@@ -81,22 +81,28 @@ export function CanvasToolbar({
   Button,
   Tooltip,
 }: CanvasToolbarProps) {
+  const focusRingClass =
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+  const iconButtonClass = `h-10 w-10 p-0 text-gray-900 hover:bg-gray-200 ${focusRingClass}`
+  const activeIconButtonClass = `h-10 w-10 p-0 bg-gray-200 text-gray-950 ${focusRingClass}`
+
   return (
-    <div className="flex items-center gap-1.5 rounded-lg border border-default bg-white/95 px-2 py-1.5 shadow-lg backdrop-blur-sm">
+    <div className="flex items-center gap-2.5 rounded-lg border border-gray-300 bg-white px-3 py-2 shadow-lg">
       {/* Sidebar toggle */}
       <Tooltip content={`${sidebarVisible ? "Hide" : "Show"} sidebar [  ]`}>
         <Button
           variant="ghost"
           size="sm"
           onClick={onToggleSidebar}
-          className={`h-7 w-7 p-0 ${!sidebarVisible ? "text-brand-600" : ""}`}
+          className={`${iconButtonClass} ${!sidebarVisible ? "text-brand-700" : ""}`}
           aria-label="Toggle sidebar"
+          aria-pressed={sidebarVisible}
         >
-          <PanelLeft className="h-4 w-4" />
+          <PanelLeft className="h-5 w-5" />
         </Button>
       </Tooltip>
 
-      <div className="h-5 w-px bg-border-default" />
+      <div className="h-6 w-px bg-border-default" />
 
       {/* Zoom controls */}
       <div className="flex items-center gap-0.5">
@@ -105,16 +111,16 @@ export function CanvasToolbar({
             variant="ghost"
             size="sm"
             onClick={onZoomOut}
-            className="h-7 w-7 p-0"
+            className={iconButtonClass}
             aria-label="Zoom out"
           >
-            <Minus className="h-3.5 w-3.5" />
+            <Minus className="h-5 w-5" />
           </Button>
         </Tooltip>
         <Tooltip content="Click to reset [ 0 ]">
           <button
             onClick={onResetZoom}
-            className="min-w-[52px] rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums text-foreground hover:bg-surface-100"
+            className={`min-w-[64px] rounded px-2 py-1 text-xs font-semibold tabular-nums text-gray-900 hover:bg-gray-100 ${focusRingClass}`}
           >
             {Math.round(scale * 100)}%
           </button>
@@ -124,15 +130,15 @@ export function CanvasToolbar({
             variant="ghost"
             size="sm"
             onClick={onZoomIn}
-            className="h-7 w-7 p-0"
+            className={iconButtonClass}
             aria-label="Zoom in"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-5 w-5" />
           </Button>
         </Tooltip>
       </div>
 
-      <div className="h-5 w-px bg-border-default" />
+      <div className="h-6 w-px bg-border-default" />
 
       {/* View controls */}
       <Tooltip content="Fit all in view [ 1 ]">
@@ -140,11 +146,11 @@ export function CanvasToolbar({
           variant="ghost"
           size="sm"
           onClick={onFitToView}
-          className="h-7 w-7 p-0"
+          className={iconButtonClass}
           aria-label="Fit to view"
           disabled={itemCount === 0}
         >
-          <Maximize2 className="h-3.5 w-3.5" />
+          <Maximize2 className="h-5 w-5" />
         </Button>
       </Tooltip>
 
@@ -153,14 +159,14 @@ export function CanvasToolbar({
           variant="ghost"
           size="sm"
           onClick={onResetZoom}
-          className="h-7 w-7 p-0"
+          className={iconButtonClass}
           aria-label="Reset view"
         >
-          <RotateCcw className="h-3.5 w-3.5" />
+          <RotateCcw className="h-5 w-5" />
         </Button>
       </Tooltip>
 
-      <div className="h-5 w-px bg-border-default" />
+      <div className="h-6 w-px bg-border-default" />
 
       {/* Interact mode */}
       <Tooltip content={interactMode ? "Exit interact mode" : "Interact with content"}>
@@ -168,14 +174,15 @@ export function CanvasToolbar({
           variant="ghost"
           size="sm"
           onClick={onToggleInteractMode}
-          className={`h-7 w-7 p-0 ${interactMode ? "bg-brand-100 text-brand-700" : ""}`}
+          className={interactMode ? activeIconButtonClass : iconButtonClass}
           aria-label="Toggle interact mode"
+          aria-pressed={interactMode}
         >
-          <MousePointer2 className="h-3.5 w-3.5" />
+          <MousePointer2 className="h-5 w-5" />
         </Button>
       </Tooltip>
 
-      <div className="h-5 w-px bg-border-default" />
+      <div className="h-6 w-px bg-border-default" />
 
       {/* Selection actions */}
       {selectedCount > 0 && (
@@ -189,10 +196,10 @@ export function CanvasToolbar({
               variant="ghost"
               size="sm"
               onClick={onDuplicateSelected}
-              className="h-7 w-7 p-0"
+              className={iconButtonClass}
               aria-label="Duplicate selected"
             >
-              <Copy className="h-3.5 w-3.5" />
+              <Copy className="h-5 w-5" />
             </Button>
           </Tooltip>
 
@@ -202,10 +209,10 @@ export function CanvasToolbar({
                 variant="ghost"
                 size="sm"
                 onClick={onGroupSelected}
-                className="h-7 w-7 p-0"
+                className={iconButtonClass}
                 aria-label="Group selected"
               >
-                <Group className="h-3.5 w-3.5" />
+                <Group className="h-5 w-5" />
               </Button>
             </Tooltip>
           )}
@@ -216,20 +223,20 @@ export function CanvasToolbar({
                 variant="ghost"
                 size="sm"
                 onClick={onUngroupSelected}
-                className="h-7 w-7 p-0"
+                className={iconButtonClass}
                 aria-label="Ungroup"
               >
-                <Ungroup className="h-3.5 w-3.5" />
+                <Ungroup className="h-5 w-5" />
               </Button>
             </Tooltip>
           )}
 
-          <div className="h-5 w-px bg-border-default" />
+          <div className="h-6 w-px bg-border-default" />
         </>
       )}
 
       {/* Item count and clear */}
-      <span className="px-1 text-xs tabular-nums text-muted-foreground">
+      <span className="px-1 text-xs tabular-nums text-gray-700">
         {itemCount}
       </span>
 
@@ -239,15 +246,15 @@ export function CanvasToolbar({
             variant="ghost"
             size="sm"
             onClick={onClearCanvas}
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-red-600"
+            className={`${iconButtonClass} text-gray-600 hover:text-red-600`}
             aria-label="Clear canvas"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-5 w-5" />
           </Button>
         </Tooltip>
       )}
 
-      <div className="h-5 w-px bg-border-default" />
+      <div className="h-6 w-px bg-border-default" />
 
       {/* Scenes */}
       <Tooltip content="Saved scenes">
@@ -255,10 +262,11 @@ export function CanvasToolbar({
           variant="ghost"
           size="sm"
           onClick={onToggleScenes}
-          className={`h-7 w-7 p-0 ${scenesVisible ? "bg-brand-100 text-brand-600" : ""}`}
+          className={scenesVisible ? activeIconButtonClass : iconButtonClass}
           aria-label="Toggle scenes panel"
+          aria-pressed={scenesVisible}
         >
-          <FolderOpen className="h-3.5 w-3.5" />
+          <FolderOpen className="h-5 w-5" />
         </Button>
       </Tooltip>
 
@@ -268,10 +276,10 @@ export function CanvasToolbar({
           variant="ghost"
           size="sm"
           onClick={onToggleHelp}
-          className="h-7 w-7 p-0"
+          className={iconButtonClass}
           aria-label="Show help"
         >
-          <HelpCircle className="h-3.5 w-3.5" />
+          <HelpCircle className="h-5 w-5" />
         </Button>
       </Tooltip>
     </div>
