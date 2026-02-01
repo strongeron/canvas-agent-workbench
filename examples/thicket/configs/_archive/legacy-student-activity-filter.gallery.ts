@@ -1,0 +1,55 @@
+import type { ComponentProps } from 'react'
+
+import type { StudentActivityFilter } from '@/platform/components/_archive/StudentActivityFilter'
+import type { GalleryComponentMeta } from '../registry/types'
+import type { GalleryEntry } from '../registry/types'
+
+type StudentActivityFilterProps = ComponentProps<typeof StudentActivityFilter>
+
+const legacyStudentActivityFilterMeta: GalleryComponentMeta = {
+  id: '_archive/legacy-student-activity-filter',
+  sourceId: '@/platform/components/_archive/StudentActivityFilter#StudentActivityFilter',
+  status: 'archive',
+}
+
+export const legacyStudentActivityFilterGalleryEntry: GalleryEntry<StudentActivityFilterProps> = {
+  name: 'StudentActivityFilter (Legacy)',
+  importPath: legacyStudentActivityFilterMeta.sourceId.split('#')[0],
+  category: 'Archive',
+  id: legacyStudentActivityFilterMeta.id,
+  layoutSize: 'full',
+  allowOverflow: true,
+  meta: legacyStudentActivityFilterMeta,
+  variants: [
+    {
+      name: 'All Students (Default)',
+      description: 'Legacy StudentActivityFilter using FilterButton - no filter applied',
+      props: {
+        value: 'all' as const,
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'variant',
+    },
+    {
+      name: 'Active Students Only',
+      description: 'Legacy StudentActivityFilter filtered to active students',
+      props: {
+        value: 'active' as const,
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'state',
+    },
+    {
+      name: 'Inactive Students Only',
+      description: 'Legacy StudentActivityFilter filtered to inactive students',
+      props: {
+        value: 'inactive' as const,
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'state',
+    },
+  ],
+}
