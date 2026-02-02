@@ -10,9 +10,9 @@ import {
   patternsByCategory,
   getLayoutsByContext,
   getPatternsByContext,
-} from "../mocks/componentVariants"
+} from "./componentVariants"
 
-import { getCategoryLabel, groupVariantsByCategory } from "./ComponentSection"
+import { getCategoryLabel, groupVariantsByCategory } from "../components/ComponentSection"
 
 interface GallerySidebarProps {
   categories: string[]

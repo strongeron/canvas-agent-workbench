@@ -13,7 +13,13 @@ type ModuleRecord = Record<string, any>
 const galleryModules = import.meta.glob("./configs/**/*.gallery.ts", { eager: true })
 
 const componentModules = import.meta.glob(
-  ["./components/**/*.{ts,tsx}", "./platform/**/*.{ts,tsx}", "./layouts/**/*.{ts,tsx}", "./*.tsx"],
+  [
+    "./components/**/*.{ts,tsx}",
+    "./platform/**/*.{ts,tsx}",
+    "./layouts/**/*.{ts,tsx}",
+    "./*.tsx",
+    "!./main.tsx",
+  ],
   { eager: true }
 )
 
@@ -81,6 +87,22 @@ function parseSourceId(entry: AnyEntry) {
   }
 }
 
+function normalizeImportPath(importPath: string) {
+  if (!importPath) return importPath
+  const trimmed = importPath.replace(/\.(tsx|ts)$/, "")
+
+  if (trimmed.startsWith("@thicket/") || trimmed === "@thicket") {
+    return trimmed
+  }
+
+  if (trimmed.startsWith("./") || trimmed.startsWith("../")) {
+    const withoutRelative = trimmed.replace(/^(\.\/|(\.\.\/)+)/, "")
+    return `@thicket/${withoutRelative}`
+  }
+
+  return trimmed
+}
+
 function resolveComponentExport(
   moduleRecord: ModuleRecord | undefined,
   exportName: string,
@@ -124,7 +146,8 @@ const componentMap: Record<string, ComponentType<any>> = {}
 
 for (const entry of [...entries, ...layoutEntries, ...patternEntries]) {
   const { importPath, exportName } = parseSourceId(entry)
-  const moduleRecord = moduleMap.get(importPath)
+  const normalizedImportPath = normalizeImportPath(importPath)
+  const moduleRecord = moduleMap.get(normalizedImportPath) ?? moduleMap.get(importPath)
   const component = resolveComponentExport(moduleRecord, exportName, entry.name)
   if (!component) {
     console.warn(

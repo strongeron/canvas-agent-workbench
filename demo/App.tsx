@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { Search } from "lucide-react"
 
 import { GalleryProvider, createStaticAdapter, type GalleryEntry } from "../core"
 
@@ -570,6 +571,7 @@ type ProjectId = "demo" | "thicket"
 
 function App() {
   const [view, setView] = useState<"gallery" | "canvas">("gallery")
+  const [searchQuery, setSearchQuery] = useState("")
   const [projectId, setProjectId] = useState<ProjectId>("demo")
   const [thicketPack, setThicketPack] = useState<null | {
     id: string
@@ -625,59 +627,81 @@ function App() {
   return (
     <GalleryProvider adapter={adapter}>
       <div className="flex h-screen flex-col bg-white">
-        <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-          <div>
-            <h1 className="text-sm font-semibold text-gray-900">Component Gallery Demo</h1>
-            <p className="text-xs text-gray-500">Switch between gallery and canvas</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex rounded-md border border-gray-200 bg-white p-0.5 text-xs font-semibold">
-              {(["demo", "thicket"] as const).map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setProjectId(id)}
-                  disabled={id === "thicket" && isThicketLoading}
-                  className={`rounded px-2.5 py-1 transition-colors ${
-                    projectId === id
-                      ? "bg-gray-900 text-white"
-                      : "text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  {id === "demo" ? "Demo" : "Thicket"}
-                </button>
-              ))}
+        <header className="fixed left-0 right-0 top-0 z-50 border-b border-gray-200 bg-white/95 px-4 py-2 backdrop-blur">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-[200px]">
+              <h1 className="text-sm font-semibold text-gray-900">Component Gallery Demo</h1>
+              <p className="text-xs text-gray-500">Switch between gallery and canvas</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setView("gallery")}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-                view === "gallery"
-                  ? "bg-gray-900 text-white"
-                  : "border border-gray-200 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              Gallery
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("canvas")}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-                view === "canvas"
-                  ? "bg-gray-900 text-white"
-                  : "border border-gray-200 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              Canvas
-            </button>
+
+            {view === "gallery" && (
+              <div className="relative min-w-[240px] flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search components..."
+                  className="w-full rounded-md border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                />
+              </div>
+            )}
+
+            <div className="ml-auto flex items-center gap-3">
+              <div className="flex rounded-md border border-gray-200 bg-white p-0.5 text-xs font-semibold">
+                {(["demo", "thicket"] as const).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setProjectId(id)}
+                    disabled={id === "thicket" && isThicketLoading}
+                    className={`rounded px-2.5 py-1 transition-colors ${
+                      projectId === id
+                        ? "bg-gray-900 text-white"
+                        : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {id === "demo" ? "Demo" : "Thicket"}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setView("gallery")}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                  view === "gallery"
+                    ? "bg-gray-900 text-white"
+                    : "border border-gray-200 text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                Gallery
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("canvas")}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                  view === "canvas"
+                    ? "bg-gray-900 text-white"
+                    : "border border-gray-200 text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                Canvas
+              </button>
+            </div>
           </div>
         </header>
 
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 pt-14">
           {view === "gallery" ? (
             <GalleryPage
               title="Component Gallery"
               description="A portable component gallery demo - browse and interact with all components"
+              externalSearchQuery={searchQuery}
+              onExternalSearchChange={setSearchQuery}
+              showSearch={false}
+              forceCompactHeader
+              stickyHeader={false}
+              headerOffset={64}
             />
           ) : (
             <CanvasTab

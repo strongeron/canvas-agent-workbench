@@ -9,7 +9,7 @@ import { ChevronDown, ChevronRight, Copy, RotateCcw } from "lucide-react"
 import { useState } from "react"
 
 import type { InteractivePropsSchema } from "./registry/types"
-import { PropControl } from "./PropControl"
+import { PropControl } from "../components/PropControl"
 
 interface InteractivePropsPanelProps {
   schema: InteractivePropsSchema

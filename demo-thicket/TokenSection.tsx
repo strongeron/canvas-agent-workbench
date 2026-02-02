@@ -1,7 +1,7 @@
 import { Check, Copy } from "lucide-react"
 import { useState } from "react"
 
-import type { DesignToken } from "../mocks/designTokens"
+import type { DesignToken } from "./designTokens"
 
 interface TokenSectionProps {
   category: string

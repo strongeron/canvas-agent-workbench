@@ -12,6 +12,17 @@ import type { ComponentType, ReactNode } from "react"
 import { useGalleryAdapter } from "../core/GalleryContext"
 import type { ComponentVariant, InteractivePropsSchema } from "../core/types"
 import { InteractivePropsPanel } from "./InteractivePropsPanel"
+import { ModalPreview } from "./ModalPreview"
+import { SonnerPreview } from "../demo-thicket/SonnerPreview"
+import { ToastPreview } from "../demo-thicket/platform/_archive/toast/ToastPreview"
+import { ToastProvider } from "../demo-thicket/platform/_archive/toast/ToastContext"
+import {
+  isCoverComponent,
+  isDropdownComponent,
+  isFullWidthComponent,
+  isOverlayComponent,
+  isWherebyComponent,
+} from "../demo-thicket/registry/types"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -225,8 +236,19 @@ export function PortableComponentRenderer({
     transparent: "bg-transparent",
   }
 
-  // Render content
-  const renderContent = () => {
+  const useThicketBehaviors = !!importPath && (
+    importPath.startsWith("../") || importPath.startsWith("@thicket/")
+  )
+  const shouldApplyThicketPreview = useThicketBehaviors && renderMode === "card"
+  const useSonnerPreview = shouldApplyThicketPreview && currentProps?.__useSonnerPreview
+  const useToastPreview = shouldApplyThicketPreview && currentProps?.__useToastPreview
+  const isOverlay = shouldApplyThicketPreview && isOverlayComponent(componentName)
+  const isWhereby = shouldApplyThicketPreview && isWherebyComponent(componentName)
+  const isCover = shouldApplyThicketPreview && isCoverComponent(componentName)
+  const isFullWidth = shouldApplyThicketPreview && isFullWidthComponent(componentName)
+  const isDropdown = shouldApplyThicketPreview && isDropdownComponent(componentName)
+
+  const renderBaseContent = () => {
     const element = <Component {...currentProps} />
 
     if (CustomWrapper) {
@@ -234,6 +256,120 @@ export function PortableComponentRenderer({
     }
 
     return element
+  }
+
+  const renderContent = () => {
+    if (useSonnerPreview) {
+      return (
+        <SonnerPreview
+          toastType={currentProps?.toastType}
+          message={currentProps?.message}
+          description={currentProps?.description}
+          action={currentProps?.action}
+          promiseConfig={currentProps?.promiseConfig}
+          toasts={currentProps?.toasts}
+        />
+      )
+    }
+
+    if (useToastPreview) {
+      return (
+        <ToastProvider>
+          <ToastPreview
+            toasts={Array.isArray(currentProps?.toasts) ? currentProps?.toasts : []}
+            variantName={variant.name}
+          />
+        </ToastProvider>
+      )
+    }
+
+    if (isOverlay) {
+      return (
+        <ModalPreview
+          Component={Component}
+          props={currentProps}
+          title={(currentProps?.title as string) || "Modal Preview"}
+          subtitle={currentProps?.subtitle as string | undefined}
+          size={currentProps?.size as "small" | "medium" | "large" | undefined}
+        />
+      )
+    }
+
+    if (isWhereby) {
+      return (
+        <div className="w-full max-w-2xl rounded-lg border border-blue-200 bg-blue-50 p-6 text-center">
+          <div className="mb-3 flex justify-center">
+            <div className="rounded-full bg-blue-100 p-3">
+              <svg
+                className="h-7 w-7 text-blue-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
+              </svg>
+            </div>
+          </div>
+          <h3 className="mb-2 text-sm font-semibold text-gray-900">
+            {componentName === "WherebyEmbed" ? "Video Room Integration" : "Recording Player"}
+          </h3>
+          <p className="text-sm text-gray-600">
+            This component loads the Whereby video platform dynamically. In production, it displays a live room.
+          </p>
+          <div className="mt-3 text-xs text-gray-500">
+            Room URL: {currentProps?.roomUrl || currentProps?.recordingUrl || "—"}
+          </div>
+        </div>
+      )
+    }
+
+    if (isCover && componentName === "LessonCover" && !currentProps?.coverUrl) {
+      return (
+        <div className="w-full max-w-md">
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <Component {...currentProps} />
+            <div className="border-t border-gray-200 bg-white p-4">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-xs text-gray-500">
+                  Lesson {currentProps?.lessonNumber || 1}
+                </span>
+              </div>
+              <h4 className="mb-1 text-base font-semibold text-gray-900">
+                {currentProps?.title || "Lesson Title"}
+              </h4>
+              <p className="text-sm text-gray-600">
+                Lesson description goes here. This shows how the cover looks in context.
+              </p>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (isCover && componentName === "CourseCover" && currentProps?.variant === "card") {
+      return (
+        <div className="w-full max-w-sm">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <Component {...currentProps} />
+            <div className="p-4">
+              <h4 className="mb-2 text-lg font-semibold text-gray-900">
+                {currentProps?.title || "Course Title"}
+              </h4>
+              <p className="text-sm text-gray-600">
+                Course description showing how the cover looks in context.
+              </p>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    return renderBaseContent()
   }
 
   // Standalone mode (no card wrapper)
@@ -284,10 +420,16 @@ export function PortableComponentRenderer({
       <div
         className={`${bgStyles[backgroundColor]} ${
           allowOverflow ? "" : "overflow-hidden"
-        } p-6`}
+        } ${isDropdown ? "pb-20" : ""} p-6`}
       >
         <ComponentErrorBoundary componentName={componentName}>
-          {renderContent()}
+          <div
+            className={`flex items-center justify-center ${
+              isFullWidth ? "min-h-[200px]" : "min-h-[120px]"
+            }`}
+          >
+            {renderContent()}
+          </div>
         </ComponentErrorBoundary>
       </div>
 
@@ -296,8 +438,8 @@ export function PortableComponentRenderer({
         <div className="border-t border-gray-100 p-4">
           <InteractivePropsPanel
             schema={variant.interactiveSchema}
-            currentProps={currentProps}
-            onPropChange={handlePropChange}
+            values={currentProps}
+            onChange={handlePropChange}
             onReset={handleReset}
           />
         </div>

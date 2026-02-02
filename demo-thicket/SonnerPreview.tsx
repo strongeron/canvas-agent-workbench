@@ -38,6 +38,12 @@ export function SonnerPreview({
   toasts,
 }: SonnerPreviewProps) {
   const handleTrigger = () => {
+    if (
+      typeof window !== "undefined" &&
+      (window as any).__GALLERY_PREVIEW_DISABLE_TOASTS
+    ) {
+      return
+    }
     switch (toastType) {
       case 'success':
         toast.success(message, { description })

@@ -15,3 +15,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+body[data-gallery-preview="true"] [data-sonner-toaster],
+body[data-gallery-preview="true"] [data-sonner-toast],
+body[data-gallery-preview="true"] [data-sonner-toast-list],
+body[data-gallery-preview="true"] [data-sonner-toast-container],
+body[data-gallery-preview="true"] [aria-label="Notifications"] {
+  display: none !important;
+}

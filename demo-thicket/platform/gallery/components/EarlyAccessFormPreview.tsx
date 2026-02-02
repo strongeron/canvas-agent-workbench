@@ -1,3 +1,2 @@
-export { default } from "../../../EarlyAccessFormPreview"
+export { EarlyAccessFormPreview as default } from "../../../EarlyAccessFormPreview"
 export * from "../../../EarlyAccessFormPreview"
-

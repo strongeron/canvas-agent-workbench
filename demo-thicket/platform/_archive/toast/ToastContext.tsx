@@ -33,6 +33,12 @@ export function ToastProvider({ children }: ToastProviderProps) {
 
   const showToast = useCallback(
     (message: string, variant: ToastVariant = "info", duration = 5000) => {
+      if (
+        typeof window !== "undefined" &&
+        (window as any).__GALLERY_PREVIEW_DISABLE_TOASTS
+      ) {
+        return
+      }
       const id = `toast-${Date.now()}-${Math.random()}`
       const newToast: Toast = { id, message, variant, duration }
       setToasts((prev) => [...prev, newToast])

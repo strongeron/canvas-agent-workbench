@@ -1,7 +1,7 @@
 import { Camera, Clock, Plus, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 
-import { type Snapshot, deleteSnapshot, getSnapshots, saveSnapshot } from "../mocks/snapshots"
+import { type Snapshot, deleteSnapshot, getSnapshots, saveSnapshot } from "./mocks/snapshots"
 
 export function SnapshotManager() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])

@@ -178,3 +178,5 @@ export function EarlyAccessFormPreview({
     </Modal>
   )
 }
+
+export default EarlyAccessFormPreview
