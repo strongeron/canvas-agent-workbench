@@ -53,6 +53,12 @@ interface CanvasTabProps {
   Button: React.ComponentType<any>
   /** Injected Tooltip component for toolbar */
   Tooltip: React.ComponentType<any>
+  /** Optional storage key prefix (for multi-project setups) */
+  storageKey?: string
+  /** Optional project selector */
+  projects?: Array<{ id: string; label: string }>
+  activeProjectId?: string
+  onSelectProject?: (id: string) => void
 }
 
 export function CanvasTab({
@@ -61,6 +67,10 @@ export function CanvasTab({
   entries,
   Button,
   Tooltip,
+  storageKey,
+  projects,
+  activeProjectId,
+  onSelectProject,
 }: CanvasTabProps) {
   const {
     items,
@@ -82,7 +92,7 @@ export function CanvasTab({
     removeSelected,
     duplicateSelected,
     duplicateItem,
-  } = useCanvasState()
+  } = useCanvasState(storageKey ? `${storageKey}-state` : undefined)
 
   const {
     scenes,
@@ -92,7 +102,7 @@ export function CanvasTab({
     duplicateScene,
     exportScene,
     importScene,
-  } = useCanvasScenes()
+  } = useCanvasScenes(storageKey ? `${storageKey}-scenes` : undefined)
 
   const {
     transform,
@@ -412,12 +422,18 @@ export function CanvasTab({
               sidebarVisible ? "w-72" : "w-0"
             }`}
           >
-            <div
-              className={`h-full w-72 transition-transform duration-200 ${
-                sidebarVisible ? "translate-x-0" : "-translate-x-full"
-              }`}
-            >
-              <CanvasSidebar entries={entries} onAddEmbed={handleAddEmbed} />
+          <div
+            className={`h-full w-72 transition-transform duration-200 ${
+              sidebarVisible ? "translate-x-0" : "-translate-x-full"
+            }`}
+          >
+              <CanvasSidebar
+                entries={entries}
+                onAddEmbed={handleAddEmbed}
+                projects={projects}
+                activeProjectId={activeProjectId}
+                onSelectProject={onSelectProject}
+              />
             </div>
           </div>
 

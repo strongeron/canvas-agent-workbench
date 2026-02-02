@@ -11,6 +11,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './'),
+      '@thicket': path.resolve(__dirname, './demo-thicket'),
+      '@inertiajs/react': path.resolve(__dirname, './demo-thicket/shims/inertia-react.tsx'),
     },
   },
   server: {

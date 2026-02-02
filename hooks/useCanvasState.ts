@@ -29,8 +29,8 @@ function normalizeState(state: Partial<CanvasState> | null | undefined): CanvasS
   }
 }
 
-export function useCanvasState() {
-  const [rawState, setRawState] = useLocalStorage<CanvasState>("gallery-canvas-state", DEFAULT_STATE)
+export function useCanvasState(storageKey = "gallery-canvas-state") {
+  const [rawState, setRawState] = useLocalStorage<CanvasState>(storageKey, DEFAULT_STATE)
 
   // Normalize state to ensure all properties exist
   const state = normalizeState(rawState)

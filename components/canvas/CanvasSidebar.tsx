@@ -90,9 +90,19 @@ interface CanvasSidebarProps {
   entries: GalleryEntry[]
   /** Add an iframe/embed item to the canvas */
   onAddEmbed: (url: string) => void
+  /** Optional project selector */
+  projects?: Array<{ id: string; label: string }>
+  activeProjectId?: string
+  onSelectProject?: (id: string) => void
 }
 
-export function CanvasSidebar({ entries, onAddEmbed }: CanvasSidebarProps) {
+export function CanvasSidebar({
+  entries,
+  onAddEmbed,
+  projects,
+  activeProjectId,
+  onSelectProject,
+}: CanvasSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [embedUrl, setEmbedUrl] = useState("")
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
@@ -151,6 +161,33 @@ export function CanvasSidebar({ entries, onAddEmbed }: CanvasSidebarProps) {
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-default bg-white">
+      {projects && projects.length > 0 && (
+        <div className="border-b border-default p-3">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Projects
+          </h3>
+          <div className="space-y-1">
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                type="button"
+                onClick={() => onSelectProject?.(project.id)}
+                className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+                  activeProjectId === project.id
+                    ? "bg-brand-50 text-brand-700"
+                    : "text-foreground hover:bg-surface-50"
+                }`}
+              >
+                <span className="truncate">{project.label}</span>
+                {activeProjectId === project.id && (
+                  <span className="text-xs font-semibold text-brand-600">Active</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="border-b border-default p-3">
         <h3 className="mb-2 text-sm font-semibold text-foreground">Embeds</h3>
         <div className="space-y-2">

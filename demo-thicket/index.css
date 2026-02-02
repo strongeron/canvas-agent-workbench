@@ -1,0 +1,66 @@
+/*
+Don't use @layer & oklch() for better browser support
+@see https://github.com/zounar/tailwind-4-rgb-palette?tab=readme-ov-file
+*/
+@import 'tailwindcss/theme';
+@import './theme.css';
+@import 'tailwindcss/preflight';
+@import 'tailwindcss/utilities';
+
+/* Border utilities - semantic neutral borders */
+/* Note: @utility is a valid Tailwind v4 directive - warnings can be ignored */
+@utility border-subtle {
+  border-color: var(--color-border-subtle);
+}
+
+@utility border-default {
+  border-color: var(--color-border-default);
+}
+
+@utility border-strong {
+  border-color: var(--color-border-strong);
+}
+
+@utility shadow-top {
+  box-shadow: var(--shadow-top);
+}
+
+/* Checkbox/Radio button accent color */
+@utility accent-brand-600 {
+  accent-color: var(--color-brand-600);
+}
+
+.course-card-title-border-transition {
+  transition: opacity 200ms ease-in-out, padding-bottom 300ms ease-in-out, border-color 300ms ease-in-out;
+  will-change: auto;
+}
+
+.course-card-title-border-ready {
+  opacity: 1;
+}
+
+.course-card-title-border-calculating {
+  opacity: 0;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

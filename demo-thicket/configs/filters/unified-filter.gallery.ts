@@ -1,0 +1,268 @@
+import { BookOpen, Calendar, Filter, Tag, Users } from 'lucide-react'
+import type { ComponentProps } from 'react'
+import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+
+import type { UnifiedFilter } from '@thicket/platform/filters/UnifiedFilter'
+import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+
+type UnifiedFilterProps = ComponentProps<typeof UnifiedFilter>
+
+const unifiedFilterMeta: GalleryComponentMeta = {
+    id: 'filters/unified-filter',
+  sourceId: '@thicket/platform/filters/UnifiedFilter#UnifiedFilter',
+  status: 'archive',
+}
+
+export const unifiedFilterGalleryEntry: GalleryEntry<UnifiedFilterProps> = {
+  name: 'UnifiedFilter',
+  importPath: unifiedFilterMeta.sourceId.split('#')[0],
+  category: 'Filtering & Sorting',
+  id: 'filters/unified-filter',
+  layoutSize: 'full',
+  allowOverflow: true,
+  variants: [
+    {
+      name: 'Single-Select - No Badge (Default)',
+      description: 'Standard single selection with no badge shown',
+      props: {
+        mode: 'single' as const,
+        showBadge: 'never' as const,
+        displayMode: 'dropdown' as const,
+        icon: BookOpen,
+        label: 'All Courses',
+        value: null,
+        options: [
+          { value: 1, label: 'React Fundamentals', icon: BookOpen },
+          { value: 2, label: 'Advanced TypeScript', icon: BookOpen },
+          { value: 3, label: 'Full-Stack Development', icon: BookOpen },
+        ],
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'variant',
+    },
+    {
+      name: 'Single-Select - With Selected',
+      description: 'Shows selected item label in button',
+      props: {
+        mode: 'single' as const,
+        showBadge: 'never' as const,
+        displayMode: 'dropdown' as const,
+        icon: BookOpen,
+        label: 'All Courses',
+        value: 1,
+        options: [
+          { value: 1, label: 'React Fundamentals', icon: BookOpen },
+          { value: 2, label: 'Advanced TypeScript', icon: BookOpen },
+          { value: 3, label: 'Full-Stack Development', icon: BookOpen },
+        ],
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'state',
+    },
+    {
+      name: 'Single-Select - Always Show Badge',
+      description: 'Forces badge "1" to show even with single selection',
+      props: {
+        mode: 'single' as const,
+        showBadge: 'always' as const,
+        displayMode: 'dropdown' as const,
+        icon: BookOpen,
+        label: 'All Courses',
+        value: 1,
+        options: [
+          { value: 1, label: 'React Fundamentals', icon: BookOpen },
+          { value: 2, label: 'Advanced TypeScript', icon: BookOpen },
+        ],
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'variant',
+    },
+    {
+      name: 'Single-Select - Static Mode',
+      description: 'Label stays the same regardless of selection',
+      props: {
+        mode: 'single' as const,
+        showBadge: 'never' as const,
+        displayMode: 'static' as const,
+        icon: Tag,
+        label: 'Category',
+        value: 1,
+        options: [
+          { value: 1, label: 'Technology', icon: Tag },
+          { value: 2, label: 'Arts & Design', icon: Tag },
+          { value: 3, label: 'Business', icon: Tag },
+        ],
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'variant',
+    },
+    {
+      name: 'Multi-Select - With Count Badge',
+      description: 'Multiple selections with count badge (hides if count = 1)',
+      props: {
+        mode: 'multi' as const,
+        showBadge: 'count' as const,
+        displayMode: 'static' as const,
+        icon: Filter,
+        label: 'Filters',
+        value: [1, 2],
+        options: [
+          { value: 1, label: 'Published' },
+          { value: 2, label: 'Waitlist' },
+          { value: 3, label: 'Archived' },
+        ],
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'variant',
+    },
+    {
+      name: 'Multi-Select - Single Item (No Badge)',
+      description: 'Count badge hidden when only 1 item selected',
+      props: {
+        mode: 'multi' as const,
+        showBadge: 'count' as const,
+        displayMode: 'dropdown' as const,
+        icon: Tag,
+        label: 'Categories',
+        value: [1],
+        options: [
+          { value: 1, label: 'Technology' },
+          { value: 2, label: 'Arts & Design' },
+          { value: 3, label: 'Business' },
+        ],
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'state',
+    },
+    {
+      name: 'Multi-Select - Always Show Badge',
+      description: 'Badge always shows count, even with 1 selection',
+      props: {
+        mode: 'multi' as const,
+        showBadge: 'always' as const,
+        displayMode: 'static' as const,
+        icon: Filter,
+        label: 'Status',
+        value: [1],
+        options: [
+          { value: 1, label: 'Active' },
+          { value: 2, label: 'Inactive' },
+        ],
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'variant',
+    },
+    {
+      name: 'Multi-Select - With Checkboxes',
+      description: 'Shows checkboxes for multiple selections',
+      props: {
+        mode: 'multi' as const,
+        showBadge: 'count' as const,
+        displayMode: 'static' as const,
+        icon: Tag,
+        label: 'All Categories',
+        value: [1, 3],
+        options: [
+          { value: 1, label: 'Technology' },
+          { value: 2, label: 'Arts & Design' },
+          { value: 3, label: 'Business' },
+          { value: 4, label: 'Science' },
+        ],
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'variant',
+    },
+    {
+      name: 'Dropdown Width - Small',
+      description: 'Compact dropdown for sidebars',
+      props: {
+        mode: 'single' as const,
+        showBadge: 'never' as const,
+        displayMode: 'dropdown' as const,
+        icon: Calendar,
+        label: 'Date Range',
+        value: null,
+        options: [
+          { value: 'today', label: 'Today' },
+          { value: 'week', label: 'This Week' },
+          { value: 'month', label: 'This Month' },
+        ],
+        dropdownWidth: 'sm' as const,
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'size',
+    },
+    {
+      name: 'Dropdown Width - Large',
+      description: 'Wider dropdown for detailed options',
+      props: {
+        mode: 'single' as const,
+        showBadge: 'never' as const,
+        displayMode: 'dropdown' as const,
+        icon: BookOpen,
+        label: 'Select Course',
+        value: null,
+        options: [
+          { value: 1, label: 'Advanced Full-Stack Development with React and Node.js' },
+          { value: 2, label: 'Machine Learning Fundamentals for Beginners' },
+        ],
+        dropdownWidth: 'lg' as const,
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'size',
+    },
+    {
+      name: 'With Truncated Label',
+      description: 'Long labels are truncated with ellipsis',
+      props: {
+        mode: 'single' as const,
+        showBadge: 'never' as const,
+        displayMode: 'dropdown' as const,
+        icon: BookOpen,
+        label: 'Course',
+        value: 1,
+        options: [
+          {
+            value: 1,
+            label: 'The Complete Guide to Modern Web Development with React, TypeScript, and Next.js',
+          },
+          { value: 2, label: 'Short Course' },
+        ],
+        truncateLength: 150,
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'layout',
+    },
+    {
+      name: 'Different Icons Per Option',
+      description: 'Each option can have its own icon',
+      props: {
+        mode: 'single' as const,
+        showBadge: 'never' as const,
+        displayMode: 'dropdown' as const,
+        icon: Users,
+        label: 'View',
+        value: null,
+        options: [
+          { value: 'active', label: 'Active Students', icon: Users },
+          { value: 'inactive', label: 'Inactive Students', icon: Users },
+          { value: 'all', label: 'All Students', icon: Filter },
+        ],
+        onChange: () => {},
+      },
+      status: 'archive',
+      category: 'variant',
+    },
+  ],
+}

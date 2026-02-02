@@ -4,7 +4,7 @@
  * This demonstrates how to set up the component gallery system.
  */
 
-import { useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 
 import { GalleryProvider, createStaticAdapter, type GalleryEntry } from "../core"
 
@@ -509,19 +509,16 @@ const selectEntry: GalleryEntry<SelectProps> = {
 // ADAPTER SETUP
 // ─────────────────────────────────────────────────────────────────────────────
 
-const entries = [buttonEntry, badgeEntry, inputEntry, cardEntry, modalEntry, selectEntry]
+const demoEntries = [buttonEntry, badgeEntry, inputEntry, cardEntry, modalEntry, selectEntry]
 
-const adapter = createStaticAdapter({
-  componentMap: {
-    Button,
-    Badge,
-    Input,
-    Card,
-    Modal,
-    Select,
-  },
-  entries,
-})
+const demoComponentMap = {
+  Button,
+  Badge,
+  Input,
+  Card,
+  Modal,
+  Select,
+}
 
 function CanvasButton({
   variant,
@@ -569,8 +566,61 @@ function CanvasButton({
 // APP
 // ─────────────────────────────────────────────────────────────────────────────
 
+type ProjectId = "demo" | "thicket"
+
 function App() {
   const [view, setView] = useState<"gallery" | "canvas">("gallery")
+  const [projectId, setProjectId] = useState<ProjectId>("demo")
+  const [thicketPack, setThicketPack] = useState<null | {
+    id: string
+    label: string
+    entries: GalleryEntry[]
+    layouts?: any[]
+    patterns?: any[]
+    componentMap: Record<string, React.ComponentType<any>>
+    ui: { Button: React.ComponentType<any>; Tooltip: React.ComponentType<any> }
+  }>(null)
+  const [isThicketLoading, setIsThicketLoading] = useState(false)
+
+  useEffect(() => {
+    if (projectId !== "thicket" || thicketPack || isThicketLoading) return
+    setIsThicketLoading(true)
+    import("../demo-thicket/pack")
+      .then((mod) => {
+        setThicketPack(mod.thicketPack)
+      })
+      .finally(() => setIsThicketLoading(false))
+  }, [projectId, thicketPack, isThicketLoading])
+
+  const activePack = projectId === "demo"
+    ? {
+        id: "demo",
+        label: "Demo",
+        entries: demoEntries,
+        layouts: [],
+        patterns: [],
+        componentMap: demoComponentMap,
+        ui: { Button: CanvasButton, Tooltip },
+      }
+    : thicketPack
+
+  const adapter = useMemo(() => {
+    if (!activePack) return null
+    return createStaticAdapter({
+      componentMap: activePack.componentMap,
+      entries: activePack.entries,
+      layouts: activePack.layouts,
+      patterns: activePack.patterns,
+    })
+  }, [activePack])
+
+  if (!adapter || !activePack) {
+    return (
+      <div className="flex h-screen items-center justify-center text-sm text-gray-600">
+        Loading {projectId === "thicket" ? "Thicket" : "Demo"} components...
+      </div>
+    )
+  }
 
   return (
     <GalleryProvider adapter={adapter}>
@@ -580,7 +630,24 @@ function App() {
             <h1 className="text-sm font-semibold text-gray-900">Component Gallery Demo</h1>
             <p className="text-xs text-gray-500">Switch between gallery and canvas</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <div className="flex rounded-md border border-gray-200 bg-white p-0.5 text-xs font-semibold">
+              {(["demo", "thicket"] as const).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setProjectId(id)}
+                  disabled={id === "thicket" && isThicketLoading}
+                  className={`rounded px-2.5 py-1 transition-colors ${
+                    projectId === id
+                      ? "bg-gray-900 text-white"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {id === "demo" ? "Demo" : "Thicket"}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               onClick={() => setView("gallery")}
@@ -620,9 +687,16 @@ function App() {
                 if (!entry || entry.kind === "layout" || entry.kind === "page-pattern") return null
                 return entry as GalleryEntry
               }}
-              entries={entries}
-              Button={CanvasButton}
-              Tooltip={Tooltip}
+              entries={activePack.entries}
+              Button={activePack.ui.Button}
+              Tooltip={activePack.ui.Tooltip}
+              storageKey={`gallery-${projectId}`}
+              projects={[
+                { id: "demo", label: "Demo" },
+                { id: "thicket", label: "Thicket" },
+              ]}
+              activeProjectId={projectId}
+              onSelectProject={(id) => setProjectId(id as ProjectId)}
             />
           )}
         </div>

@@ -18,8 +18,8 @@ const DEFAULT_SCENES_STATE: ScenesState = {
   scenes: [],
 }
 
-export function useCanvasScenes() {
-  const [state, setState] = useLocalStorage<ScenesState>("gallery-canvas-scenes", DEFAULT_SCENES_STATE)
+export function useCanvasScenes(storageKey = "gallery-canvas-scenes") {
+  const [state, setState] = useLocalStorage<ScenesState>(storageKey, DEFAULT_SCENES_STATE)
 
   /**
    * Save current canvas state as a new scene

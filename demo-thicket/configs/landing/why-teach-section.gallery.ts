@@ -1,0 +1,27 @@
+import { WhyTeachSection } from "@thicket/components/why-teach-section"
+import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+
+export const whyTeachSectionMeta: GalleryComponentMeta = {
+  id: "landing.why-teach-section",
+  sourceId: "@thicket/components/why-teach-section#WhyTeachSection",
+  status: "prod",
+}
+
+export const whyTeachSectionGalleryEntry: GalleryEntry<Record<string, never>> = {
+  name: "WhyTeachSection",
+  importPath: whyTeachSectionMeta.sourceId.split("#")[0],
+  category: "Landing",
+  id: whyTeachSectionMeta.id,
+  layoutSize: "full",
+  meta: whyTeachSectionMeta,
+  variants: [
+    {
+      name: "Default",
+      description: "Reasons to teach with CTA",
+      props: {},
+      status: "prod",
+      category: "Default",
+    },
+  ],
+}
