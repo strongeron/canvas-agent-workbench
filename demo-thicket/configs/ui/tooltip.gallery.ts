@@ -1,10 +1,10 @@
-import type { TooltipProps } from "@thicket/components/ui/tooltip"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { TooltipProps } from "../../components/ui/tooltip"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const tooltipMeta: GalleryComponentMeta = {
     id: 'ui/tooltip',
-  sourceId: '@thicket/components/ui/tooltip#TooltipProps',
+  sourceId: '../../components/ui/tooltip#TooltipProps',
   status: 'archive',
 }
 

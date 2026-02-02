@@ -6,7 +6,7 @@
 import { ChevronDown, type LucideIcon, X } from "lucide-react"
 import { useState } from "react"
 
-import { Popover, PopoverContent, PopoverTrigger } from "@thicket/components/ui/popover"
+import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover"
 
 export interface FilterOption<T = string | number> {
   value: T

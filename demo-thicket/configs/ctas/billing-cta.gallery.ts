@@ -1,5 +1,5 @@
-import type { BillingCTAProps } from '@thicket/platform/CTAs/BillingCTA'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { BillingCTAProps } from '../../platform/CTAs/BillingCTA'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 const samplePlan = {
@@ -10,7 +10,7 @@ const samplePlan = {
 
 export const billingCTAMeta: GalleryComponentMeta = {
   id: 'ctas/billing-cta',
-  sourceId: '@thicket/platform/CTAs/BillingCTA#BillingCTA',
+  sourceId: '../../platform/CTAs/BillingCTA#BillingCTA',
   status: 'wip',
 }
 

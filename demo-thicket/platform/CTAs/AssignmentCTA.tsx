@@ -1,8 +1,8 @@
 import type { LucideIcon } from "lucide-react"
 import { Download, FileText, Upload } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import type { Assignment } from "@thicket/types"
+import { Button } from "../../components/ui/button"
+import type { Assignment } from "../../types"
 
 export type AssignmentCTARole = "student" | "teacher"
 export type AssignmentCTAAction = "submit" | "view" | "upload" | "download"

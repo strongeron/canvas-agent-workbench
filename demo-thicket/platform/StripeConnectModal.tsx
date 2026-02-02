@@ -1,9 +1,9 @@
-import { router } from "@thicket/shims/inertia-react"
+import { router } from "../shims/inertia-react"
 import { CheckCircle2, CreditCard } from "lucide-react"
 import { useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Modal } from "@thicket/components/ui/modal/"
+import { Button } from "../components/ui/button"
+import { Modal } from "../components/ui/modal"
 
 interface StripeConnectModalProps {
   isOpen: boolean

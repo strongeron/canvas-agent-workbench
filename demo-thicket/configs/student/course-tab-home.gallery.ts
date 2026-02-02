@@ -1,12 +1,12 @@
-import type { CourseTabHomeProps } from '@thicket/platform/Student/CourseTabHome'
+import type { CourseTabHomeProps } from '../../platform/Student/CourseTabHome'
 
-import { GALLERY_COURSES, GALLERY_INSTRUCTORS } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { GALLERY_COURSES, GALLERY_INSTRUCTORS } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const courseTabHomeMeta: GalleryComponentMeta = {
   id: 'student/course-tab-home',
-  sourceId: '@thicket/platform/Student/CourseTabHome#CourseTabHome',
+  sourceId: '../../platform/Student/CourseTabHome#CourseTabHome',
   status: 'prod',
 }
 

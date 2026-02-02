@@ -1,7 +1,7 @@
 import { AlertTriangle } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Modal } from "@thicket/components/ui/modal/"
+import { Button } from "../components/ui/button"
+import { Modal } from "../components/ui/modal"
 
 interface ResetDraftModalProps {
   isOpen: boolean

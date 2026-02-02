@@ -1,6 +1,6 @@
-import { PublishConfirmationModal } from "@thicket/platform/PublishConfirmationModal"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { PublishConfirmationModal } from "../../platform/PublishConfirmationModal"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type PublishConfirmationModalProps = React.ComponentProps<typeof PublishConfirmationModal>
 
@@ -8,7 +8,7 @@ export { PublishConfirmationModal }
 
 export const publishConfirmationModalMeta: GalleryComponentMeta = {
   id: 'modals/publish-confirmation-modal',
-  sourceId: '@thicket/platform/PublishConfirmationModal#PublishConfirmationModal',
+  sourceId: '../../platform/PublishConfirmationModal#PublishConfirmationModal',
   status: 'prod',
 }
 

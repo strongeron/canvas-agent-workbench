@@ -1,16 +1,16 @@
 import type { ComponentProps } from 'react'
 
-import type { CategoryFilter } from '@thicket/components/category-filter'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { CategoryFilter } from '../../components/category-filter'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
-import { GALLERY_CATEGORIES } from '@thicket/platform/gallery/mocks/galleryData'
+import { GALLERY_CATEGORIES } from '../../platform/gallery/mocks/galleryData'
 
 type CategoryFilterProps = ComponentProps<typeof CategoryFilter>
 
 export const categoryFilterMeta: GalleryComponentMeta = {
   id: 'public/category-filter',
-  sourceId: '@thicket/components/category-filter#CategoryFilter',
+  sourceId: '../../components/category-filter#CategoryFilter',
   status: 'prod',
 }
 

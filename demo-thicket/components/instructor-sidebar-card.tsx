@@ -1,15 +1,15 @@
-import { Link, router } from "@thicket/shims/inertia-react"
+import { Link, router } from "../shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { GraduationCap } from "lucide-react"
 
-import { PlatformOutputs } from "@thicket/components/platform-outputs"
-import { Badge } from "@thicket/components/ui/badge"
-import { ImagePlaceholder } from "@thicket/components/ui/image-placeholder"
-import { CourseCTA } from "@thicket/platform/CTAs/CourseCTA"
-import type { EducationEntry } from "@thicket/data/instructors"
-import type { AuthenticatedUser } from "@thicket/platform/types"
-import type { AuthorProfile, Course } from "@thicket/types"
-import { teacher_profile_path } from "@thicket/routes"
+import { PlatformOutputs } from "./platform-outputs"
+import { Badge } from "./ui/badge"
+import { ImagePlaceholder } from "./ui/image-placeholder"
+import { CourseCTA } from "../platform/CTAs/CourseCTA"
+import type { EducationEntry } from "../data/instructors"
+import type { AuthenticatedUser } from "../platform/types"
+import type { AuthorProfile, Course } from "../types"
+import { teacher_profile_path } from "../routes"
 
 /**
  * Variant types for InstructorSidebarCard component

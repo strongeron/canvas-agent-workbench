@@ -1,11 +1,11 @@
-import { Link, router } from "@thicket/shims/inertia-react"
+import { Link, router } from "../../shims/inertia-react"
 import type { LucideIcon } from "lucide-react"
 import { Bell, CheckCircle, ShoppingCart, Video } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { isLessonActive } from "@thicket/data/students"
-import { course_path, student_course_path, student_lesson_room_path } from "@thicket/routes"
-import type { Course, EnrolledCourseWithDetails } from "@thicket/types"
+import { Button } from "../../components/ui/button"
+import { isLessonActive } from "../../data/students"
+import { course_path, student_course_path, student_lesson_room_path } from "../../routes"
+import type { Course, EnrolledCourseWithDetails } from "../../types"
 
 export type CourseCTARole = "student" | "teacher" | "public"
 export type CourseCTAVariant = "sidebar" | "card" | "table"

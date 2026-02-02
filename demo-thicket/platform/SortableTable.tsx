@@ -2,8 +2,8 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react"
 import type { ReactNode} from "react";
 import { useMemo, useState } from "react"
 
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@thicket/components/ui/table"
-import { cn } from "@thicket/lib/utils"
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table"
+import { cn } from "../lib/utils"
 
 type SortDirection = "asc" | "desc"
 

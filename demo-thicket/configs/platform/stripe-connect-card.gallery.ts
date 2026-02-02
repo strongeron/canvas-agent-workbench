@@ -1,8 +1,8 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { StripeConnectCard } from '@thicket/platform/StripeConnectCard'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { StripeConnectCard } from '../../platform/StripeConnectCard'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type StripeConnectCardProps = ComponentProps<typeof StripeConnectCard>
 
@@ -12,7 +12,7 @@ type StripeConnectCardProps = ComponentProps<typeof StripeConnectCard>
  */
 const stripeConnectCardMeta: GalleryComponentMeta = {
     id: 'platform/stripe-connect-card',
-  sourceId: '@thicket/platform/StripeConnectCard#StripeConnectCard',
+  sourceId: '../../platform/StripeConnectCard#StripeConnectCard',
   status: 'archive',
 }
 

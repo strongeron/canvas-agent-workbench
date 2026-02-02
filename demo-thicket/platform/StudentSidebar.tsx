@@ -1,11 +1,11 @@
-import { usePage } from "@thicket/shims/inertia-react"
+import { usePage } from "../shims/inertia-react"
 import { BookOpen, Calendar, HelpCircle, Home, MessageSquare, Search, Settings } from "lucide-react"
 import { useMemo } from "react"
 
-import { getUnreadStudentMessageCount } from "@thicket/data/messages"
-import { Sidebar, type NavItem } from "@thicket/platform/Sidebar"
-import type { AuthenticatedUser } from "@thicket/platform/types"
-import { getBaseDashboardPath } from "@thicket/platform/utils/userRouteMapping"
+import { getUnreadStudentMessageCount } from "../data/messages"
+import { Sidebar, type NavItem } from "./Sidebar"
+import type { AuthenticatedUser } from "./types"
+import { getBaseDashboardPath } from "./utils/userRouteMapping"
 
 interface StudentSidebarProps {
   authenticated_user: AuthenticatedUser

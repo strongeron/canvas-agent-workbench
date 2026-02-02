@@ -1,10 +1,10 @@
-import type { BreadcrumbProps } from "@thicket/components/ui/breadcrumb"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { BreadcrumbProps } from "../../components/ui/breadcrumb"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const breadcrumbMeta: GalleryComponentMeta = {
   id: 'ui/breadcrumb',
-  sourceId: '@thicket/components/ui/breadcrumb#Breadcrumb',
+  sourceId: '../../components/ui/breadcrumb#Breadcrumb',
   status: 'prod',
 }
 

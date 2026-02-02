@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from "react"
 
-import { cn } from "@thicket/lib/utils"
+import { cn } from "../../lib/utils"
 
 import { Popover, PopoverContent, PopoverTrigger } from "./popover"
 

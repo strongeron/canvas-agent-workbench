@@ -1,11 +1,11 @@
-import type { BrowseSortProps } from '@thicket/components/browse-sort'
+import type { BrowseSortProps } from '../../components/browse-sort'
 
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const browseSortMeta: GalleryComponentMeta = {
   id: 'teacher/browse-sort',
-  sourceId: '@thicket/components/browse-sort#BrowseSort',
+  sourceId: '../../components/browse-sort#BrowseSort',
   status: 'prod',
 }
 

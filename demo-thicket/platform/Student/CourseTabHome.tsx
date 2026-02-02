@@ -1,14 +1,14 @@
 import { format, isWithinInterval, parseISO } from "date-fns"
 import { Calendar, Circle, Megaphone } from "lucide-react"
 
-import { LearningObjectivesList } from "@thicket/components/learning-objectives-list"
-import { Badge } from "@thicket/components/ui/badge"
-import { getAssignmentsByLessonId } from "@thicket/data/assignments"
-import { getSessionThreads } from "@thicket/data/persistence"
-import { LessonCard } from "@thicket/platform/Student/LessonCardNew"
-import { UnifiedLessonCard } from "@thicket/platform/UnifiedLessonCard"
-import { lessonWithProgressToUnified } from "@thicket/platform/utils/lessonDataTransformers"
-import type { AuthorProfile, Course, LessonWithProgress } from "@thicket/types"
+import { LearningObjectivesList } from "../../components/learning-objectives-list"
+import { Badge } from "../../components/ui/badge"
+import { getAssignmentsByLessonId } from "../../data/assignments"
+import { getSessionThreads } from "../../data/persistence"
+import { LessonCard } from "./LessonCardNew"
+import { UnifiedLessonCard } from "../UnifiedLessonCard"
+import { lessonWithProgressToUnified } from "../utils/lessonDataTransformers"
+import type { AuthorProfile, Course, LessonWithProgress } from "../../types"
 
 export interface CourseTabHomeProps {
   course: Course & {

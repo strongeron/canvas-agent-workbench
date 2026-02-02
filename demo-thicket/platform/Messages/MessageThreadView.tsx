@@ -1,14 +1,14 @@
-import { router } from "@thicket/shims/inertia-react"
+import { router } from "../../shims/inertia-react"
 import { ChevronDown, ChevronUp, Megaphone, Send, Users } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { EmptyState } from "@thicket/components/ui/empty-state"
-import { UserAvatar } from "@thicket/components/ui/user-avatar"
-import { useToast } from "@thicket/hooks/useToast"
-import { isAnnouncementThread } from "@thicket/data/messages"
-import { getNextMessageId, saveSessionMessage, saveSessionThread, updateThreadUnreadCount } from "@thicket/data/persistence"
-import type { Message, MessageThread } from "@thicket/types"
+import { Badge } from "../../components/ui/badge"
+import { EmptyState } from "../../components/ui/empty-state"
+import { UserAvatar } from "../../components/ui/user-avatar"
+import { useToast } from "../../hooks/useToast"
+import { isAnnouncementThread } from "../../data/messages"
+import { getNextMessageId, saveSessionMessage, saveSessionThread, updateThreadUnreadCount } from "../../data/persistence"
+import type { Message, MessageThread } from "../../types"
 
 export interface MessageThreadViewProps {
   thread: MessageThread | null

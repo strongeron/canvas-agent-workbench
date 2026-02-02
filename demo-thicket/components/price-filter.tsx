@@ -1,4 +1,4 @@
-import { router, usePage } from "@thicket/shims/inertia-react"
+import { router, usePage } from "../shims/inertia-react"
 import { ChevronDown, DollarSign, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 

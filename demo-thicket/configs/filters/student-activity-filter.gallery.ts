@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
 
-import type { StudentActivityFilter } from '@thicket/platform/filters/StudentActivityFilter'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { StudentActivityFilter } from '../../platform/filters/StudentActivityFilter'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type StudentActivityFilterProps = ComponentProps<typeof StudentActivityFilter>
 
 const studentActivityFilterMeta: GalleryComponentMeta = {
   id: 'filters/student-activity-filter',
-  sourceId: '@thicket/platform/filters/StudentActivityFilter#StudentActivityFilter',
+  sourceId: '../../platform/filters/StudentActivityFilter#StudentActivityFilter',
   status: 'archive',
 }
 

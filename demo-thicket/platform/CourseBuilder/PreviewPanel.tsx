@@ -1,6 +1,6 @@
-import { CoursePreviewCard } from "@thicket/components/course-preview-card"
-import { StatusBadge } from "@thicket/components/ui/status-badge"
-import type { Course } from "@thicket/types"
+import { CoursePreviewCard } from "../../components/course-preview-card"
+import { StatusBadge } from "../../components/ui/status-badge"
+import type { Course } from "../../types"
 
 export interface PreviewPanelProps {
   courseData: Partial<Course> & {

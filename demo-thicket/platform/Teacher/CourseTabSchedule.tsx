@@ -1,10 +1,10 @@
 import { Circle } from "lucide-react"
 
-import { getAssignmentsByLessonId } from "@thicket/data/assignments"
-import { UnifiedLessonCard, type UnifiedLessonData } from "@thicket/platform/UnifiedLessonCard"
-import { DateHeader } from "@thicket/platform/shared-lesson-card-primitives"
-import { type ScheduledLesson, getLessonStatus, groupLessonsByDate } from "@thicket/platform/utils/scheduleUtils"
-import type { Lesson, LessonWithProgress } from "@thicket/types"
+import { getAssignmentsByLessonId } from "../../data/assignments"
+import { UnifiedLessonCard, type UnifiedLessonData } from "../UnifiedLessonCard"
+import { DateHeader } from "../shared-lesson-card-primitives"
+import { type ScheduledLesson, getLessonStatus, groupLessonsByDate } from "../utils/scheduleUtils"
+import type { Lesson, LessonWithProgress } from "../../types"
 
 interface CourseTabScheduleTeacherProps {
   courseId: number

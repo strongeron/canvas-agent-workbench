@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
 
-import type { PriceFilter } from '@thicket/components/price-filter'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { PriceFilter } from '../../components/price-filter'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type PriceFilterProps = ComponentProps<typeof PriceFilter>
 
 export const priceFilterMeta: GalleryComponentMeta = {
   id: 'public/price-filter',
-  sourceId: '@thicket/components/price-filter#PriceFilter',
+  sourceId: '../../components/price-filter#PriceFilter',
   status: 'prod',
 }
 

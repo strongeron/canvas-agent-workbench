@@ -1,10 +1,10 @@
-import { usePage } from "@thicket/shims/inertia-react"
+import { usePage } from "../shims/inertia-react"
 import { Mail } from "lucide-react"
 import { useState } from "react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { Button } from "@thicket/components/ui/button"
-import type { Student } from "@thicket/types"
+import { Badge } from "../components/ui/badge"
+import { Button } from "../components/ui/button"
+import type { Student } from "../types"
 
 import { MessageComposerModal } from "./MessageComposerModal"
 import { SortableTable } from "./SortableTable"

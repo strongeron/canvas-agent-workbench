@@ -1,10 +1,10 @@
-import type { MessagesHeaderProps } from "@thicket/platform/Messages/MessagesHeader"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { MessagesHeaderProps } from "../../platform/Messages/MessagesHeader"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 const messagesHeaderMeta: GalleryComponentMeta = {
   id: "messages/messages-header",
-  sourceId: "@thicket/platform/Messages/MessagesHeader#MessagesHeader",
+  sourceId: "../../platform/Messages/MessagesHeader#MessagesHeader",
   status: "prod",
 }
 

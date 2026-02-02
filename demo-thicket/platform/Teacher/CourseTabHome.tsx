@@ -1,12 +1,12 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../../shims/inertia-react"
 import { format, isWithinInterval, parseISO } from "date-fns"
 import { Calendar, Circle, Clock, Megaphone, Users, Video } from "lucide-react"
 
-import { LearningObjectivesList } from "@thicket/components/learning-objectives-list"
-import { Badge } from "@thicket/components/ui/badge"
-import { Button } from "@thicket/components/ui/button"
-import { getSessionThreads } from "@thicket/data/persistence"
-import type { Course, LessonWithProgress } from "@thicket/types"
+import { LearningObjectivesList } from "../../components/learning-objectives-list"
+import { Badge } from "../../components/ui/badge"
+import { Button } from "../../components/ui/button"
+import { getSessionThreads } from "../../data/persistence"
+import type { Course, LessonWithProgress } from "../../types"
 
 interface CourseTabHomeProps {
   course: Course & {

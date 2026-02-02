@@ -1,10 +1,10 @@
-import type { NotFoundStateProps } from "@thicket/components/ui/not-found"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { NotFoundStateProps } from "../../components/ui/not-found"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const notFoundMeta: GalleryComponentMeta = {
   id: 'ui/not-found',
-  sourceId: '@thicket/components/ui/not-found#NotFoundState',
+  sourceId: '../../components/ui/not-found#NotFoundState',
   status: 'prod',
 }
 

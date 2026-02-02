@@ -1,13 +1,13 @@
-import { Link, router } from "@thicket/shims/inertia-react"
+import { Link, router } from "../shims/inertia-react"
 import { CheckCircle2, GraduationCap, Settings } from "lucide-react"
 import { useEffect, useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
+import { Button } from "../components/ui/button"
 import {
   areAllStepsCompleted,
   getOnboardingState,
   markStepCompleted,
-} from "@thicket/platform/utils/onboardingState"
+} from "./utils/onboardingState"
 
 import { StripeConnectCard } from "./StripeConnectCard"
 import { StripeConnectModal } from "./StripeConnectModal"

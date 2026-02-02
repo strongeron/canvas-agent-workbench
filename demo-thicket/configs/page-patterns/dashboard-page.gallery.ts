@@ -1,11 +1,11 @@
 import React from "react"
-import { DashboardLayout } from "@thicket/platform/layouts/patterns/DashboardLayout"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { PagePatternEntry } from "@thicket/platform/gallery/registry/types"
+import { DashboardLayout } from "../../platform/layouts/patterns/DashboardLayout"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { PagePatternEntry } from "../../platform/gallery/registry/types"
 
 export const dashboardPageMeta: GalleryComponentMeta = {
   id: 'page-patterns/dashboard',
-  sourceId: '@thicket/platform/layouts/patterns/DashboardLayout#DashboardLayout',
+  sourceId: '../../platform/layouts/patterns/DashboardLayout#DashboardLayout',
   status: 'prod',
 }
 

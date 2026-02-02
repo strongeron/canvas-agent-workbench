@@ -1,12 +1,12 @@
-import type { TransactionStatusBadge } from "@thicket/components/ui/transaction-status-badge"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { TransactionStatusBadge } from "../../components/ui/transaction-status-badge"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type TransactionStatusBadgeProps = React.ComponentProps<typeof TransactionStatusBadge>
 
 export const transactionStatusBadgeMeta: GalleryComponentMeta = {
   id: 'ui/transaction-status-badge',
-  sourceId: '@thicket/components/ui/transaction-status-badge#TransactionStatusBadge',
+  sourceId: '../../components/ui/transaction-status-badge#TransactionStatusBadge',
   status: 'prod',
 }
 

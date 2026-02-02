@@ -1,8 +1,8 @@
 import type { ComponentProps } from 'react'
 
-import { StripeConnectModal } from '@thicket/platform/StripeConnectModal'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { StripeConnectModal } from '../../platform/StripeConnectModal'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type StripeConnectModalProps = ComponentProps<typeof StripeConnectModal>
 
@@ -10,7 +10,7 @@ export { StripeConnectModal }
 
 export const stripeConnectModalMeta: GalleryComponentMeta = {
   id: 'modals/stripe-connect-modal',
-  sourceId: '@thicket/platform/StripeConnectModal#StripeConnectModal',
+  sourceId: '../../platform/StripeConnectModal#StripeConnectModal',
   status: 'prod',
 }
 

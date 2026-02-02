@@ -1,14 +1,14 @@
 import React from "react"
-import { FormPageLayout } from "@thicket/platform/layouts/patterns/FormPageLayout"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { PagePatternEntry } from "@thicket/platform/gallery/registry/types"
-import { Button } from "@thicket/components/ui/button"
-import { Input } from "@thicket/components/ui/input"
-import { Textarea } from "@thicket/components/ui/textarea"
+import { FormPageLayout } from "../../platform/layouts/patterns/FormPageLayout"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { PagePatternEntry } from "../../platform/gallery/registry/types"
+import { Button } from "../../components/ui/button"
+import { Input } from "../../components/ui/input"
+import { Textarea } from "../../components/ui/textarea"
 
 export const formPageMeta: GalleryComponentMeta = {
   id: 'page-patterns/form-page',
-  sourceId: '@thicket/platform/layouts/patterns/FormPageLayout#FormPageLayout',
+  sourceId: '../../platform/layouts/patterns/FormPageLayout#FormPageLayout',
   status: 'prod',
 }
 

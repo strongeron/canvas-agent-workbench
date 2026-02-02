@@ -1,12 +1,12 @@
-import type { TodaysSummary } from "@thicket/platform/TodaysSummary"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { TodaysSummary } from "../../platform/TodaysSummary"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 type TodaysSummaryProps = React.ComponentProps<typeof TodaysSummary>
 
 const todaysSummaryMeta: GalleryComponentMeta = {
     id: 'platform/todays-summary',
-  sourceId: '@thicket/platform/TodaysSummary#TodaysSummary',
+  sourceId: '../../platform/TodaysSummary#TodaysSummary',
   status: 'archive',
 }
 

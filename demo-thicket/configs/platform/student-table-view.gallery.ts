@@ -1,15 +1,15 @@
 import type { ComponentProps } from 'react'
 
-import type { StudentTableView } from '@thicket/platform/StudentTableView'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import { GALLERY_STUDENTS } from "@thicket/platform/gallery/mocks/galleryData"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { StudentTableView } from '../../platform/StudentTableView'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import { GALLERY_STUDENTS } from "../../platform/gallery/mocks/galleryData"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type StudentTableViewProps = ComponentProps<typeof StudentTableView>
 
 export const studentTableViewMeta: GalleryComponentMeta = {
   id: 'platform/student-table-view',
-  sourceId: '@thicket/platform/StudentTableView#StudentTableView',
+  sourceId: '../../platform/StudentTableView#StudentTableView',
   status: 'prod',
 }
 

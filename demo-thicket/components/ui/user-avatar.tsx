@@ -1,7 +1,7 @@
 import { GraduationCap } from "lucide-react"
 import { useState } from "react"
 
-import { cn } from "@thicket/lib/utils"
+import { cn } from "../../lib/utils"
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl"
 type BadgePosition = "top-right" | "bottom-right" | "bottom-left" | "top-left"

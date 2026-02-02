@@ -1,7 +1,7 @@
-import { Button } from "@thicket/components/ui/button"
-import { Modal } from "@thicket/components/ui/modal/"
-import { usePublishCourse } from "@thicket/platform/hooks/usePublishCourse"
-import type { Course } from "@thicket/types"
+import { Button } from "../components/ui/button"
+import { Modal } from "../components/ui/modal"
+import { usePublishCourse } from "./hooks/usePublishCourse"
+import type { Course } from "../types"
 
 interface PublishCourseModalProps {
   course: Course | null

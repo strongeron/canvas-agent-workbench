@@ -1,6 +1,6 @@
 import type React from "react"
 import { Calendar } from "lucide-react"
-import { cn } from "@thicket/lib/utils"
+import { cn } from "../../lib/utils"
 import { ImagePlaceholder } from "./image-placeholder"
 
 export type CourseCoverVariant = "card" | "icon"

@@ -1,11 +1,11 @@
-import type { ImageUploadZoneProps } from '@thicket/platform/CourseBuilder/ImageUploadZone'
+import type { ImageUploadZoneProps } from '../../platform/CourseBuilder/ImageUploadZone'
 
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const imageUploadZoneMeta: GalleryComponentMeta = {
   id: 'teacher/image-upload-zone',
-  sourceId: '@thicket/platform/CourseBuilder/ImageUploadZone#ImageUploadZone',
+  sourceId: '../../platform/CourseBuilder/ImageUploadZone#ImageUploadZone',
   status: 'prod',
 }
 

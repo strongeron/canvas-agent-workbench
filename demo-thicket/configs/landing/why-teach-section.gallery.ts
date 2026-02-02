@@ -1,10 +1,10 @@
-import { WhyTeachSection } from "@thicket/components/why-teach-section"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { WhyTeachSection } from "../../components/why-teach-section"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const whyTeachSectionMeta: GalleryComponentMeta = {
   id: "landing.why-teach-section",
-  sourceId: "@thicket/components/why-teach-section#WhyTeachSection",
+  sourceId: "../../components/why-teach-section#WhyTeachSection",
   status: "prod",
 }
 

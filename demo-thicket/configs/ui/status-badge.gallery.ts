@@ -1,10 +1,10 @@
-import type { StatusBadgeProps } from "@thicket/components/ui/status-badge"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { StatusBadgeProps } from "../../components/ui/status-badge"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const statusBadgeMeta: GalleryComponentMeta = {
     id: 'ui/status-badge',
-  sourceId: '@thicket/components/ui/status-badge#StatusBadgeProps',
+  sourceId: '../../components/ui/status-badge#StatusBadgeProps',
   status: 'archive',
 }
 

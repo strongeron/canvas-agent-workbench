@@ -1,7 +1,7 @@
-import type { PreviewPanelProps } from '@thicket/platform/CourseBuilder/PreviewPanel'
+import type { PreviewPanelProps } from '../../platform/CourseBuilder/PreviewPanel'
 
-import { GALLERY_COURSES, GALLERY_INSTRUCTORS } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { GALLERY_COURSES, GALLERY_INSTRUCTORS } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 const course = GALLERY_COURSES[0]
@@ -9,7 +9,7 @@ const instructor = GALLERY_INSTRUCTORS[0]
 
 export const previewPanelMeta: GalleryComponentMeta = {
   id: 'teacher/preview-panel',
-  sourceId: '@thicket/platform/CourseBuilder/PreviewPanel#PreviewPanel',
+  sourceId: '../../platform/CourseBuilder/PreviewPanel#PreviewPanel',
   status: 'prod',
 }
 

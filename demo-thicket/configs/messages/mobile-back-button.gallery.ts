@@ -1,10 +1,10 @@
-import type { MobileBackButtonProps } from "@thicket/platform/Messages/MobileBackButton"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { MobileBackButtonProps } from "../../platform/Messages/MobileBackButton"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 const mobileBackButtonMeta: GalleryComponentMeta = {
   id: "messages/mobile-back-button",
-  sourceId: "@thicket/platform/Messages/MobileBackButton#MobileBackButton",
+  sourceId: "../../platform/Messages/MobileBackButton#MobileBackButton",
   status: "prod",
 }
 

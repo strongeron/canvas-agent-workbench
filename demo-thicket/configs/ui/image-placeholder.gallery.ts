@@ -1,10 +1,10 @@
-import type { ImagePlaceholderProps } from "@thicket/components/ui/image-placeholder"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { ImagePlaceholderProps } from "../../components/ui/image-placeholder"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const imagePlaceholderMeta: GalleryComponentMeta = {
     id: 'ui/image-placeholder',
-  sourceId: '@thicket/components/ui/image-placeholder#ImagePlaceholderProps',
+  sourceId: '../../components/ui/image-placeholder#ImagePlaceholderProps',
   status: 'archive',
 }
 

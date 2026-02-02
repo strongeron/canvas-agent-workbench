@@ -1,12 +1,12 @@
-import type { ScheduleCourseFilter } from "@thicket/platform/ScheduleCourseFilter"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { ScheduleCourseFilter } from "../../platform/ScheduleCourseFilter"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type ScheduleCourseFilterProps = React.ComponentProps<typeof ScheduleCourseFilter>
 
 export const scheduleCourseFilterMeta: GalleryComponentMeta = {
   id: 'platform/schedule-course-filter',
-  sourceId: '@thicket/platform/ScheduleCourseFilter#ScheduleCourseFilter',
+  sourceId: '../../platform/ScheduleCourseFilter#ScheduleCourseFilter',
   status: 'prod',
 }
 

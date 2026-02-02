@@ -1,4 +1,4 @@
-import { CourseCover, type CourseCoverProps } from "@thicket/components/ui/course-cover"
+import { CourseCover, type CourseCoverProps } from "../components/ui/course-cover"
 import { LessonNumberCover } from "./LessonNumberCover"
 
 export type LessonCoverStatus = "completed" | "locked" | "upcoming" | "live"

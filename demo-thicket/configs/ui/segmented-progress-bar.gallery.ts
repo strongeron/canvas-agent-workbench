@@ -1,10 +1,10 @@
-import type { SegmentedProgressBarProps } from "@thicket/components/ui/segmented-progress-bar"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { SegmentedProgressBarProps } from "../../components/ui/segmented-progress-bar"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const segmentedProgressBarMeta: GalleryComponentMeta = {
   id: 'ui/segmented-progress-bar',
-  sourceId: '@thicket/components/ui/segmented-progress-bar#SegmentedProgressBar',
+  sourceId: '../../components/ui/segmented-progress-bar#SegmentedProgressBar',
   status: 'prod',
 }
 

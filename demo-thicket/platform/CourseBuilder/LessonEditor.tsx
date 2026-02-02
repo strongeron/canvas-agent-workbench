@@ -14,12 +14,12 @@ import { CSS } from "@dnd-kit/utilities"
 import { GripVertical, Plus, X } from "lucide-react"
 import { useEffect, useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Input } from "@thicket/components/ui/input"
-import { Modal } from "@thicket/components/ui/modal/"
-import { AssignmentUploadZone } from "@thicket/platform/CourseBuilder/AssignmentUploadZone"
-import { arrayMove, useDragSensors } from "@thicket/platform/utils/drag-helpers"
-import type { Lesson } from "@thicket/types"
+import { Button } from "../../components/ui/button"
+import { Input } from "../../components/ui/input"
+import { Modal } from "../../components/ui/modal"
+import { AssignmentUploadZone } from "./AssignmentUploadZone"
+import { arrayMove, useDragSensors } from "../utils/drag-helpers"
+import type { Lesson } from "../../types"
 
 interface LessonEditorProps {
   lesson: Lesson | null

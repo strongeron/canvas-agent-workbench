@@ -1,7 +1,7 @@
-import { TeacherMessageComposerModal, type TeacherMessageComposerModalProps } from '@thicket/platform/Messages/TeacherMessageComposerModal'
+import { TeacherMessageComposerModal, type TeacherMessageComposerModalProps } from '../../platform/Messages/TeacherMessageComposerModal'
 
-import { GALLERY_COURSES, GALLERY_STUDENTS } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { GALLERY_COURSES, GALLERY_STUDENTS } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export { TeacherMessageComposerModal }
@@ -15,7 +15,7 @@ const GALLERY_TEACHER_USER = {
 
 export const teacherMessageComposerModalMeta: GalleryComponentMeta = {
   id: 'messages/teacher-message-composer-modal',
-  sourceId: '@thicket/platform/Messages/TeacherMessageComposerModal#TeacherMessageComposerModal',
+  sourceId: '../../platform/Messages/TeacherMessageComposerModal#TeacherMessageComposerModal',
   status: 'prod',
 }
 

@@ -1,5 +1,5 @@
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 interface CourseTabStudentsProps {
   students: {
@@ -14,7 +14,7 @@ interface CourseTabStudentsProps {
 
 export const courseTabStudentsMeta: GalleryComponentMeta = {
   id: 'teacher/course-tab-students',
-  sourceId: '@thicket/platform/Teacher/CourseTabStudents#CourseTabStudents',
+  sourceId: '../../platform/Teacher/CourseTabStudents#CourseTabStudents',
   status: 'prod',
 }
 

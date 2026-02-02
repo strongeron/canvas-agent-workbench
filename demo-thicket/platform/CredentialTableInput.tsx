@@ -14,13 +14,13 @@ import { CSS } from "@dnd-kit/utilities"
 import { ChevronDown, ChevronUp, GripVertical, Plus, X } from "lucide-react"
 import { useState } from "react"
 
-import { Autocomplete } from "@thicket/components/ui/autocomplete"
-import { Button } from "@thicket/components/ui/button"
-import { filterAcademicDegrees } from "@thicket/data/academic-degrees"
-import { filterAcademicFields } from "@thicket/data/academic-fields"
-import { filterAcademicPositions } from "@thicket/data/academic-positions"
-import { filterInstitutions } from "@thicket/data/institutions"
-import { arrayMove, useDragSensors } from "@thicket/platform/utils/drag-helpers"
+import { Autocomplete } from "../components/ui/autocomplete"
+import { Button } from "../components/ui/button"
+import { filterAcademicDegrees } from "../data/academic-degrees"
+import { filterAcademicFields } from "../data/academic-fields"
+import { filterAcademicPositions } from "../data/academic-positions"
+import { filterInstitutions } from "../data/institutions"
+import { arrayMove, useDragSensors } from "./utils/drag-helpers"
 
 type CredentialEntry = Record<string, string>;
 

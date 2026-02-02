@@ -1,4 +1,4 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../shims/inertia-react"
 import { Instagram, Twitter } from "lucide-react"
 
 import {
@@ -7,7 +7,7 @@ import {
   privacy_path,
   root_path,
   terms_path,
-} from "@thicket/routes"
+} from "../routes"
 
 export function Footer() {
   const currentYear = new Date().getFullYear()

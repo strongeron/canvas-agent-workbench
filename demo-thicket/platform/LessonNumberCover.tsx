@@ -1,4 +1,4 @@
-import { cn } from "@thicket/lib/utils"
+import { cn } from "../lib/utils"
 
 export type LessonNumberCoverStatus = "completed" | "locked" | "upcoming" | "live"
 

@@ -1,4 +1,4 @@
-import { cn } from "@thicket/lib/utils"
+import { cn } from "../../lib/utils"
 
 interface SkeletonProps {
   className?: string

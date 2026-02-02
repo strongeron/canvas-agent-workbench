@@ -12,13 +12,13 @@ import { useEffect } from "react"
  *
  * @example
  * // Instead of:
- * import { Modal } from '@thicket/components/ui/modal.tsx'
+ * import { Modal } from './modal.tsx'
  * <Modal isOpen={isOpen} onClose={onClose} title="Title">
  *   <p>Content</p>
  * </Modal>
  *
  * // Use:
- * import { Modal } from '@thicket/components/ui/modal'
+ * import { Modal } from './modal'
  * <Modal isOpen={isOpen} onClose={onClose}>
  *   <Modal.Header title="Title" onClose={onClose} />
  *   <Modal.Body>

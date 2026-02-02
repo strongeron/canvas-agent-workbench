@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
 
-import type { DayOfWeekFilter } from '@thicket/components/day-of-week-filter'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { DayOfWeekFilter } from '../../components/day-of-week-filter'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type DayOfWeekFilterProps = ComponentProps<typeof DayOfWeekFilter>
 
 export const publicDayOfWeekFilterMeta: GalleryComponentMeta = {
   id: 'public/day-of-week-filter',
-  sourceId: '@thicket/components/day-of-week-filter#DayOfWeekFilter',
+  sourceId: '../../components/day-of-week-filter#DayOfWeekFilter',
   status: 'prod',
 }
 

@@ -1,18 +1,18 @@
-import { UnpublishCourseModal, type UnpublishCourseModalProps } from '@thicket/platform/CourseBuilder/UnpublishCourseModal'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import { UnpublishCourseModal, type UnpublishCourseModalProps } from '../../platform/CourseBuilder/UnpublishCourseModal'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 export { UnpublishCourseModal }
 
 const unpublishCourseModalMeta: GalleryComponentMeta = {
   id: "course-builder/unpublish-course-modal",
-  sourceId: "@thicket/platform/CourseBuilder/UnpublishCourseModal#UnpublishCourseModal",
+  sourceId: "../../platform/CourseBuilder/UnpublishCourseModal#UnpublishCourseModal",
   status: 'prod',
 }
 
 export const unpublishCourseModalGalleryEntry: GalleryEntry<UnpublishCourseModalProps> = {
   name: 'UnpublishCourseModal',
-  importPath: '@thicket/platform/CourseBuilder/UnpublishCourseModal',
+  importPath: '../../platform/CourseBuilder/UnpublishCourseModal',
   category: 'Course Management',
   id: unpublishCourseModalMeta.id,
   meta: unpublishCourseModalMeta,

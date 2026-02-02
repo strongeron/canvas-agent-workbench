@@ -1,10 +1,10 @@
 import { CreditCard, Lock } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Input } from "@thicket/components/ui/input"
-import { Modal } from "@thicket/components/ui/modal/"
-import { useStripeCheckout } from "@thicket/platform/hooks/useStripeCheckout"
-import type { AuthorProfile, Course } from "@thicket/types"
+import { Button } from "../../components/ui/button"
+import { Input } from "../../components/ui/input"
+import { Modal } from "../../components/ui/modal"
+import { useStripeCheckout } from "../hooks/useStripeCheckout"
+import type { AuthorProfile, Course } from "../../types"
 
 export interface StripeCheckoutModalProps {
   course: Course & { instructor?: AuthorProfile }

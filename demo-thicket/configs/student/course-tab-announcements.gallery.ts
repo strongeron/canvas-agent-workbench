@@ -1,14 +1,14 @@
 import type { ComponentProps } from "react"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { CourseTabAnnouncementsStudent } from "@thicket/platform/Student/CourseTabAnnouncements"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { CourseTabAnnouncementsStudent } from "../../platform/Student/CourseTabAnnouncements"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type CourseTabAnnouncementsProps = ComponentProps<typeof CourseTabAnnouncementsStudent>
 
 export const courseTabAnnouncementsMeta: GalleryComponentMeta = {
   id: 'student/course-tab-announcements',
-  sourceId: '@thicket/platform/Student/CourseTabAnnouncements#CourseTabAnnouncementsStudent',
+  sourceId: '../../platform/Student/CourseTabAnnouncements#CourseTabAnnouncementsStudent',
   status: 'prod',
 }
 

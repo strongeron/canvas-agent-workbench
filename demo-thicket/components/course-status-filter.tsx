@@ -1,4 +1,4 @@
-import { router, usePage } from "@thicket/shims/inertia-react"
+import { router, usePage } from "../shims/inertia-react"
 import { ChevronDown, Filter, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
@@ -7,7 +7,7 @@ import {
   FILTER_BUTTON_BASE,
   FILTER_CLEAR_BUTTON,
   FILTER_DROPDOWN_BASE,
-} from "@thicket/platform/filters/filterConstants"
+} from "../platform/filters/filterConstants"
 
 type CourseState = "draft" | "in_review" | "waitlist" | "published" | "archived"
 

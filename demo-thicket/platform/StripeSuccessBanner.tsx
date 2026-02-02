@@ -1,6 +1,6 @@
 import { CheckCircle2, ExternalLink, Sparkles, X } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
+import { Button } from "../components/ui/button"
 
 interface StripeSuccessBannerProps {
   onDismiss: () => void

@@ -1,7 +1,7 @@
-import { CoursePreviewCard } from "@thicket/components/course-preview-card"
-import type Course from "@thicket/types/serializers/Course"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { CoursePreviewCard } from "../../components/course-preview-card"
+import type Course from "../../types/serializers/Course"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 const sampleCourse: Course = {
   id: 1,
@@ -28,7 +28,7 @@ const sampleCourse: Course = {
 
 export const coursePreviewCardMeta: GalleryComponentMeta = {
   id: "landing.course-preview-card",
-  sourceId: "@thicket/components/course-preview-card#CoursePreviewCard",
+  sourceId: "../../components/course-preview-card#CoursePreviewCard",
   status: "prod",
 }
 

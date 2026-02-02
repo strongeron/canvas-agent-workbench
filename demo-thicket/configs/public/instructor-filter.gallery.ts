@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
 
-import type { InstructorFilter } from '@thicket/components/instructor-filter'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { InstructorFilter } from '../../components/instructor-filter'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type InstructorFilterProps = ComponentProps<typeof InstructorFilter>
 
 export const instructorFilterMeta: GalleryComponentMeta = {
   id: 'public/instructor-filter',
-  sourceId: '@thicket/components/instructor-filter#InstructorFilter',
+  sourceId: '../../components/instructor-filter#InstructorFilter',
   status: 'prod',
 }
 

@@ -1,14 +1,14 @@
-import { StripeCheckoutModal, type StripeCheckoutModalProps } from '@thicket/platform/Student/StripeCheckoutModal'
+import { StripeCheckoutModal, type StripeCheckoutModalProps } from '../../platform/Student/StripeCheckoutModal'
 
-import { GALLERY_COURSES, GALLERY_INSTRUCTORS } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { GALLERY_COURSES, GALLERY_INSTRUCTORS } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export { StripeCheckoutModal }
 
 export const stripeCheckoutModalMeta: GalleryComponentMeta = {
   id: 'student/stripe-checkout-modal',
-  sourceId: '@thicket/platform/Student/StripeCheckoutModal#StripeCheckoutModal',
+  sourceId: '../../platform/Student/StripeCheckoutModal#StripeCheckoutModal',
   status: 'prod',
 }
 

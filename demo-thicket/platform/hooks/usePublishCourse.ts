@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 
-import type { Course } from "@thicket/types"
+import type { Course } from "../../types"
 
 type StatusOption = {
   value: "draft" | "published"

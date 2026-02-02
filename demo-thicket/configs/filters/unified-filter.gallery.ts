@@ -1,15 +1,15 @@
 import { BookOpen, Calendar, Filter, Tag, Users } from 'lucide-react'
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { UnifiedFilter } from '@thicket/platform/filters/UnifiedFilter'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { UnifiedFilter } from '../../platform/filters/UnifiedFilter'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type UnifiedFilterProps = ComponentProps<typeof UnifiedFilter>
 
 const unifiedFilterMeta: GalleryComponentMeta = {
     id: 'filters/unified-filter',
-  sourceId: '@thicket/platform/filters/UnifiedFilter#UnifiedFilter',
+  sourceId: '../../platform/filters/UnifiedFilter#UnifiedFilter',
   status: 'archive',
 }
 

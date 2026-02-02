@@ -1,7 +1,7 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../shims/inertia-react"
 import { useEffect, useRef, useState } from "react"
 
-import { contacts_path } from "@thicket/routes"
+import { contacts_path } from "../routes"
 
 export function ApproachSection({ variant = "image" }: { variant?: "image" | "video" }) {
   const [videoError, setVideoError] = useState(false)

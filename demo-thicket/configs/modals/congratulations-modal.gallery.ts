@@ -1,8 +1,8 @@
 import type { ComponentProps } from 'react'
 
-import { CongratulationsModal } from '@thicket/platform/CongratulationsModal'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { CongratulationsModal } from '../../platform/CongratulationsModal'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type CongratulationsModalProps = ComponentProps<typeof CongratulationsModal>
 
@@ -10,7 +10,7 @@ export { CongratulationsModal }
 
 export const congratulationsModalMeta: GalleryComponentMeta = {
   id: 'modals/congratulations-modal',
-  sourceId: '@thicket/platform/CongratulationsModal#CongratulationsModal',
+  sourceId: '../../platform/CongratulationsModal#CongratulationsModal',
   status: 'prod',
 }
 

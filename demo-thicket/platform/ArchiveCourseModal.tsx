@@ -1,8 +1,8 @@
 import { useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Modal } from "@thicket/components/ui/modal/"
-import type { Course } from "@thicket/types"
+import { Button } from "../components/ui/button"
+import { Modal } from "../components/ui/modal"
+import type { Course } from "../types"
 
 interface ArchiveCourseModalProps {
   course: Course | null

@@ -1,9 +1,9 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { UserProfile } from '@thicket/platform/UserProfile'
-import { GALLERY_INSTRUCTORS, GALLERY_STUDENTS } from "@thicket/platform/gallery/mocks/galleryData"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { UserProfile } from '../../platform/UserProfile'
+import { GALLERY_INSTRUCTORS, GALLERY_STUDENTS } from "../../platform/gallery/mocks/galleryData"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type UserProfileProps = ComponentProps<typeof UserProfile>
 
@@ -13,7 +13,7 @@ type UserProfileProps = ComponentProps<typeof UserProfile>
  */
 const userProfileMeta: GalleryComponentMeta = {
     id: 'platform/user-profile',
-  sourceId: '@thicket/platform/UserProfile#UserProfile',
+  sourceId: '../../platform/UserProfile#UserProfile',
   status: 'archive',
 }
 

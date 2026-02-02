@@ -14,9 +14,9 @@ import { CSS } from "@dnd-kit/utilities"
 import { BookOpen, Calendar, CheckCircle2, ChevronDown, ChevronUp, Copy, Edit, FileText, Grid3x3, GripVertical, Minus, Plus, Trash2 } from "lucide-react"
 import { useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { arrayMove, useDragSensors } from "@thicket/platform/utils/drag-helpers"
-import type { Lesson } from "@thicket/types"
+import { Button } from "../../components/ui/button"
+import { arrayMove, useDragSensors } from "../utils/drag-helpers"
+import type { Lesson } from "../../types"
 
 interface CurriculumBuilderProps {
   lessons: Lesson[]

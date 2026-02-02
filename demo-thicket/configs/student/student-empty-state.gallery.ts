@@ -1,11 +1,11 @@
-import type { StudentEmptyStateProps } from '@thicket/platform/Student/StudentEmptyState'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { StudentEmptyStateProps } from '../../platform/Student/StudentEmptyState'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 import type { GalleryEntry } from '../../registry/types'
 
 const studentEmptyStateMeta: GalleryComponentMeta = {
     id: 'student/student-empty-state',
-  sourceId: '@thicket/platform/Student/StudentEmptyState#StudentEmptyStateProps',
+  sourceId: '../../platform/Student/StudentEmptyState#StudentEmptyStateProps',
   status: 'archive',
 }
 

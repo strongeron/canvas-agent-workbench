@@ -1,12 +1,12 @@
-import type { UpcomingLessonsWidgetProps } from '@thicket/platform/Teacher/UpcomingLessonsWidget'
+import type { UpcomingLessonsWidgetProps } from '../../platform/Teacher/UpcomingLessonsWidget'
 
-import { GALLERY_COURSES } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { GALLERY_COURSES } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const teacherUpcomingLessonsWidgetMeta: GalleryComponentMeta = {
   id: 'teacher/upcoming-lessons-widget',
-  sourceId: '@thicket/platform/Teacher/UpcomingLessonsWidget#UpcomingLessonsWidget',
+  sourceId: '../../platform/Teacher/UpcomingLessonsWidget#UpcomingLessonsWidget',
   status: 'prod',
 }
 

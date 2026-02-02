@@ -1,7 +1,7 @@
 import { ExternalLink } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
+import { Button } from "../../components/ui/button"
 
 export interface WherebyEmbedProps {
   roomUrl: string

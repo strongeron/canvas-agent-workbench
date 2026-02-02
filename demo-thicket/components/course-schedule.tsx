@@ -1,6 +1,6 @@
-import { WeekScheduleItem } from "@thicket/components/week-schedule-item"
-import type { Lesson } from "@thicket/types"
-import type { LessonWithProgress } from "@thicket/types/serializers/StudentCoursesShow"
+import { WeekScheduleItem } from "./week-schedule-item"
+import type { Lesson } from "../types"
+import type { LessonWithProgress } from "../types/serializers/StudentCoursesShow"
 
 type CourseScheduleCurriculum = Lesson[] | LessonWithProgress[]
 

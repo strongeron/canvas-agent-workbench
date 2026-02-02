@@ -1,6 +1,6 @@
 import type { HTMLAttributes, ReactNode } from "react"
 
-import { cn } from "@thicket/lib/utils"
+import { cn } from "../../lib/utils"
 
 interface TableProps {
   children: ReactNode

@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
 
-import type { PhotoUpload } from '@thicket/components/ui/photo-upload'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { PhotoUpload } from '../../components/ui/photo-upload'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type PhotoUploadProps = ComponentProps<typeof PhotoUpload>
 
 export const photoUploadMeta: GalleryComponentMeta = {
   id: 'ui/photo-upload',
-  sourceId: '@thicket/components/ui/photo-upload#PhotoUpload',
+  sourceId: '../../components/ui/photo-upload#PhotoUpload',
   status: 'prod',
 }
 

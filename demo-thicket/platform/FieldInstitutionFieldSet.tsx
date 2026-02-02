@@ -1,6 +1,6 @@
-import { Autocomplete } from "@thicket/components/ui/autocomplete"
-import { filterAcademicFields } from "@thicket/data/academic-fields"
-import { filterInstitutions } from "@thicket/data/institutions"
+import { Autocomplete } from "../components/ui/autocomplete"
+import { filterAcademicFields } from "../data/academic-fields"
+import { filterInstitutions } from "../data/institutions"
 
 interface FieldInstitutionFieldSetProps {
   fieldValue: string

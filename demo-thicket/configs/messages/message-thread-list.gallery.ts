@@ -1,5 +1,5 @@
 // @ts-nocheck
-import type { MessageThreadListProps } from '@thicket/platform/Messages/MessageThreadList'
+import type { MessageThreadListProps } from '../../platform/Messages/MessageThreadList'
 
 import {
   GALLERY_MESSAGE_THREADS,
@@ -8,13 +8,13 @@ import {
   GALLERY_THREAD_STUDENT_READ,
   GALLERY_THREAD_STUDENT_UNREAD,
   GALLERY_THREAD_TEACHER,
-} from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+} from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const messageThreadListMeta: GalleryComponentMeta = {
   id: 'messages/message-thread-list',
-  sourceId: '@thicket/platform/Messages/MessageThreadList#MessageThreadList',
+  sourceId: '../../platform/Messages/MessageThreadList#MessageThreadList',
   status: 'prod',
 }
 

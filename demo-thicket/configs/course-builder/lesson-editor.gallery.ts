@@ -1,20 +1,20 @@
-import { LessonEditor } from "@thicket/platform/CourseBuilder/LessonEditor"
+import { LessonEditor } from "../../platform/CourseBuilder/LessonEditor"
 
 export { LessonEditor }
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 type LessonEditorProps = React.ComponentProps<typeof LessonEditor>
 
 const lessonEditorMeta: GalleryComponentMeta = {
   id: "course-builder/lesson-editor",
-  sourceId: "@thicket/platform/CourseBuilder/LessonEditor#LessonEditor",
+  sourceId: "../../platform/CourseBuilder/LessonEditor#LessonEditor",
   status: 'prod',
 }
 
 export const lessonEditorGalleryEntry: GalleryEntry<LessonEditorProps> = {
   name: 'LessonEditor',
-  importPath: '@thicket/platform/CourseBuilder/LessonEditor',
+  importPath: '../../platform/CourseBuilder/LessonEditor',
   category: 'Course Management',
   id: lessonEditorMeta.id,
   meta: lessonEditorMeta,

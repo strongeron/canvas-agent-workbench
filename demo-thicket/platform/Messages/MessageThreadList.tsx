@@ -1,8 +1,8 @@
 import { MessageSquare } from "lucide-react"
 import { type ReactNode, useMemo } from "react"
 
-import { EmptyState } from "@thicket/components/ui/empty-state"
-import type { MessageThread } from "@thicket/types"
+import { EmptyState } from "../../components/ui/empty-state"
+import type { MessageThread } from "../../types"
 
 import { MessageThreadItem } from "./MessageThreadItem"
 

@@ -1,5 +1,5 @@
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 interface MessageTypeToggleProps {
   value: 'individual' | 'announcement'
@@ -9,7 +9,7 @@ interface MessageTypeToggleProps {
 
 const messageTypeToggleMeta: GalleryComponentMeta = {
     id: 'messages/message-type-toggle',
-  sourceId: '@thicket/platform/MessageComposer/MessageTypeToggle#MessageTypeToggle',
+  sourceId: '../../platform/MessageComposer/MessageTypeToggle#MessageTypeToggle',
   status: 'archive',
 }
 

@@ -1,9 +1,9 @@
 import type { ComponentEntry } from '../../registry/types'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const sonnerMeta: GalleryComponentMeta = {
   id: '90100',
-  sourceId: '@thicket/components/ui/sonner#Toaster',
+  sourceId: '../../components/ui/sonner#Toaster',
   status: 'prod',
 }
 

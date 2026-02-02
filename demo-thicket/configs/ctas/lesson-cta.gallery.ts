@@ -1,7 +1,7 @@
-import type { LessonCTAProps } from '@thicket/platform/CTAs/LessonCTA'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { LessonCTAProps } from '../../platform/CTAs/LessonCTA'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
-import { GALLERY_LESSONS } from '@thicket/platform/gallery/mocks/galleryData'
+import { GALLERY_LESSONS } from '../../platform/gallery/mocks/galleryData'
 
 const liveLesson = {
   id: 1,
@@ -56,7 +56,7 @@ const pastLessonNoRecording = {
 
 export const lessonCTAMeta: GalleryComponentMeta = {
   id: 'ctas/lesson-cta',
-  sourceId: '@thicket/platform/CTAs/LessonCTA#LessonCTA',
+  sourceId: '../../platform/CTAs/LessonCTA#LessonCTA',
   status: 'prod',
 }
 

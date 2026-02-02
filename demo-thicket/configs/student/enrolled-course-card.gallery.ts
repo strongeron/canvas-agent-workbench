@@ -1,12 +1,12 @@
-import type { EnrolledCourseCardProps } from '@thicket/platform/Student/EnrolledCourseCard'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { EnrolledCourseCardProps } from '../../platform/Student/EnrolledCourseCard'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import { GALLERY_COURSES } from '@thicket/platform/gallery/mocks/galleryData'
+import { GALLERY_COURSES } from '../../platform/gallery/mocks/galleryData'
 import type { GalleryEntry } from '../../registry/types'
 
 const enrolledCourseCardMeta: GalleryComponentMeta = {
     id: 'student/enrolled-course-card',
-  sourceId: '@thicket/platform/Student/EnrolledCourseCard#EnrolledCourseCardProps',
+  sourceId: '../../platform/Student/EnrolledCourseCard#EnrolledCourseCardProps',
   status: 'archive',
 }
 

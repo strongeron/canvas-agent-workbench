@@ -1,7 +1,7 @@
-import type { TeacherLessonCardMode } from "@thicket/platform/Teacher/TeacherLessonCard"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { ScheduledLesson } from "@thicket/platform/utils/scheduleUtils"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { TeacherLessonCardMode } from "../../platform/Teacher/TeacherLessonCard"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { ScheduledLesson } from "../../platform/utils/scheduleUtils"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 interface TeacherLessonCardProps {
   lesson: ScheduledLesson
@@ -11,7 +11,7 @@ interface TeacherLessonCardProps {
 
 const teacherLessonCardMeta: GalleryComponentMeta = {
     id: 'teacher/teacher-lesson-card',
-  sourceId: '@thicket/platform/Teacher/TeacherLessonCard#TeacherLessonCardMode',
+  sourceId: '../../platform/Teacher/TeacherLessonCard#TeacherLessonCardMode',
   status: 'archive',
 }
 

@@ -1,12 +1,12 @@
-import { Link, usePage } from "@thicket/shims/inertia-react"
+import { Link, usePage } from "../shims/inertia-react"
 import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { LogoMasked } from "@thicket/components/ui/logo-masked"
-import { Tooltip } from "@thicket/components/ui/tooltip"
-import { UserProfile } from "@thicket/platform/UserProfile"
-import type { AuthenticatedUser } from "@thicket/platform/types"
-import { getBaseDashboardPath } from "@thicket/platform/utils/userRouteMapping"
+import { Badge } from "../components/ui/badge"
+import { LogoMasked } from "../components/ui/logo-masked"
+import { Tooltip } from "../components/ui/tooltip"
+import { UserProfile } from "./UserProfile"
+import type { AuthenticatedUser } from "./types"
+import { getBaseDashboardPath } from "./utils/userRouteMapping"
 
 export interface NavItem {
   label: string

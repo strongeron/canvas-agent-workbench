@@ -1,15 +1,15 @@
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react"
 import type { ReactNode } from "react"
 
-import { Skeleton } from "@thicket/components/ui/skeleton"
+import { Skeleton } from "./skeleton"
 import {
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from "@thicket/components/ui/table"
-import { cn } from "@thicket/lib/utils"
+} from "./table"
+import { cn } from "../../lib/utils"
 
 export type SortDirection = "asc" | "desc"
 

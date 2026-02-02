@@ -1,4 +1,4 @@
-import type { EnrolledCourse, Student } from "@thicket/data/students"
+import type { EnrolledCourse, Student } from "./students"
 
 function getDateDaysAgo(days: number): string {
   const date = new Date()

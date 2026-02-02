@@ -1,18 +1,18 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../shims/inertia-react"
 import { CircleCheck, Clock, Lock, Users } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { CourseCover } from "@thicket/components/ui/course-cover"
-import { LessonCTA } from "@thicket/platform/CTAs/LessonCTA"
+import { Badge } from "../components/ui/badge"
+import { CourseCover } from "../components/ui/course-cover"
+import { LessonCTA } from "./CTAs/LessonCTA"
 import {
   type LessonStatus,
   getLessonDetailedStatus,
-} from "@thicket/platform/utils/lessonHelpers"
+} from "./utils/lessonHelpers"
 import {
   areInSameTimezone,
   formatWithTimezoneAbbr,
-} from "@thicket/platform/utils/timezoneHelpers"
-import type { Assignment } from "@thicket/types"
+} from "./utils/timezoneHelpers"
+import type { Assignment } from "../types"
 
 export type LessonCardRole = "teacher" | "student"
 export type LessonCardMode = "dashboard" | "schedule" | "course-details" | "hero" | "live-banner"

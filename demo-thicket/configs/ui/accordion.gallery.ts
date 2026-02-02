@@ -1,9 +1,9 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { Accordion } from '@thicket/components/ui/accordion'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
-import { propSchemas } from '@thicket/platform/gallery/registry/schema-helpers'
+import type { Accordion } from '../../components/ui/accordion'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
+import { propSchemas } from '../../platform/gallery/registry/schema-helpers'
 
 type AccordionProps = ComponentProps<typeof Accordion>
 
@@ -32,7 +32,7 @@ const FAQ_ITEMS = [
 
 const accordionMeta: GalleryComponentMeta = {
     id: 'ui/accordion',
-  sourceId: '@thicket/components/ui/accordion#Accordion',
+  sourceId: '../../components/ui/accordion#Accordion',
   status: 'prod',
 }
 

@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { Badge } from "@thicket/components/ui/badge"
-import { propSchemas } from "@thicket/platform/gallery/registry/schema-helpers"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { Badge } from "../../components/ui/badge"
+import { propSchemas } from "../../platform/gallery/registry/schema-helpers"
 
 type BadgeProps = ComponentProps<typeof Badge>
 
 export const badgeMeta: GalleryComponentMeta = {
   id: 'ui/badge',
-  sourceId: '@thicket/components/ui/badge#Badge',
+  sourceId: '../../components/ui/badge#Badge',
   status: 'prod',
 }
 

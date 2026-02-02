@@ -1,5 +1,5 @@
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 interface TeacherSidebarProps {
   authenticated_user: {
@@ -20,7 +20,7 @@ interface TeacherSidebarProps {
 
 const teacherSidebarMeta: GalleryComponentMeta = {
     id: 'platform/teacher-sidebar',
-  sourceId: '@thicket/platform/TeacherSidebar#TeacherSidebar',
+  sourceId: '../../platform/TeacherSidebar#TeacherSidebar',
   status: 'archive',
 }
 

@@ -1,14 +1,14 @@
-import { RescheduleModal, type RescheduleModalProps } from '@thicket/platform/Teacher/RescheduleModal'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { RescheduleModal, type RescheduleModalProps } from '../../platform/Teacher/RescheduleModal'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import { GALLERY_COURSES } from '@thicket/platform/gallery/mocks/galleryData'
+import { GALLERY_COURSES } from '../../platform/gallery/mocks/galleryData'
 import type { GalleryEntry } from '../../registry/types'
 
 export { RescheduleModal }
 
 const rescheduleModalMeta: GalleryComponentMeta = {
     id: 'teacher/reschedule-modal',
-  sourceId: '@thicket/platform/Teacher/RescheduleModal#RescheduleModalProps',
+  sourceId: '../../platform/Teacher/RescheduleModal#RescheduleModalProps',
   status: 'archive',
 }
 

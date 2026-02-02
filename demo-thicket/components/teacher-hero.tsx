@@ -1,9 +1,9 @@
-import { Link, router } from "@thicket/shims/inertia-react"
+import { Link, router } from "../shims/inertia-react"
 import { ArrowRight } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { LogoMasked } from "@thicket/components/ui/logo-masked"
-import { contacts_path, teacher_application_path } from "@thicket/routes"
+import { Button } from "./ui/button"
+import { LogoMasked } from "./ui/logo-masked"
+import { contacts_path, teacher_application_path } from "../routes"
 
 export function TeacherHero() {
   const handleApplyToTeach = () => {

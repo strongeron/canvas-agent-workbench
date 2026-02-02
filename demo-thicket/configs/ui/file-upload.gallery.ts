@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
 
-import type { FileUpload } from '@thicket/components/ui/file-upload'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { FileUpload } from '../../components/ui/file-upload'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type FileUploadProps = ComponentProps<typeof FileUpload>
 
 export const fileUploadMeta: GalleryComponentMeta = {
   id: 'ui/file-upload',
-  sourceId: '@thicket/components/ui/file-upload#FileUpload',
+  sourceId: '../../components/ui/file-upload#FileUpload',
   status: 'prod',
 }
 

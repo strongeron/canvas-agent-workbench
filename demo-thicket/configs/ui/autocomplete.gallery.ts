@@ -1,13 +1,13 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { Autocomplete } from "@thicket/components/ui/autocomplete"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { Autocomplete } from "../../components/ui/autocomplete"
 
 type AutocompleteProps = ComponentProps<typeof Autocomplete>
 
 export const autocompleteMeta: GalleryComponentMeta = {
   id: 'ui/autocomplete',
-  sourceId: '@thicket/components/ui/autocomplete#Autocomplete',
+  sourceId: '../../components/ui/autocomplete#Autocomplete',
   status: 'prod',
 }
 

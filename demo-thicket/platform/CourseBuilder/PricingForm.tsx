@@ -1,6 +1,6 @@
 import { DollarSign } from "lucide-react"
 
-import { Select } from "@thicket/components/ui/select"
+import { Select } from "../../components/ui/select"
 
 interface PricingFormProps {
   price: number | null

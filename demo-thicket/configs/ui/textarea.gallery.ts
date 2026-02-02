@@ -1,11 +1,11 @@
-import type { TextareaProps } from "@thicket/components/ui/textarea"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import { propSchemas } from "@thicket/platform/gallery/registry/schema-helpers"
+import type { TextareaProps } from "../../components/ui/textarea"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import { propSchemas } from "../../platform/gallery/registry/schema-helpers"
 
 export const textareaMeta: GalleryComponentMeta = {
   id: 'ui/textarea',
-  sourceId: '@thicket/components/ui/textarea#Textarea',
+  sourceId: '../../components/ui/textarea#Textarea',
   status: 'prod',
 }
 

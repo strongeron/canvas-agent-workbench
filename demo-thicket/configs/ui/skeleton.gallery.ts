@@ -1,5 +1,5 @@
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 interface SkeletonProps {
   className?: string
@@ -7,7 +7,7 @@ interface SkeletonProps {
 
 export const skeletonMeta: GalleryComponentMeta = {
   id: 'ui/skeleton',
-  sourceId: '@thicket/components/ui/skeleton#Skeleton',
+  sourceId: '../../components/ui/skeleton#Skeleton',
   status: 'prod',
 }
 

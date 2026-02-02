@@ -1,4 +1,4 @@
-import type { Course, LessonWithProgress } from "@thicket/types"
+import type { Course, LessonWithProgress } from "../types"
 
 import { CATEGORIES } from "./categories"
 import { INSTRUCTORS } from "./instructors"

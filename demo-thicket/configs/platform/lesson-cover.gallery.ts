@@ -1,10 +1,10 @@
-import type { LessonCoverProps } from "@thicket/platform/LessonCover"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { LessonCoverProps } from "../../platform/LessonCover"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const lessonCoverMeta: GalleryComponentMeta = {
   id: 'platform/lesson-cover',
-  sourceId: '@thicket/platform/LessonCover#LessonCover',
+  sourceId: '../../platform/LessonCover#LessonCover',
   status: 'prod',
 }
 

@@ -2,11 +2,11 @@ import { format } from "date-fns"
 import { CheckCircle, ChevronDown, ChevronUp, Circle, Lock } from "lucide-react"
 import { useState } from "react"
 
-import { LessonCTA } from "@thicket/platform/CTAs/LessonCTA"
-import { FilesList, TopicsList } from "@thicket/platform/shared-lesson-card-primitives"
-import { getLessonDetailedStatus } from "@thicket/platform/utils/lessonHelpers"
-import type { Lesson } from "@thicket/types"
-import type { LessonWithProgress } from "@thicket/types/serializers/StudentCoursesShow"
+import { LessonCTA } from "../platform/CTAs/LessonCTA"
+import { FilesList, TopicsList } from "../platform/shared-lesson-card-primitives"
+import { getLessonDetailedStatus } from "../platform/utils/lessonHelpers"
+import type { Lesson } from "../types"
+import type { LessonWithProgress } from "../types/serializers/StudentCoursesShow"
 
 type WeekScheduleItemLesson = Lesson | LessonWithProgress
 

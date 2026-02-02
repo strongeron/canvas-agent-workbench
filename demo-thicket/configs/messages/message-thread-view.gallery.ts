@@ -1,12 +1,12 @@
-import type { MessageThreadViewProps } from '@thicket/platform/Messages/MessageThreadView'
+import type { MessageThreadViewProps } from '../../platform/Messages/MessageThreadView'
 
-import { GALLERY_MESSAGE_THREADS } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { GALLERY_MESSAGE_THREADS } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const messageThreadViewMeta: GalleryComponentMeta = {
   id: 'messages/message-thread-view',
-  sourceId: '@thicket/platform/Messages/MessageThreadView#MessageThreadView',
+  sourceId: '../../platform/Messages/MessageThreadView#MessageThreadView',
   status: 'prod',
 }
 

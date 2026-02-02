@@ -1,5 +1,5 @@
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 interface UnifiedLessonData {
   id: number
@@ -32,7 +32,7 @@ interface LessonCardProps {
 
 const lessonCardMeta: GalleryComponentMeta = {
     id: 'student/lesson-card',
-  sourceId: '@thicket/platform/Student/LessonCard#LessonCard',
+  sourceId: '../../platform/Student/LessonCard#LessonCard',
   status: 'archive',
 }
 

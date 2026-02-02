@@ -1,4 +1,4 @@
-import type { AuthorProfile } from "@thicket/types"
+import type { AuthorProfile } from "../types"
 
 export interface EducationEntry {
   degree: "Certification" | "BA" | "BS" | "MA" | "MS" | "MFA" | "MPhil" | "PhD"

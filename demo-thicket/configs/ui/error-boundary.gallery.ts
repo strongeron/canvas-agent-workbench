@@ -1,5 +1,5 @@
 import type { GalleryEntry } from '../../registry/types'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const ThrowingComponent = () => {
   throw new Error('This is a simulated error for testing')
@@ -7,7 +7,7 @@ const ThrowingComponent = () => {
 
 const errorBoundaryMeta: GalleryComponentMeta = {
   id: 'ui/error-boundary',
-  sourceId: '@thicket/components/ui/error-boundary#default',
+  sourceId: '../../components/ui/error-boundary#default',
   status: 'archive',
 }
 

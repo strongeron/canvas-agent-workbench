@@ -1,4 +1,4 @@
-import type { CourseFile } from "@thicket/types"
+import type { CourseFile } from "../types"
 
 import { getHardcodedCourseFiles } from "./hardcoded-course-files"
 import { storage } from "./storage-manager"

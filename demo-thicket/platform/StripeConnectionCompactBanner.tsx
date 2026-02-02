@@ -1,6 +1,6 @@
 import { CreditCard } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
+import { Button } from "../components/ui/button"
 
 interface StripeConnectionCompactBannerProps {
   onConnect: () => void

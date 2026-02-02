@@ -1,13 +1,13 @@
-import { Link, router, usePage } from "@thicket/shims/inertia-react"
+import { Link, router, usePage } from "../shims/inertia-react"
 import { Archive, ArchiveX, Copy, Edit, Eye, Globe, MoreVertical, Users } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { type Column, DataTable } from "@thicket/components/ui/data-table"
+import { Badge } from "../components/ui/badge"
+import { type Column, DataTable } from "../components/ui/data-table"
 import {
   DropdownMenu,
   DropdownMenuItem,
-} from "@thicket/components/ui/dropdown-menu"
-import { StatusBadge } from "@thicket/components/ui/status-badge"
+} from "../components/ui/dropdown-menu"
+import { StatusBadge } from "../components/ui/status-badge"
 import {
   canArchiveCourse,
   canEditCourse,
@@ -17,10 +17,10 @@ import {
   getWaitlistCount,
   hasWaitlist,
   isAtCapacity,
-} from "@thicket/platform/utils/calculateTeacherStats"
-import { getBaseDashboardPath } from "@thicket/platform/utils/userRouteMapping"
-import type { Course } from "@thicket/types"
-import { formatCurrency, formatDate } from "@thicket/utils/formatters"
+} from "./utils/calculateTeacherStats"
+import { getBaseDashboardPath } from "./utils/userRouteMapping"
+import type { Course } from "../types"
+import { formatCurrency, formatDate } from "../utils/formatters"
 
 interface TeacherCourseTableProps {
   courses: Course[]

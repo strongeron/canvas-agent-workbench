@@ -1,9 +1,9 @@
 import type { ComponentEntry } from '../../registry/types'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const toastMeta: GalleryComponentMeta = {
   id: '90001',
-  sourceId: '@thicket/platform/_archive/toast#Toast',
+  sourceId: '../../platform/_archive/toast#Toast',
   status: 'archive',
 }
 

@@ -1,7 +1,7 @@
-import { InstructorSidebarCard } from "@thicket/components/instructor-sidebar-card"
-import type Course from "@thicket/types/serializers/Course"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { InstructorSidebarCard } from "../../components/instructor-sidebar-card"
+import type Course from "../../types/serializers/Course"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 const sidebarCourse: Course = {
   id: 4,
@@ -28,7 +28,7 @@ const sidebarCourse: Course = {
 
 export const instructorSidebarCardMeta: GalleryComponentMeta = {
   id: "landing.instructor-sidebar-card",
-  sourceId: "@thicket/components/instructor-sidebar-card#InstructorSidebarCard",
+  sourceId: "../../components/instructor-sidebar-card#InstructorSidebarCard",
   status: "prod",
 }
 

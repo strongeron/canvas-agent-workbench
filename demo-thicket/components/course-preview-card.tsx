@@ -1,10 +1,10 @@
 import { Clock } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { CourseCover } from "@thicket/components/ui/course-cover"
-import { ImagePlaceholder } from "@thicket/components/ui/image-placeholder"
-import type { Course } from "@thicket/types"
-import { formatDuration } from "@thicket/utils/formatters"
+import { Badge } from "./ui/badge"
+import { CourseCover } from "./ui/course-cover"
+import { ImagePlaceholder } from "./ui/image-placeholder"
+import type { Course } from "../types"
+import { formatDuration } from "../utils/formatters"
 
 interface CoursePreviewCardProps {
   course: Course

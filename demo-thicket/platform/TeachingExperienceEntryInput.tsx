@@ -1,11 +1,11 @@
 import { X } from "lucide-react"
 
-import { Autocomplete } from "@thicket/components/ui/autocomplete"
-import { Button } from "@thicket/components/ui/button"
-import { Select } from "@thicket/components/ui/select"
-import { filterAcademicFields } from "@thicket/data/academic-fields"
-import { filterInstitutions } from "@thicket/data/institutions"
-import type { TeachingExperienceEntry } from "@thicket/data/instructors"
+import { Autocomplete } from "../components/ui/autocomplete"
+import { Button } from "../components/ui/button"
+import { Select } from "../components/ui/select"
+import { filterAcademicFields } from "../data/academic-fields"
+import { filterInstitutions } from "../data/institutions"
+import type { TeachingExperienceEntry } from "../data/instructors"
 
 const POSITION_OPTIONS: TeachingExperienceEntry["position"][] = [
   "Teaching Assistant",

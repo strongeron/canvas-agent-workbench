@@ -1,16 +1,16 @@
 import type { ComponentProps } from 'react'
 
-import type { CourseTabHomeTeacher } from '@thicket/platform/Teacher/CourseTabHome'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { CourseTabHomeTeacher } from '../../platform/Teacher/CourseTabHome'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
-import { GALLERY_COURSES } from '@thicket/platform/gallery/mocks/galleryData'
+import { GALLERY_COURSES } from '../../platform/gallery/mocks/galleryData'
 
 type CourseTabHomeProps = ComponentProps<typeof CourseTabHomeTeacher>
 
 export const teacherCourseTabHomeMeta: GalleryComponentMeta = {
   id: 'teacher/course-tab-home',
-  sourceId: '@thicket/platform/Teacher/CourseTabHome#CourseTabHomeTeacher',
+  sourceId: '../../platform/Teacher/CourseTabHome#CourseTabHomeTeacher',
   status: 'prod',
 }
 

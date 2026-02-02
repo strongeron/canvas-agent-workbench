@@ -1,10 +1,10 @@
-import { TeacherHero } from "@thicket/components/teacher-hero"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { TeacherHero } from "../../components/teacher-hero"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const teacherHeroMeta: GalleryComponentMeta = {
   id: "landing.teacher-hero",
-  sourceId: "@thicket/components/teacher-hero#TeacherHero",
+  sourceId: "../../components/teacher-hero#TeacherHero",
   status: "prod",
 }
 

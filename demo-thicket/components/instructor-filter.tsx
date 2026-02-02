@@ -1,9 +1,9 @@
-import { router, usePage } from "@thicket/shims/inertia-react"
+import { router, usePage } from "../shims/inertia-react"
 import { ChevronDown, Users, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
-import { ImagePlaceholder } from "@thicket/components/ui/image-placeholder"
-import type { AuthorProfile } from "@thicket/types"
+import { ImagePlaceholder } from "./ui/image-placeholder"
+import type { AuthorProfile } from "../types"
 
 export function InstructorFilter() {
   const props = usePage<{

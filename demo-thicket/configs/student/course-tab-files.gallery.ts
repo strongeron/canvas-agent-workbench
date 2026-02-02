@@ -1,11 +1,11 @@
-import type { CourseTabFilesProps } from '@thicket/platform/Student/CourseTabFiles'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { CourseTabFilesProps } from '../../platform/Student/CourseTabFiles'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 import type { GalleryEntry } from '../../registry/types'
 
 const courseTabFilesMeta: GalleryComponentMeta = {
     id: 'student/course-tab-files',
-  sourceId: '@thicket/platform/Student/CourseTabFiles#CourseTabFilesProps',
+  sourceId: '../../platform/Student/CourseTabFiles#CourseTabFilesProps',
   status: 'archive',
 }
 

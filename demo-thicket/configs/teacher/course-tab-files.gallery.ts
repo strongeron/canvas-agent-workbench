@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
 
-import type { CourseTabFilesTeacher } from '@thicket/platform/Teacher/CourseTabFiles'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { CourseTabFilesTeacher } from '../../platform/Teacher/CourseTabFiles'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type CourseTabFilesProps = ComponentProps<typeof CourseTabFilesTeacher>
 
 export const teacherCourseTabFilesMeta: GalleryComponentMeta = {
   id: 'teacher/course-tab-files',
-  sourceId: '@thicket/platform/Teacher/CourseTabFiles#CourseTabFilesTeacher',
+  sourceId: '../../platform/Teacher/CourseTabFiles#CourseTabFilesTeacher',
   status: 'prod',
 }
 

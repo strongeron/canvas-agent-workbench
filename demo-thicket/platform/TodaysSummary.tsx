@@ -1,4 +1,4 @@
-import type { ScheduledLesson } from "@thicket/platform/utils/scheduleUtils"
+import type { ScheduledLesson } from "./utils/scheduleUtils"
 
 interface TodaysSummaryProps {
   lessons: ScheduledLesson[]

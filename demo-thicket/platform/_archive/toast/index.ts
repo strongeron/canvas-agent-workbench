@@ -11,7 +11,7 @@
  *
  * For new toast usage, import from:
  * - import { toast } from "sonner" (direct sonner API)
- * - import { useToast } from "@thicket/hooks/useToast" (wrapper hook)
+ * - import { useToast } from "../../../hooks/useToast" (wrapper hook)
  */
 
 export { ToastContainer, type Toast, type ToastVariant } from './toast'

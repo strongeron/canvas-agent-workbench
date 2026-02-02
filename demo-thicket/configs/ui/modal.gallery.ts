@@ -1,10 +1,10 @@
-import type { ModalProps } from "@thicket/components/ui/modal/Modal"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { ModalProps } from "../../components/ui/modal/Modal"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const modalMeta: GalleryComponentMeta = {
     id: 'ui/modal',
-  sourceId: '@thicket/components/ui/modal#Modal',
+  sourceId: '../../components/ui/modal#Modal',
   status: 'prod',
 }
 

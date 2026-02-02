@@ -1,6 +1,6 @@
-import { CourseTabScheduleTeacher } from "@thicket/platform/Teacher/CourseTabSchedule"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { CourseTabScheduleTeacher } from "../../platform/Teacher/CourseTabSchedule"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 const sampleLessons = [
   {
@@ -26,7 +26,7 @@ const sampleLessons = [
 
 export const courseTabScheduleTeacherMeta: GalleryComponentMeta = {
   id: "teacher/course-tab-schedule",
-  sourceId: "@thicket/platform/Teacher/CourseTabSchedule#CourseTabScheduleTeacher",
+  sourceId: "../../platform/Teacher/CourseTabSchedule#CourseTabScheduleTeacher",
   status: "prod",
 }
 

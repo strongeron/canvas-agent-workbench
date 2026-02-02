@@ -1,13 +1,13 @@
-import { EarlyAccessForm } from '@thicket/components/early-access-form'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { EarlyAccessFormPreview } from "@thicket/platform/gallery/components/EarlyAccessFormPreview"
+import { EarlyAccessForm } from '../../components/early-access-form'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { EarlyAccessFormPreview } from "../../platform/gallery/components/EarlyAccessFormPreview"
 
 export { EarlyAccessForm }
 
 export const earlyAccessFormMeta: GalleryComponentMeta = {
   id: 'public/early-access-form',
-  sourceId: '@thicket/components/early-access-form#EarlyAccessForm',
+  sourceId: '../../components/early-access-form#EarlyAccessForm',
   status: 'prod',
 }
 

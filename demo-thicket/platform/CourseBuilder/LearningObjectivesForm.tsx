@@ -14,9 +14,9 @@ import { CSS } from "@dnd-kit/utilities"
 import { GripVertical, Plus, Target, Trash2 } from "lucide-react"
 import { useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Textarea } from "@thicket/components/ui/textarea"
-import { arrayMove, useDragSensors } from "@thicket/platform/utils/drag-helpers"
+import { Button } from "../../components/ui/button"
+import { Textarea } from "../../components/ui/textarea"
+import { arrayMove, useDragSensors } from "../utils/drag-helpers"
 
 interface LearningObjectivesFormProps {
   objectives: string[]

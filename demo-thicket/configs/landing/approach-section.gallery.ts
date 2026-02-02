@@ -1,12 +1,12 @@
-import { ApproachSection } from "@thicket/components/approach-section"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { ApproachSection } from "../../components/approach-section"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type ApproachSectionProps = { variant?: "image" | "video" }
 
 export const approachSectionMeta: GalleryComponentMeta = {
   id: "landing.approach-section",
-  sourceId: "@thicket/components/approach-section#ApproachSection",
+  sourceId: "../../components/approach-section#ApproachSection",
   status: "prod",
 }
 

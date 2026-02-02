@@ -1,9 +1,9 @@
 import { MessageSquare, Send } from "lucide-react"
 import { useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Textarea } from "@thicket/components/ui/textarea"
-import { UserAvatar } from "@thicket/components/ui/user-avatar"
+import { Button } from "../../components/ui/button"
+import { Textarea } from "../../components/ui/textarea"
+import { UserAvatar } from "../../components/ui/user-avatar"
 
 interface Message {
   id: number

@@ -1,5 +1,5 @@
-import { UserAvatar } from "@thicket/components/ui/user-avatar"
-import type { Recipient } from "@thicket/platform/hooks/useMessageComposer"
+import { UserAvatar } from "../../components/ui/user-avatar"
+import type { Recipient } from "../hooks/useMessageComposer"
 
 interface RecipientSelectorProps {
   recipients: Recipient[]

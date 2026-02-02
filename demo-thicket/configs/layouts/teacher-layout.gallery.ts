@@ -1,11 +1,11 @@
 import React from "react"
-import { TeacherLayout } from "@thicket/platform/layouts/TeacherLayout"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { LayoutEntry } from "@thicket/platform/gallery/registry/types"
+import { TeacherLayout } from "../../platform/layouts/TeacherLayout"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { LayoutEntry } from "../../platform/gallery/registry/types"
 
 export const teacherLayoutMeta: GalleryComponentMeta = {
   id: 'layouts/teacher',
-  sourceId: '@thicket/platform/layouts/TeacherLayout#TeacherLayout',
+  sourceId: '../../platform/layouts/TeacherLayout#TeacherLayout',
   status: 'prod',
 }
 

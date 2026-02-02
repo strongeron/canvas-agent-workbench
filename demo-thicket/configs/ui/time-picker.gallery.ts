@@ -1,10 +1,10 @@
-import type { TimePickerProps } from "@thicket/components/ui/time-picker"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { TimePickerProps } from "../../components/ui/time-picker"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const timePickerMeta: GalleryComponentMeta = {
     id: 'ui/time-picker',
-  sourceId: '@thicket/components/ui/time-picker#TimePickerProps',
+  sourceId: '../../components/ui/time-picker#TimePickerProps',
   status: 'archive',
 }
 

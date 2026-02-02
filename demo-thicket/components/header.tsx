@@ -1,10 +1,10 @@
-import { Link, router, usePage } from "@thicket/shims/inertia-react"
+import { Link, router, usePage } from "../shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { Menu, X } from "lucide-react"
 import { useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { about_us_path, contacts_path, root_path, teach_path } from "@thicket/routes"
+import { Button } from "./ui/button"
+import { about_us_path, contacts_path, root_path, teach_path } from "../routes"
 
 export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)

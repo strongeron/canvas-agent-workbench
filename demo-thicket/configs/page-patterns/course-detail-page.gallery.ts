@@ -1,13 +1,13 @@
 import React from "react"
-import { CourseDetailLayout } from "@thicket/platform/layouts/patterns/CourseDetailLayout"
-import { CourseHero } from "@thicket/components/course-hero"
-import { CourseTabs } from "@thicket/platform/Student/CourseTabs"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { PagePatternEntry } from "@thicket/platform/gallery/registry/types"
+import { CourseDetailLayout } from "../../platform/layouts/patterns/CourseDetailLayout"
+import { CourseHero } from "../../components/course-hero"
+import { CourseTabs } from "../../platform/Student/CourseTabs"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { PagePatternEntry } from "../../platform/gallery/registry/types"
 
 export const courseDetailPageMeta: GalleryComponentMeta = {
   id: 'page-patterns/course-detail',
-  sourceId: '@thicket/platform/layouts/patterns/CourseDetailLayout#CourseDetailLayout',
+  sourceId: '../../platform/layouts/patterns/CourseDetailLayout#CourseDetailLayout',
   status: 'prod',
 }
 

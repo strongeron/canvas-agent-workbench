@@ -1,6 +1,6 @@
 import { format } from "date-fns"
 
-import type { Course } from "@thicket/types"
+import type { Course } from "../../types"
 
 export function useEnrollmentSuccess({
   course,

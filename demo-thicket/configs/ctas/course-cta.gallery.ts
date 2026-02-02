@@ -1,7 +1,7 @@
-import type { CourseCTAProps } from '@thicket/platform/CTAs/CourseCTA'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { CourseCTAProps } from '../../platform/CTAs/CourseCTA'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
-import { GALLERY_COURSES, GALLERY_ENROLLED_COURSES } from '@thicket/platform/gallery/mocks/galleryData'
+import { GALLERY_COURSES, GALLERY_ENROLLED_COURSES } from '../../platform/gallery/mocks/galleryData'
 
 const publishedCourse = GALLERY_COURSES[0]
 const waitlistCourse = {
@@ -14,7 +14,7 @@ const enrolledCourse = GALLERY_ENROLLED_COURSES[0]
 
 export const courseCTAMeta: GalleryComponentMeta = {
   id: 'ctas/course-cta',
-  sourceId: '@thicket/platform/CTAs/CourseCTA#CourseCTA',
+  sourceId: '../../platform/CTAs/CourseCTA#CourseCTA',
   status: 'prod',
 }
 

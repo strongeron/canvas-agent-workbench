@@ -1,10 +1,10 @@
-import { AboutHero } from "@thicket/components/about-hero"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { AboutHero } from "../../components/about-hero"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const aboutHeroMeta: GalleryComponentMeta = {
   id: "landing.about-hero",
-  sourceId: "@thicket/components/about-hero#AboutHero",
+  sourceId: "../../components/about-hero#AboutHero",
   status: "prod",
 }
 

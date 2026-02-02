@@ -1,11 +1,11 @@
-import type { CourseTabsProps } from '@thicket/platform/Student/CourseTabs'
+import type { CourseTabsProps } from '../../platform/Student/CourseTabs'
 
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const courseTabsMeta: GalleryComponentMeta = {
     id: 'home',
-  sourceId: '@thicket/platform/Student/CourseTabs#CourseTabs',
+  sourceId: '../../platform/Student/CourseTabs#CourseTabs',
   status: 'prod',
 }
 

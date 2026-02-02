@@ -1,9 +1,9 @@
 import { type ChangeEvent } from "react"
 
-import { Input } from "@thicket/components/ui/input"
-import { Select } from "@thicket/components/ui/select"
-import { Textarea } from "@thicket/components/ui/textarea"
-import type { Category } from "@thicket/types"
+import { Input } from "../../components/ui/input"
+import { Select } from "../../components/ui/select"
+import { Textarea } from "../../components/ui/textarea"
+import type { Category } from "../../types"
 
 interface CourseInfoFormProps {
   title: string

@@ -1,8 +1,8 @@
-import { router } from "@thicket/shims/inertia-react"
+import { router } from "../shims/inertia-react"
 import { ArrowRight, BookOpen, Clock, DollarSign, Heart, MessageSquare, Users } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { teacher_application_path } from "@thicket/routes"
+import { Button } from "./ui/button"
+import { teacher_application_path } from "../routes"
 
 export function WhyTeachSection() {
   const handleApplyToTeach = () => {

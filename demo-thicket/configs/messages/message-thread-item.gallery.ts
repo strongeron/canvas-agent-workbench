@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { MessageThreadItem } from '@thicket/platform/Messages/MessageThreadItem'
+import type { MessageThreadItem } from '../../platform/Messages/MessageThreadItem'
 import {
   GALLERY_THREAD_ANNOUNCEMENT,
   GALLERY_THREAD_ANNOUNCEMENT_UNREAD,
@@ -11,14 +11,14 @@ import {
   GALLERY_THREAD_STUDENT_READ,
   GALLERY_THREAD_STUDENT_UNREAD,
   GALLERY_THREAD_TEACHER,
-} from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+} from '../../platform/gallery/mocks/galleryData'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type MessageThreadItemProps = ComponentProps<typeof MessageThreadItem>
 
 const messageThreadItemMeta: GalleryComponentMeta = {
     id: 'messages/message-thread-item',
-  sourceId: '@thicket/platform/Messages/MessageThreadItem#MessageThreadItem',
+  sourceId: '../../platform/Messages/MessageThreadItem#MessageThreadItem',
   status: 'archive',
 }
 

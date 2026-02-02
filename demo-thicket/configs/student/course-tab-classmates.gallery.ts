@@ -1,13 +1,13 @@
 // @ts-nocheck
-import type { CourseTabClassmatesProps } from '@thicket/platform/Student/CourseTabClassmates'
+import type { CourseTabClassmatesProps } from '../../platform/Student/CourseTabClassmates'
 
-import { GALLERY_COURSES, GALLERY_INSTRUCTORS, GALLERY_STUDENTS } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { GALLERY_COURSES, GALLERY_INSTRUCTORS, GALLERY_STUDENTS } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const courseTabClassmatesMeta: GalleryComponentMeta = {
   id: 'student/course-tab-classmates',
-  sourceId: '@thicket/platform/Student/CourseTabClassmates#CourseTabClassmates',
+  sourceId: '../../platform/Student/CourseTabClassmates#CourseTabClassmates',
   status: 'prod',
 }
 

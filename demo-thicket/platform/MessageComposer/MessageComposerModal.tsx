@@ -1,11 +1,11 @@
 import { Mail, Megaphone } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Modal } from "@thicket/components/ui/modal/"
+import { Button } from "../../components/ui/button"
+import { Modal } from "../../components/ui/modal"
 import {
   type UseMessageComposerOptions,
   useMessageComposer,
-} from "@thicket/platform/hooks/useMessageComposer"
+} from "../hooks/useMessageComposer"
 
 import { AnnouncementPreview } from "./AnnouncementPreview"
 import { CourseSelector } from "./CourseSelector"

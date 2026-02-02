@@ -1,9 +1,9 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { SortableTable } from '@thicket/platform/SortableTable'
-import { GALLERY_STUDENTS } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { SortableTable } from '../../platform/SortableTable'
+import { GALLERY_STUDENTS } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type SortableTableProps = ComponentProps<typeof SortableTable>
 
@@ -25,7 +25,7 @@ const simpleStudents: SimpleStudent[] = GALLERY_STUDENTS.slice(0, 4).map((s) => 
 
 const sortableTableMeta: GalleryComponentMeta = {
     id: 'platform/sortable-table',
-  sourceId: '@thicket/platform/SortableTable#SortableTable',
+  sourceId: '../../platform/SortableTable#SortableTable',
   status: 'archive',
 }
 

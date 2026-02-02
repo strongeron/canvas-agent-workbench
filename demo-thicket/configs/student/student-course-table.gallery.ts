@@ -1,12 +1,12 @@
-import type { StudentCourseTableProps } from '@thicket/platform/Student/StudentCourseTable'
+import type { StudentCourseTableProps } from '../../platform/Student/StudentCourseTable'
 
-import { GALLERY_COURSES, GALLERY_ENROLLED_COURSES } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { GALLERY_COURSES, GALLERY_ENROLLED_COURSES } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const studentCourseTableMeta: GalleryComponentMeta = {
   id: 'student/student-course-table',
-  sourceId: '@thicket/platform/Student/StudentCourseTable#StudentCourseTable',
+  sourceId: '../../platform/Student/StudentCourseTable#StudentCourseTable',
   status: 'prod',
 }
 

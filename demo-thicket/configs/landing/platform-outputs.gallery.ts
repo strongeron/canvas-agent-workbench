@@ -1,10 +1,10 @@
-import { PlatformOutputs } from "@thicket/components/platform-outputs"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { PlatformOutputs } from "../../components/platform-outputs"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const platformOutputsMeta: GalleryComponentMeta = {
   id: "landing.platform-outputs",
-  sourceId: "@thicket/components/platform-outputs#PlatformOutputs",
+  sourceId: "../../components/platform-outputs#PlatformOutputs",
   status: "prod",
 }
 

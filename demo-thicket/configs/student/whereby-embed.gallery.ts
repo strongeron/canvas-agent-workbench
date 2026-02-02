@@ -1,11 +1,11 @@
-import type { WherebyEmbedProps } from '@thicket/platform/Student/WherebyEmbed'
+import type { WherebyEmbedProps } from '../../platform/Student/WherebyEmbed'
 
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const wherebyEmbedMeta: GalleryComponentMeta = {
   id: 'student/whereby-embed',
-  sourceId: '@thicket/platform/Student/WherebyEmbed#WherebyEmbed',
+  sourceId: '../../platform/Student/WherebyEmbed#WherebyEmbed',
   status: 'prod',
 }
 

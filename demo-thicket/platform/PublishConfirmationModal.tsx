@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle2, Clock, FileText } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Modal } from "@thicket/components/ui/modal/"
+import { Button } from "../components/ui/button"
+import { Modal } from "../components/ui/modal"
 
 type CourseStatus = "draft" | "waitlist" | "published"
 

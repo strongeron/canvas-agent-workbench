@@ -1,8 +1,8 @@
 import { Download, File, FileCheck, FileText, FileType, Image, Layers, Sparkles } from "lucide-react"
 
-import { useToast } from "@thicket/hooks/useToast"
-import { getCourseFiles } from "@thicket/data/course-files"
-import type { CourseFile } from "@thicket/types"
+import { useToast } from "../../hooks/useToast"
+import { getCourseFiles } from "../../data/course-files"
+import type { CourseFile } from "../../types"
 
 interface CourseTabResourcesProps {
   courseId: number

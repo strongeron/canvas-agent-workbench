@@ -1,9 +1,9 @@
 import { ArrowRight, Calendar, CheckCircle, User } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Modal } from "@thicket/components/ui/modal/"
-import { useEnrollmentSuccess } from "@thicket/platform/hooks/useEnrollmentSuccess"
-import type { AuthorProfile, Course } from "@thicket/types"
+import { Button } from "../../components/ui/button"
+import { Modal } from "../../components/ui/modal"
+import { useEnrollmentSuccess } from "../hooks/useEnrollmentSuccess"
+import type { AuthorProfile, Course } from "../../types"
 
 export interface EnrollmentSuccessModalProps {
   course: Course & { instructor?: AuthorProfile }

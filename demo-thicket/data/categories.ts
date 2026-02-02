@@ -1,4 +1,4 @@
-import type { Category } from "@thicket/types"
+import type { Category } from "../types"
 
 export const CATEGORIES: Category[] = [
   {

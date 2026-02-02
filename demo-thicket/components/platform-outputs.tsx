@@ -1,9 +1,9 @@
-import { router } from "@thicket/shims/inertia-react"
+import { router } from "../shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { Layout, PlayCircle, Users, Video } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
+import { Button } from "./ui/button"
 
 interface PlatformFeature {
   icon: LucideIcon

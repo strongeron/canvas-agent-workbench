@@ -1,7 +1,7 @@
-import { router } from "@thicket/shims/inertia-react"
+import { router } from "../shims/inertia-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { LogoMasked } from "@thicket/components/ui/logo-masked"
+import { Button } from "./ui/button"
+import { LogoMasked } from "./ui/logo-masked"
 
 export function MissionSection() {
   const handleJoinEarlyAccess = () => {

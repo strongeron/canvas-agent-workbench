@@ -1,7 +1,7 @@
 import { Filter } from 'lucide-react'
 
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 interface FilterButtonGalleryProps {
   icon: typeof Filter
@@ -15,7 +15,7 @@ interface FilterButtonGalleryProps {
 
 const filterButtonMeta: GalleryComponentMeta = {
   id: '_archive/filter-button',
-  sourceId: '@thicket/platform/_archive/FilterButton#FilterButton',
+  sourceId: '../../platform/_archive/FilterButton#FilterButton',
   status: 'archive',
 }
 

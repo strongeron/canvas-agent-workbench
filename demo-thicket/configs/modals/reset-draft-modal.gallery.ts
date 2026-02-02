@@ -1,6 +1,6 @@
-import { ResetDraftModal } from "@thicket/platform/ResetDraftModal"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { ResetDraftModal } from "../../platform/ResetDraftModal"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type ResetDraftModalProps = React.ComponentProps<typeof ResetDraftModal>
 
@@ -8,7 +8,7 @@ export { ResetDraftModal }
 
 export const resetDraftModalMeta: GalleryComponentMeta = {
   id: 'modals/reset-draft-modal',
-  sourceId: '@thicket/platform/ResetDraftModal#ResetDraftModal',
+  sourceId: '../../platform/ResetDraftModal#ResetDraftModal',
   status: 'prod',
 }
 

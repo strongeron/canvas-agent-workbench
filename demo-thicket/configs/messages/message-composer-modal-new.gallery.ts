@@ -1,13 +1,13 @@
-import { MessageComposerModal, type MessageComposerModalProps } from '@thicket/platform/MessageComposer/MessageComposerModal'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import { GALLERY_COURSES } from "@thicket/platform/gallery/mocks/galleryData"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { MessageComposerModal, type MessageComposerModalProps } from '../../platform/MessageComposer/MessageComposerModal'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import { GALLERY_COURSES } from "../../platform/gallery/mocks/galleryData"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export { MessageComposerModal as MessageComposerModalNew }
 
 export const messageComposerModalNewMeta: GalleryComponentMeta = {
   id: 'messages/message-composer-modal-new',
-  sourceId: '@thicket/platform/MessageComposer/MessageComposerModal#MessageComposerModal',
+  sourceId: '../../platform/MessageComposer/MessageComposerModal#MessageComposerModal',
   status: 'prod',
 }
 

@@ -1,7 +1,7 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../../shims/inertia-react"
 import { BookOpen, Sparkles } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
+import { Button } from "../../components/ui/button"
 
 export interface StudentEmptyStateProps {
   studentName: string

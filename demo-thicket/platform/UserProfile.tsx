@@ -1,10 +1,10 @@
-import { Link, usePage } from "@thicket/shims/inertia-react"
+import { Link, usePage } from "../shims/inertia-react"
 import { Settings } from "lucide-react"
 
-import { Tooltip } from "@thicket/components/ui/tooltip"
-import { UserAvatar } from "@thicket/components/ui/user-avatar"
-import type { AuthenticatedUser } from "@thicket/platform/types"
-import { getBaseDashboardPath } from "@thicket/platform/utils/userRouteMapping"
+import { Tooltip } from "../components/ui/tooltip"
+import { UserAvatar } from "../components/ui/user-avatar"
+import type { AuthenticatedUser } from "./types"
+import { getBaseDashboardPath } from "./utils/userRouteMapping"
 
 interface UserProfileProps {
   user: AuthenticatedUser

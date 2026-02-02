@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react"
 
-import { cn } from "@thicket/lib/utils"
+import { cn } from "../../lib/utils"
 
 interface LogoMaskedProps {
   variant?: "full" | "icon"

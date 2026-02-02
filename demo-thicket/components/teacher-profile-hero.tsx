@@ -1,19 +1,19 @@
-import { router } from "@thicket/shims/inertia-react"
+import { router } from "../shims/inertia-react"
 import { Briefcase, GraduationCap, Heart, MessageCircle, Users } from "lucide-react"
 import { useState } from "react"
 
-import { SocialLinks } from "@thicket/components/social-links"
-import { Badge } from "@thicket/components/ui/badge"
-import { Button } from "@thicket/components/ui/button"
-import { ImagePlaceholder } from "@thicket/components/ui/image-placeholder"
+import { SocialLinks } from "./social-links"
+import { Badge } from "./ui/badge"
+import { Button } from "./ui/button"
+import { ImagePlaceholder } from "./ui/image-placeholder"
 import {
   followTeacher,
   unfollowTeacher,
   type EducationEntry,
   type TeachingExperienceEntry,
-} from "@thicket/data/instructors"
-import type { AuthenticatedUser } from "@thicket/platform/types"
-import type { AuthorProfile } from "@thicket/types"
+} from "../data/instructors"
+import type { AuthenticatedUser } from "../platform/types"
+import type { AuthorProfile } from "../types"
 
 interface TeacherProfileHeroProps {
   teacher: AuthorProfile

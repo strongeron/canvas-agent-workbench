@@ -1,12 +1,12 @@
 import type { ReactNode } from "react"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import { LegalContentWrapper } from "@thicket/components/legal-content-wrapper"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { LegalContentWrapper } from "../../components/legal-content-wrapper"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const legalContentWrapperMeta: GalleryComponentMeta = {
   id: "landing.legal-content-wrapper",
-  sourceId: "@thicket/components/legal-content-wrapper#LegalContentWrapper",
+  sourceId: "../../components/legal-content-wrapper#LegalContentWrapper",
   status: "prod",
 }
 

@@ -1,10 +1,10 @@
-import { HowThicketWorks } from "@thicket/components/how-thicket-works"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { HowThicketWorks } from "../../components/how-thicket-works"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const howThicketWorksMeta: GalleryComponentMeta = {
   id: "landing.how-thicket-works",
-  sourceId: "@thicket/components/how-thicket-works#HowThicketWorks",
+  sourceId: "../../components/how-thicket-works#HowThicketWorks",
   status: "prod",
 }
 

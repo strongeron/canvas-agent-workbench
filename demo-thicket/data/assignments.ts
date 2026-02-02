@@ -1,4 +1,4 @@
-import type { Assignment } from "@thicket/types"
+import type { Assignment } from "../types"
 
 let assignmentsStore: Assignment[] = []
 let nextAssignmentId = 1

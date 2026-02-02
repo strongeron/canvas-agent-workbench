@@ -1,6 +1,6 @@
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { Course } from "@thicket/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { Course } from "../../types"
 
 interface TeacherMetricsSidebarProps {
   course: Course
@@ -14,7 +14,7 @@ interface TeacherMetricsSidebarProps {
 
 export const teacherMetricsSidebarMeta: GalleryComponentMeta = {
   id: 'teacher/teacher-metrics-sidebar',
-  sourceId: '@thicket/platform/Teacher/TeacherMetricsSidebar#TeacherMetricsSidebar',
+  sourceId: '../../platform/Teacher/TeacherMetricsSidebar#TeacherMetricsSidebar',
   status: 'prod',
 }
 

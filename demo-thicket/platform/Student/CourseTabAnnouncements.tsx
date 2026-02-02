@@ -1,9 +1,9 @@
 import { format, parseISO } from "date-fns"
 import { Calendar, Megaphone } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { EmptyState } from "@thicket/components/ui/empty-state"
-import { getSessionThreads } from "@thicket/data/persistence"
+import { Badge } from "../../components/ui/badge"
+import { EmptyState } from "../../components/ui/empty-state"
+import { getSessionThreads } from "../../data/persistence"
 
 interface CourseTabAnnouncementsProps {
   courseId: number

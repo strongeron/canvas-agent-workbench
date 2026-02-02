@@ -1,6 +1,6 @@
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { ScheduledLesson } from "@thicket/platform/utils/scheduleUtils"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { ScheduledLesson } from "../../platform/utils/scheduleUtils"
 
 interface LiveLessonBannerProps {
   lessons: ScheduledLesson[]
@@ -9,7 +9,7 @@ interface LiveLessonBannerProps {
 
 export const liveLessonBannerMeta: GalleryComponentMeta = {
   id: 'teacher/live-lesson-banner',
-  sourceId: '@thicket/platform/Teacher/LiveLessonBanner#LiveLessonBanner',
+  sourceId: '../../platform/Teacher/LiveLessonBanner#LiveLessonBanner',
   status: 'prod',
 }
 

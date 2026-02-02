@@ -1,10 +1,10 @@
-import type { ConfirmationModalProps } from "@thicket/components/ui/confirmation-modal"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { ConfirmationModalProps } from "../../components/ui/confirmation-modal"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const confirmationModalMeta: GalleryComponentMeta = {
   id: 'ui/confirmation-modal',
-  sourceId: '@thicket/components/ui/confirmation-modal#ConfirmationModal',
+  sourceId: '../../components/ui/confirmation-modal#ConfirmationModal',
   status: 'prod',
 }
 

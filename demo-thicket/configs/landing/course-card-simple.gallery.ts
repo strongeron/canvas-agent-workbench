@@ -1,7 +1,7 @@
-import { CourseCardSimple } from "@thicket/components/course-card-simple"
-import type Course from "@thicket/types/serializers/Course"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { CourseCardSimple } from "../../components/course-card-simple"
+import type Course from "../../types/serializers/Course"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 const publishedCourse: Course = {
   id: 2,
@@ -37,7 +37,7 @@ const waitlistCourse: Course = {
 
 export const courseCardSimpleMeta: GalleryComponentMeta = {
   id: "landing.course-card-simple",
-  sourceId: "@thicket/components/course-card-simple#CourseCardSimple",
+  sourceId: "../../components/course-card-simple#CourseCardSimple",
   status: "prod",
 }
 

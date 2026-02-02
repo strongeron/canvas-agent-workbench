@@ -1,18 +1,18 @@
-import type { CourseReviewConfirmation } from "@thicket/platform/CourseBuilder/CourseReviewConfirmation"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { CourseReviewConfirmation } from "../../platform/CourseBuilder/CourseReviewConfirmation"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 type CourseReviewConfirmationProps = React.ComponentProps<typeof CourseReviewConfirmation>
 
 const courseReviewConfirmationMeta: GalleryComponentMeta = {
   id: "course-builder/course-review-confirmation",
-  sourceId: "@thicket/platform/CourseBuilder/CourseReviewConfirmation#CourseReviewConfirmation",
+  sourceId: "../../platform/CourseBuilder/CourseReviewConfirmation#CourseReviewConfirmation",
   status: 'prod',
 }
 
 export const courseReviewConfirmationGalleryEntry: GalleryEntry<CourseReviewConfirmationProps> = {
   name: 'CourseReviewConfirmation',
-  importPath: '@thicket/platform/CourseBuilder/CourseReviewConfirmation',
+  importPath: '../../platform/CourseBuilder/CourseReviewConfirmation',
   category: 'Course Management',
   id: courseReviewConfirmationMeta.id,
   meta: courseReviewConfirmationMeta,

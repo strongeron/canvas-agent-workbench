@@ -1,7 +1,7 @@
-import type { AssignmentCTAProps } from '@thicket/platform/CTAs/AssignmentCTA'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { AssignmentCTAProps } from '../../platform/CTAs/AssignmentCTA'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
-import type { Assignment } from '@thicket/types'
+import type { Assignment } from '../../types'
 
 const sampleAssignment: Assignment = {
   id: 1,
@@ -16,7 +16,7 @@ const sampleAssignment: Assignment = {
 
 export const assignmentCTAMeta: GalleryComponentMeta = {
   id: 'ctas/assignment-cta',
-  sourceId: '@thicket/platform/CTAs/AssignmentCTA#AssignmentCTA',
+  sourceId: '../../platform/CTAs/AssignmentCTA#AssignmentCTA',
   status: 'wip',
 }
 

@@ -1,12 +1,12 @@
-import type { DateRangeFilter } from "@thicket/platform/DateRangeFilter"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { DateRangeFilter } from "../../platform/DateRangeFilter"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type DateRangeFilterProps = React.ComponentProps<typeof DateRangeFilter>
 
 export const dateRangeFilterMeta: GalleryComponentMeta = {
   id: 'platform/date-range-filter',
-  sourceId: '@thicket/platform/DateRangeFilter#DateRangeFilter',
+  sourceId: '../../platform/DateRangeFilter#DateRangeFilter',
   status: 'prod',
 }
 

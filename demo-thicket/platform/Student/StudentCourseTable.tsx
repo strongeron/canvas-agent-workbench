@@ -1,15 +1,15 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../../shims/inertia-react"
 import { format } from "date-fns"
 import { BookOpen } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { CourseCover } from "@thicket/components/ui/course-cover"
-import { CourseCTA } from "@thicket/platform/CTAs/CourseCTA"
-import { ImagePlaceholder } from "@thicket/components/ui/image-placeholder"
-import { type Column, SortableTable } from "@thicket/platform/SortableTable"
-import { student_course_path } from "@thicket/routes"
-import type { EnrolledCourseWithDetails } from "@thicket/types"
-import { formatDuration } from "@thicket/utils/formatters"
+import { Badge } from "../../components/ui/badge"
+import { CourseCover } from "../../components/ui/course-cover"
+import { CourseCTA } from "../CTAs/CourseCTA"
+import { ImagePlaceholder } from "../../components/ui/image-placeholder"
+import { type Column, SortableTable } from "../SortableTable"
+import { student_course_path } from "../../routes"
+import type { EnrolledCourseWithDetails } from "../../types"
+import { formatDuration } from "../../utils/formatters"
 
 export interface StudentCourseTableProps {
   enrolledCourses: EnrolledCourseWithDetails[]

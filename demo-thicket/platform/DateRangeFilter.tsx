@@ -1,8 +1,8 @@
 import { Calendar, ChevronDown, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
-import type { DateRangeFilter as DateRangeFilterType } from "@thicket/platform/utils/scheduleUtils"
-import { getDateRangeLabel } from "@thicket/platform/utils/scheduleUtils"
+import type { DateRangeFilter as DateRangeFilterType } from "./utils/scheduleUtils"
+import { getDateRangeLabel } from "./utils/scheduleUtils"
 
 import {
   FILTER_BADGE_BASE,

@@ -1,6 +1,6 @@
-import { CourseLockModal } from '@thicket/platform/CourseLockModal'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { CourseLockModal } from '../../platform/CourseLockModal'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type CourseLockModalProps = React.ComponentProps<typeof CourseLockModal>
 
@@ -8,7 +8,7 @@ export { CourseLockModal }
 
 export const courseLockModalMeta: GalleryComponentMeta = {
   id: 'platform/course-lock-modal',
-  sourceId: '@thicket/platform/CourseLockModal#CourseLockModal',
+  sourceId: '../../platform/CourseLockModal#CourseLockModal',
   status: 'prod',
 }
 

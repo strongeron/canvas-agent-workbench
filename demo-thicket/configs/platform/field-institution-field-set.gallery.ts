@@ -1,10 +1,10 @@
-import { FieldInstitutionFieldSet } from "@thicket/platform/FieldInstitutionFieldSet"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { FieldInstitutionFieldSet } from "../../platform/FieldInstitutionFieldSet"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const fieldInstitutionFieldSetMeta: GalleryComponentMeta = {
   id: "platform/field-institution-field-set",
-  sourceId: "@thicket/platform/FieldInstitutionFieldSet#FieldInstitutionFieldSet",
+  sourceId: "../../platform/FieldInstitutionFieldSet#FieldInstitutionFieldSet",
   status: "prod",
 }
 

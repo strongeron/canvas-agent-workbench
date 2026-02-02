@@ -1,10 +1,10 @@
-import type { ShowMoreButtonProps } from "@thicket/components/ui/show-more-button"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { ShowMoreButtonProps } from "../../components/ui/show-more-button"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const showMoreButtonMeta: GalleryComponentMeta = {
   id: 'ui/show-more-button',
-  sourceId: '@thicket/components/ui/show-more-button#ShowMoreButton',
+  sourceId: '../../components/ui/show-more-button#ShowMoreButton',
   status: 'prod',
 }
 

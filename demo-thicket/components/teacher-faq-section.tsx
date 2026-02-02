@@ -1,7 +1,7 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../shims/inertia-react"
 
-import { Accordion, type AccordionItem } from "@thicket/components/ui/accordion"
-import { contacts_path } from "@thicket/routes"
+import { Accordion, type AccordionItem } from "./ui/accordion"
+import { contacts_path } from "../routes"
 
 export function TeacherFAQSection() {
   const faqItems: AccordionItem[] = [

@@ -1,14 +1,14 @@
-import { EnrollmentSuccessModal, type EnrollmentSuccessModalProps } from '@thicket/platform/Student/EnrollmentSuccessModal'
+import { EnrollmentSuccessModal, type EnrollmentSuccessModalProps } from '../../platform/Student/EnrollmentSuccessModal'
 
-import { GALLERY_COURSES } from '@thicket/platform/gallery/mocks/galleryData'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import { GALLERY_COURSES } from '../../platform/gallery/mocks/galleryData'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export { EnrollmentSuccessModal }
 
 export const enrollmentSuccessModalMeta: GalleryComponentMeta = {
   id: 'student/enrollment-success-modal',
-  sourceId: '@thicket/platform/Student/EnrollmentSuccessModal#EnrollmentSuccessModal',
+  sourceId: '../../platform/Student/EnrollmentSuccessModal#EnrollmentSuccessModal',
   status: 'prod',
 }
 

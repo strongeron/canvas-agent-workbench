@@ -1,9 +1,9 @@
 import type { ComponentProps } from 'react'
 
-import { PublishCourseModal } from '@thicket/platform/PublishCourseModal'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import { GALLERY_COURSES } from "@thicket/platform/gallery/mocks/galleryData"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { PublishCourseModal } from '../../platform/PublishCourseModal'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import { GALLERY_COURSES } from "../../platform/gallery/mocks/galleryData"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type PublishCourseModalProps = ComponentProps<typeof PublishCourseModal>
 
@@ -11,7 +11,7 @@ export { PublishCourseModal }
 
 export const publishCourseModalMeta: GalleryComponentMeta = {
   id: 'modals/publish-course-modal',
-  sourceId: '@thicket/platform/PublishCourseModal#PublishCourseModal',
+  sourceId: '../../platform/PublishCourseModal#PublishCourseModal',
   status: 'prod',
 }
 

@@ -1,4 +1,4 @@
-import { router, usePage } from "@thicket/shims/inertia-react"
+import { router, usePage } from "../shims/inertia-react"
 import { Calendar, ChevronDown, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
@@ -10,7 +10,7 @@ import {
   FILTER_OPTION_BASE,
   FILTER_OPTION_SELECTED,
   FILTER_OPTION_UNSELECTED,
-} from "@thicket/platform/filters/filterConstants"
+} from "../platform/filters/filterConstants"
 
 type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6
 

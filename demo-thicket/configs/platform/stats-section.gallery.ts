@@ -1,12 +1,12 @@
-import type { StatsSection } from "@thicket/platform/StatsSection"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { StatsSection } from "../../platform/StatsSection"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 type StatsSectionProps = React.ComponentProps<typeof StatsSection>
 
 const statsSectionMeta: GalleryComponentMeta = {
     id: 'platform/stats-section',
-  sourceId: '@thicket/platform/StatsSection#StatsSection',
+  sourceId: '../../platform/StatsSection#StatsSection',
   status: 'archive',
 }
 

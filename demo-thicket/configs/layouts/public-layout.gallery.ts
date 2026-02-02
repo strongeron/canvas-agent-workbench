@@ -1,11 +1,11 @@
 import React from "react"
-import { Layout } from "@thicket/layouts/Layout"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { LayoutEntry } from "@thicket/platform/gallery/registry/types"
+import { Layout } from "../../layouts/Layout"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { LayoutEntry } from "../../platform/gallery/registry/types"
 
 export const publicLayoutMeta: GalleryComponentMeta = {
   id: 'layouts/public',
-  sourceId: '@thicket/layouts/Layout#Layout',
+  sourceId: '../../layouts/Layout#Layout',
   status: 'prod',
 }
 

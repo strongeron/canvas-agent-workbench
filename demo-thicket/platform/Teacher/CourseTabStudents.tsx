@@ -2,12 +2,12 @@ import { format, parseISO } from "date-fns"
 import { Mail, Users } from "lucide-react"
 import { useState } from "react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { Button } from "@thicket/components/ui/button"
-import { EmptyState } from "@thicket/components/ui/empty-state"
-import { MessageComposerModal } from "@thicket/platform/MessageComposerModal"
-import { type Column, SortableTable } from "@thicket/platform/SortableTable"
-import type { Student } from "@thicket/types"
+import { Badge } from "../../components/ui/badge"
+import { Button } from "../../components/ui/button"
+import { EmptyState } from "../../components/ui/empty-state"
+import { MessageComposerModal } from "../MessageComposerModal"
+import { type Column, SortableTable } from "../SortableTable"
+import type { Student } from "../../types"
 
 interface CourseStudent {
   id: number

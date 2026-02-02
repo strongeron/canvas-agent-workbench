@@ -1,4 +1,4 @@
-import { router, usePage } from "@thicket/shims/inertia-react"
+import { router, usePage } from "../shims/inertia-react"
 import type { LucideIcon } from "lucide-react"
 import {
   BadgeCheck,
@@ -25,8 +25,8 @@ import {
   FILTER_OPTION_BASE,
   FILTER_OPTION_SELECTED,
   FILTER_OPTION_UNSELECTED,
-} from "@thicket/platform/filters/filterConstants"
-import type { Category, CoursesIndex } from "@thicket/types"
+} from "../platform/filters/filterConstants"
+import type { Category, CoursesIndex } from "../types"
 
 const iconMap: Record<string, LucideIcon> = {
   building: Building2,

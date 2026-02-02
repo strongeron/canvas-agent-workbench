@@ -1,12 +1,12 @@
-import type { StripeConnectionCompactBanner } from "@thicket/platform/StripeConnectionCompactBanner"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { StripeConnectionCompactBanner } from "../../platform/StripeConnectionCompactBanner"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type StripeConnectionCompactBannerProps = React.ComponentProps<typeof StripeConnectionCompactBanner>
 
 export const stripeConnectionCompactBannerMeta: GalleryComponentMeta = {
   id: 'platform/stripe-connection-compact-banner',
-  sourceId: '@thicket/platform/StripeConnectionCompactBanner#StripeConnectionCompactBanner',
+  sourceId: '../../platform/StripeConnectionCompactBanner#StripeConnectionCompactBanner',
   status: 'prod',
 }
 

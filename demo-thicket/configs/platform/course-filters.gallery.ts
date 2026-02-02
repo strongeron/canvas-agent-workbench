@@ -1,8 +1,8 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { CourseFilters } from '@thicket/platform/CourseFilters'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { CourseFilters } from '../../platform/CourseFilters'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type CourseFiltersProps = ComponentProps<typeof CourseFilters>
 
@@ -12,7 +12,7 @@ type CourseFiltersProps = ComponentProps<typeof CourseFilters>
  */
 const courseFiltersMeta: GalleryComponentMeta = {
     id: 'platform/course-filters',
-  sourceId: '@thicket/platform/CourseFilters#CourseFilters',
+  sourceId: '../../platform/CourseFilters#CourseFilters',
   status: 'archive',
 }
 

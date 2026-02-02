@@ -1,10 +1,10 @@
 import { isWithinInterval, parseISO } from "date-fns"
 import { Circle } from "lucide-react"
 
-import { getAssignmentsByLessonId } from "@thicket/data/assignments"
-import { UnifiedLessonCard } from "@thicket/platform/UnifiedLessonCard"
-import { lessonWithProgressToUnified } from "@thicket/platform/utils/lessonDataTransformers"
-import type { LessonWithProgress } from "@thicket/types"
+import { getAssignmentsByLessonId } from "../../data/assignments"
+import { UnifiedLessonCard } from "../UnifiedLessonCard"
+import { lessonWithProgressToUnified } from "../utils/lessonDataTransformers"
+import type { LessonWithProgress } from "../../types"
 
 export interface CourseTabScheduleProps {
   courseId: number

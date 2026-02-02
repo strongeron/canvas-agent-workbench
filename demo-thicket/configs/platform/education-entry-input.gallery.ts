@@ -1,6 +1,6 @@
-import type { EducationEntry } from "@thicket/data/instructors"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { EducationEntry } from "../../data/instructors"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 interface EducationEntryInputProps {
   entry: EducationEntry
@@ -11,7 +11,7 @@ interface EducationEntryInputProps {
 
 const educationEntryInputMeta: GalleryComponentMeta = {
     id: 'platform/education-entry-input',
-  sourceId: '@thicket/platform/EducationEntryInput#EducationEntryInput',
+  sourceId: '../../platform/EducationEntryInput#EducationEntryInput',
   status: 'archive',
 }
 

@@ -1,8 +1,8 @@
 import { CheckCircle2 } from "lucide-react"
 import { useMemo } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Modal } from "@thicket/components/ui/modal/"
+import { Button } from "../components/ui/button"
+import { Modal } from "../components/ui/modal"
 
 type ConfettiStyle = {
   key: number

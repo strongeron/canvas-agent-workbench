@@ -1,11 +1,11 @@
-import type { SearchInputProps } from "@thicket/components/ui/search-input"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import { propSchemas } from "@thicket/platform/gallery/registry/schema-helpers"
+import type { SearchInputProps } from "../../components/ui/search-input"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import { propSchemas } from "../../platform/gallery/registry/schema-helpers"
 
 export const searchInputMeta: GalleryComponentMeta = {
   id: 'ui/search-input',
-  sourceId: '@thicket/components/ui/search-input#SearchInput',
+  sourceId: '../../components/ui/search-input#SearchInput',
   status: 'prod',
 }
 

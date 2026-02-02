@@ -1,15 +1,15 @@
 import { formatDistanceToNow, parseISO } from "date-fns"
 import { CircleCheck, Clock, Download, FileText, Globe, Image as ImageIcon, Lock } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { CourseCover } from "@thicket/components/ui/course-cover"
-import { formatFileSize } from "@thicket/platform/utils/fileUpload"
-import type { LessonStatus } from "@thicket/platform/utils/lessonHelpers"
+import { Badge } from "../components/ui/badge"
+import { CourseCover } from "../components/ui/course-cover"
+import { formatFileSize } from "./utils/fileUpload"
+import type { LessonStatus } from "./utils/lessonHelpers"
 import {
   areInSameTimezone,
   formatWithTimezoneAbbr,
-} from "@thicket/platform/utils/timezoneHelpers"
-import type { Assignment } from "@thicket/types"
+} from "./utils/timezoneHelpers"
+import type { Assignment } from "../types"
 
 export function LessonStatusBadge({ status, isLive: _isLive }: { status: LessonStatus; isLive?: boolean }) {
   const config = {

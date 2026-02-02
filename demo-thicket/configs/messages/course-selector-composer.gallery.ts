@@ -1,7 +1,7 @@
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import { GALLERY_COURSES } from '@thicket/platform/gallery/mocks/galleryData'
+import { GALLERY_COURSES } from '../../platform/gallery/mocks/galleryData'
 
 interface Course {
   id: number
@@ -26,7 +26,7 @@ interface CourseSelectorProps {
 
 const courseSelectorComposerMeta: GalleryComponentMeta = {
     id: 'messages/course-selector-composer',
-  sourceId: '@thicket/platform/MessageComposer/CourseSelector#CourseSelector',
+  sourceId: '../../platform/MessageComposer/CourseSelector#CourseSelector',
   status: 'archive',
 }
 

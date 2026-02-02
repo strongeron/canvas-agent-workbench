@@ -1,11 +1,11 @@
-import { router } from "@thicket/shims/inertia-react"
+import { router } from "../shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { Sparkles } from "lucide-react"
 
-import { CoursePreviewCard } from "@thicket/components/course-preview-card"
-import { Badge } from "@thicket/components/ui/badge"
-import { Button } from "@thicket/components/ui/button"
-import type { Course } from "@thicket/types"
+import { CoursePreviewCard } from "./course-preview-card"
+import { Badge } from "./ui/badge"
+import { Button } from "./ui/button"
+import type { Course } from "../types"
 
 export function HeroStackedCards({
   showcaseCourses,

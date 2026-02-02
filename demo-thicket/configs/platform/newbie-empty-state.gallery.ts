@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
 
-import type { NewbieEmptyState } from '@thicket/platform/NewbieEmptyState'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { NewbieEmptyState } from '../../platform/NewbieEmptyState'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type NewbieEmptyStateProps = ComponentProps<typeof NewbieEmptyState>
 
 export const newbieEmptyStateMeta: GalleryComponentMeta = {
   id: 'platform/newbie-empty-state',
-  sourceId: '@thicket/platform/NewbieEmptyState#NewbieEmptyState',
+  sourceId: '../../platform/NewbieEmptyState#NewbieEmptyState',
   status: 'prod',
 }
 

@@ -1,18 +1,18 @@
-import type { PricingForm } from "@thicket/platform/CourseBuilder/PricingForm"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { PricingForm } from "../../platform/CourseBuilder/PricingForm"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 type PricingFormProps = React.ComponentProps<typeof PricingForm>
 
 const pricingFormMeta: GalleryComponentMeta = {
   id: "course-builder/pricing-form",
-  sourceId: "@thicket/platform/CourseBuilder/PricingForm#PricingForm",
+  sourceId: "../../platform/CourseBuilder/PricingForm#PricingForm",
   status: 'prod',
 }
 
 export const pricingFormGalleryEntry: GalleryEntry<PricingFormProps> = {
   name: 'PricingForm',
-  importPath: '@thicket/platform/CourseBuilder/PricingForm',
+  importPath: '../../platform/CourseBuilder/PricingForm',
   category: 'Course Management',
   id: pricingFormMeta.id,
   meta: pricingFormMeta,

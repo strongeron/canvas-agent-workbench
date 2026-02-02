@@ -1,10 +1,10 @@
-import type { CourseSelectorProps } from "@thicket/components/ui/course-selector"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { CourseSelectorProps } from "../../components/ui/course-selector"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const courseSelectorMeta: GalleryComponentMeta = {
   id: 'ui/course-selector',
-  sourceId: '@thicket/components/ui/course-selector#CourseSelector',
+  sourceId: '../../components/ui/course-selector#CourseSelector',
   status: 'prod',
 }
 

@@ -1,4 +1,4 @@
-import type { AuthorProfile, Course } from '@thicket/types'
+import type { AuthorProfile, Course } from '../types'
 
 import type { Transaction } from './earnings'
 import type { InstructorSettings } from './instructors'

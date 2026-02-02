@@ -1,7 +1,7 @@
 import { Circle } from "lucide-react"
 
-import { UnifiedLessonCard, type UnifiedLessonData } from "@thicket/platform/UnifiedLessonCard"
-import type { ScheduledLesson } from "@thicket/platform/utils/scheduleUtils"
+import { UnifiedLessonCard, type UnifiedLessonData } from "../UnifiedLessonCard"
+import type { ScheduledLesson } from "../utils/scheduleUtils"
 
 interface LiveLessonBannerProps {
   lessons: ScheduledLesson[]

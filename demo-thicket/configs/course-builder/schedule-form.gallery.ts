@@ -1,18 +1,18 @@
-import type { ScheduleForm } from "@thicket/platform/CourseBuilder/ScheduleForm"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { ScheduleForm } from "../../platform/CourseBuilder/ScheduleForm"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 type ScheduleFormProps = React.ComponentProps<typeof ScheduleForm>
 
 const scheduleFormMeta: GalleryComponentMeta = {
   id: "course-builder/schedule-form",
-  sourceId: "@thicket/platform/CourseBuilder/ScheduleForm#ScheduleForm",
+  sourceId: "../../platform/CourseBuilder/ScheduleForm#ScheduleForm",
   status: 'prod',
 }
 
 export const scheduleFormGalleryEntry: GalleryEntry<ScheduleFormProps> = {
   name: 'ScheduleForm',
-  importPath: '@thicket/platform/CourseBuilder/ScheduleForm',
+  importPath: '../../platform/CourseBuilder/ScheduleForm',
   category: 'Course Management',
   id: scheduleFormMeta.id,
   meta: scheduleFormMeta,

@@ -12,8 +12,8 @@ import { createPortal } from "react-dom"
 import {
   type OverlayAlign,
   useOverlayPosition,
-} from "@thicket/hooks/use-overlay-position"
-import { cn } from "@thicket/lib/utils"
+} from "../../hooks/use-overlay-position"
+import { cn } from "../../lib/utils"
 
 interface PopoverContextValue {
   isOpen: boolean

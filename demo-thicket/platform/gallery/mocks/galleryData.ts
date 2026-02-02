@@ -1,6 +1,6 @@
 // @ts-nocheck
-import type { Message, MessageThread } from "@thicket/data/messages"
-import type { AuthorProfile, Category, Course, Student } from "@thicket/types"
+import type { Message, MessageThread } from "../../../data/messages"
+import type { AuthorProfile, Category, Course, Student } from "../../../types"
 
 export const GALLERY_STUDENTS: Student[] = [
   {

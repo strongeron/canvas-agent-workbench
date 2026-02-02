@@ -1,5 +1,5 @@
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 interface AnnouncementPreviewProps {
   recipientCount: number
@@ -9,7 +9,7 @@ interface AnnouncementPreviewProps {
 
 const announcementPreviewMeta: GalleryComponentMeta = {
     id: 'messages/announcement-preview',
-  sourceId: '@thicket/platform/MessageComposer/AnnouncementPreview#AnnouncementPreview',
+  sourceId: '../../platform/MessageComposer/AnnouncementPreview#AnnouncementPreview',
   status: 'archive',
 }
 

@@ -1,7 +1,7 @@
 import { BookOpen, Users } from "lucide-react"
 
-import { Select } from "@thicket/components/ui/select"
-import type { Course } from "@thicket/platform/hooks/useMessageComposer"
+import { Select } from "../../components/ui/select"
+import type { Course } from "../hooks/useMessageComposer"
 
 interface CourseSelectorProps {
   courses: Course[]

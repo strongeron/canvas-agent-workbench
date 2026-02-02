@@ -1,8 +1,8 @@
 import { Upload, X } from "lucide-react"
 import { type ChangeEvent, type DragEvent, useRef, useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { formatFileSize, simulateImageUpload } from "@thicket/platform/utils/fileUpload"
+import { Button } from "../../components/ui/button"
+import { formatFileSize, simulateImageUpload } from "../utils/fileUpload"
 
 export interface ImageUploadZoneProps {
   value?: string

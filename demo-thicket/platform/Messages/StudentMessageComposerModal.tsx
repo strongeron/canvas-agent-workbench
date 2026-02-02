@@ -1,5 +1,5 @@
-import { MessageComposerModal } from "@thicket/platform/MessageComposer"
-import type { Course, CurrentUser, Recipient } from "@thicket/platform/hooks/useMessageComposer"
+import { MessageComposerModal } from "../MessageComposer"
+import type { Course, CurrentUser, Recipient } from "../hooks/useMessageComposer"
 
 interface RecipientOption {
   id: number

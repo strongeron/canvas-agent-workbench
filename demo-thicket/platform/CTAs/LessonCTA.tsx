@@ -1,10 +1,10 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../../shims/inertia-react"
 import { Clock, Lock, PlayCircle, Video } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import type { LessonCardMode, LessonCardRole, UnifiedLessonData } from "@thicket/platform/UnifiedLessonCard"
-import { getLessonDetailedStatus, type LessonStatus } from "@thicket/platform/utils/lessonHelpers"
-import type { ScheduledLesson } from "@thicket/platform/utils/scheduleUtils"
+import { Button } from "../../components/ui/button"
+import type { LessonCardMode, LessonCardRole, UnifiedLessonData } from "../UnifiedLessonCard"
+import { getLessonDetailedStatus, type LessonStatus } from "../utils/lessonHelpers"
+import type { ScheduledLesson } from "../utils/scheduleUtils"
 
 interface CTAConfig {
   show: boolean

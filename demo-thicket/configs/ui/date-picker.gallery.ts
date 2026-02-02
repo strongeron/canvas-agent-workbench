@@ -1,10 +1,10 @@
-import type { DatePickerProps } from "@thicket/components/ui/date-picker"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { DatePickerProps } from "../../components/ui/date-picker"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const datePickerMeta: GalleryComponentMeta = {
     id: 'ui/date-picker',
-  sourceId: '@thicket/components/ui/date-picker#DatePickerProps',
+  sourceId: '../../components/ui/date-picker#DatePickerProps',
   status: 'archive',
 }
 

@@ -1,4 +1,4 @@
-import type { Assignment } from "@thicket/types"
+import type { Assignment } from "../../types"
 import type { ScheduledLesson } from "./scheduleUtils"
 
 export function lessonWithProgressToUnified(

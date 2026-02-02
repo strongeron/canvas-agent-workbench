@@ -1,4 +1,4 @@
-import type { CourseFile } from "@thicket/types"
+import type { CourseFile } from "../types"
 
 function getDateDaysAgo(days: number): string {
   const date = new Date()

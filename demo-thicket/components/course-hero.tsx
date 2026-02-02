@@ -1,9 +1,9 @@
 import { BookOpen, Clock } from "lucide-react"
 
-import { CourseCover } from "@thicket/components/ui/course-cover"
-import { CourseCTA } from "@thicket/platform/CTAs/CourseCTA"
-import { formatDuration, formatScheduleTime } from "@thicket/utils/formatters"
-import type { Course } from "@thicket/types"
+import { CourseCover } from "./ui/course-cover"
+import { CourseCTA } from "../platform/CTAs/CourseCTA"
+import { formatDuration, formatScheduleTime } from "../utils/formatters"
+import type { Course } from "../types"
 
 interface CourseHeroProps {
   title: string

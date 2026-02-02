@@ -1,9 +1,9 @@
 import { MessageSquare } from "lucide-react"
 import { useMemo, useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import type { CurrentUser } from "@thicket/platform/hooks/useMessageComposer"
-import { StudentMessageComposerModal } from "@thicket/platform/Messages/StudentMessageComposerModal"
+import { Button } from "../../components/ui/button"
+import type { CurrentUser } from "../hooks/useMessageComposer"
+import { StudentMessageComposerModal } from "../Messages/StudentMessageComposerModal"
 
 interface Classmate {
   id: number

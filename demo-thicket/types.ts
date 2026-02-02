@@ -5,7 +5,7 @@
  * These types ensure consistency across variant definitions and registry.
  */
 
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { GalleryComponentMeta } from "./platform/gallery/types"
 
 /**
  * Gallery item kind discriminator
@@ -161,7 +161,7 @@ export interface BaseGalleryMeta {
 export interface GalleryEntry<TProps = any> extends BaseGalleryMeta {
   /** Kind discriminator - defaults to 'component' for backward compatibility */
   kind?: 'component'
-  /** Import path for the component (e.g., "@thicket/components/ui/button") */
+  /** Import path for the component (e.g., "./components/ui/button") */
   importPath: string
   /** All variants of this component */
   variants: ComponentVariant<TProps>[]
@@ -259,7 +259,7 @@ export interface CoursesIndex {
  * A gallery entry representing a layout component with all its variants
  */
 export interface LayoutEntry<TProps = any> extends BaseGalleryMeta, LayoutMeta {
-  /** Import path for the layout component (e.g., "@thicket/platform/layouts/StudentLayout") */
+  /** Import path for the layout component (e.g., "./platform/layouts/StudentLayout") */
   importPath: string
   /** All variants of this layout */
   variants: ComponentVariant<TProps>[]
@@ -271,7 +271,7 @@ export interface LayoutEntry<TProps = any> extends BaseGalleryMeta, LayoutMeta {
  * A gallery entry representing a page pattern with all its variants
  */
 export interface PagePatternEntry<TProps = any> extends BaseGalleryMeta, PagePatternMeta {
-  /** Import path for the pattern component (e.g., "@thicket/platform/layouts/patterns/CourseDetailLayout") */
+  /** Import path for the pattern component (e.g., "./platform/layouts/patterns/CourseDetailLayout") */
   importPath: string
   /** All variants of this pattern */
   variants: ComponentVariant<TProps>[]

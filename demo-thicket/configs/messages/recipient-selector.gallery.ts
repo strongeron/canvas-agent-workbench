@@ -1,5 +1,5 @@
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 interface Recipient {
   id: number
@@ -55,7 +55,7 @@ const MOCK_STUDENTS: Recipient[] = [
 
 const recipientSelectorMeta: GalleryComponentMeta = {
     id: 'messages/recipient-selector',
-  sourceId: '@thicket/platform/MessageComposer/RecipientSelector#RecipientSelector',
+  sourceId: '../../platform/MessageComposer/RecipientSelector#RecipientSelector',
   status: 'archive',
 }
 

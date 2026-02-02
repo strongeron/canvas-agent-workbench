@@ -1,18 +1,18 @@
-import type { CurriculumBuilder } from "@thicket/platform/CourseBuilder/CurriculumBuilder"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { CurriculumBuilder } from "../../platform/CourseBuilder/CurriculumBuilder"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 type CurriculumBuilderProps = React.ComponentProps<typeof CurriculumBuilder>
 
 const curriculumBuilderMeta: GalleryComponentMeta = {
   id: "course-builder/curriculum-builder",
-  sourceId: "@thicket/platform/CourseBuilder/CurriculumBuilder#CurriculumBuilder",
+  sourceId: "../../platform/CourseBuilder/CurriculumBuilder#CurriculumBuilder",
   status: 'prod',
 }
 
 export const curriculumBuilderGalleryEntry: GalleryEntry<CurriculumBuilderProps> = {
   name: 'CurriculumBuilder',
-  importPath: '@thicket/platform/CourseBuilder/CurriculumBuilder',
+  importPath: '../../platform/CourseBuilder/CurriculumBuilder',
   category: 'Course Management',
   id: curriculumBuilderMeta.id,
   meta: curriculumBuilderMeta,

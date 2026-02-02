@@ -1,11 +1,11 @@
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 type CourseStatusFilterProps = Record<string, never>
 
 export const courseStatusFilterMeta: GalleryComponentMeta = {
   id: 'filters/course-status-filter',
-  sourceId: '@thicket/components/course-status-filter#CourseStatusFilter',
+  sourceId: '../../components/course-status-filter#CourseStatusFilter',
   status: 'prod',
 }
 

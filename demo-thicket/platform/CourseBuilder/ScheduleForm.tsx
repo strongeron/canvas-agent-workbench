@@ -1,8 +1,8 @@
 import { Clock } from "lucide-react"
 
-import { DatePicker } from "@thicket/components/ui/date-picker"
-import { TimePicker } from "@thicket/components/ui/time-picker"
-import { getFullTimezoneDisplay } from "@thicket/platform/utils/timezoneHelpers"
+import { DatePicker } from "../../components/ui/date-picker"
+import { TimePicker } from "../../components/ui/time-picker"
+import { getFullTimezoneDisplay } from "../utils/timezoneHelpers"
 
 interface ScheduleFormProps {
   startDate: string

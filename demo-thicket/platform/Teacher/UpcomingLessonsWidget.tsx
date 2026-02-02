@@ -1,10 +1,10 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../../shims/inertia-react"
 import { Calendar, ChevronRight } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
-import { TodaysSummary } from "@thicket/platform/TodaysSummary"
-import { UnifiedLessonCard, type UnifiedLessonData } from "@thicket/platform/UnifiedLessonCard"
-import { type ScheduledLesson } from "@thicket/platform/utils/scheduleUtils"
+import { Button } from "../../components/ui/button"
+import { TodaysSummary } from "../TodaysSummary"
+import { UnifiedLessonCard, type UnifiedLessonData } from "../UnifiedLessonCard"
+import { type ScheduledLesson } from "../utils/scheduleUtils"
 
 export interface UpcomingLessonsWidgetProps {
   lessons: ScheduledLesson[]

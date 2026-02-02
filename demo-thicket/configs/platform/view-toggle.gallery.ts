@@ -1,8 +1,8 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { ViewToggle } from '@thicket/platform/ViewToggle'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { ViewToggle } from '../../platform/ViewToggle'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type ViewToggleProps = ComponentProps<typeof ViewToggle>
 
@@ -12,7 +12,7 @@ type ViewToggleProps = ComponentProps<typeof ViewToggle>
  */
 const viewToggleMeta: GalleryComponentMeta = {
     id: 'platform/view-toggle',
-  sourceId: '@thicket/platform/ViewToggle#ViewToggle',
+  sourceId: '../../platform/ViewToggle#ViewToggle',
   status: 'archive',
 }
 

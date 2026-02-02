@@ -1,11 +1,11 @@
-import type { UnifiedLessonCardProps } from '@thicket/platform/UnifiedLessonCard'
+import type { UnifiedLessonCardProps } from '../../platform/UnifiedLessonCard'
 
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const unifiedLessonCardMeta: GalleryComponentMeta = {
   id: 'lessons/unified-lesson-card',
-  sourceId: '@thicket/platform/UnifiedLessonCard#UnifiedLessonCard',
+  sourceId: '../../platform/UnifiedLessonCard#UnifiedLessonCard',
   status: 'prod',
 }
 

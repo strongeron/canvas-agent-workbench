@@ -1,15 +1,15 @@
-import { router, usePage } from "@thicket/shims/inertia-react"
+import { router, usePage } from "../shims/inertia-react"
 import { useMemo, useState } from "react"
 
-import { useToast } from "@thicket/hooks/useToast"
-import { archiveSessionCourse } from "@thicket/data/persistence"
-import { ArchiveCourseModal } from "@thicket/platform/ArchiveCourseModal"
-import { CourseFilters } from "@thicket/platform/CourseFilters"
-import { PublishCourseModal } from "@thicket/platform/PublishCourseModal"
-import { TeacherCourseTable } from "@thicket/platform/TeacherCourseTable"
-import { UnpublishCourseModal } from "@thicket/platform/UnpublishCourseModal"
-import { getBaseDashboardPath } from "@thicket/platform/utils/userRouteMapping"
-import type { Course } from "@thicket/types"
+import { useToast } from "../hooks/useToast"
+import { archiveSessionCourse } from "../data/persistence"
+import { ArchiveCourseModal } from "./ArchiveCourseModal"
+import { CourseFilters } from "./CourseFilters"
+import { PublishCourseModal } from "./PublishCourseModal"
+import { TeacherCourseTable } from "./TeacherCourseTable"
+import { UnpublishCourseModal } from "./UnpublishCourseModal"
+import { getBaseDashboardPath } from "./utils/userRouteMapping"
+import type { Course } from "../types"
 
 interface TeacherCourseListProps {
   courses: Course[]

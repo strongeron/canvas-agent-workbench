@@ -1,9 +1,9 @@
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { PagePatternEntry } from "@thicket/platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { PagePatternEntry } from "../../platform/gallery/registry/types"
 
 export const listPageMeta: GalleryComponentMeta = {
   id: 'page-patterns/list-page',
-  sourceId: '@thicket/platform/layouts/patterns/ListPageLayout#ListPageLayout',
+  sourceId: '../../platform/layouts/patterns/ListPageLayout#ListPageLayout',
   status: 'wip',
 }
 

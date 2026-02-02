@@ -1,9 +1,9 @@
 import type { ComponentProps } from 'react'
 
-import { ArchiveCourseModal } from '@thicket/platform/ArchiveCourseModal'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import { GALLERY_COURSES } from "@thicket/platform/gallery/mocks/galleryData"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { ArchiveCourseModal } from '../../platform/ArchiveCourseModal'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import { GALLERY_COURSES } from "../../platform/gallery/mocks/galleryData"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type ArchiveCourseModalProps = ComponentProps<typeof ArchiveCourseModal>
 
@@ -11,7 +11,7 @@ export { ArchiveCourseModal }
 
 export const archiveCourseModalMeta: GalleryComponentMeta = {
   id: 'platform/archive-course-modal',
-  sourceId: '@thicket/platform/ArchiveCourseModal#ArchiveCourseModal',
+  sourceId: '../../platform/ArchiveCourseModal#ArchiveCourseModal',
   status: 'prod',
 }
 

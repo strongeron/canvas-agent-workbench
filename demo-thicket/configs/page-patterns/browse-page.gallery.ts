@@ -1,9 +1,9 @@
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { PagePatternEntry } from "@thicket/platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { PagePatternEntry } from "../../platform/gallery/registry/types"
 
 export const browsePageMeta: GalleryComponentMeta = {
   id: 'page-patterns/browse-page',
-  sourceId: '@thicket/platform/layouts/patterns/BrowsePageLayout#BrowsePageLayout',
+  sourceId: '../../platform/layouts/patterns/BrowsePageLayout#BrowsePageLayout',
   status: 'wip',
 }
 

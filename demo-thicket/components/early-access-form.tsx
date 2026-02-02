@@ -1,13 +1,13 @@
-import { Form, router, usePage } from "@thicket/shims/inertia-react"
+import { Form, router, usePage } from "../shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { useEffect } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { CourseCover } from "@thicket/components/ui/course-cover"
-import { Input } from "@thicket/components/ui/input"
-import { Modal } from "@thicket/components/ui/modal/"
-import { early_access_signups_path } from "@thicket/routes"
-import type { Course } from "@thicket/types"
+import { Button } from "./ui/button"
+import { CourseCover } from "./ui/course-cover"
+import { Input } from "./ui/input"
+import { Modal } from "./ui/modal"
+import { early_access_signups_path } from "../routes"
+import type { Course } from "../types"
 
 function SuccessMessage({
   title,

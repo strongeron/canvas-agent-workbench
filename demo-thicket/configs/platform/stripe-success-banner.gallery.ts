@@ -1,12 +1,12 @@
-import type { StripeSuccessBanner } from "@thicket/platform/StripeSuccessBanner"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { StripeSuccessBanner } from "../../platform/StripeSuccessBanner"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 type StripeSuccessBannerProps = React.ComponentProps<typeof StripeSuccessBanner>
 
 const stripeSuccessBannerMeta: GalleryComponentMeta = {
     id: 'platform/stripe-success-banner',
-  sourceId: '@thicket/platform/StripeSuccessBanner#StripeSuccessBanner',
+  sourceId: '../../platform/StripeSuccessBanner#StripeSuccessBanner',
   status: 'archive',
 }
 

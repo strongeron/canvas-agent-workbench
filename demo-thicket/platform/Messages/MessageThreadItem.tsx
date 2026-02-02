@@ -1,10 +1,10 @@
 import { BookOpen, Megaphone, Users } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { UserAvatar } from "@thicket/components/ui/user-avatar"
-import { isAnnouncementThread } from "@thicket/data/messages"
-import type { MessageThread } from "@thicket/types"
-import { formatDate } from "@thicket/utils/formatters"
+import { Badge } from "../../components/ui/badge"
+import { UserAvatar } from "../../components/ui/user-avatar"
+import { isAnnouncementThread } from "../../data/messages"
+import type { MessageThread } from "../../types"
+import { formatDate } from "../../utils/formatters"
 
 interface MessageThreadItemProps {
   thread: MessageThread

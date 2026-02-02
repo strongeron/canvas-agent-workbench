@@ -1,19 +1,19 @@
-import type { CourseInfoForm } from "@thicket/platform/CourseBuilder/CourseInfoForm"
-import { GALLERY_CATEGORIES } from "@thicket/platform/gallery/mocks/galleryData"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { CourseInfoForm } from "../../platform/CourseBuilder/CourseInfoForm"
+import { GALLERY_CATEGORIES } from "../../platform/gallery/mocks/galleryData"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 type CourseInfoFormProps = React.ComponentProps<typeof CourseInfoForm>
 
 const courseInfoFormMeta: GalleryComponentMeta = {
   id: "course-builder/course-info-form",
-  sourceId: "@thicket/platform/CourseBuilder/CourseInfoForm#CourseInfoForm",
+  sourceId: "../../platform/CourseBuilder/CourseInfoForm#CourseInfoForm",
   status: 'prod',
 }
 
 export const courseInfoFormGalleryEntry: GalleryEntry<CourseInfoFormProps> = {
   name: 'CourseInfoForm',
-  importPath: '@thicket/platform/CourseBuilder/CourseInfoForm',
+  importPath: '../../platform/CourseBuilder/CourseInfoForm',
   category: 'Course Management',
   id: courseInfoFormMeta.id,
   meta: courseInfoFormMeta,

@@ -1,5 +1,5 @@
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type CredentialEntry = Record<string, string>;
 
@@ -27,7 +27,7 @@ interface CredentialTableInputProps {
 
 export const credentialTableInputMeta: GalleryComponentMeta = {
   id: 'platform/credential-table-input',
-  sourceId: '@thicket/platform/CredentialTableInput#CredentialTableInput',
+  sourceId: '../../platform/CredentialTableInput#CredentialTableInput',
   status: 'prod',
 }
 

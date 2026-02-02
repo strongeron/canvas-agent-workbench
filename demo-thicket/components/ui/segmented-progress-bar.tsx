@@ -1,6 +1,6 @@
 import { Check } from "lucide-react"
 
-import { cn } from "@thicket/lib/utils"
+import { cn } from "../../lib/utils"
 
 interface LessonSegment {
   id: number

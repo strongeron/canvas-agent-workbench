@@ -1,10 +1,10 @@
-import { MissionSection } from "@thicket/components/mission-section"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { MissionSection } from "../../components/mission-section"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const missionSectionMeta: GalleryComponentMeta = {
   id: "landing.mission-section",
-  sourceId: "@thicket/components/mission-section#MissionSection",
+  sourceId: "../../components/mission-section#MissionSection",
   status: "prod",
 }
 

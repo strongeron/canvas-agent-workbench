@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { exportSessionData, importSessionData, resetAllSessionData } from '@thicket/data'
+import { exportSessionData, importSessionData, resetAllSessionData } from '../data'
 
 export function StorageDebugPanel() {
   const [isOpen, setIsOpen] = useState(false)

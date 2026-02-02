@@ -1,6 +1,6 @@
 import { AlertCircle, CheckCircle, Info, XCircle } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
+import { Button } from "../../../components/ui/button"
 import type { ToastVariant } from "./toast"
 import { useToast } from "./ToastContext"
 

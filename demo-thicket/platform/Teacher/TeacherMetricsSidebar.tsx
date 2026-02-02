@@ -1,9 +1,9 @@
-import { router } from "@thicket/shims/inertia-react"
+import { router } from "../../shims/inertia-react"
 import { BookOpen, DollarSign, Edit, Megaphone, TrendingUp, Users } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { Button } from "@thicket/components/ui/button"
-import type { Course } from "@thicket/types"
+import { Badge } from "../../components/ui/badge"
+import { Button } from "../../components/ui/button"
+import type { Course } from "../../types"
 
 interface TeacherMetricsSidebarProps {
   course: Course

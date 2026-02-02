@@ -1,5 +1,5 @@
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 interface MessageFormProps {
   subject: string
@@ -14,7 +14,7 @@ interface MessageFormProps {
 
 const messageFormMeta: GalleryComponentMeta = {
     id: 'messages/message-form',
-  sourceId: '@thicket/platform/MessageComposer/MessageForm#MessageForm',
+  sourceId: '../../platform/MessageComposer/MessageForm#MessageForm',
   status: 'archive',
 }
 

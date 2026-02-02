@@ -1,6 +1,6 @@
-import { CourseHero } from "@thicket/components/course-hero"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { CourseHero } from "../../components/course-hero"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 const sampleCourseHeroProps = {
   title: "Ancient Civilizations: A Deep Dive",
@@ -14,7 +14,7 @@ const sampleCourseHeroProps = {
 
 export const courseHeroMeta: GalleryComponentMeta = {
   id: "landing.course-hero",
-  sourceId: "@thicket/components/course-hero#CourseHero",
+  sourceId: "../../components/course-hero#CourseHero",
   status: "prod",
 }
 

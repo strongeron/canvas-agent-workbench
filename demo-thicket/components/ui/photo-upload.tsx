@@ -1,7 +1,7 @@
 import { Upload, X } from "lucide-react"
 import { useRef, useState } from "react"
 
-import { UserAvatar } from "@thicket/components/ui/user-avatar"
+import { UserAvatar } from "./user-avatar"
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl"
 

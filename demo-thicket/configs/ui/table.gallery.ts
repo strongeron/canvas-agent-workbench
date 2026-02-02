@@ -1,10 +1,10 @@
-import type { TableProps } from "@thicket/components/ui/table"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { TableProps } from "../../components/ui/table"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const tableMeta: GalleryComponentMeta = {
     id: 'ui/table',
-  sourceId: '@thicket/components/ui/table#TableProps',
+  sourceId: '../../components/ui/table#TableProps',
   status: 'archive',
 }
 

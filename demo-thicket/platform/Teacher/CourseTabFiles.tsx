@@ -1,12 +1,12 @@
-import { router } from "@thicket/shims/inertia-react"
+import { router } from "../../shims/inertia-react"
 import { Download, File, FileText, FileType, Image, Trash2, Upload, X } from "lucide-react"
 import { useRef, useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { Textarea } from "@thicket/components/ui/textarea"
-import { useToast } from "@thicket/hooks/useToast"
-import { deleteCourseFile, formatFileSize, getCourseFiles, uploadCourseFile } from "@thicket/data/course-files"
-import type { CourseFile } from "@thicket/types"
+import { Button } from "../../components/ui/button"
+import { Textarea } from "../../components/ui/textarea"
+import { useToast } from "../../hooks/useToast"
+import { deleteCourseFile, formatFileSize, getCourseFiles, uploadCourseFile } from "../../data/course-files"
+import type { CourseFile } from "../../types"
 
 interface CourseTabFilesProps {
   courseId: number

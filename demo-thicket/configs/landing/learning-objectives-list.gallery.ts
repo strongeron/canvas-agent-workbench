@@ -1,6 +1,6 @@
-import { LearningObjectivesList } from "@thicket/components/learning-objectives-list"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { LearningObjectivesList } from "../../components/learning-objectives-list"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 const objectives = [
   "Analyze primary sources with a critical lens",
@@ -11,7 +11,7 @@ const objectives = [
 
 export const learningObjectivesListMeta: GalleryComponentMeta = {
   id: "landing.learning-objectives-list",
-  sourceId: "@thicket/components/learning-objectives-list#LearningObjectivesList",
+  sourceId: "../../components/learning-objectives-list#LearningObjectivesList",
   status: "prod",
 }
 

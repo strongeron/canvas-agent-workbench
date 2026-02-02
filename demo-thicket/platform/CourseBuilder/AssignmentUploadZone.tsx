@@ -7,8 +7,8 @@ import {
   simulateImageUpload,
   validateDocumentFile,
   validateImageFile,
-} from "@thicket/platform/utils/fileUpload"
-import type { Assignment } from "@thicket/types"
+} from "../utils/fileUpload"
+import type { Assignment } from "../../types"
 
 interface AssignmentUploadZoneProps {
   assignments: Assignment[]

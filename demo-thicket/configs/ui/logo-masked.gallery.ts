@@ -1,9 +1,9 @@
 import type { GalleryEntry } from '../../registry/types'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 const logoMaskedMeta: GalleryComponentMeta = {
   id: 'ui/logo-masked',
-  sourceId: '@thicket/components/ui/logo-masked#default',
+  sourceId: '../../components/ui/logo-masked#default',
   status: 'archive',
 }
 

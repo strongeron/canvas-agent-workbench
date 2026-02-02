@@ -1,5 +1,5 @@
-import { Input } from "@thicket/components/ui/input"
-import { Textarea } from "@thicket/components/ui/textarea"
+import { Input } from "../../components/ui/input"
+import { Textarea } from "../../components/ui/textarea"
 
 interface MessageFormProps {
   subject: string

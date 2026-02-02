@@ -1,11 +1,11 @@
-import type { ButtonProps } from "@thicket/components/ui/button"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import { propSchemas } from "@thicket/platform/gallery/registry/schema-helpers"
+import type { ButtonProps } from "../../components/ui/button"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import { propSchemas } from "../../platform/gallery/registry/schema-helpers"
 
 export const buttonMeta: GalleryComponentMeta = {
   id: 'ui/button',
-  sourceId: '@thicket/components/ui/button#Button',
+  sourceId: '../../components/ui/button#Button',
   status: 'prod',
 }
 

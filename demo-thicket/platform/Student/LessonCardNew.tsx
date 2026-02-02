@@ -1,23 +1,23 @@
-import { Link } from "@thicket/shims/inertia-react"
+import { Link } from "../../shims/inertia-react"
 import { format, formatDistanceToNow, parseISO } from "date-fns"
 import { Calendar, CircleCheck, Clock, ExternalLink, Lock, PlayCircle, Video } from "lucide-react"
 
-import { Badge } from "@thicket/components/ui/badge"
-import { Button } from "@thicket/components/ui/button"
-import { CourseCover } from "@thicket/components/ui/course-cover"
+import { Badge } from "../../components/ui/badge"
+import { Button } from "../../components/ui/button"
+import { CourseCover } from "../../components/ui/course-cover"
 import {
   FilesList,
   ObjectivesList,
   TimezoneConversionBadge,
   TopicsList,
-} from "@thicket/platform/shared-lesson-card-primitives"
+} from "../shared-lesson-card-primitives"
 import {
   type LessonStatus,
   getCTAConfig,
   getLessonDetailedStatus,
-} from "@thicket/platform/utils/lessonHelpers"
-import { formatWithTimezoneAbbr } from "@thicket/platform/utils/timezoneHelpers"
-import type { Assignment } from "@thicket/types"
+} from "../utils/lessonHelpers"
+import { formatWithTimezoneAbbr } from "../utils/timezoneHelpers"
+import type { Assignment } from "../../types"
 
 export type LessonCardMode = "dashboard" | "schedule" | "course-details" | "hero"
 

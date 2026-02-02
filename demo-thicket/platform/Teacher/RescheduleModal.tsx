@@ -2,11 +2,11 @@ import { format } from "date-fns"
 import { Calendar, Clock } from "lucide-react"
 import { useState } from "react"
 
-import { Button } from "@thicket/components/ui/button"
-import { DatePicker } from "@thicket/components/ui/date-picker"
-import { Modal } from "@thicket/components/ui/modal/"
-import { TimePicker } from "@thicket/components/ui/time-picker"
-import type { ScheduledLesson } from "@thicket/platform/utils/scheduleUtils"
+import { Button } from "../../components/ui/button"
+import { DatePicker } from "../../components/ui/date-picker"
+import { Modal } from "../../components/ui/modal"
+import { TimePicker } from "../../components/ui/time-picker"
+import type { ScheduledLesson } from "../utils/scheduleUtils"
 
 export interface RescheduleModalProps {
   lesson: ScheduledLesson

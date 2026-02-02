@@ -1,10 +1,10 @@
-import { TeacherFAQSection } from "@thicket/components/teacher-faq-section"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { TeacherFAQSection } from "../../components/teacher-faq-section"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export const teacherFaqSectionMeta: GalleryComponentMeta = {
   id: "landing.teacher-faq-section",
-  sourceId: "@thicket/components/teacher-faq-section#TeacherFAQSection",
+  sourceId: "../../components/teacher-faq-section#TeacherFAQSection",
   status: "prod",
 }
 

@@ -1,12 +1,12 @@
-import type { AssignmentUploadZone } from "@thicket/platform/CourseBuilder/AssignmentUploadZone"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { AssignmentUploadZone } from "../../platform/CourseBuilder/AssignmentUploadZone"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
 type AssignmentUploadZoneProps = React.ComponentProps<typeof AssignmentUploadZone>
 
 const assignmentUploadZoneMeta: GalleryComponentMeta = {
     id: 'course-builder/assignment-upload-zone',
-  sourceId: '@thicket/platform/CourseBuilder/AssignmentUploadZone#AssignmentUploadZone',
+  sourceId: '../../platform/CourseBuilder/AssignmentUploadZone#AssignmentUploadZone',
   status: 'archive',
 }
 

@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react"
 import { CreditCard, ExternalLink, Settings } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
+import { Button } from "../../components/ui/button"
 
 export type BillingCTAAction = "upgrade" | "subscribe" | "manage" | "connect-stripe"
 export type BillingCTAStatus = "active" | "inactive" | "trial"

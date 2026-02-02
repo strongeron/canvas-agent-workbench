@@ -1,4 +1,4 @@
-import type { Course } from "@thicket/types"
+import type { Course } from "../types"
 
 import { CATEGORIES } from "./categories"
 import { INSTRUCTORS } from "./instructors"

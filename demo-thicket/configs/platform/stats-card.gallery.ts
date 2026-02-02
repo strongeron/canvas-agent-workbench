@@ -1,14 +1,14 @@
 import type { ComponentProps } from 'react'
 
-import type { StatsCard } from '@thicket/platform/StatsCard'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { StatsCard } from '../../platform/StatsCard'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type StatsCardProps = ComponentProps<typeof StatsCard>
 
 export const statsCardMeta: GalleryComponentMeta = {
   id: 'platform/stats-card',
-  sourceId: '@thicket/platform/StatsCard#StatsCard',
+  sourceId: '../../platform/StatsCard#StatsCard',
   status: 'prod',
 }
 

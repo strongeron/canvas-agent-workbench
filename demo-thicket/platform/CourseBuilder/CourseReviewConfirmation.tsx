@@ -1,6 +1,6 @@
 import { CheckCircle2, Clock, FileText } from "lucide-react"
 
-import { Button } from "@thicket/components/ui/button"
+import { Button } from "../../components/ui/button"
 
 interface CourseReviewConfirmationProps {
   courseTitle: string

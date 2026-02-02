@@ -1,13 +1,13 @@
-import { UnpublishCourseModal, type UnpublishCourseModalProps } from '@thicket/platform/UnpublishCourseModal'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import { GALLERY_COURSES } from "@thicket/platform/gallery/mocks/galleryData"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { UnpublishCourseModal, type UnpublishCourseModalProps } from '../../platform/UnpublishCourseModal'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import { GALLERY_COURSES } from "../../platform/gallery/mocks/galleryData"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 export { UnpublishCourseModal }
 
 export const unpublishCourseModalMeta: GalleryComponentMeta = {
   id: 'platform/unpublish-course-modal',
-  sourceId: '@thicket/platform/UnpublishCourseModal#UnpublishCourseModal',
+  sourceId: '../../platform/UnpublishCourseModal#UnpublishCourseModal',
   status: 'prod',
 }
 

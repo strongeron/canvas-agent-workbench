@@ -1,5 +1,5 @@
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
-import type { GalleryEntry } from '@thicket/platform/gallery/registry/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
+import type { GalleryEntry } from '../../platform/gallery/registry/types'
 
 interface DayOfWeekFilterProps {
   variant?: 'dropdown' | 'horizontal'
@@ -10,7 +10,7 @@ interface DayOfWeekFilterProps {
 
 export const dayOfWeekFilterMeta: GalleryComponentMeta = {
   id: 'filters/day-of-week-filter',
-  sourceId: '@thicket/components/day-of-week-filter#DayOfWeekFilter',
+  sourceId: '../../components/day-of-week-filter#DayOfWeekFilter',
   status: 'prod',
 }
 

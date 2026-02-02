@@ -1,18 +1,18 @@
-import type { LearningObjectivesForm } from "@thicket/platform/CourseBuilder/LearningObjectivesForm"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
+import type { LearningObjectivesForm } from "../../platform/CourseBuilder/LearningObjectivesForm"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
 
 type LearningObjectivesFormProps = React.ComponentProps<typeof LearningObjectivesForm>
 
 const learningObjectivesFormMeta: GalleryComponentMeta = {
   id: "course-builder/learning-objectives-form",
-  sourceId: "@thicket/platform/CourseBuilder/LearningObjectivesForm#LearningObjectivesForm",
+  sourceId: "../../platform/CourseBuilder/LearningObjectivesForm#LearningObjectivesForm",
   status: 'prod',
 }
 
 export const learningObjectivesFormGalleryEntry: GalleryEntry<LearningObjectivesFormProps> = {
   name: 'LearningObjectivesForm',
-  importPath: '@thicket/platform/CourseBuilder/LearningObjectivesForm',
+  importPath: '../../platform/CourseBuilder/LearningObjectivesForm',
   category: 'Course Management',
   id: learningObjectivesFormMeta.id,
   meta: learningObjectivesFormMeta,

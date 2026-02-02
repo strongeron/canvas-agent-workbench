@@ -1,13 +1,13 @@
-import type { CourseStatusSelector } from '@thicket/platform/CourseBuilder/CourseStatusSelector'
+import type { CourseStatusSelector } from '../../platform/CourseBuilder/CourseStatusSelector'
 
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 type CourseStatusSelectorProps = React.ComponentProps<typeof CourseStatusSelector>
 
 export const courseStatusSelectorMeta: GalleryComponentMeta = {
   id: 'teacher/course-status-selector',
-  sourceId: '@thicket/platform/CourseBuilder/CourseStatusSelector#CourseStatusSelector',
+  sourceId: '../../platform/CourseBuilder/CourseStatusSelector#CourseStatusSelector',
   status: 'prod',
 }
 

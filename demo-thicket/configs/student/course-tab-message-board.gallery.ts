@@ -1,12 +1,12 @@
-import type { CourseTabMessageBoardProps } from '@thicket/platform/Student/CourseTabMessageBoard'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { CourseTabMessageBoardProps } from '../../platform/Student/CourseTabMessageBoard'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import { GALLERY_STUDENTS } from '@thicket/platform/gallery/mocks/galleryData'
+import { GALLERY_STUDENTS } from '../../platform/gallery/mocks/galleryData'
 import type { GalleryEntry } from '../../registry/types'
 
 const courseTabMessageBoardMeta: GalleryComponentMeta = {
     id: 'student/course-tab-message-board',
-  sourceId: '@thicket/platform/Student/CourseTabMessageBoard#CourseTabMessageBoardProps',
+  sourceId: '../../platform/Student/CourseTabMessageBoard#CourseTabMessageBoardProps',
   status: 'archive',
 }
 

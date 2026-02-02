@@ -1,7 +1,7 @@
-import { CourseSchedule } from "@thicket/components/course-schedule"
-import type Lesson from "@thicket/types/serializers/Lesson"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { CourseSchedule } from "../../components/course-schedule"
+import type Lesson from "../../types/serializers/Lesson"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 const sampleCurriculum: Lesson[] = [
   {
@@ -36,7 +36,7 @@ const sampleCurriculum: Lesson[] = [
 
 export const courseScheduleMeta: GalleryComponentMeta = {
   id: "landing.course-schedule",
-  sourceId: "@thicket/components/course-schedule#CourseSchedule",
+  sourceId: "../../components/course-schedule#CourseSchedule",
   status: "prod",
 }
 

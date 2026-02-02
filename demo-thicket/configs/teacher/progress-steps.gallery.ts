@@ -1,13 +1,13 @@
-import type { ProgressSteps } from '@thicket/platform/CourseBuilder/ProgressSteps'
+import type { ProgressSteps } from '../../platform/CourseBuilder/ProgressSteps'
 
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 type ProgressStepsProps = React.ComponentProps<typeof ProgressSteps>
 
 export const progressStepsMeta: GalleryComponentMeta = {
   id: 'teacher/progress-steps',
-  sourceId: '@thicket/platform/CourseBuilder/ProgressSteps#ProgressSteps',
+  sourceId: '../../platform/CourseBuilder/ProgressSteps#ProgressSteps',
   status: 'prod',
 }
 

@@ -1,6 +1,6 @@
-import { AnnouncementComposerModal } from "@thicket/platform/AnnouncementComposerModal"
-import type { GalleryComponentMeta } from "@thicket/platform/gallery/types"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import { AnnouncementComposerModal } from "../../platform/AnnouncementComposerModal"
+import type { GalleryComponentMeta } from "../../platform/gallery/types"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type AnnouncementComposerModalProps = React.ComponentProps<typeof AnnouncementComposerModal>
 
@@ -8,7 +8,7 @@ export { AnnouncementComposerModal }
 
 export const announcementComposerModalMeta: GalleryComponentMeta = {
   id: 'platform/announcement-composer-modal',
-  sourceId: '@thicket/platform/AnnouncementComposerModal#AnnouncementComposerModal',
+  sourceId: '../../platform/AnnouncementComposerModal#AnnouncementComposerModal',
   status: 'prod',
 }
 

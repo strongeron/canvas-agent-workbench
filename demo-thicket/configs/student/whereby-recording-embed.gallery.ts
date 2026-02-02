@@ -1,11 +1,11 @@
-import type { WherebyRecordingEmbedProps } from '@thicket/platform/Student/WherebyRecordingEmbed'
+import type { WherebyRecordingEmbedProps } from '../../platform/Student/WherebyRecordingEmbed'
 
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 import type { GalleryEntry } from '../../registry/types'
 
 export const wherebyRecordingEmbedMeta: GalleryComponentMeta = {
   id: 'student/whereby-recording-embed',
-  sourceId: '@thicket/platform/Student/WherebyRecordingEmbed#WherebyRecordingEmbed',
+  sourceId: '../../platform/Student/WherebyRecordingEmbed#WherebyRecordingEmbed',
   status: 'prod',
 }
 

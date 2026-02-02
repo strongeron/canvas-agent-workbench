@@ -1,9 +1,9 @@
 import type { ComponentProps } from 'react'
-import type { GalleryComponentMeta } from '@thicket/platform/gallery/types'
+import type { GalleryComponentMeta } from '../../platform/gallery/types'
 
-import type { StudentCard } from '@thicket/platform/StudentCard'
-import { GALLERY_STUDENTS } from "@thicket/platform/gallery/mocks/galleryData"
-import type { GalleryEntry } from "@thicket/platform/gallery/registry/types"
+import type { StudentCard } from '../../platform/StudentCard'
+import { GALLERY_STUDENTS } from "../../platform/gallery/mocks/galleryData"
+import type { GalleryEntry } from "../../platform/gallery/registry/types"
 
 type StudentCardProps = ComponentProps<typeof StudentCard>
 
@@ -13,7 +13,7 @@ type StudentCardProps = ComponentProps<typeof StudentCard>
  */
 const studentCardMeta: GalleryComponentMeta = {
     id: 'platform/student-card',
-  sourceId: '@thicket/platform/StudentCard#StudentCard',
+  sourceId: '../../platform/StudentCard#StudentCard',
   status: 'archive',
 }
 
