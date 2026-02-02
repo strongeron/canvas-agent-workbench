@@ -1,4 +1,4 @@
-import { Link, router } from "@inertiajs/react"
+import { Link, router } from "@thicket/shims/inertia-react"
 import type { LucideIcon } from "lucide-react"
 import { Bell, CheckCircle, ShoppingCart, Video } from "lucide-react"
 

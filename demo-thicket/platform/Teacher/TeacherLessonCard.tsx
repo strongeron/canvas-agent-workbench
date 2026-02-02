@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react"
+import { Link } from "@thicket/shims/inertia-react"
 import { formatDistanceToNow, parseISO } from "date-fns"
 import { Clock, Users } from "lucide-react"
 

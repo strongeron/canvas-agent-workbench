@@ -1,4 +1,4 @@
-import { Link, router, usePage } from "@inertiajs/react"
+import { Link, router, usePage } from "@thicket/shims/inertia-react"
 import { Archive, ArchiveX, Copy, Edit, Eye, Globe, MoreVertical, Users } from "lucide-react"
 
 import { Badge } from "@thicket/components/ui/badge"

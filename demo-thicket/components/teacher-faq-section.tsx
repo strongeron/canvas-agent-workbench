@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react"
+import { Link } from "@thicket/shims/inertia-react"
 
 import { Accordion, type AccordionItem } from "@thicket/components/ui/accordion"
 import { contacts_path } from "@thicket/routes"

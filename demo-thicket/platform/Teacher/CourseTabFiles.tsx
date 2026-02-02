@@ -1,4 +1,4 @@
-import { router } from "@inertiajs/react"
+import { router } from "@thicket/shims/inertia-react"
 import { Download, File, FileText, FileType, Image, Trash2, Upload, X } from "lucide-react"
 import { useRef, useState } from "react"
 

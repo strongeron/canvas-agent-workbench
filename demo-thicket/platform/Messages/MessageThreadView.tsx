@@ -1,4 +1,4 @@
-import { router } from "@inertiajs/react"
+import { router } from "@thicket/shims/inertia-react"
 import { ChevronDown, ChevronUp, Megaphone, Send, Users } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 

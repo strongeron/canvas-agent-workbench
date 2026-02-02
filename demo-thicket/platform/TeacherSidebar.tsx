@@ -1,4 +1,4 @@
-import { usePage } from "@inertiajs/react"
+import { usePage } from "@thicket/shims/inertia-react"
 import { BookOpen, Calendar, Compass, DollarSign, Home, MessageSquare, Settings, Users } from "lucide-react"
 import { useMemo } from "react"
 

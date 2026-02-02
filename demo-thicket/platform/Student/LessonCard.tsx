@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react"
+import { Link } from "@thicket/shims/inertia-react"
 import { Calendar, Circle, CircleCheck, Clock, Download, FileText, Lock, PlayCircle, Video } from "lucide-react"
 
 import { Badge } from "@thicket/components/ui/badge"

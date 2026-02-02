@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react"
+import { Link } from "@thicket/shims/inertia-react"
 import { ChevronRight } from "lucide-react"
 
 interface BreadcrumbItem {

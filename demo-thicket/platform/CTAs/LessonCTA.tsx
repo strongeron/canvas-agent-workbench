@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react"
+import { Link } from "@thicket/shims/inertia-react"
 import { Clock, Lock, PlayCircle, Video } from "lucide-react"
 
 import { Button } from "@thicket/components/ui/button"

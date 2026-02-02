@@ -1,4 +1,4 @@
-import { router, usePage } from "@inertiajs/react"
+import { router, usePage } from "@thicket/shims/inertia-react"
 import type { LucideIcon } from "lucide-react"
 import {
   BadgeCheck,

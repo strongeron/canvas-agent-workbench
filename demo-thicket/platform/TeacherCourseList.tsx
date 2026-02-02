@@ -1,4 +1,4 @@
-import { router, usePage } from "@inertiajs/react"
+import { router, usePage } from "@thicket/shims/inertia-react"
 import { useMemo, useState } from "react"
 
 import { useToast } from "@thicket/hooks/useToast"

@@ -1,4 +1,4 @@
-import { router } from "@inertiajs/react"
+import { router } from "@thicket/shims/inertia-react"
 import { ArrowRight, BookOpen, Clock, DollarSign, Heart, MessageSquare, Users } from "lucide-react"
 
 import { Button } from "@thicket/components/ui/button"

@@ -1,4 +1,4 @@
-import { Link, usePage } from "@inertiajs/react"
+import { Link, usePage } from "@thicket/shims/inertia-react"
 import { Settings } from "lucide-react"
 
 import { Tooltip } from "@thicket/components/ui/tooltip"

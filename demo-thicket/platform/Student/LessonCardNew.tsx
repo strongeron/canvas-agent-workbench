@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react"
+import { Link } from "@thicket/shims/inertia-react"
 import { format, formatDistanceToNow, parseISO } from "date-fns"
 import { Calendar, CircleCheck, Clock, ExternalLink, Lock, PlayCircle, Video } from "lucide-react"
 

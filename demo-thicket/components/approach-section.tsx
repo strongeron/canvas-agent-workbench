@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react"
+import { Link } from "@thicket/shims/inertia-react"
 import { useEffect, useRef, useState } from "react"
 
 import { contacts_path } from "@thicket/routes"

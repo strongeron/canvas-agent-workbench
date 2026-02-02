@@ -1,4 +1,4 @@
-import { Link, router, usePage } from "@inertiajs/react"
+import { Link, router, usePage } from "@thicket/shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { Menu, X } from "lucide-react"
 import { useState } from "react"

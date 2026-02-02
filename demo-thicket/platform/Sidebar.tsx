@@ -1,4 +1,4 @@
-import { Link, usePage } from "@inertiajs/react"
+import { Link, usePage } from "@thicket/shims/inertia-react"
 import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 
 import { Badge } from "@thicket/components/ui/badge"

@@ -1,4 +1,4 @@
-import { Link, router } from "@inertiajs/react"
+import { Link, router } from "@thicket/shims/inertia-react"
 import { CheckCircle2, GraduationCap, Settings } from "lucide-react"
 import { useEffect, useState } from "react"
 

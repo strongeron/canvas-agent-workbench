@@ -1,4 +1,4 @@
-import { router } from "@inertiajs/react"
+import { router } from "@thicket/shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { Sparkles } from "lucide-react"
 

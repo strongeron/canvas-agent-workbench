@@ -1,4 +1,4 @@
-import { usePage } from "@inertiajs/react"
+import { usePage } from "@thicket/shims/inertia-react"
 import { Mail } from "lucide-react"
 import { useState } from "react"
 

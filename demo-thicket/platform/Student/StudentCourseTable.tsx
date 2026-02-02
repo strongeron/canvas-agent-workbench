@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react"
+import { Link } from "@thicket/shims/inertia-react"
 import { format } from "date-fns"
 import { BookOpen } from "lucide-react"
 

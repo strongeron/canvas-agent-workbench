@@ -1,4 +1,4 @@
-import { Form, router, usePage } from "@inertiajs/react"
+import { Form, router, usePage } from "@thicket/shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { useEffect } from "react"
 

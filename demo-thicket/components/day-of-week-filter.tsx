@@ -1,4 +1,4 @@
-import { router, usePage } from "@inertiajs/react"
+import { router, usePage } from "@thicket/shims/inertia-react"
 import { Calendar, ChevronDown, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 

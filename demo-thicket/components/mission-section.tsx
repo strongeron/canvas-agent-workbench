@@ -1,4 +1,4 @@
-import { router } from "@inertiajs/react"
+import { router } from "@thicket/shims/inertia-react"
 
 import { Button } from "@thicket/components/ui/button"
 import { LogoMasked } from "@thicket/components/ui/logo-masked"

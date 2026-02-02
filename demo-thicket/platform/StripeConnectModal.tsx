@@ -1,4 +1,4 @@
-import { router } from "@inertiajs/react"
+import { router } from "@thicket/shims/inertia-react"
 import { CheckCircle2, CreditCard } from "lucide-react"
 import { useState } from "react"
 

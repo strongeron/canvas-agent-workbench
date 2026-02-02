@@ -1,4 +1,4 @@
-import { Link } from "@inertiajs/react"
+import { Link } from "@thicket/shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { BookOpen, Clock } from "lucide-react"
 

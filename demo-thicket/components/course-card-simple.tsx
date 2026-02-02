@@ -1,4 +1,4 @@
-import { Link, router } from "@inertiajs/react"
+import { Link, router } from "@thicket/shims/inertia-react"
 import { track } from "@plausible-analytics/tracker"
 import { BookOpen, Clock } from "lucide-react"
 import type { MouseEvent } from "react"
