@@ -1,7 +1,6 @@
 import { Link } from "@inertiajs/react"
 import { Instagram, Twitter } from "lucide-react"
 
-import Logo from "@thicket/assets/logos/thicket-logo.svg?react"
 import {
   about_us_path,
   contacts_path,
@@ -37,7 +36,7 @@ export function Footer() {
               href={root_path()}
               className="cursor-pointer transition-opacity hover:opacity-80"
             >
-              <Logo className="h-6 w-auto" />
+          <span className="text-sm font-semibold text-brand-700">Brand</span>
             </Link>
 
             <div className="flex items-center gap-5 text-base">

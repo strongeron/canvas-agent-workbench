@@ -3,7 +3,6 @@ import { track } from "@plausible-analytics/tracker"
 import { Menu, X } from "lucide-react"
 import { useState } from "react"
 
-import Logo from "@thicket/assets/logos/thicket-logo.svg?react"
 import { Button } from "@thicket/components/ui/button"
 import { about_us_path, contacts_path, root_path, teach_path } from "@thicket/routes"
 
@@ -46,7 +45,7 @@ export function Header() {
               className="cursor-pointer"
               onClick={closeMobileMenu}
             >
-              <Logo className="h-6 w-auto" />
+              <span className="text-sm font-semibold text-brand-700">Brand</span>
             </Link>
           </div>
 

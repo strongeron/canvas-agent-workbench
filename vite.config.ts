@@ -9,11 +9,24 @@ const __dirname = dirname(__filename)
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './'),
-      '@thicket': path.resolve(__dirname, './demo-thicket'),
-      '@inertiajs/react': path.resolve(__dirname, './demo-thicket/shims/inertia-react.tsx'),
-    },
+    alias: [
+      {
+        find: '@inertiajs/react',
+        replacement: path.resolve(__dirname, './demo-thicket/shims/inertia-react.tsx'),
+      },
+      {
+        find: /^@thicket\/(.*)$/,
+        replacement: path.resolve(__dirname, './demo-thicket/$1'),
+      },
+      {
+        find: '@thicket',
+        replacement: path.resolve(__dirname, './demo-thicket'),
+      },
+      {
+        find: /^@\/(.*)$/,
+        replacement: path.resolve(__dirname, './$1'),
+      },
+    ],
   },
   server: {
     fs: {
