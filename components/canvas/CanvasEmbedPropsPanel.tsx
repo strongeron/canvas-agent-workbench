@@ -5,6 +5,10 @@ interface CanvasEmbedPropsPanelProps {
   title?: string
   allow?: string
   sandbox?: string
+  embedOrigin?: string
+  embedStateVersion?: number
+  hasEmbedState?: boolean
+  onRequestState?: () => void
   onChange: (updates: { url?: string; title?: string; allow?: string; sandbox?: string }) => void
   onClose: () => void
 }
@@ -14,6 +18,10 @@ export function CanvasEmbedPropsPanel({
   title,
   allow,
   sandbox,
+  embedOrigin,
+  embedStateVersion,
+  hasEmbedState,
+  onRequestState,
   onChange,
   onClose,
 }: CanvasEmbedPropsPanelProps) {
@@ -91,6 +99,36 @@ export function CanvasEmbedPropsPanel({
 
           <div className="rounded-md bg-surface-50 px-3 py-2 text-xs text-muted-foreground">
             Use Interact mode to click and scroll inside embeds.
+          </div>
+
+          <div className="rounded-md border border-default bg-white px-3 py-2 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[11px] font-semibold text-foreground">Embed State</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {hasEmbedState ? "State captured" : "No state captured yet"}
+                </div>
+              </div>
+              {onRequestState && (
+                <button
+                  type="button"
+                  onClick={onRequestState}
+                  className="rounded-md border border-default px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-100"
+                >
+                  Sync State
+                </button>
+              )}
+            </div>
+            {embedOrigin && (
+              <div className="mt-2 text-[10px] text-muted-foreground">
+                Origin: {embedOrigin}
+              </div>
+            )}
+            {embedStateVersion && (
+              <div className="mt-1 text-[10px] text-muted-foreground">
+                Protocol v{embedStateVersion}
+              </div>
+            )}
           </div>
         </div>
       </div>

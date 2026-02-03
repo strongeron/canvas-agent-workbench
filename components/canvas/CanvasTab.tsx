@@ -273,12 +273,30 @@ export function CanvasTab({
     [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
+  const requestEmbedStates = useCallback(async () => {
+    if (typeof window === "undefined") return
+    const requestId = `embed-state-${Date.now()}`
+    window.dispatchEvent(
+      new CustomEvent("canvas:request-embed-state", { detail: { requestId } })
+    )
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }, [])
+
+  const requestSingleEmbedState = useCallback((targetId: string) => {
+    if (typeof window === "undefined") return
+    const requestId = `embed-state-${Date.now()}`
+    window.dispatchEvent(
+      new CustomEvent("canvas:request-embed-state", { detail: { requestId, targetId } })
+    )
+  }, [])
+
   // Scene operations
   const handleSaveScene = useCallback(
-    (name: string) => {
+    async (name: string) => {
+      await requestEmbedStates()
       saveScene(name, items, groups)
     },
-    [saveScene, items, groups]
+    [requestEmbedStates, saveScene, items, groups]
   )
 
   const handleLoadScene = useCallback(
@@ -484,6 +502,10 @@ export function CanvasTab({
               title={selectedEmbedItem.title}
               allow={selectedEmbedItem.allow}
               sandbox={selectedEmbedItem.sandbox}
+              embedOrigin={selectedEmbedItem.embedOrigin}
+              embedStateVersion={selectedEmbedItem.embedStateVersion}
+              hasEmbedState={selectedEmbedItem.embedState !== undefined}
+              onRequestState={() => requestSingleEmbedState(selectedEmbedItem.id)}
               onChange={(updates) => updateItem(selectedEmbedItem.id, updates)}
               onClose={handleClosePropsPanel}
             />

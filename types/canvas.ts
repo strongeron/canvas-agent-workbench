@@ -24,6 +24,12 @@ export interface CanvasEmbedItem extends CanvasItemBase {
   title?: string
   allow?: string
   sandbox?: string
+  /** Optional persisted iframe state (requires embed to support postMessage protocol) */
+  embedState?: unknown
+  /** Origin derived from embed URL (used for postMessage) */
+  embedOrigin?: string
+  /** Version of embed state protocol */
+  embedStateVersion?: number
 }
 
 export interface CanvasGroup {
