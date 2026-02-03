@@ -3,6 +3,8 @@ import {
   FolderOpen,
   Group,
   HelpCircle,
+  LayoutGrid,
+  Layers,
   Maximize2,
   Minus,
   MousePointer2,
@@ -40,7 +42,9 @@ interface CanvasToolbarProps {
   onToggleSidebar: () => void
   onToggleHelp: () => void
   onToggleScenes: () => void
+  onToggleLayers: () => void
   onToggleInteractMode: () => void
+  onAddArtboard: () => void
   onGroupSelected: () => void
   onUngroupSelected: () => void
   onDuplicateSelected: () => void
@@ -51,6 +55,7 @@ interface CanvasToolbarProps {
   interactMode: boolean
   sidebarVisible: boolean
   scenesVisible: boolean
+  layersVisible: boolean
   /** Injected Button component */
   Button: React.ComponentType<ButtonComponentProps>
   /** Injected Tooltip component */
@@ -67,7 +72,9 @@ export function CanvasToolbar({
   onToggleSidebar,
   onToggleHelp,
   onToggleScenes,
+  onToggleLayers,
   onToggleInteractMode,
+  onAddArtboard,
   onGroupSelected,
   onUngroupSelected,
   onDuplicateSelected,
@@ -78,6 +85,7 @@ export function CanvasToolbar({
   interactMode,
   sidebarVisible,
   scenesVisible,
+  layersVisible,
   Button,
   Tooltip,
 }: CanvasToolbarProps) {
@@ -163,6 +171,21 @@ export function CanvasToolbar({
           aria-label="Reset view"
         >
           <RotateCcw className="h-5 w-5" />
+        </Button>
+      </Tooltip>
+
+      <div className="h-6 w-px bg-border-default" />
+
+      {/* Add artboard */}
+      <Tooltip content="Add artboard">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onAddArtboard}
+          className={iconButtonClass}
+          aria-label="Add artboard"
+        >
+          <LayoutGrid className="h-5 w-5" />
         </Button>
       </Tooltip>
 
@@ -267,6 +290,20 @@ export function CanvasToolbar({
           aria-pressed={scenesVisible}
         >
           <FolderOpen className="h-5 w-5" />
+        </Button>
+      </Tooltip>
+
+      {/* Layers */}
+      <Tooltip content="Layers panel">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleLayers}
+          className={layersVisible ? activeIconButtonClass : iconButtonClass}
+          aria-label="Toggle layers panel"
+          aria-pressed={layersVisible}
+        >
+          <Layers className="h-5 w-5" />
         </Button>
       </Tooltip>
 

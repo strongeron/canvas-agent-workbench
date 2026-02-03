@@ -41,4 +41,20 @@ This document records the agreed phases and TODOs for canvas persistence and lay
 - [x] Request iframe state before `saveScene`
 - [x] Verify scene export includes embed state
 - [x] Add IndexedDB storage (Phase 2)
-- [ ] Add artboards + layers panel (Phase 3)
+- [x] Add artboards + layers panel (Phase 3)
+
+## Phase 3 Plan (Implementation Order)
+1. Add `CanvasArtboardItem` type and layout metadata in `types/canvas.ts`.
+2. Extend canvas state to support parent/child relationships:
+   - `parentId` on items
+   - `order` for layout ordering
+3. Render artboards in `CanvasWorkspace` with a layout container:
+   - `display: flex` or `grid`
+   - children rendered inside, ignoring absolute position.
+4. Enable drop-to-artboard behavior:
+   - DnD targets for artboards
+   - Assign `parentId` + `order`
+5. Add Layers panel grouped by artboard:
+   - Reorder items within artboard (updates `order`)
+   - Select/highlight items
+6. Optional: layout/page component -> artboard template mapping.

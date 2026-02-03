@@ -16,6 +16,9 @@ function normalizeItem(item: CanvasItem | any): CanvasItem {
   if (item?.type === "embed") {
     return { ...item, type: "embed" }
   }
+  if (item?.type === "artboard") {
+    return { ...item, type: "artboard" }
+  }
   return { ...item, type: "component" }
 }
 
@@ -49,22 +52,21 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
 
   const addItem = useCallback(
     (item: Omit<CanvasItem, "id" | "zIndex">) => {
-      setState((prev) => {
-        const newId = `canvas-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-        return {
-          ...prev,
-          items: [
-            ...prev.items,
-            {
-              ...item,
-              id: newId,
-              zIndex: prev.nextZIndex,
-            },
-          ],
-          nextZIndex: prev.nextZIndex + 1,
-          selectedIds: [newId], // Auto-select the new item
-        }
-      })
+      const newId = `canvas-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      setState((prev) => ({
+        ...prev,
+        items: [
+          ...prev.items,
+          {
+            ...item,
+            id: newId,
+            zIndex: prev.nextZIndex,
+          },
+        ],
+        nextZIndex: prev.nextZIndex + 1,
+        selectedIds: [newId], // Auto-select the new item
+      }))
+      return newId
     },
     [setState]
   )
@@ -83,11 +85,24 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
 
   const removeItem = useCallback(
     (id: string) => {
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.filter((item) => item.id !== id),
-        selectedIds: prev.selectedIds.filter((selectedId) => selectedId !== id),
-      }))
+      setState((prev) => {
+        const target = prev.items.find((item) => item.id === id)
+        const idsToRemove = new Set([id])
+
+        if (target?.type === "artboard") {
+          prev.items.forEach((item) => {
+            if (item.parentId === id) {
+              idsToRemove.add(item.id)
+            }
+          })
+        }
+
+        return {
+          ...prev,
+          items: prev.items.filter((item) => !idsToRemove.has(item.id)),
+          selectedIds: prev.selectedIds.filter((selectedId) => !idsToRemove.has(selectedId)),
+        }
+      })
     },
     [setState]
   )
@@ -268,11 +283,20 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const removeSelected = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      items: prev.items.filter((item) => !prev.selectedIds.includes(item.id)),
-      selectedIds: [],
-    }))
+    setState((prev) => {
+      const idsToRemove = new Set(prev.selectedIds)
+      prev.items.forEach((item) => {
+        if (item.parentId && idsToRemove.has(item.parentId)) {
+          idsToRemove.add(item.id)
+        }
+      })
+
+      return {
+        ...prev,
+        items: prev.items.filter((item) => !idsToRemove.has(item.id)),
+        selectedIds: [],
+      }
+    })
   }, [setState])
 
   const moveSelected = useCallback(

@@ -9,6 +9,7 @@ import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import type { DragData, CanvasScene } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
+import { CanvasLayersPanel } from "./CanvasLayersPanel"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
 import { CanvasScenesPanel } from "./CanvasScenesPanel"
 import { CanvasSidebar } from "./CanvasSidebar"
@@ -120,6 +121,7 @@ export function CanvasTab({
   const [showHelp, setShowHelp] = useState(false)
   const [propsPanelVisible, setPropsPanelVisible] = useState(true)
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
+  const [layersPanelVisible, setLayersPanelVisible] = useState(false)
   const [interactMode, setInteractMode] = useState(false)
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 })
 
@@ -193,7 +195,24 @@ export function CanvasTab({
 
   const toggleSidebar = useCallback(() => setSidebarVisible((prev) => !prev), [])
   const toggleHelp = useCallback(() => setShowHelp((prev) => !prev), [])
-  const toggleScenes = useCallback(() => setScenesPanelVisible((prev) => !prev), [])
+  const toggleScenes = useCallback(() => {
+    setScenesPanelVisible((prev) => {
+      const next = !prev
+      if (next) {
+        setLayersPanelVisible(false)
+      }
+      return next
+    })
+  }, [])
+  const toggleLayers = useCallback(() => {
+    setLayersPanelVisible((prev) => {
+      const next = !prev
+      if (next) {
+        setScenesPanelVisible(false)
+      }
+      return next
+    })
+  }, [])
   const toggleInteractMode = useCallback(() => setInteractMode((prev) => !prev), [])
 
   const handleDimensionsChange = useCallback(
@@ -207,7 +226,8 @@ export function CanvasTab({
   )
 
   const handleFitToView = useCallback(() => {
-    fitToView(items.map((item) => ({ position: item.position, size: item.size })))
+    const topLevelItems = items.filter((item) => item.type === "artboard" || !item.parentId)
+    fitToView(topLevelItems.map((item) => ({ position: item.position, size: item.size })))
   }, [fitToView, items])
 
   const handleDeleteSelected = useCallback(() => {
@@ -221,10 +241,12 @@ export function CanvasTab({
       setShowHelp(false)
     } else if (scenesPanelVisible) {
       setScenesPanelVisible(false)
+    } else if (layersPanelVisible) {
+      setLayersPanelVisible(false)
     } else {
       clearSelection()
     }
-  }, [showHelp, scenesPanelVisible, clearSelection])
+  }, [showHelp, scenesPanelVisible, layersPanelVisible, clearSelection])
 
   // Group selected items
   const handleGroupSelected = useCallback(() => {
@@ -250,6 +272,31 @@ export function CanvasTab({
     }
   }, [selectedIds, duplicateSelected])
 
+  const handleMoveLayer = useCallback(
+    (itemId: string, direction: "up" | "down") => {
+      const target = items.find((item) => item.id === itemId)
+      if (!target?.parentId) return
+
+      const siblings = items
+        .filter((item) => item.parentId === target.parentId && item.type !== "artboard")
+        .map((item, index) => ({ ...item, order: item.order ?? index }))
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+
+      const currentIndex = siblings.findIndex((item) => item.id === itemId)
+      if (currentIndex === -1) return
+
+      const swapIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1
+      if (swapIndex < 0 || swapIndex >= siblings.length) return
+
+      const current = siblings[currentIndex]
+      const swap = siblings[swapIndex]
+
+      updateItem(current.id, { order: swap.order })
+      updateItem(swap.id, { order: current.order })
+    },
+    [items, updateItem]
+  )
+
   const handleAddEmbed = useCallback(
     (url: string) => {
       const embedWidth = 640
@@ -272,6 +319,42 @@ export function CanvasTab({
     },
     [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
+
+  const handleAddArtboard = useCallback(() => {
+    const artboardWidth = 960
+    const artboardHeight = 600
+    const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+    const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+    const artboardCount = items.filter((item) => item.type === "artboard").length
+
+    addItem({
+      type: "artboard",
+      name: `Artboard ${artboardCount + 1}`,
+      position: {
+        x: Math.max(0, centerX - artboardWidth / 2),
+        y: Math.max(0, centerY - artboardHeight / 2),
+      },
+      size: { width: artboardWidth, height: artboardHeight },
+      rotation: 0,
+      background: "white",
+      layout: {
+        display: "flex",
+        direction: "column",
+        align: "start",
+        justify: "start",
+        gap: 16,
+        padding: 24,
+      },
+    })
+  }, [
+    addItem,
+    items,
+    transform.offset.x,
+    transform.offset.y,
+    transform.scale,
+    workspaceSize.height,
+    workspaceSize.width,
+  ])
 
   const requestEmbedStates = useCallback(async () => {
     if (typeof window === "undefined") return
@@ -303,23 +386,48 @@ export function CanvasTab({
     (scene: CanvasScene) => {
       // Clear current canvas and load scene items
       clearCanvas()
-      // Add items from scene with new IDs
-      scene.items.forEach((item) => {
+      const idMap = new Map<string, string>()
+
+      const artboards = scene.items.filter((item) => item.type === "artboard")
+      const otherItems = scene.items.filter((item) => item.type !== "artboard")
+
+      artboards.forEach((item) => {
+        const newId = addItem({
+          type: "artboard",
+          name: item.name,
+          position: { ...item.position },
+          size: { ...item.size },
+          rotation: item.rotation,
+          background: item.background,
+          layout: { ...item.layout },
+        })
+        idMap.set(item.id, newId)
+      })
+
+      otherItems.forEach((item) => {
+        const parentId = item.parentId ? idMap.get(item.parentId) : undefined
+
         if (item.type === "embed") {
-          addItem({
+          const newId = addItem({
             type: "embed",
             url: item.url,
             title: item.title,
             allow: item.allow,
             sandbox: item.sandbox,
+            embedState: item.embedState,
+            embedOrigin: item.embedOrigin,
+            embedStateVersion: item.embedStateVersion,
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            parentId,
+            order: item.order,
           })
+          idMap.set(item.id, newId)
           return
         }
 
-        addItem({
+        const newId = addItem({
           type: "component",
           componentId: item.componentId,
           variantIndex: item.variantIndex,
@@ -327,7 +435,10 @@ export function CanvasTab({
           size: { ...item.size },
           rotation: item.rotation,
           customProps: item.customProps ? { ...item.customProps } : undefined,
+          parentId,
+          order: item.order,
         })
+        idMap.set(item.id, newId)
       })
       // Note: Groups are not preserved when loading a scene currently
       // This could be enhanced to restore group relationships
@@ -364,7 +475,7 @@ export function CanvasTab({
     setActiveDragData(null)
 
     const { active, over } = event
-    if (!over || over.id !== "canvas-workspace") return
+    if (!over) return
 
     const data = active.data.current as DragData | undefined
     if (!data) return
@@ -373,25 +484,52 @@ export function CanvasTab({
     const component = getComponentById(data.componentId)
     if (!component) return
 
-    // Calculate drop position relative to workspace
-    // Use the delta from drag to position the item
-    const dropX = (event.delta.x + 200) / transform.scale - transform.offset.x / transform.scale
-    const dropY = (event.delta.y + 100) / transform.scale - transform.offset.y / transform.scale
-
     // Get smart default size based on component's layoutSize
     const defaultSize = getDefaultSizeForComponent(data.componentId, getComponentById)
 
-    addItem({
-      type: "component",
-      componentId: data.componentId,
-      variantIndex: data.variantIndex,
-      position: { x: Math.max(0, dropX), y: Math.max(0, dropY) },
-      size: defaultSize,
-      rotation: 0,
-    })
+    if (over.id === "canvas-workspace") {
+      // Calculate drop position relative to workspace
+      // Use the delta from drag to position the item
+      const dropX = (event.delta.x + 200) / transform.scale - transform.offset.x / transform.scale
+      const dropY = (event.delta.y + 100) / transform.scale - transform.offset.y / transform.scale
 
-    // Open props panel for the newly added item
-    setPropsPanelVisible(true)
+      addItem({
+        type: "component",
+        componentId: data.componentId,
+        variantIndex: data.variantIndex,
+        position: { x: Math.max(0, dropX), y: Math.max(0, dropY) },
+        size: defaultSize,
+        rotation: 0,
+      })
+
+      // Open props panel for the newly added item
+      setPropsPanelVisible(true)
+      return
+    }
+
+    if (typeof over.id === "string" && over.id.startsWith("artboard-")) {
+      const artboardId = over.id.replace("artboard-", "")
+      const siblings = items.filter(
+        (item) => item.parentId === artboardId && item.type !== "artboard"
+      )
+      const maxOrder = siblings.reduce(
+        (max, item) => Math.max(max, item.order ?? 0),
+        -1
+      )
+
+      addItem({
+        type: "component",
+        componentId: data.componentId,
+        variantIndex: data.variantIndex,
+        position: { x: 0, y: 0 },
+        size: defaultSize,
+        rotation: 0,
+        parentId: artboardId,
+        order: maxOrder + 1,
+      })
+
+      setPropsPanelVisible(true)
+    }
   }
 
   // Get component info for drag overlay
@@ -399,7 +537,8 @@ export function CanvasTab({
   const dragOverlayVariant = dragOverlayComponent?.variants[activeDragData?.variantIndex ?? 0]
 
   // Show props panel for single selection
-  const showPropsPanel = selectedItem && propsPanelVisible && !scenesPanelVisible
+  const showPropsPanel =
+    selectedItem && propsPanelVisible && !scenesPanelVisible && !layersPanelVisible
 
   return (
     <div className="relative flex h-full flex-col">
@@ -415,7 +554,9 @@ export function CanvasTab({
           onToggleSidebar={toggleSidebar}
           onToggleHelp={toggleHelp}
           onToggleScenes={toggleScenes}
+          onToggleLayers={toggleLayers}
           onToggleInteractMode={toggleInteractMode}
+          onAddArtboard={handleAddArtboard}
           onGroupSelected={handleGroupSelected}
           onUngroupSelected={handleUngroupSelected}
           onDuplicateSelected={handleDuplicate}
@@ -426,6 +567,7 @@ export function CanvasTab({
           interactMode={interactMode}
           sidebarVisible={sidebarVisible}
           scenesVisible={scenesPanelVisible}
+          layersVisible={layersPanelVisible}
           Button={Button}
           Tooltip={Tooltip}
         />
@@ -508,6 +650,20 @@ export function CanvasTab({
               onRequestState={() => requestSingleEmbedState(selectedEmbedItem.id)}
               onChange={(updates) => updateItem(selectedEmbedItem.id, updates)}
               onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {layersPanelVisible && (
+            <CanvasLayersPanel
+              items={items}
+              selectedIds={selectedIds}
+              onSelectItem={(id, addToSelection) => {
+                selectItem(id, addToSelection)
+                if (!addToSelection) setPropsPanelVisible(true)
+              }}
+              onMoveLayer={handleMoveLayer}
+              onClose={() => setLayersPanelVisible(false)}
+              getComponentById={getComponentById}
             />
           )}
 

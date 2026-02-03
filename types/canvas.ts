@@ -1,4 +1,4 @@
-export type CanvasItem = CanvasComponentItem | CanvasEmbedItem
+export type CanvasItem = CanvasComponentItem | CanvasEmbedItem | CanvasArtboardItem
 
 export interface CanvasItemBase {
   id: string
@@ -8,6 +8,10 @@ export interface CanvasItemBase {
   zIndex: number
   /** Group ID if this item belongs to a group */
   groupId?: string
+  /** Parent artboard ID if this item is within an artboard */
+  parentId?: string
+  /** Order within a layout container */
+  order?: number
 }
 
 export interface CanvasComponentItem extends CanvasItemBase {
@@ -30,6 +34,21 @@ export interface CanvasEmbedItem extends CanvasItemBase {
   embedOrigin?: string
   /** Version of embed state protocol */
   embedStateVersion?: number
+}
+
+export interface CanvasArtboardItem extends CanvasItemBase {
+  type: "artboard"
+  name: string
+  background?: string
+  layout: {
+    display: "flex" | "grid"
+    direction?: "row" | "column"
+    align?: "start" | "center" | "end" | "stretch"
+    justify?: "start" | "center" | "end" | "between"
+    gap?: number
+    columns?: number
+    padding?: number
+  }
 }
 
 export interface CanvasGroup {

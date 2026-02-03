@@ -6,11 +6,14 @@ import type {
   CanvasItem as CanvasItemType,
   CanvasComponentItem,
   CanvasEmbedItem,
+  CanvasArtboardItem,
   CanvasTransform,
   CanvasGroup,
 } from "../../types/canvas"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
+import { CanvasArtboardItem } from "./CanvasArtboardItem"
 import { CanvasEmbedItem } from "./CanvasEmbedItem"
+import { CanvasLayoutEmbedItem } from "./CanvasLayoutEmbedItem"
 import { CanvasItem } from "./CanvasItem"
 
 interface SelectionBox {
@@ -131,6 +134,103 @@ export function CanvasWorkspace({
     }
   }, [interactMode])
 
+  const artboards = items.filter((item) => item.type === "artboard") as CanvasArtboardItem[]
+  const freeformItems = items.filter(
+    (item) => item.type !== "artboard" && !item.parentId
+  )
+  const sortedArtboards = [...artboards].sort((a, b) => a.zIndex - b.zIndex)
+  const sortedFreeformItems = [...freeformItems].sort((a, b) => a.zIndex - b.zIndex)
+  const selectableItems = [...sortedArtboards, ...sortedFreeformItems]
+
+  const getArtboardChildren = useCallback(
+    (artboardId: string) => {
+      return items
+        .filter(
+          (item): item is CanvasComponentItem | CanvasEmbedItem =>
+            item.type !== "artboard" && item.parentId === artboardId
+        )
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    },
+    [items]
+  )
+
+  const renderLayoutChild = useCallback(
+    (child: CanvasComponentItem | CanvasEmbedItem) => {
+      const isSelected = selectedIds.includes(child.id)
+
+      if (child.type === "embed") {
+        return (
+          <div
+            key={child.id}
+            className="relative"
+            style={{ width: child.size.width, height: child.size.height }}
+          >
+            <CanvasLayoutEmbedItem
+              item={child}
+              isSelected={isSelected}
+              onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
+              onUpdate={(updates) => onUpdateItem(child.id, updates)}
+              interactMode={interactMode}
+            />
+          </div>
+        )
+      }
+
+      const component = getComponentById(child.componentId)
+      const variant = component?.variants[child.variantIndex]
+      const borderClass = isSelected
+        ? "border-2 border-brand-500 ring-4 ring-brand-500/20"
+        : "border border-default"
+
+      return (
+        <div
+          key={child.id}
+          className="relative"
+          style={{ width: child.size.width, height: child.size.height }}
+          onMouseDown={(e) => {
+            if (interactMode) return
+            e.stopPropagation()
+            onSelectItem(child.id, e.shiftKey)
+          }}
+        >
+          <div className={`h-full w-full rounded-lg bg-white shadow-card ${borderClass}`}>
+            <div
+              className={`flex h-full w-full items-center justify-center overflow-hidden rounded-lg px-3 py-3 ${
+                interactMode ? "pointer-events-auto" : "pointer-events-none"
+              }`}
+            >
+              <div className="w-full">
+                {component && variant ? (
+                  <Renderer
+                    componentName={component.name}
+                    importPath={component.importPath}
+                    variant={variant}
+                    allowOverflow={false}
+                    renderMode="canvas"
+                    propsOverride={child.customProps}
+                    showInteractivePanel={false}
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                    Missing component
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )
+    },
+    [
+      selectedIds,
+      interactMode,
+      onSelectItem,
+      onUpdateItem,
+      Renderer,
+      getComponentById,
+    ]
+  )
+
   useEffect(() => {
     if (!interactMode) return
     setIsPanning(false)
@@ -246,7 +346,7 @@ export function CanvasWorkspace({
 
         if (dragDistance > 5) {
           // It was a drag - select items in box
-          const selectedItemIds = items
+          const selectedItemIds = selectableItems
             .filter((item) => itemIntersectsBox(item, selectionBox))
             .map((item) => item.id)
 
@@ -270,7 +370,7 @@ export function CanvasWorkspace({
       isPanning,
       isSelecting,
       selectionBox,
-      items,
+      selectableItems,
       selectedIds,
       itemIntersectsBox,
       onSelectItems,
@@ -371,7 +471,28 @@ export function CanvasWorkspace({
         })}
 
         {/* Canvas items */}
-        {items.map((item) => {
+      {sortedArtboards.map((item) => (
+        <CanvasArtboardItem
+          key={item.id}
+          item={item}
+          isSelected={selectedIds.includes(item.id)}
+          isMultiSelected={selectedIds.length > 1 && selectedIds.includes(item.id)}
+          onSelect={(addToSelection) => {
+            onSelectItem(item.id, addToSelection)
+            onBringToFront(item.id)
+          }}
+          onUpdate={(updates: Partial<Omit<CanvasArtboardItem, "id">>) =>
+            onUpdateItem(item.id, updates)
+          }
+          onBringToFront={() => onBringToFront(item.id)}
+          scale={transform.scale}
+          interactMode={interactMode}
+        >
+          {getArtboardChildren(item.id).map((child) => renderLayoutChild(child))}
+        </CanvasArtboardItem>
+      ))}
+
+      {sortedFreeformItems.map((item) => {
           const commonProps = {
             key: item.id,
             isSelected: selectedIds.includes(item.id),
