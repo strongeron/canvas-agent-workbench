@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { CanvasEmbedItem as CanvasEmbedItemType } from "../../types/canvas"
 
@@ -7,17 +7,27 @@ interface CanvasLayoutEmbedItemProps {
   isSelected: boolean
   onSelect: (addToSelection?: boolean) => void
   onUpdate: (updates: Partial<Omit<CanvasEmbedItemType, "id">>) => void
+  scale: number
   interactMode: boolean
 }
+
+type ResizeHandle = "se"
+
+const MIN_WIDTH = 200
+const MIN_HEIGHT = 120
 
 export function CanvasLayoutEmbedItem({
   item,
   isSelected,
   onSelect,
   onUpdate,
+  scale,
   interactMode,
 }: CanvasLayoutEmbedItemProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const [isResizing, setIsResizing] = useState(false)
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [initialSize, setInitialSize] = useState({ width: 0, height: 0 })
 
   const postToEmbed = useCallback(
     (message: Record<string, unknown>) => {
@@ -79,6 +89,49 @@ export function CanvasLayoutEmbedItem({
       window.removeEventListener("canvas:request-embed-state", handleRequest as EventListener)
   }, [item.id, requestEmbedState])
 
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent, handle: ResizeHandle) => {
+      if (interactMode) return
+      if (handle !== "se") return
+      e.stopPropagation()
+      e.preventDefault()
+      onSelect()
+
+      setIsResizing(true)
+      setDragStart({ x: e.clientX, y: e.clientY })
+      setInitialSize({ width: item.size.width, height: item.size.height })
+    },
+    [interactMode, item.size.height, item.size.width, onSelect]
+  )
+
+  useEffect(() => {
+    if (!isResizing) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dx = (e.clientX - dragStart.x) / scale
+      const dy = (e.clientY - dragStart.y) / scale
+
+      onUpdate({
+        size: {
+          width: Math.max(MIN_WIDTH, initialSize.width + dx),
+          height: Math.max(MIN_HEIGHT, initialSize.height + dy),
+        },
+      })
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [dragStart.x, dragStart.y, initialSize.height, initialSize.width, isResizing, onUpdate, scale])
+
   const borderClass = isSelected
     ? "border-2 border-brand-500 ring-4 ring-brand-500/20"
     : "border border-default"
@@ -129,6 +182,15 @@ export function CanvasLayoutEmbedItem({
           </div>
         )}
       </div>
+
+      {isSelected && !interactMode && (
+        <button
+          type="button"
+          onMouseDown={(e) => handleResizeStart(e, "se")}
+          className="absolute -bottom-1 -right-1 h-3 w-3 cursor-nwse-resize rounded-full border border-brand-400 bg-white shadow-sm hover:bg-brand-100"
+          aria-label="Resize"
+        />
+      )}
     </div>
   )
 }

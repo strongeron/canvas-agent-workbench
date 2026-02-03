@@ -8,6 +8,7 @@ import { useCanvasTransform } from "../../hooks/useCanvasTransform"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import type { DragData, CanvasScene } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
+import { CanvasArtboardPropsPanel } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasLayersPanel } from "./CanvasLayersPanel"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
@@ -131,6 +132,7 @@ export function CanvasTab({
     : null
   const selectedComponentItem = selectedItem?.type === "component" ? selectedItem : null
   const selectedEmbedItem = selectedItem?.type === "embed" ? selectedItem : null
+  const selectedArtboardItem = selectedItem?.type === "artboard" ? selectedItem : null
   const selectedComponent = selectedComponentItem ? getComponentById(selectedComponentItem.componentId) : null
   const selectedVariant = selectedComponent?.variants[selectedComponentItem?.variantIndex ?? 0]
 
@@ -649,6 +651,17 @@ export function CanvasTab({
               hasEmbedState={selectedEmbedItem.embedState !== undefined}
               onRequestState={() => requestSingleEmbedState(selectedEmbedItem.id)}
               onChange={(updates) => updateItem(selectedEmbedItem.id, updates)}
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedArtboardItem && (
+            <CanvasArtboardPropsPanel
+              name={selectedArtboardItem.name}
+              background={selectedArtboardItem.background}
+              layout={selectedArtboardItem.layout}
+              size={selectedArtboardItem.size}
+              onChange={(updates) => updateItem(selectedArtboardItem.id, updates)}
               onClose={handleClosePropsPanel}
             />
           )}

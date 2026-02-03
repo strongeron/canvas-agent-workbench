@@ -13,6 +13,7 @@ import type {
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import { CanvasArtboardItem } from "./CanvasArtboardItem"
 import { CanvasEmbedItem } from "./CanvasEmbedItem"
+import { CanvasLayoutComponentItem } from "./CanvasLayoutComponentItem"
 import { CanvasLayoutEmbedItem } from "./CanvasLayoutEmbedItem"
 import { CanvasItem } from "./CanvasItem"
 
@@ -171,17 +172,12 @@ export function CanvasWorkspace({
               isSelected={isSelected}
               onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
               onUpdate={(updates) => onUpdateItem(child.id, updates)}
+              scale={transform.scale}
               interactMode={interactMode}
             />
           </div>
         )
       }
-
-      const component = getComponentById(child.componentId)
-      const variant = component?.variants[child.variantIndex]
-      const borderClass = isSelected
-        ? "border-2 border-brand-500 ring-4 ring-brand-500/20"
-        : "border border-default"
 
       return (
         <div
@@ -189,37 +185,17 @@ export function CanvasWorkspace({
           className="relative"
           style={{ width: child.size.width, height: child.size.height }}
           data-artboard-child="true"
-          onMouseDown={(e) => {
-            if (interactMode) return
-            e.stopPropagation()
-            onSelectItem(child.id, e.shiftKey)
-          }}
         >
-          <div className={`h-full w-full rounded-lg bg-white shadow-card ${borderClass}`}>
-            <div
-              className={`flex h-full w-full items-center justify-center overflow-hidden rounded-lg px-3 py-3 ${
-                interactMode ? "pointer-events-auto" : "pointer-events-none"
-              }`}
-            >
-              <div className="w-full">
-                {component && variant ? (
-                  <Renderer
-                    componentName={component.name}
-                    importPath={component.importPath}
-                    variant={variant}
-                    allowOverflow={false}
-                    renderMode="canvas"
-                    propsOverride={child.customProps}
-                    showInteractivePanel={false}
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                    Missing component
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <CanvasLayoutComponentItem
+            item={child}
+            isSelected={isSelected}
+            onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
+            onUpdate={(updates) => onUpdateItem(child.id, updates)}
+            scale={transform.scale}
+            interactMode={interactMode}
+            Renderer={Renderer}
+            getComponentById={getComponentById}
+          />
         </div>
       )
     },
@@ -230,6 +206,7 @@ export function CanvasWorkspace({
       onUpdateItem,
       Renderer,
       getComponentById,
+      transform.scale,
     ]
   )
 
