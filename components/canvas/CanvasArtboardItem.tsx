@@ -97,9 +97,6 @@ export function CanvasArtboardItem({
     (e: React.MouseEvent) => {
       if (interactMode) return
       if (e.button !== 0) return
-      if (!(e.target as HTMLElement).closest('[data-artboard-handle="true"]')) {
-        return
-      }
       e.stopPropagation()
 
       if (!e.shiftKey) {
@@ -249,7 +246,7 @@ export function CanvasArtboardItem({
         containerRef.current = node
         setNodeRef(node)
       }}
-      className="absolute"
+      className={`absolute ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
       style={{
         left: item.position.x,
         top: item.position.y,
@@ -286,7 +283,7 @@ export function CanvasArtboardItem({
         </div>
 
         <div
-          className={`h-full w-full ${layoutClassName}`}
+          className={`h-full w-full ${layoutClassName} ${interactMode ? "pointer-events-auto" : "pointer-events-none"}`}
           style={{
             gap: layout.gap ?? 12,
             padding: layout.padding ?? 16,
