@@ -570,7 +570,7 @@ function CanvasButton({
 type ProjectId = "demo" | "thicket"
 
 function App() {
-  const [view, setView] = useState<"gallery" | "canvas">("gallery")
+  const [view, setView] = useState<"gallery" | "canvas">("canvas")
   const [searchQuery, setSearchQuery] = useState("")
   const [projectId, setProjectId] = useState<ProjectId>("demo")
   const [thicketPack, setThicketPack] = useState<null | {
