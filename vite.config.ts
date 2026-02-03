@@ -72,6 +72,35 @@ async function ensureProjectScaffold(projectId, label) {
   return projectDir
 }
 
+async function updateProjectRegistry(projectDir, entryId, kind) {
+  const registryPath = path.join(projectDir, 'registry.json')
+  const fallback = { ui: [], page: [] }
+  let registry = fallback
+
+  if (existsSync(registryPath)) {
+    try {
+      const raw = await fs.readFile(registryPath, 'utf8')
+      registry = JSON.parse(raw)
+    } catch {
+      registry = fallback
+    }
+  }
+
+  const normalized = {
+    ui: Array.isArray(registry.ui) ? registry.ui : [],
+    page: Array.isArray(registry.page) ? registry.page : [],
+  }
+
+  const bucket = kind === 'page' ? 'page' : 'ui'
+  const other = bucket === 'page' ? 'ui' : 'page'
+  if (!normalized[bucket].includes(entryId)) {
+    normalized[bucket].push(entryId)
+  }
+  normalized[other] = normalized[other].filter((id) => id !== entryId)
+
+  await fs.writeFile(registryPath, JSON.stringify(normalized, null, 2))
+}
+
 function paperImportPlugin() {
   return {
     name: 'paper-import',
@@ -150,6 +179,8 @@ function paperImportPlugin() {
 
             await fs.writeFile(path.join(componentDir, `${componentName}.tsx`), componentSource)
             await fs.writeFile(path.join(configDir, `${slug}.gallery.ts`), entrySource)
+            const kind = body.kind === 'page' ? 'page' : 'ui'
+            await updateProjectRegistry(projectDir, entry.id, kind)
 
             return sendJson(res, 200, {
               ok: true,

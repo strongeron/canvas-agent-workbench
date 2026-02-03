@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Search } from "lucide-react"
+import { Toaster, toast } from "sonner"
 
 import {
   GalleryProvider,
@@ -690,15 +691,17 @@ function App() {
     }) => {
       const selectedProjectId = targetProjectId || projectId
       if (!selectedProjectId || !projectIds.includes(selectedProjectId)) {
-        alert("Select a project pack before importing from Paper.")
+        toast.error("Select a project pack before importing from Paper.")
         return null
       }
 
       const client = getPaperMcpClient()
       if (!client) {
-        alert("Paper MCP client not available in this environment.")
+        toast.error("Paper MCP client not available in this environment.")
         return null
       }
+
+      const toastId = toast.loading("Importing from Paper...")
 
       const basicInfo = await client.getBasicInfo().catch(() => ({}))
       const selection = await importPaperSelection(client, { format: "tailwind" })
@@ -709,6 +712,7 @@ function App() {
           projectId: selectedProjectId,
           name: selection.name,
           jsx: selection.jsx,
+          kind: "ui",
           source: {
             fileName: (basicInfo as { fileName?: string }).fileName,
             pageName: (basicInfo as { pageName?: string }).pageName,
@@ -720,12 +724,15 @@ function App() {
 
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.componentId) {
-        alert(data.error || "Paper import failed.")
+        toast.error(data.error || "Paper import failed.", { id: toastId })
         return null
       }
 
       if (data.reload) {
+        toast.success("Imported from Paper. Reloading...", { id: toastId })
         window.setTimeout(() => window.location.reload(), 600)
+      } else {
+        toast.success("Imported from Paper.", { id: toastId })
       }
 
       const size =
@@ -752,6 +759,7 @@ function App() {
 
   return (
     <GalleryProvider adapter={adapter}>
+      <Toaster position="top-right" richColors />
       <div className="flex h-screen flex-col bg-white">
         <header className="fixed left-0 right-0 top-0 z-50 border-b border-gray-200 bg-white/95 px-4 py-2 backdrop-blur">
           <div className="flex flex-wrap items-center gap-3">

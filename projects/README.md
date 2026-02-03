@@ -8,6 +8,7 @@ Each project lives under `projects/<project-id>/` with two main folders:
 Optional metadata:
 
 - `project.json` — `{ "label": "My Project", "description": "..." }`
+- `registry.json` — `{ "ui": ["..."], "page": ["..."] }`
 
 Import paths in entries should use:
 
@@ -17,3 +18,6 @@ Import paths in entries should use:
 
 The pack loader (`projects/pack.ts`) auto-scans all projects and builds
 `componentMap` + `entries` for use in adapters.
+
+`registry.json` is used by the Paper import flow to keep a lightweight
+index of page-level components vs UI components.
