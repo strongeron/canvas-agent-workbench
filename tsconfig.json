@@ -19,7 +19,8 @@
     "paths": {
       "@/*": ["./*"],
       "@thicket/*": ["./demo-thicket/*"],
-      "@inertiajs/react": ["./demo-thicket/shims/inertia-react.tsx"]
+      "@inertiajs/react": ["./demo-thicket/shims/inertia-react.tsx"],
+      "@project/*": ["./projects/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],

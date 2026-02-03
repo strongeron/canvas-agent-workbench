@@ -8,9 +8,11 @@ import {
   Maximize2,
   Minus,
   MousePointer2,
+  Palette,
   PanelLeft,
   Plus,
   RotateCcw,
+  Sparkles,
   Trash2,
   Ungroup,
 } from "lucide-react"
@@ -45,9 +47,11 @@ interface CanvasToolbarProps {
   onToggleLayers: () => void
   onToggleInteractMode: () => void
   onAddArtboard: () => void
+  onImportFromPaper?: () => void
   onGroupSelected: () => void
   onUngroupSelected: () => void
   onDuplicateSelected: () => void
+  onToggleThemePanel: () => void
   itemCount: number
   selectedCount: number
   canGroup: boolean
@@ -56,6 +60,8 @@ interface CanvasToolbarProps {
   sidebarVisible: boolean
   scenesVisible: boolean
   layersVisible: boolean
+  themePanelVisible: boolean
+  importingPaper?: boolean
   /** Injected Button component */
   Button: React.ComponentType<ButtonComponentProps>
   /** Injected Tooltip component */
@@ -75,9 +81,11 @@ export function CanvasToolbar({
   onToggleLayers,
   onToggleInteractMode,
   onAddArtboard,
+  onImportFromPaper,
   onGroupSelected,
   onUngroupSelected,
   onDuplicateSelected,
+  onToggleThemePanel,
   itemCount,
   selectedCount,
   canGroup,
@@ -86,6 +94,8 @@ export function CanvasToolbar({
   sidebarVisible,
   scenesVisible,
   layersVisible,
+  themePanelVisible,
+  importingPaper,
   Button,
   Tooltip,
 }: CanvasToolbarProps) {
@@ -188,6 +198,23 @@ export function CanvasToolbar({
           <LayoutGrid className="h-5 w-5" />
         </Button>
       </Tooltip>
+
+      {onImportFromPaper && (
+        <>
+          <Tooltip content={importingPaper ? "Importing from Paper..." : "Import from Paper"}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onImportFromPaper}
+              className={iconButtonClass}
+              aria-label="Import from Paper"
+              disabled={importingPaper}
+            >
+              <Sparkles className="h-5 w-5" />
+            </Button>
+          </Tooltip>
+        </>
+      )}
 
       <div className="h-6 w-px bg-border-default" />
 
@@ -304,6 +331,20 @@ export function CanvasToolbar({
           aria-pressed={layersVisible}
         >
           <Layers className="h-5 w-5" />
+        </Button>
+      </Tooltip>
+
+      {/* Theme */}
+      <Tooltip content="Theme + tokens panel">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleThemePanel}
+          className={themePanelVisible ? activeIconButtonClass : iconButtonClass}
+          aria-label="Toggle theme panel"
+          aria-pressed={themePanelVisible}
+        >
+          <Palette className="h-5 w-5" />
         </Button>
       </Tooltip>
 

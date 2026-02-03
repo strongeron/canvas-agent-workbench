@@ -1,5 +1,5 @@
 import { useDraggable } from "@dnd-kit/core"
-import { ChevronDown, ChevronRight, GripVertical, Search } from "lucide-react"
+import { ChevronDown, ChevronRight, GripVertical, Plus, Search } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import type { GalleryEntry } from "../../core/types"
@@ -94,6 +94,7 @@ interface CanvasSidebarProps {
   projects?: Array<{ id: string; label: string }>
   activeProjectId?: string
   onSelectProject?: (id: string) => void
+  onCreateProject?: () => void
 }
 
 export function CanvasSidebar({
@@ -102,6 +103,7 @@ export function CanvasSidebar({
   projects,
   activeProjectId,
   onSelectProject,
+  onCreateProject,
 }: CanvasSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [embedUrl, setEmbedUrl] = useState("")
@@ -163,9 +165,21 @@ export function CanvasSidebar({
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-default bg-white">
       {projects && projects.length > 0 && (
         <div className="border-b border-default p-3">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Projects
-          </h3>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Projects
+            </h3>
+            {onCreateProject && (
+              <button
+                type="button"
+                onClick={onCreateProject}
+                className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+                aria-label="Create project"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <div className="space-y-1">
             {projects.map((project) => (
               <button

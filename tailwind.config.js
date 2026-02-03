@@ -45,6 +45,7 @@ export default {
     "./demo-thicket/**/*.{js,ts,jsx,tsx}",
     "./components/**/*.{js,ts,jsx,tsx}",
     "./core/**/*.{js,ts,jsx,tsx}",
+    "./projects/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {

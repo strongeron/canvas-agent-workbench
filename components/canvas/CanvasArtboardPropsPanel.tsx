@@ -3,6 +3,8 @@ import { X } from "lucide-react"
 interface CanvasArtboardPropsPanelProps {
   name: string
   background?: string
+  themeId?: string
+  themes?: Array<{ id: string; label: string }>
   layout: {
     display: "flex" | "grid"
     direction?: "row" | "column"
@@ -13,9 +15,12 @@ interface CanvasArtboardPropsPanelProps {
     padding?: number
   }
   size: { width: number; height: number }
+  onImportFromPaper?: () => void
+  importingPaper?: boolean
   onChange: (updates: {
     name?: string
     background?: string
+    themeId?: string
     layout?: CanvasArtboardPropsPanelProps["layout"]
   }) => void
   onClose: () => void
@@ -38,8 +43,12 @@ const JUSTIFY_OPTIONS = [
 export function CanvasArtboardPropsPanel({
   name,
   background,
+  themeId,
+  themes,
   layout,
   size,
+  onImportFromPaper,
+  importingPaper,
   onChange,
   onClose,
 }: CanvasArtboardPropsPanelProps) {
@@ -71,6 +80,26 @@ export function CanvasArtboardPropsPanel({
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="space-y-4">
+          {themes && themes.length > 0 && (
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Theme</label>
+              <select
+                value={themeId || ""}
+                onChange={(e) =>
+                  onChange({ themeId: e.target.value ? e.target.value : undefined })
+                }
+                className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+              >
+                <option value="">Inherit canvas theme</option>
+                {themes.map((theme) => (
+                  <option key={theme.id} value={theme.id}>
+                    {theme.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Name</label>
             <input
@@ -103,6 +132,20 @@ export function CanvasArtboardPropsPanel({
           <div className="rounded-md border border-default bg-surface-50 px-3 py-2 text-xs text-muted-foreground">
             Size: {Math.round(size.width)} × {Math.round(size.height)} px
           </div>
+
+          {onImportFromPaper && (
+            <div className="space-y-2">
+              <div className="text-[11px] font-medium text-muted-foreground">Paper</div>
+              <button
+                type="button"
+                onClick={onImportFromPaper}
+                disabled={importingPaper}
+                className="w-full rounded-md border border-default bg-white px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-100 disabled:opacity-60"
+              >
+                {importingPaper ? "Importing from Paper..." : "Import selection into artboard"}
+              </button>
+            </div>
+          )}
 
           <div>
             <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Layout</label>

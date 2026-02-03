@@ -44,3 +44,6 @@ export {
   SIZE_OPTIONS,
   BOOLEAN_OPTIONS,
 } from "./schema-helpers"
+
+// MCP Bridges
+export * from "./mcp/paper"

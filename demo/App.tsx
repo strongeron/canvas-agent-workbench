@@ -4,10 +4,16 @@
  * This demonstrates how to set up the component gallery system.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Search } from "lucide-react"
 
-import { GalleryProvider, createStaticAdapter, type GalleryEntry } from "../core"
+import {
+  GalleryProvider,
+  createStaticAdapter,
+  importPaperSelection,
+  type GalleryEntry,
+  type PaperMcpClient,
+} from "../core"
 
 import {
   CanvasTab,
@@ -23,6 +29,7 @@ import { Card, type CardProps } from "./components/Card"
 import { Modal, type ModalProps } from "./components/Modal"
 import { Select, type SelectProps } from "./components/Select"
 import { Tooltip } from "./components/Tooltip"
+import { projectPacks } from "../projects/pack"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GALLERY CONFIGS
@@ -563,11 +570,21 @@ function CanvasButton({
   )
 }
 
+function getPaperMcpClient(): PaperMcpClient | null {
+  if (typeof window === "undefined") return null
+  const anyWindow = window as unknown as {
+    paperMcp?: PaperMcpClient
+    mcp?: { paper?: PaperMcpClient }
+    __paperMcp?: PaperMcpClient
+  }
+  return anyWindow.paperMcp || anyWindow.__paperMcp || anyWindow.mcp?.paper || null
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // APP
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ProjectId = "demo" | "thicket"
+type ProjectId = string
 
 function App() {
   const [view, setView] = useState<"gallery" | "canvas">("canvas")
@@ -594,17 +611,45 @@ function App() {
       .finally(() => setIsThicketLoading(false))
   }, [projectId, thicketPack, isThicketLoading])
 
-  const activePack = projectId === "demo"
-    ? {
-        id: "demo",
-        label: "Demo",
-        entries: demoEntries,
-        layouts: [],
-        patterns: [],
-        componentMap: demoComponentMap,
+  const demoPack = useMemo(
+    () => ({
+      id: "demo",
+      label: "Demo",
+      entries: demoEntries,
+      layouts: [],
+      patterns: [],
+      componentMap: demoComponentMap,
+      ui: { Button: CanvasButton, Tooltip },
+    }),
+    []
+  )
+
+  const projectPackList = useMemo(
+    () =>
+      projectPacks.map((pack) => ({
+        ...pack,
         ui: { Button: CanvasButton, Tooltip },
-      }
-    : thicketPack
+      })),
+    []
+  )
+
+  const projectIds = useMemo(() => projectPackList.map((pack) => pack.id), [projectPackList])
+
+  const projectOptions = useMemo(
+    () => [
+      { id: "demo", label: "Demo" },
+      { id: "thicket", label: "Thicket" },
+      ...projectPackList.map((pack) => ({ id: pack.id, label: pack.label })),
+    ],
+    [projectPackList]
+  )
+
+  const activePack =
+    projectId === "demo"
+      ? demoPack
+      : projectId === "thicket"
+        ? thicketPack
+        : projectPackList.find((pack) => pack.id === projectId)
 
   const adapter = useMemo(() => {
     if (!activePack) return null
@@ -616,10 +661,91 @@ function App() {
     })
   }, [activePack])
 
+  const handleCreateProject = useCallback(async () => {
+    const label = window.prompt("Project name")
+    if (!label) return
+
+    const response = await fetch("/api/projects/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: label, label }),
+    })
+
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || !data.projectId) {
+      alert(data.error || "Failed to create project.")
+      return
+    }
+
+    setProjectId(data.projectId)
+    window.location.reload()
+  }, [])
+
+  const handleImportFromPaper = useCallback(
+    async ({
+      projectId: targetProjectId,
+    }: {
+      projectId?: string
+      artboardId?: string | null
+    }) => {
+      const selectedProjectId = targetProjectId || projectId
+      if (!selectedProjectId || !projectIds.includes(selectedProjectId)) {
+        alert("Select a project pack before importing from Paper.")
+        return null
+      }
+
+      const client = getPaperMcpClient()
+      if (!client) {
+        alert("Paper MCP client not available in this environment.")
+        return null
+      }
+
+      const basicInfo = await client.getBasicInfo().catch(() => ({}))
+      const selection = await importPaperSelection(client, { format: "tailwind" })
+      const response = await fetch("/api/paper/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: selectedProjectId,
+          name: selection.name,
+          jsx: selection.jsx,
+          source: {
+            fileName: (basicInfo as { fileName?: string }).fileName,
+            pageName: (basicInfo as { pageName?: string }).pageName,
+            nodeId: selection.nodeId,
+            importedAt: new Date().toISOString().split("T")[0],
+          },
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.componentId) {
+        alert(data.error || "Paper import failed.")
+        return null
+      }
+
+      if (data.reload) {
+        window.setTimeout(() => window.location.reload(), 600)
+      }
+
+      const size =
+        selection.width && selection.height
+          ? { width: selection.width, height: selection.height }
+          : undefined
+
+      return {
+        componentId: data.componentId as string,
+        variantIndex: 0,
+        size,
+      }
+    },
+    [projectId, projectIds]
+  )
+
   if (!adapter || !activePack) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-gray-600">
-        Loading {projectId === "thicket" ? "Thicket" : "Demo"} components...
+        Loading {projectId === "thicket" ? "Thicket" : "Project"} components...
       </div>
     )
   }
@@ -715,12 +841,11 @@ function App() {
               Button={activePack.ui.Button}
               Tooltip={activePack.ui.Tooltip}
               storageKey={`gallery-${projectId}`}
-              projects={[
-                { id: "demo", label: "Demo" },
-                { id: "thicket", label: "Thicket" },
-              ]}
+              projects={projectOptions}
               activeProjectId={projectId}
               onSelectProject={(id) => setProjectId(id as ProjectId)}
+              onCreateProject={handleCreateProject}
+              onImportFromPaper={handleImportFromPaper}
             />
           )}
         </div>

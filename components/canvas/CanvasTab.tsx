@@ -1,5 +1,5 @@
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core"
-import { useCallback, useState, useMemo } from "react"
+import { useCallback, useState, useMemo, useEffect, useRef } from "react"
 
 import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShortcuts"
 import { useCanvasState } from "../../hooks/useCanvasState"
@@ -14,8 +14,10 @@ import { CanvasLayersPanel } from "./CanvasLayersPanel"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
 import { CanvasScenesPanel } from "./CanvasScenesPanel"
 import { CanvasSidebar } from "./CanvasSidebar"
+import { CanvasThemePanel, type CanvasThemeOption, type CanvasThemeToken } from "./CanvasThemePanel"
 import { CanvasToolbar } from "./CanvasToolbar"
 import { CanvasWorkspace } from "./CanvasWorkspace"
+import { useLocalStorage } from "../../hooks/useLocalStorage"
 
 /** Props for injected Renderer component */
 interface RendererComponentProps {
@@ -33,6 +35,24 @@ const LAYOUT_SIZE_DEFAULTS: Record<string, { width: number; minHeight: number }>
   large: { width: 500, minHeight: 200 },   // tables, lists
   full: { width: 600, minHeight: 250 },    // tabs, sidebars, full-width
 }
+
+const DEFAULT_THEMES: CanvasThemeOption[] = [
+  {
+    id: "thicket",
+    label: "Thicket",
+    description: "Default gallery theme",
+    vars: {},
+  },
+]
+
+const THEME_TOKENS: CanvasThemeToken[] = [
+  { label: "Brand 600", cssVar: "--color-brand-600" },
+  { label: "Brand 500", cssVar: "--color-brand-500" },
+  { label: "Surface 50", cssVar: "--color-surface-50" },
+  { label: "Surface 100", cssVar: "--color-surface-100" },
+  { label: "Foreground", cssVar: "--color-foreground" },
+  { label: "Muted Foreground", cssVar: "--color-muted-foreground" },
+]
 
 function getDefaultSizeForComponent(
   componentId: string,
@@ -57,10 +77,29 @@ interface CanvasTabProps {
   Tooltip: React.ComponentType<any>
   /** Optional storage key prefix (for multi-project setups) */
   storageKey?: string
+  /** Optional theme storage key prefix (shared across canvases) */
+  themeStorageKeyPrefix?: string
   /** Optional project selector */
   projects?: Array<{ id: string; label: string }>
   activeProjectId?: string
   onSelectProject?: (id: string) => void
+  onCreateProject?: () => void
+  /** Optional handler to open dedicated color canvas view */
+  onOpenColorCanvas?: () => void
+  /** Optional Paper import handler */
+  onImportFromPaper?: (context: PaperImportContext) => Promise<PaperImportResult | null>
+}
+
+export interface PaperImportContext {
+  projectId?: string
+  artboardId?: string | null
+}
+
+export interface PaperImportResult {
+  componentId: string
+  variantIndex?: number
+  size?: { width: number; height: number }
+  position?: { x: number; y: number }
 }
 
 export function CanvasTab({
@@ -70,9 +109,13 @@ export function CanvasTab({
   Button,
   Tooltip,
   storageKey,
+  themeStorageKeyPrefix,
   projects,
   activeProjectId,
   onSelectProject,
+  onCreateProject,
+  onOpenColorCanvas,
+  onImportFromPaper,
 }: CanvasTabProps) {
   const {
     items,
@@ -123,8 +166,24 @@ export function CanvasTab({
   const [propsPanelVisible, setPropsPanelVisible] = useState(true)
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
   const [layersPanelVisible, setLayersPanelVisible] = useState(false)
+  const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [interactMode, setInteractMode] = useState(false)
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 })
+  const [isImportingPaper, setIsImportingPaper] = useState(false)
+  const canvasRootRef = useRef<HTMLDivElement>(null)
+  const themeStorageKey = themeStorageKeyPrefix
+    ? `${themeStorageKeyPrefix}-theme`
+    : storageKey
+      ? `${storageKey}-theme`
+      : "gallery-canvas-theme"
+  const [activeThemeId, setActiveThemeId] = useLocalStorage<string>(themeStorageKey, "thicket")
+  const themeListStorageKey = themeStorageKeyPrefix
+    ? `${themeStorageKeyPrefix}-themes`
+    : storageKey
+      ? `${storageKey}-themes`
+      : "gallery-canvas-themes"
+  const [themes, setThemes] = useLocalStorage<CanvasThemeOption[]>(themeListStorageKey, DEFAULT_THEMES)
+  const [tokenValues, setTokenValues] = useState<Record<string, string>>({})
 
   // Get the first selected item (for props panel - shows single item when one is selected)
   const selectedItem = selectedIds.length === 1
@@ -202,6 +261,7 @@ export function CanvasTab({
       const next = !prev
       if (next) {
         setLayersPanelVisible(false)
+        setThemePanelVisible(false)
       }
       return next
     })
@@ -211,11 +271,134 @@ export function CanvasTab({
       const next = !prev
       if (next) {
         setScenesPanelVisible(false)
+        setThemePanelVisible(false)
+      }
+      return next
+    })
+  }, [])
+  const toggleThemePanel = useCallback(() => {
+    setThemePanelVisible((prev) => {
+      const next = !prev
+      if (next) {
+        setScenesPanelVisible(false)
+        setLayersPanelVisible(false)
       }
       return next
     })
   }, [])
   const toggleInteractMode = useCallback(() => setInteractMode((prev) => !prev), [])
+
+  useEffect(() => {
+    if (!themes || themes.length === 0) {
+      setThemes(DEFAULT_THEMES)
+    }
+  }, [themes, setThemes])
+
+  useEffect(() => {
+    if (!themes || themes.length === 0) return
+    if (!themes.some((theme) => theme.id === activeThemeId)) {
+      setActiveThemeId(themes[0].id)
+    }
+  }, [themes, activeThemeId, setActiveThemeId])
+
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    const styleId = themeStorageKeyPrefix
+      ? `${themeStorageKeyPrefix}-theme-overrides`
+      : storageKey
+        ? `${storageKey}-theme-overrides`
+        : "canvas-theme-overrides"
+    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null
+    if (!styleEl) {
+      styleEl = document.createElement("style")
+      styleEl.id = styleId
+      document.head.appendChild(styleEl)
+    }
+
+    const cssText = themes
+      .map((theme) => {
+        const entries = Object.entries(theme.vars ?? {})
+        if (entries.length === 0) return ""
+        const body = entries
+          .map(([cssVar, value]) => `  ${cssVar}: ${value};`)
+          .join("\n")
+        return `[data-theme="${theme.id}"] {\n${body}\n}`
+      })
+      .filter(Boolean)
+      .join("\n\n")
+
+    styleEl.textContent = cssText
+  }, [themes, storageKey, themeStorageKeyPrefix])
+
+  useEffect(() => {
+    if (!canvasRootRef.current) return
+    const styles = getComputedStyle(canvasRootRef.current)
+    const values: Record<string, string> = {}
+    for (const token of THEME_TOKENS) {
+      values[token.cssVar] = styles.getPropertyValue(token.cssVar).trim()
+    }
+    setTokenValues(values)
+  }, [activeThemeId, themes])
+
+  const handleImportFromPaper = useCallback(async () => {
+    if (!onImportFromPaper || isImportingPaper) return
+    setIsImportingPaper(true)
+    try {
+      const result = await onImportFromPaper({
+        projectId: activeProjectId,
+        artboardId: selectedArtboardItem?.id ?? null,
+      })
+      if (!result) return
+
+      const componentId = result.componentId
+      const variantIndex = result.variantIndex ?? 0
+      const size =
+        result.size ?? getDefaultSizeForComponent(componentId, getComponentById)
+      const position = result.position ?? { x: 0, y: 0 }
+
+      if (selectedArtboardItem) {
+        const siblings = items.filter(
+          (item) => item.parentId === selectedArtboardItem.id && item.type !== "artboard"
+        )
+        const maxOrder = siblings.reduce(
+          (max, item) => Math.max(max, item.order ?? 0),
+          -1
+        )
+
+        addItem({
+          type: "component",
+          componentId,
+          variantIndex,
+          position: { x: 0, y: 0 },
+          size,
+          rotation: 0,
+          parentId: selectedArtboardItem.id,
+          order: maxOrder + 1,
+        })
+      } else {
+        addItem({
+          type: "component",
+          componentId,
+          variantIndex,
+          position,
+          size,
+          rotation: 0,
+        })
+      }
+
+      setPropsPanelVisible(true)
+    } finally {
+      setIsImportingPaper(false)
+    }
+  }, [
+    activeProjectId,
+    addItem,
+    getComponentById,
+    isImportingPaper,
+    items,
+    onImportFromPaper,
+    selectedArtboardItem,
+  ])
 
   const handleDimensionsChange = useCallback(
     (width: number, height: number) => {
@@ -357,6 +540,107 @@ export function CanvasTab({
     workspaceSize.height,
     workspaceSize.width,
   ])
+
+  const handleOpenColorCanvas = useCallback(() => {
+    if (onOpenColorCanvas) {
+      onOpenColorCanvas()
+      return
+    }
+    const existingArtboard = items.find(
+      (item) => item.type === "artboard" && item.name === "Color Canvas"
+    )
+
+    if (existingArtboard) {
+      selectItem(existingArtboard.id)
+      bringToFront(existingArtboard.id)
+      setPropsPanelVisible(true)
+      return
+    }
+
+    const artboardWidth = 1080
+    const artboardHeight = 720
+    const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+    const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+
+    addItem({
+      type: "artboard",
+      name: "Color Canvas",
+      position: {
+        x: Math.max(0, centerX - artboardWidth / 2),
+        y: Math.max(0, centerY - artboardHeight / 2),
+      },
+      size: { width: artboardWidth, height: artboardHeight },
+      rotation: 0,
+      background: "var(--color-surface-50)",
+      layout: {
+        display: "grid",
+        columns: 4,
+        gap: 16,
+        padding: 24,
+      },
+    })
+
+    setPropsPanelVisible(true)
+  }, [
+    addItem,
+    bringToFront,
+    items,
+    onOpenColorCanvas,
+    selectItem,
+    transform.offset.x,
+    transform.offset.y,
+    transform.scale,
+    workspaceSize.height,
+    workspaceSize.width,
+  ])
+
+  const handleAddTheme = useCallback(
+    (label: string) => {
+      const normalized = label.trim()
+      if (!normalized) return
+      const baseId = normalized
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)+/g, "")
+      let nextId = baseId || `theme-${themes.length + 1}`
+      let counter = 2
+      while (themes.some((theme) => theme.id === nextId)) {
+        nextId = `${baseId || "theme"}-${counter}`
+        counter += 1
+      }
+
+      const activeTheme = themes.find((theme) => theme.id === activeThemeId)
+      const newTheme: CanvasThemeOption = {
+        id: nextId,
+        label: normalized,
+        description: "Custom theme",
+        vars: { ...(activeTheme?.vars ?? {}) },
+      }
+
+      setThemes((prev) => [...prev, newTheme])
+      setActiveThemeId(nextId)
+    },
+    [themes, activeThemeId, setThemes, setActiveThemeId]
+  )
+
+  const handleUpdateThemeVar = useCallback(
+    (themeId: string, cssVar: string, value: string) => {
+      setThemes((prev) =>
+        prev.map((theme) => {
+          if (theme.id !== themeId) return theme
+          const nextVars = { ...(theme.vars ?? {}) }
+          const trimmed = value.trim()
+          if (!trimmed) {
+            delete nextVars[cssVar]
+          } else {
+            nextVars[cssVar] = trimmed
+          }
+          return { ...theme, vars: nextVars }
+        })
+      )
+    },
+    [setThemes]
+  )
 
   const requestEmbedStates = useCallback(async () => {
     if (typeof window === "undefined") return
@@ -540,10 +824,15 @@ export function CanvasTab({
 
   // Show props panel for single selection
   const showPropsPanel =
-    selectedItem && propsPanelVisible && !scenesPanelVisible && !layersPanelVisible
+    selectedItem && propsPanelVisible && !scenesPanelVisible && !layersPanelVisible && !themePanelVisible
 
   return (
-    <div className="relative flex h-full flex-col">
+    <div
+      ref={canvasRootRef}
+      className="relative flex h-full flex-col"
+      data-theme={activeThemeId}
+      data-canvas-root="true"
+    >
       {/* Floating toolbar */}
       <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2">
         <CanvasToolbar
@@ -557,8 +846,10 @@ export function CanvasTab({
           onToggleHelp={toggleHelp}
           onToggleScenes={toggleScenes}
           onToggleLayers={toggleLayers}
+          onToggleThemePanel={toggleThemePanel}
           onToggleInteractMode={toggleInteractMode}
           onAddArtboard={handleAddArtboard}
+          onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
           onGroupSelected={handleGroupSelected}
           onUngroupSelected={handleUngroupSelected}
           onDuplicateSelected={handleDuplicate}
@@ -570,6 +861,8 @@ export function CanvasTab({
           sidebarVisible={sidebarVisible}
           scenesVisible={scenesPanelVisible}
           layersVisible={layersPanelVisible}
+          themePanelVisible={themePanelVisible}
+          importingPaper={isImportingPaper}
           Button={Button}
           Tooltip={Tooltip}
         />
@@ -595,6 +888,7 @@ export function CanvasTab({
                 projects={projects}
                 activeProjectId={activeProjectId}
                 onSelectProject={onSelectProject}
+                onCreateProject={onCreateProject}
               />
             </div>
           </div>
@@ -661,6 +955,10 @@ export function CanvasTab({
               background={selectedArtboardItem.background}
               layout={selectedArtboardItem.layout}
               size={selectedArtboardItem.size}
+              themes={themes}
+              themeId={selectedArtboardItem.themeId}
+              onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
+              importingPaper={isImportingPaper}
               onChange={(updates) => updateItem(selectedArtboardItem.id, updates)}
               onClose={handleClosePropsPanel}
             />
@@ -677,6 +975,20 @@ export function CanvasTab({
               onMoveLayer={handleMoveLayer}
               onClose={() => setLayersPanelVisible(false)}
               getComponentById={getComponentById}
+            />
+          )}
+
+          {themePanelVisible && (
+            <CanvasThemePanel
+              themes={themes}
+              activeThemeId={activeThemeId}
+              onThemeChange={setActiveThemeId}
+              onOpenColorCanvas={handleOpenColorCanvas}
+              onAddTheme={handleAddTheme}
+              onUpdateThemeVar={handleUpdateThemeVar}
+              tokenValues={tokenValues}
+              tokens={THEME_TOKENS}
+              onClose={() => setThemePanelVisible(false)}
             />
           )}
 
