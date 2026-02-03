@@ -289,7 +289,7 @@ export function CanvasArtboardItem({
         </div>
 
         <div
-          className={`h-full w-full ${layoutClassName} ${interactMode ? "pointer-events-auto" : "pointer-events-none"}`}
+          className={`h-full w-full ${layoutClassName}`}
           style={{
             gap: layout.gap ?? 12,
             padding: layout.padding ?? 16,
