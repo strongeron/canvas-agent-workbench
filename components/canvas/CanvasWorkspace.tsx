@@ -164,6 +164,7 @@ export function CanvasWorkspace({
             key={child.id}
             className="relative"
             style={{ width: child.size.width, height: child.size.height }}
+            data-artboard-child="true"
           >
             <CanvasLayoutEmbedItem
               item={child}
@@ -187,6 +188,7 @@ export function CanvasWorkspace({
           key={child.id}
           className="relative"
           style={{ width: child.size.width, height: child.size.height }}
+          data-artboard-child="true"
           onMouseDown={(e) => {
             if (interactMode) return
             e.stopPropagation()

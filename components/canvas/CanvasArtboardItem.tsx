@@ -97,6 +97,9 @@ export function CanvasArtboardItem({
     (e: React.MouseEvent) => {
       if (interactMode) return
       if (e.button !== 0) return
+      if ((e.target as HTMLElement).closest('[data-artboard-child="true"]')) {
+        return
+      }
       e.stopPropagation()
 
       if (!e.shiftKey) {
@@ -259,6 +262,9 @@ export function CanvasArtboardItem({
       onMouseDown={handleMouseDown}
       onClick={(e) => {
         if (interactMode) return
+        if ((e.target as HTMLElement).closest('[data-artboard-child="true"]')) {
+          return
+        }
         e.stopPropagation()
         if (e.shiftKey) {
           onSelect(true)
