@@ -34,6 +34,8 @@ export interface TooltipComponentProps {
   children: React.ReactNode
 }
 
+export type PaperImportKind = "ui" | "page"
+
 interface CanvasToolbarProps {
   scale: number
   onZoomIn: () => void
@@ -48,6 +50,8 @@ interface CanvasToolbarProps {
   onToggleInteractMode: () => void
   onAddArtboard: () => void
   onImportFromPaper?: () => void
+  importKind?: PaperImportKind
+  onImportKindChange?: (kind: PaperImportKind) => void
   onGroupSelected: () => void
   onUngroupSelected: () => void
   onDuplicateSelected: () => void
@@ -82,6 +86,8 @@ export function CanvasToolbar({
   onToggleInteractMode,
   onAddArtboard,
   onImportFromPaper,
+  importKind,
+  onImportKindChange,
   onGroupSelected,
   onUngroupSelected,
   onDuplicateSelected,
@@ -213,6 +219,24 @@ export function CanvasToolbar({
               <Sparkles className="h-5 w-5" />
             </Button>
           </Tooltip>
+          {onImportKindChange && (
+            <div className="flex items-center gap-1 rounded-md border border-gray-200 bg-white p-1">
+              {(["ui", "page"] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => onImportKindChange(kind)}
+                  className={`rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                    importKind === kind
+                      ? "bg-gray-900 text-white"
+                      : "text-gray-600 hover:bg-gray-100"
+                  }`}
+                >
+                  {kind}
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
 

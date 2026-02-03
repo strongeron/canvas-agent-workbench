@@ -22,7 +22,7 @@ export { LayoutSection } from "./LayoutSection"
 
 // Canvas Components (Portable with Props Injection)
 export { CanvasTab } from "./canvas/CanvasTab"
-export type { PaperImportContext, PaperImportResult } from "./canvas/CanvasTab"
+export type { PaperImportContext, PaperImportResult, PaperImportQueueItem } from "./canvas/CanvasTab"
 export { CanvasWorkspace } from "./canvas/CanvasWorkspace"
 export { CanvasToolbar } from "./canvas/CanvasToolbar"
 export { CanvasSidebar } from "./canvas/CanvasSidebar"

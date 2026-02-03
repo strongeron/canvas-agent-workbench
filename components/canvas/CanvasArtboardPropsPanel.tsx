@@ -16,6 +16,8 @@ interface CanvasArtboardPropsPanelProps {
   }
   size: { width: number; height: number }
   onImportFromPaper?: () => void
+  importKind?: "ui" | "page"
+  onImportKindChange?: (kind: "ui" | "page") => void
   importingPaper?: boolean
   onChange: (updates: {
     name?: string
@@ -48,6 +50,8 @@ export function CanvasArtboardPropsPanel({
   layout,
   size,
   onImportFromPaper,
+  importKind,
+  onImportKindChange,
   importingPaper,
   onChange,
   onClose,
@@ -133,13 +137,31 @@ export function CanvasArtboardPropsPanel({
             Size: {Math.round(size.width)} × {Math.round(size.height)} px
           </div>
 
-          {onImportFromPaper && (
-            <div className="space-y-2">
-              <div className="text-[11px] font-medium text-muted-foreground">Paper</div>
-              <button
-                type="button"
-                onClick={onImportFromPaper}
-                disabled={importingPaper}
+        {onImportFromPaper && (
+          <div className="space-y-2">
+            <div className="text-[11px] font-medium text-muted-foreground">Paper</div>
+            {onImportKindChange && (
+              <div className="flex items-center gap-1 rounded-md border border-default bg-white p-1">
+                {(["ui", "page"] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() => onImportKindChange(kind)}
+                    className={`flex-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                      importKind === kind
+                        ? "bg-gray-900 text-white"
+                        : "text-gray-600 hover:bg-surface-100"
+                    }`}
+                  >
+                    {kind}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onImportFromPaper}
+              disabled={importingPaper}
                 className="w-full rounded-md border border-default bg-white px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-100 disabled:opacity-60"
               >
                 {importingPaper ? "Importing from Paper..." : "Import selection into artboard"}

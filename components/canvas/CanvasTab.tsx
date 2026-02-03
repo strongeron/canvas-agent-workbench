@@ -93,6 +93,7 @@ interface CanvasTabProps {
 export interface PaperImportContext {
   projectId?: string
   artboardId?: string | null
+  kind?: "ui" | "page"
 }
 
 export interface PaperImportResult {
@@ -100,6 +101,21 @@ export interface PaperImportResult {
   variantIndex?: number
   size?: { width: number; height: number }
   position?: { x: number; y: number }
+  queueItem?: PaperImportQueueItem
+}
+
+export interface PaperImportQueueItem {
+  id: string
+  name: string
+  componentId: string
+  projectId?: string
+  kind?: "ui" | "page"
+  importedAt: string
+  source?: {
+    fileName?: string
+    pageName?: string
+    nodeId?: string
+  }
 }
 
 export function CanvasTab({
@@ -170,6 +186,7 @@ export function CanvasTab({
   const [interactMode, setInteractMode] = useState(false)
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 })
   const [isImportingPaper, setIsImportingPaper] = useState(false)
+  const [importKind, setImportKind] = useState<"ui" | "page">("ui")
   const canvasRootRef = useRef<HTMLDivElement>(null)
   const themeStorageKey = themeStorageKeyPrefix
     ? `${themeStorageKeyPrefix}-theme`
@@ -177,6 +194,13 @@ export function CanvasTab({
       ? `${storageKey}-theme`
       : "gallery-canvas-theme"
   const [activeThemeId, setActiveThemeId] = useLocalStorage<string>(themeStorageKey, "thicket")
+  const importQueueStorageKey = storageKey
+    ? `${storageKey}-imports`
+    : "gallery-import-queue"
+  const [importQueue, setImportQueue] = useLocalStorage<PaperImportQueueItem[]>(
+    importQueueStorageKey,
+    []
+  )
   const themeListStorageKey = themeStorageKeyPrefix
     ? `${themeStorageKeyPrefix}-themes`
     : storageKey
@@ -347,6 +371,7 @@ export function CanvasTab({
       const result = await onImportFromPaper({
         projectId: activeProjectId,
         artboardId: selectedArtboardItem?.id ?? null,
+        kind: importKind,
       })
       if (!result) return
 
@@ -387,6 +412,13 @@ export function CanvasTab({
       }
 
       setPropsPanelVisible(true)
+
+      if (result.queueItem) {
+        setImportQueue((prev) => {
+          const next = [result.queueItem, ...prev.filter((item) => item.id !== result.queueItem?.id)]
+          return next.slice(0, 20)
+        })
+      }
     } finally {
       setIsImportingPaper(false)
     }
@@ -398,7 +430,47 @@ export function CanvasTab({
     items,
     onImportFromPaper,
     selectedArtboardItem,
+    setImportQueue,
   ])
+
+  const handleAddImportedComponent = useCallback(
+    (componentId: string, variantIndex = 0) => {
+      const size = getDefaultSizeForComponent(componentId, getComponentById)
+
+      if (selectedArtboardItem) {
+        const siblings = items.filter(
+          (item) => item.parentId === selectedArtboardItem.id && item.type !== "artboard"
+        )
+        const maxOrder = siblings.reduce(
+          (max, item) => Math.max(max, item.order ?? 0),
+          -1
+        )
+
+        addItem({
+          type: "component",
+          componentId,
+          variantIndex,
+          position: { x: 0, y: 0 },
+          size,
+          rotation: 0,
+          parentId: selectedArtboardItem.id,
+          order: maxOrder + 1,
+        })
+      } else {
+        addItem({
+          type: "component",
+          componentId,
+          variantIndex,
+          position: { x: 0, y: 0 },
+          size,
+          rotation: 0,
+        })
+      }
+
+      setPropsPanelVisible(true)
+    },
+    [addItem, getComponentById, items, selectedArtboardItem]
+  )
 
   const handleDimensionsChange = useCallback(
     (width: number, height: number) => {
@@ -850,6 +922,8 @@ export function CanvasTab({
           onToggleInteractMode={toggleInteractMode}
           onAddArtboard={handleAddArtboard}
           onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
+          importKind={importKind}
+          onImportKindChange={setImportKind}
           onGroupSelected={handleGroupSelected}
           onUngroupSelected={handleUngroupSelected}
           onDuplicateSelected={handleDuplicate}
@@ -885,6 +959,9 @@ export function CanvasTab({
               <CanvasSidebar
                 entries={entries}
                 onAddEmbed={handleAddEmbed}
+                importQueue={importQueue}
+                onAddImportedComponent={handleAddImportedComponent}
+                onClearImportQueue={() => setImportQueue([])}
                 projects={projects}
                 activeProjectId={activeProjectId}
                 onSelectProject={onSelectProject}
@@ -958,6 +1035,8 @@ export function CanvasTab({
               themes={themes}
               themeId={selectedArtboardItem.themeId}
               onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
+              importKind={importKind}
+              onImportKindChange={setImportKind}
               importingPaper={isImportingPaper}
               onChange={(updates) => updateItem(selectedArtboardItem.id, updates)}
               onClose={handleClosePropsPanel}

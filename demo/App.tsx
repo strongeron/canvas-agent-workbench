@@ -685,9 +685,11 @@ function App() {
   const handleImportFromPaper = useCallback(
     async ({
       projectId: targetProjectId,
+      kind,
     }: {
       projectId?: string
       artboardId?: string | null
+      kind?: "ui" | "page"
     }) => {
       const selectedProjectId = targetProjectId || projectId
       if (!selectedProjectId || !projectIds.includes(selectedProjectId)) {
@@ -705,6 +707,8 @@ function App() {
 
       const basicInfo = await client.getBasicInfo().catch(() => ({}))
       const selection = await importPaperSelection(client, { format: "tailwind" })
+      const importKind = kind === "page" ? "page" : "ui"
+      const importedAt = new Date().toISOString().split("T")[0]
       const response = await fetch("/api/paper/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -712,12 +716,12 @@ function App() {
           projectId: selectedProjectId,
           name: selection.name,
           jsx: selection.jsx,
-          kind: "ui",
+          kind: importKind,
           source: {
             fileName: (basicInfo as { fileName?: string }).fileName,
             pageName: (basicInfo as { pageName?: string }).pageName,
             nodeId: selection.nodeId,
-            importedAt: new Date().toISOString().split("T")[0],
+            importedAt,
           },
         }),
       })
@@ -744,6 +748,19 @@ function App() {
         componentId: data.componentId as string,
         variantIndex: 0,
         size,
+        queueItem: {
+          id: `${data.componentId}-${Date.now()}`,
+          name: selection.name,
+          componentId: data.componentId as string,
+          projectId: selectedProjectId,
+          kind: importKind,
+          importedAt,
+          source: {
+            fileName: (basicInfo as { fileName?: string }).fileName,
+            pageName: (basicInfo as { pageName?: string }).pageName,
+            nodeId: selection.nodeId,
+          },
+        },
       }
     },
     [projectId, projectIds]
