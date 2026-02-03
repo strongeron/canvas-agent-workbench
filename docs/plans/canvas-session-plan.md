@@ -35,10 +35,10 @@ This document records the agreed phases and TODOs for canvas persistence and lay
 - Map layout/page components as artboard templates (optional).
 
 ## TODO Checklist
-- [ ] Extend `types/canvas.ts` for iframe state
-- [ ] Add iframe postMessage bridge in `CanvasEmbedItem`
-- [ ] Add “Sync State” in `CanvasEmbedPropsPanel`
-- [ ] Request iframe state before `saveScene`
-- [ ] Verify scene export includes embed state
-- [ ] Add IndexedDB storage (Phase 2)
+- [x] Extend `types/canvas.ts` for iframe state
+- [x] Add iframe postMessage bridge in `CanvasEmbedItem`
+- [x] Add “Sync State” in `CanvasEmbedPropsPanel`
+- [x] Request iframe state before `saveScene`
+- [x] Verify scene export includes embed state
+- [x] Add IndexedDB storage (Phase 2)
 - [ ] Add artboards + layers panel (Phase 3)
