@@ -8,7 +8,8 @@
     "dev": "vite demo",
     "build": "tsc && vite build demo",
     "preview": "vite preview demo",
-    "create-project": "node scripts/create-project.mjs"
+    "create-project": "node scripts/create-project.mjs",
+    "dev:paper": "node scripts/dev-paper.mjs"
   },
   "peerDependencies": {
     "react": ">=18.0.0",

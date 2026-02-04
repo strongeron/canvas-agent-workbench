@@ -27,3 +27,15 @@ CLI helper:
 ```
 npm run create-project -- --id my-project --label "My Project"
 ```
+
+Paper MCP dev helper (uses `scripts/paper-client.mjs` by default):
+
+```
+npm run dev:paper
+```
+
+Override the client module:
+
+```
+npm run dev:paper -- --paper-client /absolute/path/to/paper-client.mjs
+```
