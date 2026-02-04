@@ -1,42 +1,66 @@
 # Theme + Color Canvas Roadmap
 
-This document records the phases and steps for multi-theme support, a color canvas with token connections, and APCA contrast checks.
+This document records the phases and steps for a project-wired Color Canvas that supports OKLCH-first token relationships, APCA-integrated constraints, and automated theme recalculation.
 
 ## Goals
-- Support multiple themes in canvas workflows.
-- Provide a dedicated color canvas with connections between palette tokens and semantic roles/styles.
-- Surface APCA contrast levels for text and UI states.
+- Support multiple themes in canvas workflows and per-artboard overrides.
+- Provide a dedicated color canvas with connections between palette tokens, semantic roles, and component roles.
+- Integrate APCA into every contrast relationship (foreground/background) with visible Lc levels.
+- Enable deterministic recomputation when any input token changes.
 
-## Phase 0 (Now): Fix Theme Color Drift
+## Phase 0 (Done): Fix Theme Color Drift
 - Align token names in `designTokens.ts` with `theme.css` + Tailwind semantics.
 - Remove/avoid token entries that point at non-existent CSS variables.
 - Keep legacy text tokens documented but prefer semantic `--color-foreground` / `--color-muted-*`.
 
-## Phase 1 (Now): Theme Panel + Dedicated Color Canvas View
-- Add a Theme panel toggle in the Canvas toolbar.
-- Theme panel includes:
-  - Theme selector with add-new flow.
-  - "Open Color Canvas" action (navigates to dedicated view).
-  - APCA level legend (15 → max).
-- Allow per-artboard theme overrides (inherit by default).
-- Dedicated Color Canvas view:
-  - Separate view mode (not the main canvas tab).
-  - Accessible from Tokens panel via link.
-  - Uses its own canvas storage key.
-- Persist theme selection and theme list in localStorage.
+## Phase 1 (In Progress): Project-Wired Color Canvas
+### Tasks
+- Add Color Canvas to the demo header menu (`demo/App.tsx`) alongside Gallery/Canvas.
+- Wire Color Canvas to the current project context:
+  - project-scoped theme storage key
+  - project-scoped token list (fallback to thicket tokens if missing)
+- Expose Color Canvas from theme panel and token panels.
+- Ensure OKLCH is the default model in documentation and planned rule engine.
 
-## Phase 2 (Next): Color Canvas Graph + APCA
-- Add a color graph model:
-  - Nodes: palette tokens, semantic roles, component style roles.
-  - Edges: "role uses token" and "component uses role".
-- Render a graph/canvas view with draggable nodes and connections.
-- Add APCA computations for relevant pairs (text on surface, interactive states).
-- Provide thresholds/labels for all steps (Lc 15 → max).
+### Review Checklist
+- Color Canvas appears in the demo header menu.
+- Switching projects changes the token list and theme storage namespace.
+- Color Canvas and Canvas share the same theme registry prefix.
+- No regressions in existing Gallery/Canvas modes.
 
-## Phase 3 (Later): Multi-Theme Tokens + Exports
-- Load theme CSS per theme and compute tokens for each theme.
-- Export/share color canvas as JSON/SVG.
+## Phase 2 (Next): Token Graph + Constraint Engine
+### Tasks
+- Define graph schema (nodes, edges, rule functions).
+- Define rule function library (OKLCH defaults, mix, deltaL, solve APCA).
+- Implement APCA constraint evaluation for foreground/background pairs.
+- Add audit panel stub (list of APCA results for rule-defined pairs).
+
+### Review Checklist
+- Rules are deterministic and inspectable.
+- APCA evaluation is enforced for each contrast relation.
+- Errors surface when constraints conflict.
+
+## Phase 3 (Later): Artboard Audit + Export
+### Tasks
+- Artboard audit panel: collect token/semantic pairs and show APCA Lc values.
+- Optional DOM scan of rendered artboards (phase 3b) for real color usage.
+- Export graph state as JSON, optionally SVG snapshots.
+
+### Review Checklist
+- Audit panel is accurate for selected artboard(s).
+- APCA warnings are visible and actionable.
+- Export includes rules + node positions + theme overrides.
+
+## Head of Design Validation
+Use this framework at each phase checkpoint:
+- Clarity: Can a designer explain and edit relationships?
+- Control: Can they set inputs and override derived tokens?
+- Correctness: Are APCA constraints enforced and visible?
+- Scalability: Can it handle 200+ tokens + multi-theme?
+- Usefulness: Does it reduce time to iterate safely?
 
 ## Decisions
-- Color Canvas is a dedicated view (also linked from Tokens).
-- APCA thresholds should show all steps from Lc 15 to max.
+- Color Canvas is a dedicated view (also linked from Tokens and Theme panel).
+- OKLCH is the default color model for rule definitions.
+- APCA is required for every foreground/background relation.
+- Contrast thresholds should show all steps from Lc 15 to max.

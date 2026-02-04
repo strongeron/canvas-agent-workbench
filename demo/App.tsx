@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { Search } from "lucide-react"
+import { Search, Share2 } from "lucide-react"
 import { Toaster, toast } from "sonner"
 
 import {
@@ -21,6 +21,7 @@ import {
   PortableComponentRenderer,
   PortableGalleryPage as GalleryPage,
 } from "../components"
+import { ColorCanvasPage } from "../components/color-canvas/ColorCanvasPage"
 
 // Demo Components
 import { Button, type ButtonProps } from "./components/Button"
@@ -31,6 +32,35 @@ import { Modal, type ModalProps } from "./components/Modal"
 import { Select, type SelectProps } from "./components/Select"
 import { Tooltip } from "./components/Tooltip"
 import { projectPacks } from "../projects/pack"
+import { allTokens as thicketTokens, type DesignToken } from "../demo-thicket/designTokens"
+import type { ThemeToken } from "../types/theme"
+
+const projectTokenModules = import.meta.glob("../projects/*/designTokens.ts", { eager: true })
+
+const projectTokenRegistry = Object.entries(projectTokenModules).reduce<Record<string, DesignToken[]>>(
+  (acc, [path, mod]) => {
+    const match = path.match(/projects\/([^/]+)\//)
+    const projectId = match?.[1]
+    const tokens = (mod as { allTokens?: DesignToken[] }).allTokens
+    if (projectId && tokens && tokens.length > 0) {
+      acc[projectId] = tokens
+    }
+    return acc
+  },
+  {}
+)
+
+function buildThemeTokens(tokens: DesignToken[]): ThemeToken[] {
+  return tokens
+    .filter((token) => token.cssVar)
+    .map((token) => ({
+      label: token.name,
+      cssVar: token.cssVar as string,
+      category: token.category,
+      subcategory: token.subcategory,
+      description: token.description,
+    }))
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GALLERY CONFIGS
@@ -588,7 +618,7 @@ function getPaperMcpClient(): PaperMcpClient | null {
 type ProjectId = string
 
 function App() {
-  const [view, setView] = useState<"gallery" | "canvas">("canvas")
+  const [view, setView] = useState<"gallery" | "canvas" | "color-canvas">("canvas")
   const [searchQuery, setSearchQuery] = useState("")
   const [projectId, setProjectId] = useState<ProjectId>("demo")
   const [thicketPack, setThicketPack] = useState<null | {
@@ -651,6 +681,13 @@ function App() {
       : projectId === "thicket"
         ? thicketPack
         : projectPackList.find((pack) => pack.id === projectId)
+
+  const tokenSource = useMemo(() => {
+    if (projectId === "demo" || projectId === "thicket") return thicketTokens
+    return projectTokenRegistry[projectId] ?? thicketTokens
+  }, [projectId])
+
+  const themeTokens = useMemo(() => buildThemeTokens(tokenSource), [tokenSource])
 
   const adapter = useMemo(() => {
     if (!activePack) return null
@@ -865,6 +902,18 @@ function App() {
               >
                 Canvas
               </button>
+              <button
+                type="button"
+                onClick={() => setView("color-canvas")}
+                className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold ${
+                  view === "color-canvas"
+                    ? "bg-gray-900 text-white"
+                    : "border border-gray-200 text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <Share2 className="h-4 w-4" />
+                Color Canvas
+              </button>
             </div>
           </div>
         </header>
@@ -881,7 +930,7 @@ function App() {
               stickyHeader={false}
               headerOffset={64}
             />
-          ) : (
+          ) : view === "canvas" ? (
             <CanvasTab
               Renderer={PortableComponentRenderer}
               getComponentById={(id) => {
@@ -893,11 +942,19 @@ function App() {
               Button={activePack.ui.Button}
               Tooltip={activePack.ui.Tooltip}
               storageKey={`gallery-${projectId}`}
+              themeStorageKeyPrefix={`gallery-${projectId}`}
+              themeTokens={themeTokens}
               projects={projectOptions}
               activeProjectId={projectId}
               onSelectProject={(id) => setProjectId(id as ProjectId)}
               onCreateProject={handleCreateProject}
               onImportFromPaper={handleImportFromPaper}
+              onOpenColorCanvas={() => setView("color-canvas")}
+            />
+          ) : (
+            <ColorCanvasPage
+              tokens={themeTokens}
+              themeStorageKeyPrefix={`gallery-${projectId}`}
             />
           )}
         </div>
