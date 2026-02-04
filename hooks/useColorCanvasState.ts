@@ -1,7 +1,14 @@
 import { useCallback } from "react"
 
 import { useLocalStorage } from "./useLocalStorage"
-import type { ColorCanvasState, ColorCanvasNode, ColorCanvasEdge, ColorCanvasEdgeType } from "../types/colorCanvas"
+import type {
+  ColorCanvasState,
+  ColorCanvasNode,
+  ColorCanvasEdge,
+  ColorCanvasEdgeType,
+  ColorCanvasEdgeRule,
+} from "../types/colorCanvas"
+import { DEFAULT_COLOR_MODEL, DEFAULT_CONTRAST_TARGET_LC } from "../utils/apca"
 
 const DEFAULT_STATE: ColorCanvasState = {
   nodes: [],
@@ -79,6 +86,16 @@ export function useColorCanvasState(storageKey = "gallery-color-canvas") {
         selectedNodeId: null,
       }))
       return id
+    },
+    [setState]
+  )
+
+  const updateEdge = useCallback(
+    (id: string, updates: Partial<Omit<ColorCanvasEdge, "id">>) => {
+      setState((prev) => ({
+        ...prev,
+        edges: prev.edges.map((edge) => (edge.id === id ? { ...edge, ...updates } : edge)),
+      }))
     },
     [setState]
   )
@@ -192,8 +209,27 @@ export function useColorCanvasState(storageKey = "gallery-color-canvas") {
       sourceId: string,
       targetId: string,
       type: ColorCanvasEdgeType
-    ) => addEdge({ sourceId, targetId, type }),
+    ) => {
+      const rule =
+        type === "contrast"
+          ? { model: DEFAULT_COLOR_MODEL, targetLc: DEFAULT_CONTRAST_TARGET_LC }
+          : { model: DEFAULT_COLOR_MODEL }
+      return addEdge({ sourceId, targetId, type, rule })
+    },
     [addEdge]
+  )
+
+  const updateEdgeRule = useCallback(
+    (id: string, updates: ColorCanvasEdgeRule) => {
+      setState((prev) => ({
+        ...prev,
+        edges: prev.edges.map((edge) => {
+          if (edge.id !== id) return edge
+          return { ...edge, rule: { ...edge.rule, ...updates } }
+        }),
+      }))
+    },
+    [setState]
   )
 
   return {
@@ -208,6 +244,8 @@ export function useColorCanvasState(storageKey = "gallery-color-canvas") {
     removeNode,
     removeEdge,
     undoRemoveEdge,
+    updateEdge,
+    updateEdgeRule,
     updateNode,
     moveNode,
     selectNode,

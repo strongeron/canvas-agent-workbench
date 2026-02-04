@@ -28,17 +28,17 @@ This document records the phases and steps for a project-wired Color Canvas that
 - Color Canvas and Canvas share the same theme registry prefix.
 - No regressions in existing Gallery/Canvas modes.
 
-## Phase 2 (Next): Token Graph + Constraint Engine
+## Phase 2 (Done): Token Graph + Constraint Engine
 ### Tasks
-- Define graph schema (nodes, edges, rule functions).
-- Define rule function library (OKLCH defaults, mix, deltaL, solve APCA).
+- Define graph schema (nodes, edges, rule metadata).
+- Add OKLCH default model flag + APCA target Lc per contrast edge.
 - Implement APCA constraint evaluation for foreground/background pairs.
-- Add audit panel stub (list of APCA results for rule-defined pairs).
+- Add audit panel stub (list of APCA results for contrast pairs).
 
 ### Review Checklist
-- Rules are deterministic and inspectable.
-- APCA evaluation is enforced for each contrast relation.
-- Errors surface when constraints conflict.
+- Rules metadata is inspectable on edges.
+- APCA evaluation is enforced for each contrast relation with target Lc.
+- Audit panel surfaces pass/fail status for contrast pairs.
 
 ## Phase 3 (Later): Artboard Audit + Export
 ### Tasks

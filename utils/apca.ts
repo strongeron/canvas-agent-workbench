@@ -5,6 +5,10 @@ interface RGBA {
   a: number
 }
 
+export const APCA_TARGETS = [15, 30, 45, 60, 75, 90] as const
+export const DEFAULT_CONTRAST_TARGET_LC = 60
+export const DEFAULT_COLOR_MODEL = "oklch"
+
 function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value))
 }
@@ -122,4 +126,9 @@ export function formatLc(value: number | null) {
   const rounded = Math.round(value)
   const sign = rounded > 0 ? "" : "-"
   return `${sign}Lc ${Math.abs(rounded)}`
+}
+
+export function getApcaStatus(value: number | null, target: number) {
+  if (value === null || Number.isNaN(value)) return "unknown"
+  return Math.abs(value) >= target ? "pass" : "fail"
 }

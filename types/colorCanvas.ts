@@ -1,5 +1,12 @@
 export type ColorCanvasNodeType = "token" | "semantic" | "component"
 export type ColorCanvasEdgeType = "map" | "contrast"
+export type ColorCanvasColorModel = "oklch" | "srgb"
+
+export interface ColorCanvasEdgeRule {
+  model?: ColorCanvasColorModel
+  targetLc?: number
+  note?: string
+}
 
 export interface ColorCanvasNode {
   id: string
@@ -16,6 +23,7 @@ export interface ColorCanvasEdge {
   sourceId: string
   targetId: string
   type: ColorCanvasEdgeType
+  rule?: ColorCanvasEdgeRule
 }
 
 export interface ColorCanvasState {

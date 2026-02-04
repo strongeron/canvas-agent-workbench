@@ -6,7 +6,13 @@ import { useThemeRegistry } from "../../hooks/useThemeRegistry"
 import { useColorCanvasState } from "../../hooks/useColorCanvasState"
 import type { ThemeToken } from "../../types/theme"
 import type { ColorCanvasEdge, ColorCanvasNode } from "../../types/colorCanvas"
-import { apcaContrast, formatLc } from "../../utils/apca"
+import {
+  APCA_TARGETS,
+  DEFAULT_CONTRAST_TARGET_LC,
+  apcaContrast,
+  formatLc,
+  getApcaStatus,
+} from "../../utils/apca"
 
 interface ColorCanvasPageProps {
   tokens: ThemeToken[]
@@ -38,6 +44,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   const [connectSourceId, setConnectSourceId] = useState<string | null>(null)
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>("all")
+  const [panelMode, setPanelMode] = useState<"inspector" | "audit">("inspector")
 
   const colorTokens = useMemo(
     () => tokens.filter((token) => token.category === "color"),
@@ -87,6 +94,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     removeEdge,
     undoRemoveEdge,
     canUndoEdgeRemoval,
+    updateEdgeRule,
     selectNode,
     selectEdge,
     moveNode,
@@ -165,6 +173,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       return apcaContrast(textColor, surfaceColor)
     },
     [getNodeColor, nodesById]
+  )
+
+  const getEdgeTarget = useCallback(
+    (edge: ColorCanvasEdge) => edge.rule?.targetLc ?? DEFAULT_CONTRAST_TARGET_LC,
+    []
   )
 
   const handleAddToken = (token: ThemeToken) => {
@@ -273,6 +286,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   const selectedEdge = selectedEdgeId ? edges.find((edge) => edge.id === selectedEdgeId) : null
   const visibleEdges =
     edgeFilter === "all" ? edges : edges.filter((edge) => edge.type === edgeFilter)
+  const contrastEdges = edges.filter((edge) => edge.type === "contrast")
 
   return (
     <div
@@ -552,104 +566,203 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
             <div className="border-b border-default px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">Inspector</h3>
-                  <p className="text-xs text-muted-foreground">Node + edge details</p>
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {panelMode === "audit" ? "Audit" : "Inspector"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {panelMode === "audit" ? "APCA contrast report" : "Node + edge details"}
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setThemePanelVisible(true)}
-                  className="rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-foreground hover:bg-surface-50"
-                >
-                  Themes
-                </button>
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-full border border-default bg-white p-0.5 text-[10px] font-semibold">
+                    {(["inspector", "audit"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setPanelMode(mode)}
+                        className={`rounded-full px-2 py-0.5 ${
+                          panelMode === mode
+                            ? "bg-gray-900 text-white"
+                            : "text-gray-600 hover:bg-surface-50"
+                        }`}
+                      >
+                        {mode === "audit" ? "Audit" : "Inspect"}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setThemePanelVisible(true)}
+                    className="rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-foreground hover:bg-surface-50"
+                  >
+                    Themes
+                  </button>
+                </div>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-4 text-xs text-foreground">
-              {!selectedNode && !selectedEdge && (
-                <div className="rounded-md border border-dashed border-default bg-white px-3 py-2 text-xs text-muted-foreground">
-                  Select a node or edge to inspect details.
-                </div>
-              )}
-
-              {selectedNode && (
+              {panelMode === "audit" ? (
                 <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Label</label>
-                    <input
-                      type="text"
-                      value={selectedNode.label}
-                      onChange={(e) => updateNodeLabel(selectedNode.id, e.target.value)}
-                      className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-[11px] text-muted-foreground">Type</div>
-                    <div className="text-xs font-semibold text-foreground">{selectedNode.type}</div>
-                  </div>
-                  {selectedNode.type === "semantic" && (
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Role</label>
-                      <select
-                        value={selectedNode.role || ""}
-                        onChange={(e) => updateNodeRole(selectedNode.id, e.target.value as ColorCanvasNode["role"])}
-                        className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
-                      >
-                        <option value="">Unspecified</option>
-                        <option value="text">Text</option>
-                        <option value="surface">Surface</option>
-                        <option value="border">Border</option>
-                        <option value="icon">Icon</option>
-                        <option value="accent">Accent</option>
-                      </select>
+                  {contrastEdges.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-default bg-white px-3 py-2 text-xs text-muted-foreground">
+                      Add contrast edges to see APCA status.
+                    </div>
+                  ) : (
+                    contrastEdges.map((edge) => {
+                      const contrast = getEdgeContrast(edge)
+                      const target = getEdgeTarget(edge)
+                      const status = getApcaStatus(contrast, target)
+                      const statusClass =
+                        status === "pass"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : status === "fail"
+                            ? "bg-rose-100 text-rose-700"
+                            : "bg-slate-100 text-slate-600"
+                      const source = nodesById[edge.sourceId]
+                      const targetNode = nodesById[edge.targetId]
+                      const label = `${source?.label ?? "Unknown"} → ${targetNode?.label ?? "Unknown"}`
+
+                      return (
+                        <button
+                          key={edge.id}
+                          type="button"
+                          onClick={() => {
+                            selectEdge(edge.id)
+                            setPanelMode("inspector")
+                          }}
+                          className="flex w-full items-center justify-between gap-2 rounded-md border border-default bg-white px-3 py-2 text-left text-xs hover:bg-surface-50"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-xs font-semibold text-foreground">{label}</div>
+                            <div className="text-[11px] text-muted-foreground">
+                              Target Lc {target}
+                            </div>
+                          </div>
+                          <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass}`}>
+                            {formatLc(contrast)}
+                          </span>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              ) : (
+                <>
+                  {!selectedNode && !selectedEdge && (
+                    <div className="rounded-md border border-dashed border-default bg-white px-3 py-2 text-xs text-muted-foreground">
+                      Select a node or edge to inspect details.
                     </div>
                   )}
-                  {selectedNode.type !== "token" && (
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Color Override</label>
-                      <input
-                        type="text"
-                        value={selectedNode.value || ""}
-                        onChange={(e) => updateNodeValue(selectedNode.id, e.target.value)}
-                        className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
-                        placeholder="e.g. rgb(0 0 0)"
-                      />
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeNode(selectedNode.id)}
-                    className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Remove node
-                  </button>
-                </div>
-              )}
 
-              {selectedEdge && (
-                <div className="space-y-3">
-                  <div>
-                    <div className="text-[11px] text-muted-foreground">Edge type</div>
-                    <div className="text-xs font-semibold text-foreground">{selectedEdge.type}</div>
-                  </div>
-                  {selectedEdge.type === "contrast" && (
-                    <div>
-                      <div className="text-[11px] text-muted-foreground">APCA (approx)</div>
-                      <div className="text-xs font-semibold text-foreground">
-                        {formatLc(getEdgeContrast(selectedEdge))}
+                  {selectedNode && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Label</label>
+                        <input
+                          type="text"
+                          value={selectedNode.label}
+                          onChange={(e) => updateNodeLabel(selectedNode.id, e.target.value)}
+                          className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
+                        />
                       </div>
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">Type</div>
+                        <div className="text-xs font-semibold text-foreground">{selectedNode.type}</div>
+                      </div>
+                      {selectedNode.type === "semantic" && (
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Role</label>
+                          <select
+                            value={selectedNode.role || ""}
+                            onChange={(e) =>
+                              updateNodeRole(selectedNode.id, e.target.value as ColorCanvasNode["role"])
+                            }
+                            className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
+                          >
+                            <option value="">Unspecified</option>
+                            <option value="text">Text</option>
+                            <option value="surface">Surface</option>
+                            <option value="border">Border</option>
+                            <option value="icon">Icon</option>
+                            <option value="accent">Accent</option>
+                          </select>
+                        </div>
+                      )}
+                      {selectedNode.type !== "token" && (
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Color Override</label>
+                          <input
+                            type="text"
+                            value={selectedNode.value || ""}
+                            onChange={(e) => updateNodeValue(selectedNode.id, e.target.value)}
+                            className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
+                            placeholder="e.g. rgb(0 0 0)"
+                          />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeNode(selectedNode.id)}
+                        className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Remove node
+                      </button>
                     </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => removeEdge(selectedEdge.id)}
-                    className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Remove edge
-                  </button>
-                </div>
+
+                  {selectedEdge && (
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">Edge type</div>
+                        <div className="text-xs font-semibold text-foreground">{selectedEdge.type}</div>
+                      </div>
+                      {selectedEdge.type === "contrast" && (
+                        <>
+                          <div>
+                            <div className="text-[11px] text-muted-foreground">APCA (approx)</div>
+                            <div className="text-xs font-semibold text-foreground">
+                              {formatLc(getEdgeContrast(selectedEdge))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                              Target Lc
+                            </label>
+                            <select
+                              value={getEdgeTarget(selectedEdge)}
+                              onChange={(e) =>
+                                updateEdgeRule(selectedEdge.id, { targetLc: Number(e.target.value) })
+                              }
+                              className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
+                            >
+                              {APCA_TARGETS.map((target) => (
+                                <option key={target} value={target}>
+                                  Lc {target}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-muted-foreground">Model</div>
+                            <div className="rounded-md border border-default bg-surface-50 px-2 py-1 text-[11px] font-semibold text-foreground">
+                              OKLCH (default)
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeEdge(selectedEdge.id)}
+                        className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Remove edge
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

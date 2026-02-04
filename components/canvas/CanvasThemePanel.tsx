@@ -1,6 +1,7 @@
 import { ExternalLink, Palette, Plus, X } from "lucide-react"
 import { useMemo, useState } from "react"
 import type { ThemeOption, ThemeToken } from "../../types/theme"
+import { APCA_TARGETS } from "../../utils/apca"
 
 interface CanvasThemePanelProps {
   themes: ThemeOption[]
@@ -221,12 +222,12 @@ export function CanvasThemePanel({
               Target levels (Lc):
             </div>
             <div className="flex flex-wrap gap-2 text-[11px]">
-              {["15", "30", "45", "60", "75", "90+"].map((level) => (
+              {APCA_TARGETS.map((level, index) => (
                 <span
                   key={level}
                   className="rounded-full border border-default bg-surface-50 px-2 py-0.5 text-muted-foreground"
                 >
-                  Lc {level}
+                  Lc {index === APCA_TARGETS.length - 1 ? `${level}+` : level}
                 </span>
               ))}
             </div>
