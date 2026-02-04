@@ -666,19 +666,30 @@ function App() {
     const label = window.prompt("Project name")
     if (!label) return
 
-    const response = await fetch("/api/projects/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: label, label }),
-    })
+    let response: Response
+    try {
+      response = await fetch("/api/projects/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: label, label }),
+      })
+    } catch (error) {
+      console.error("Project create failed:", error)
+      toast.error("Project create failed. Make sure `npm run dev` is running from repo root.")
+      return
+    }
 
     const data = await response.json().catch(() => ({}))
     if (!response.ok || !data.projectId) {
-      alert(data.error || "Failed to create project.")
+      const hint = response.status === 404
+        ? "API not available. Restart `npm run dev` from repo root."
+        : ""
+      toast.error(data.error || `Failed to create project (${response.status}). ${hint}`.trim())
       return
     }
 
     setProjectId(data.projectId)
+    toast.success("Project created. Reloading…")
     window.location.reload()
   }, [])
 
