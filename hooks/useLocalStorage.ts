@@ -45,6 +45,18 @@ export function useLocalStorage<T>(
     [key]
   )
 
+  // Refresh stored value when key changes
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    try {
+      const item = window.localStorage.getItem(key)
+      setStoredValue(item ? JSON.parse(item) : initialValue)
+    } catch {
+      setStoredValue(initialValue)
+    }
+  }, [key, initialValue])
+
   // Sync across tabs
   useEffect(() => {
     if (typeof window === "undefined") return

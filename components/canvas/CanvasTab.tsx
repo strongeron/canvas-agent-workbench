@@ -5,6 +5,7 @@ import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShort
 import { useCanvasState } from "../../hooks/useCanvasState"
 import { useCanvasScenes } from "../../hooks/useCanvasScenes"
 import { useCanvasTransform } from "../../hooks/useCanvasTransform"
+import { useLocalStorage } from "../../hooks/useLocalStorage"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import type { DragData, CanvasScene } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
