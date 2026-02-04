@@ -21,3 +21,9 @@ The pack loader (`projects/pack.ts`) auto-scans all projects and builds
 
 `registry.json` is used by the Paper import flow to keep a lightweight
 index of page-level components vs UI components.
+
+CLI helper:
+
+```
+npm run create-project -- --id my-project --label "My Project"
+```
