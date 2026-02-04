@@ -40,7 +40,7 @@ This document records the phases and steps for a project-wired Color Canvas that
 - APCA evaluation is enforced for each contrast relation with target Lc.
 - Audit panel surfaces pass/fail status for contrast pairs.
 
-## Phase 3 (Later): Artboard Audit + Export
+## Phase 3 (Done): Artboard Audit
 ### Tasks
 - Artboard audit panel: collect token/semantic pairs and show APCA Lc values.
 - Optional DOM scan of rendered artboards (phase 3b) for real color usage.
@@ -49,6 +49,13 @@ This document records the phases and steps for a project-wired Color Canvas that
 ### Review Checklist
 - Audit panel is accurate for selected artboard(s).
 - APCA warnings are visible and actionable.
+
+## Phase 4 (Later): Export
+### Tasks
+- Export graph state as JSON.
+- Optional SVG snapshot export.
+
+### Review Checklist
 - Export includes rules + node positions + theme overrides.
 
 ## Head of Design Validation

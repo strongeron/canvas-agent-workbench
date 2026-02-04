@@ -1,5 +1,5 @@
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core"
-import { useCallback, useState, useMemo, useRef } from "react"
+import { useCallback, useEffect, useState, useMemo, useRef } from "react"
 
 import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShortcuts"
 import { useCanvasState } from "../../hooks/useCanvasState"
@@ -9,7 +9,7 @@ import { useLocalStorage } from "../../hooks/useLocalStorage"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import type { DragData, CanvasScene } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
-import { CanvasArtboardPropsPanel } from "./CanvasArtboardPropsPanel"
+import { CanvasArtboardPropsPanel, type ColorAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasLayersPanel } from "./CanvasLayersPanel"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
@@ -20,6 +20,7 @@ import { CanvasToolbar } from "./CanvasToolbar"
 import { CanvasWorkspace } from "./CanvasWorkspace"
 import { useThemeRegistry } from "../../hooks/useThemeRegistry"
 import type { ThemeOption, ThemeToken } from "../../types/theme"
+import { apcaContrast, DEFAULT_CONTRAST_TARGET_LC, getApcaStatus } from "../../utils/apca"
 
 /** Props for injected Renderer component */
 interface RendererComponentProps {
@@ -63,13 +64,51 @@ const DEFAULT_THEMES: ThemeOption[] = [
 ]
 
 const DEFAULT_THEME_TOKENS: ThemeToken[] = [
-  { label: "Brand 600", cssVar: "--color-brand-600" },
-  { label: "Brand 500", cssVar: "--color-brand-500" },
-  { label: "Surface 50", cssVar: "--color-surface-50" },
-  { label: "Surface 100", cssVar: "--color-surface-100" },
-  { label: "Foreground", cssVar: "--color-foreground" },
-  { label: "Muted Foreground", cssVar: "--color-muted-foreground" },
+  { label: "Brand 600", cssVar: "--color-brand-600", category: "color", subcategory: "brand" },
+  { label: "Brand 500", cssVar: "--color-brand-500", category: "color", subcategory: "brand" },
+  { label: "Surface 50", cssVar: "--color-surface-50", category: "color", subcategory: "surface" },
+  { label: "Surface 100", cssVar: "--color-surface-100", category: "color", subcategory: "surface" },
+  { label: "Foreground", cssVar: "--color-foreground", category: "color", subcategory: "text" },
+  { label: "Muted Foreground", cssVar: "--color-muted-foreground", category: "color", subcategory: "text" },
 ]
+
+function buildColorAuditPairs(
+  tokens: ThemeToken[],
+  tokenValues: Record<string, string>
+): ColorAuditPair[] {
+  const colorTokens = tokens.filter((token) => token.category === "color" && token.cssVar)
+  const textTokens = colorTokens.filter(
+    (token) =>
+      token.subcategory === "text" ||
+      /text|foreground/i.test(token.label)
+  )
+  const surfaceTokens = colorTokens.filter(
+    (token) =>
+      token.subcategory === "surface" ||
+      /surface|canvas/i.test(token.label)
+  )
+
+  const pairs: ColorAuditPair[] = []
+  for (const text of textTokens) {
+    for (const surface of surfaceTokens) {
+      const textValue = text.cssVar ? tokenValues[text.cssVar] : undefined
+      const surfaceValue = surface.cssVar ? tokenValues[surface.cssVar] : undefined
+      const contrast =
+        textValue && surfaceValue ? apcaContrast(textValue, surfaceValue) : null
+      pairs.push({
+        id: `${text.cssVar}-${surface.cssVar}`,
+        textLabel: text.label,
+        surfaceLabel: surface.label,
+        textValue,
+        surfaceValue,
+        contrast,
+        status: getApcaStatus(contrast, DEFAULT_CONTRAST_TARGET_LC),
+      })
+    }
+  }
+
+  return pairs.slice(0, 24)
+}
 
 function getDefaultSizeForComponent(
   componentId: string,
@@ -216,7 +255,15 @@ export function CanvasTab({
     []
   )
   const resolvedThemeTokens = themeTokens && themeTokens.length > 0 ? themeTokens : DEFAULT_THEME_TOKENS
-  const { themes, activeThemeId, setActiveThemeId, tokenValues, addTheme, updateThemeVar } =
+  const {
+    themes,
+    activeThemeId,
+    setActiveThemeId,
+    tokenValues,
+    getTokenValuesForTheme,
+    addTheme,
+    updateThemeVar,
+  } =
     useThemeRegistry({
       storageKeyPrefix: themeStorageKeyPrefix ?? storageKey,
       tokens: resolvedThemeTokens,
@@ -233,6 +280,23 @@ export function CanvasTab({
   const selectedArtboardItem = selectedItem?.type === "artboard" ? selectedItem : null
   const selectedComponent = selectedComponentItem ? getComponentById(selectedComponentItem.componentId) : null
   const selectedVariant = selectedComponent?.variants[selectedComponentItem?.variantIndex ?? 0]
+  const artboardThemeId = selectedArtboardItem?.themeId || activeThemeId
+  const [artboardTokenValues, setArtboardTokenValues] = useState<Record<string, string>>(tokenValues)
+
+  useEffect(() => {
+    if (!selectedArtboardItem) {
+      setArtboardTokenValues(tokenValues)
+      return
+    }
+    setArtboardTokenValues(getTokenValuesForTheme(artboardThemeId))
+  }, [selectedArtboardItem, artboardThemeId, getTokenValuesForTheme, tokenValues])
+  const artboardAuditPairs = useMemo(
+    () =>
+      selectedArtboardItem
+        ? buildColorAuditPairs(resolvedThemeTokens, artboardTokenValues)
+        : [],
+    [selectedArtboardItem, resolvedThemeTokens, artboardTokenValues]
+  )
 
   // Get current props for selected item (customProps or default variant props)
   const selectedItemProps = selectedComponentItem?.customProps ?? selectedVariant?.props ?? {}
@@ -951,6 +1015,8 @@ export function CanvasTab({
               themes={themes}
               activeThemeId={activeThemeId}
               themeId={selectedArtboardItem.themeId}
+              colorAuditPairs={artboardAuditPairs}
+              auditTargetLc={DEFAULT_CONTRAST_TARGET_LC}
               onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
               importKind={importKind}
               onImportKindChange={setImportKind}

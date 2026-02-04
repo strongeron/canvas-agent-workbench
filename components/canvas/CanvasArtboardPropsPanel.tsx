@@ -1,6 +1,7 @@
 import { X } from "lucide-react"
 
 import type { ThemeOption } from "../../types/theme"
+import { formatLc } from "../../utils/apca"
 
 interface CanvasArtboardPropsPanelProps {
   name: string
@@ -8,6 +9,8 @@ interface CanvasArtboardPropsPanelProps {
   themeId?: string
   activeThemeId?: string
   themes?: ThemeOption[]
+  colorAuditPairs?: ColorAuditPair[]
+  auditTargetLc?: number
   layout: {
     display: "flex" | "grid"
     direction?: "row" | "column"
@@ -31,6 +34,16 @@ interface CanvasArtboardPropsPanelProps {
   onClose: () => void
 }
 
+export interface ColorAuditPair {
+  id: string
+  textLabel: string
+  surfaceLabel: string
+  textValue?: string | null
+  surfaceValue?: string | null
+  contrast: number | null
+  status: "pass" | "fail" | "unknown"
+}
+
 const ALIGN_OPTIONS = [
   { value: "start", label: "Start" },
   { value: "center", label: "Center" },
@@ -51,6 +64,8 @@ export function CanvasArtboardPropsPanel({
   themeId,
   activeThemeId,
   themes,
+  colorAuditPairs,
+  auditTargetLc,
   layout,
   size,
   onImportFromPaper,
@@ -168,31 +183,83 @@ export function CanvasArtboardPropsPanel({
             Size: {Math.round(size.width)} × {Math.round(size.height)} px
           </div>
 
-        {onImportFromPaper && (
-          <div className="space-y-2">
-            <div className="text-[11px] font-medium text-muted-foreground">Paper</div>
-            {onImportKindChange && (
-              <div className="flex items-center gap-1 rounded-md border border-default bg-white p-1">
-                {(["ui", "page"] as const).map((kind) => (
-                  <button
-                    key={kind}
-                    type="button"
-                    onClick={() => onImportKindChange(kind)}
-                    className={`flex-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
-                      importKind === kind
-                        ? "bg-gray-900 text-white"
-                        : "text-gray-600 hover:bg-surface-100"
-                    }`}
-                  >
-                    {kind}
-                  </button>
-                ))}
+          {colorAuditPairs && colorAuditPairs.length > 0 && (
+            <div>
+              <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                Color Audit (APCA)
               </div>
-            )}
-            <button
-              type="button"
-              onClick={onImportFromPaper}
-              disabled={importingPaper}
+              {auditTargetLc && (
+                <div className="mb-2 text-[11px] text-muted-foreground">
+                  Target Lc {auditTargetLc}
+                </div>
+              )}
+              <div className="space-y-2">
+                {colorAuditPairs.map((pair) => {
+                  const statusClass =
+                    pair.status === "pass"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : pair.status === "fail"
+                        ? "bg-rose-100 text-rose-700"
+                        : "bg-slate-100 text-slate-600"
+                  return (
+                    <div
+                      key={pair.id}
+                      className="flex items-center justify-between gap-3 rounded-md border border-default bg-white px-2 py-2 text-[11px]"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="h-4 w-4 rounded border border-default"
+                          style={{ background: pair.textValue || "transparent" }}
+                        />
+                        <span className="text-muted-foreground">on</span>
+                        <span
+                          className="h-4 w-4 rounded border border-default"
+                          style={{ background: pair.surfaceValue || "transparent" }}
+                        />
+                        <div className="min-w-0">
+                          <div className="truncate text-foreground">
+                            {pair.textLabel}
+                          </div>
+                          <div className="truncate text-muted-foreground">
+                            {pair.surfaceLabel}
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass}`}>
+                        {formatLc(pair.contrast)}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {onImportFromPaper && (
+            <div className="space-y-2">
+              <div className="text-[11px] font-medium text-muted-foreground">Paper</div>
+              {onImportKindChange && (
+                <div className="flex items-center gap-1 rounded-md border border-default bg-white p-1">
+                  {(["ui", "page"] as const).map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => onImportKindChange(kind)}
+                      className={`flex-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                        importKind === kind
+                          ? "bg-gray-900 text-white"
+                          : "text-gray-600 hover:bg-surface-100"
+                      }`}
+                    >
+                      {kind}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={onImportFromPaper}
+                disabled={importingPaper}
                 className="w-full rounded-md border border-default bg-white px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-100 disabled:opacity-60"
               >
                 {importingPaper ? "Importing from Paper..." : "Import selection into artboard"}

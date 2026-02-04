@@ -16,6 +16,7 @@ interface ThemeRegistryState {
   setActiveThemeId: (id: string) => void
   setThemes: (updater: ThemeOption[] | ((prev: ThemeOption[]) => ThemeOption[])) => void
   tokenValues: Record<string, string>
+  getTokenValuesForTheme: (themeId?: string) => Record<string, string>
   addTheme: (label: string) => void
   updateThemeVar: (themeId: string, cssVar: string, value: string) => void
 }
@@ -40,6 +41,29 @@ export function useThemeRegistry({
     defaultThemes[0]?.id ?? "default"
   )
   const [tokenValues, setTokenValues] = useState<Record<string, string>>({})
+
+  const getTokenValuesForTheme = useMemo(() => {
+    return (themeId?: string) => {
+      if (!rootRef?.current || tokens.length === 0) return tokenValues
+      const targetTheme = themeId || activeThemeId
+      const probe = document.createElement("div")
+      probe.setAttribute("data-theme", targetTheme)
+      probe.style.position = "absolute"
+      probe.style.visibility = "hidden"
+      probe.style.pointerEvents = "none"
+      probe.style.width = "0"
+      probe.style.height = "0"
+      rootRef.current.appendChild(probe)
+      const styles = getComputedStyle(probe)
+      const values: Record<string, string> = {}
+      for (const token of tokens) {
+        if (!token.cssVar) continue
+        values[token.cssVar] = styles.getPropertyValue(token.cssVar).trim()
+      }
+      rootRef.current.removeChild(probe)
+      return values
+    }
+  }, [rootRef, tokens, tokenValues, activeThemeId])
 
   useEffect(() => {
     if (!themes || themes.length === 0) {
@@ -142,6 +166,7 @@ export function useThemeRegistry({
     setActiveThemeId,
     setThemes,
     tokenValues,
+    getTokenValuesForTheme,
     addTheme,
     updateThemeVar,
   }
