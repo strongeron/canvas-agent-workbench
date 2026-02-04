@@ -279,6 +279,7 @@ export function CanvasArtboardItem({
         style={{
           background: item.background || "white",
         }}
+        data-theme={item.themeId || undefined}
       >
         <div
           data-artboard-handle="true"
@@ -286,6 +287,11 @@ export function CanvasArtboardItem({
         >
           <span className="h-2 w-2 rounded-full bg-brand-500" />
           {item.name}
+          {item.themeId && (
+            <span className="rounded-full border border-default bg-white px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+              {item.themeId}
+            </span>
+          )}
         </div>
 
         <div

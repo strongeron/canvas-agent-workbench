@@ -7,10 +7,14 @@ import { GallerySidebar } from "./GallerySidebar"
 import { LayoutSection } from "../components/LayoutSection"
 import { SnapshotManager } from "./SnapshotManager"
 import { TokenSection } from "./TokenSection"
+import { ColorCanvasPage } from "../components/color-canvas/ColorCanvasPage"
+import { ComponentRenderer } from "./ComponentRenderer"
+import { Button } from "./components/ui/button"
+import { Tooltip } from "./components/ui/tooltip"
 import { allComponents, componentsByCategory, allLayouts, allPagePatterns } from "./componentVariants"
 import { allTokens, tokensByCategory } from "./designTokens"
 
-type ViewMode = 'components' | 'layouts' | 'tokens' | 'snapshots' | 'canvas'
+type ViewMode = 'components' | 'layouts' | 'tokens' | 'snapshots' | 'canvas' | 'color-canvas'
 type LayoutViewType = 'all' | 'layout-components' | 'page-patterns'
 type LayoutContext = 'all' | 'public' | 'student' | 'teacher' | 'global'
 
@@ -28,6 +32,31 @@ export default function GalleryPage() {
   const totalLayouts = allLayouts.length
   const totalPagePatterns = allPagePatterns.length
   const totalTokens = allTokens.length
+  const themeTokens = allTokens
+    .filter((token) => token.cssVar)
+    .map((token) => ({
+      label: token.name,
+      cssVar: token.cssVar as string,
+      category: token.category,
+      subcategory: token.subcategory,
+      description: token.description,
+    }))
+
+  const renderCanvas = (storageKey: string) => (
+    <CanvasTab
+      Renderer={ComponentRenderer}
+      getComponentById={(id) =>
+        allComponents.find((entry) => entry.id === id || entry.name === id) ?? null
+      }
+      entries={allComponents as any}
+      Button={Button}
+      Tooltip={Tooltip}
+      storageKey={storageKey}
+      themeStorageKeyPrefix="thicket"
+      themeTokens={themeTokens}
+      onOpenColorCanvas={() => setViewMode("color-canvas")}
+    />
+  )
 
   // Ensure page always starts at the top
   useEffect(() => {
@@ -60,7 +89,11 @@ export default function GalleryPage() {
       {/* Canvas mode: full-width, no sidebar, no padding */}
       {viewMode === 'canvas' ? (
         <div className="h-[calc(100vh-80px)]">
-          <CanvasTab />
+          {renderCanvas("thicket-canvas")}
+        </div>
+      ) : viewMode === 'color-canvas' ? (
+        <div className="h-[calc(100vh-80px)]">
+          <ColorCanvasPage tokens={themeTokens} themeStorageKeyPrefix="thicket" />
         </div>
       ) : (
         <div className="mx-auto flex max-w-screen-2xl">
@@ -265,6 +298,7 @@ export default function GalleryPage() {
                   category={category}
                   tokens={tokens}
                   searchQuery={searchQuery}
+                  onOpenColorCanvas={() => setViewMode("color-canvas")}
                 />
               ))}
             </div>

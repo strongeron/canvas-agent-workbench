@@ -1,5 +1,5 @@
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core"
-import { useCallback, useState, useMemo, useEffect, useRef } from "react"
+import { useCallback, useState, useMemo, useRef } from "react"
 
 import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShortcuts"
 import { useCanvasState } from "../../hooks/useCanvasState"
@@ -14,10 +14,11 @@ import { CanvasLayersPanel } from "./CanvasLayersPanel"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
 import { CanvasScenesPanel } from "./CanvasScenesPanel"
 import { CanvasSidebar } from "./CanvasSidebar"
-import { CanvasThemePanel, type CanvasThemeOption, type CanvasThemeToken } from "./CanvasThemePanel"
+import { CanvasThemePanel } from "./CanvasThemePanel"
 import { CanvasToolbar } from "./CanvasToolbar"
 import { CanvasWorkspace } from "./CanvasWorkspace"
-import { useLocalStorage } from "../../hooks/useLocalStorage"
+import { useThemeRegistry } from "../../hooks/useThemeRegistry"
+import type { ThemeOption, ThemeToken } from "../../types/theme"
 
 /** Props for injected Renderer component */
 interface RendererComponentProps {
@@ -36,16 +37,31 @@ const LAYOUT_SIZE_DEFAULTS: Record<string, { width: number; minHeight: number }>
   full: { width: 600, minHeight: 250 },    // tabs, sidebars, full-width
 }
 
-const DEFAULT_THEMES: CanvasThemeOption[] = [
+const DEFAULT_THEMES: ThemeOption[] = [
   {
     id: "thicket",
     label: "Thicket",
     description: "Default gallery theme",
     vars: {},
+    groupId: "thicket",
+  },
+  {
+    id: "thicket-light",
+    label: "Light UI",
+    description: "Thicket preset",
+    vars: {},
+    groupId: "thicket",
+  },
+  {
+    id: "thicket-dark",
+    label: "Dark UI",
+    description: "Thicket preset",
+    vars: {},
+    groupId: "thicket",
   },
 ]
 
-const THEME_TOKENS: CanvasThemeToken[] = [
+const DEFAULT_THEME_TOKENS: ThemeToken[] = [
   { label: "Brand 600", cssVar: "--color-brand-600" },
   { label: "Brand 500", cssVar: "--color-brand-500" },
   { label: "Surface 50", cssVar: "--color-surface-50" },
@@ -79,6 +95,8 @@ interface CanvasTabProps {
   storageKey?: string
   /** Optional theme storage key prefix (shared across canvases) */
   themeStorageKeyPrefix?: string
+  /** Optional theme token list (full token set) */
+  themeTokens?: ThemeToken[]
   /** Optional project selector */
   projects?: Array<{ id: string; label: string }>
   activeProjectId?: string
@@ -126,6 +144,7 @@ export function CanvasTab({
   Tooltip,
   storageKey,
   themeStorageKeyPrefix,
+  themeTokens,
   projects,
   activeProjectId,
   onSelectProject,
@@ -188,12 +207,6 @@ export function CanvasTab({
   const [isImportingPaper, setIsImportingPaper] = useState(false)
   const [importKind, setImportKind] = useState<"ui" | "page">("ui")
   const canvasRootRef = useRef<HTMLDivElement>(null)
-  const themeStorageKey = themeStorageKeyPrefix
-    ? `${themeStorageKeyPrefix}-theme`
-    : storageKey
-      ? `${storageKey}-theme`
-      : "gallery-canvas-theme"
-  const [activeThemeId, setActiveThemeId] = useLocalStorage<string>(themeStorageKey, "thicket")
   const importQueueStorageKey = storageKey
     ? `${storageKey}-imports`
     : "gallery-import-queue"
@@ -201,13 +214,14 @@ export function CanvasTab({
     importQueueStorageKey,
     []
   )
-  const themeListStorageKey = themeStorageKeyPrefix
-    ? `${themeStorageKeyPrefix}-themes`
-    : storageKey
-      ? `${storageKey}-themes`
-      : "gallery-canvas-themes"
-  const [themes, setThemes] = useLocalStorage<CanvasThemeOption[]>(themeListStorageKey, DEFAULT_THEMES)
-  const [tokenValues, setTokenValues] = useState<Record<string, string>>({})
+  const resolvedThemeTokens = themeTokens && themeTokens.length > 0 ? themeTokens : DEFAULT_THEME_TOKENS
+  const { themes, activeThemeId, setActiveThemeId, tokenValues, addTheme, updateThemeVar } =
+    useThemeRegistry({
+      storageKeyPrefix: themeStorageKeyPrefix ?? storageKey,
+      tokens: resolvedThemeTokens,
+      defaultThemes: DEFAULT_THEMES,
+      rootRef: canvasRootRef,
+    })
 
   // Get the first selected item (for props panel - shows single item when one is selected)
   const selectedItem = selectedIds.length === 1
@@ -311,58 +325,6 @@ export function CanvasTab({
     })
   }, [])
   const toggleInteractMode = useCallback(() => setInteractMode((prev) => !prev), [])
-
-  useEffect(() => {
-    if (!themes || themes.length === 0) {
-      setThemes(DEFAULT_THEMES)
-    }
-  }, [themes, setThemes])
-
-  useEffect(() => {
-    if (!themes || themes.length === 0) return
-    if (!themes.some((theme) => theme.id === activeThemeId)) {
-      setActiveThemeId(themes[0].id)
-    }
-  }, [themes, activeThemeId, setActiveThemeId])
-
-  useEffect(() => {
-    if (typeof document === "undefined") return
-    const styleId = themeStorageKeyPrefix
-      ? `${themeStorageKeyPrefix}-theme-overrides`
-      : storageKey
-        ? `${storageKey}-theme-overrides`
-        : "canvas-theme-overrides"
-    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null
-    if (!styleEl) {
-      styleEl = document.createElement("style")
-      styleEl.id = styleId
-      document.head.appendChild(styleEl)
-    }
-
-    const cssText = themes
-      .map((theme) => {
-        const entries = Object.entries(theme.vars ?? {})
-        if (entries.length === 0) return ""
-        const body = entries
-          .map(([cssVar, value]) => `  ${cssVar}: ${value};`)
-          .join("\n")
-        return `[data-theme="${theme.id}"] {\n${body}\n}`
-      })
-      .filter(Boolean)
-      .join("\n\n")
-
-    styleEl.textContent = cssText
-  }, [themes, storageKey, themeStorageKeyPrefix])
-
-  useEffect(() => {
-    if (!canvasRootRef.current) return
-    const styles = getComputedStyle(canvasRootRef.current)
-    const values: Record<string, string> = {}
-    for (const token of THEME_TOKENS) {
-      values[token.cssVar] = styles.getPropertyValue(token.cssVar).trim()
-    }
-    setTokenValues(values)
-  }, [activeThemeId, themes])
 
   const handleImportFromPaper = useCallback(async () => {
     if (!onImportFromPaper || isImportingPaper) return
@@ -666,53 +628,6 @@ export function CanvasTab({
     workspaceSize.width,
   ])
 
-  const handleAddTheme = useCallback(
-    (label: string) => {
-      const normalized = label.trim()
-      if (!normalized) return
-      const baseId = normalized
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)+/g, "")
-      let nextId = baseId || `theme-${themes.length + 1}`
-      let counter = 2
-      while (themes.some((theme) => theme.id === nextId)) {
-        nextId = `${baseId || "theme"}-${counter}`
-        counter += 1
-      }
-
-      const activeTheme = themes.find((theme) => theme.id === activeThemeId)
-      const newTheme: CanvasThemeOption = {
-        id: nextId,
-        label: normalized,
-        description: "Custom theme",
-        vars: { ...(activeTheme?.vars ?? {}) },
-      }
-
-      setThemes((prev) => [...prev, newTheme])
-      setActiveThemeId(nextId)
-    },
-    [themes, activeThemeId, setThemes, setActiveThemeId]
-  )
-
-  const handleUpdateThemeVar = useCallback(
-    (themeId: string, cssVar: string, value: string) => {
-      setThemes((prev) =>
-        prev.map((theme) => {
-          if (theme.id !== themeId) return theme
-          const nextVars = { ...(theme.vars ?? {}) }
-          const trimmed = value.trim()
-          if (!trimmed) {
-            delete nextVars[cssVar]
-          } else {
-            nextVars[cssVar] = trimmed
-          }
-          return { ...theme, vars: nextVars }
-        })
-      )
-    },
-    [setThemes]
-  )
 
   const requestEmbedStates = useCallback(async () => {
     if (typeof window === "undefined") return
@@ -1033,6 +948,7 @@ export function CanvasTab({
               layout={selectedArtboardItem.layout}
               size={selectedArtboardItem.size}
               themes={themes}
+              activeThemeId={activeThemeId}
               themeId={selectedArtboardItem.themeId}
               onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
               importKind={importKind}
@@ -1063,10 +979,10 @@ export function CanvasTab({
               activeThemeId={activeThemeId}
               onThemeChange={setActiveThemeId}
               onOpenColorCanvas={handleOpenColorCanvas}
-              onAddTheme={handleAddTheme}
-              onUpdateThemeVar={handleUpdateThemeVar}
+              onAddTheme={addTheme}
+              onUpdateThemeVar={updateThemeVar}
               tokenValues={tokenValues}
-              tokens={THEME_TOKENS}
+              tokens={resolvedThemeTokens}
               onClose={() => setThemePanelVisible(false)}
             />
           )}

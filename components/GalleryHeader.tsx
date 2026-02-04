@@ -1,10 +1,10 @@
-import { Accessibility, Box, Layers, Layout, Palette, Search } from "lucide-react"
+import { Accessibility, Box, Layers, Layout, Palette, Search, Share2 } from "lucide-react"
 
 interface GalleryHeaderProps {
   searchQuery: string
   onSearchChange: (value: string) => void
-  viewMode: "components" | "layouts" | "tokens" | "snapshots" | "canvas"
-  onViewModeChange: (mode: "components" | "layouts" | "tokens" | "snapshots" | "canvas") => void
+  viewMode: "components" | "layouts" | "tokens" | "snapshots" | "canvas" | "color-canvas"
+  onViewModeChange: (mode: "components" | "layouts" | "tokens" | "snapshots" | "canvas" | "color-canvas") => void
   totals: {
     components: number
     variants: number
@@ -49,6 +49,7 @@ export function GalleryHeader({
               placeholder={
                 viewMode === "components" ? "Search components..." :
                 viewMode === "layouts" ? "Search layouts..." :
+                viewMode === "color-canvas" ? "Search tokens..." :
                 "Search tokens..."
               }
               className="text-foreground placeholder:text-muted w-full rounded-lg border border-default bg-white py-2 pl-10 pr-3 text-sm transition-all focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -124,6 +125,17 @@ export function GalleryHeader({
             >
               <Layers className="h-4 w-4" />
               Canvas
+            </button>
+            <button
+              onClick={() => onViewModeChange("color-canvas")}
+              className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                viewMode === "color-canvas"
+                  ? "bg-brand-600 text-white shadow-sm"
+                  : "text-muted-foreground hover:bg-surface-50 hover:text-foreground"
+              }`}
+            >
+              <Share2 className="h-4 w-4" />
+              Color Canvas
             </button>
           </div>
 

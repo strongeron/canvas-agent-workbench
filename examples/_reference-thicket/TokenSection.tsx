@@ -7,12 +7,14 @@ interface TokenSectionProps {
   category: string
   tokens: DesignToken[]
   searchQuery: string
+  onOpenColorCanvas?: () => void
 }
 
 export function TokenSection({
   category,
   tokens,
   searchQuery,
+  onOpenColorCanvas,
 }: TokenSectionProps) {
   const filteredTokens = searchQuery
     ? tokens.filter(
@@ -44,6 +46,15 @@ export function TokenSection({
         <span className="text-muted rounded-full bg-surface-200 px-3 py-1 text-sm font-medium">
           {filteredTokens.length} tokens
         </span>
+        {category === "color" && onOpenColorCanvas && (
+          <button
+            type="button"
+            onClick={onOpenColorCanvas}
+            className="ml-auto rounded-full border border-default bg-white px-3 py-1 text-xs font-semibold text-foreground hover:bg-surface-50"
+          >
+            Open Color Canvas
+          </button>
+        )}
       </div>
 
       <div className="space-y-8">

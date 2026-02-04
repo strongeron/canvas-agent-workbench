@@ -39,10 +39,10 @@ export const colorTokens: DesignToken[] = [
   { name: 'Neutral 900', value: 'rgb(42, 42, 40)', cssVar: '--color-neutral-900', category: 'color', subcategory: 'neutral' },
   { name: 'Neutral 950', value: 'rgb(32, 32, 30)', cssVar: '--color-neutral-950', category: 'color', subcategory: 'neutral' },
 
-  { name: 'Text Primary', value: 'rgb(42, 42, 40)', cssVar: '--color-text-foreground', category: 'color', subcategory: 'text', description: 'Main text color' },
-  { name: 'Text Secondary', value: 'rgb(89, 89, 85)', cssVar: '--color-text-muted-foreground', category: 'color', subcategory: 'text', description: 'Secondary text color' },
-  { name: 'Text Tertiary', value: 'rgb(105, 105, 100)', cssVar: '--color-text-muted', category: 'color', subcategory: 'text', description: 'Tertiary text color' },
-  { name: 'Text Disabled', value: 'rgb(152, 152, 148)', cssVar: '--color-text-disabled', category: 'color', subcategory: 'text', description: 'Disabled text color' },
+  { name: 'Text Primary', value: 'rgb(42, 42, 40)', cssVar: '--color-foreground', category: 'color', subcategory: 'text', description: 'Main text color (foreground)' },
+  { name: 'Text Secondary', value: 'rgb(89, 89, 85)', cssVar: '--color-muted-foreground', category: 'color', subcategory: 'text', description: 'Secondary text color (muted foreground)' },
+  { name: 'Text Tertiary', value: 'rgb(152, 152, 148)', cssVar: '--color-muted', category: 'color', subcategory: 'text', description: 'Muted text color' },
+  { name: 'Text Disabled', value: 'rgb(152, 152, 148)', cssVar: '--color-disabled', category: 'color', subcategory: 'text', description: 'Disabled text color' },
 
   { name: 'Error', value: 'rgb(206, 82, 62)', cssVar: '--color-error', category: 'color', subcategory: 'semantic', description: 'Error state color' },
   { name: 'Error Surface', value: 'rgb(253, 238, 236)', cssVar: '--color-error-surface', category: 'color', subcategory: 'semantic' },

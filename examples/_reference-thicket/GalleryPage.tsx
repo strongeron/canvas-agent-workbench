@@ -10,7 +10,7 @@ import { TokenSection } from "./TokenSection"
 import { allComponents, componentsByCategory, allLayouts, allPagePatterns } from "./mocks/componentVariants"
 import { allTokens, tokensByCategory } from "./mocks/designTokens"
 
-type ViewMode = 'components' | 'layouts' | 'tokens' | 'snapshots' | 'canvas'
+type ViewMode = 'components' | 'layouts' | 'tokens' | 'snapshots' | 'canvas' | 'color-canvas'
 type LayoutViewType = 'all' | 'layout-components' | 'page-patterns'
 type LayoutContext = 'all' | 'public' | 'student' | 'teacher' | 'global'
 
@@ -59,6 +59,10 @@ export default function GalleryPage() {
 
       {/* Canvas mode: full-width, no sidebar, no padding */}
       {viewMode === 'canvas' ? (
+        <div className="h-[calc(100vh-80px)]">
+          <CanvasTab />
+        </div>
+      ) : viewMode === 'color-canvas' ? (
         <div className="h-[calc(100vh-80px)]">
           <CanvasTab />
         </div>
@@ -265,6 +269,7 @@ export default function GalleryPage() {
                   category={category}
                   tokens={tokens}
                   searchQuery={searchQuery}
+                  onOpenColorCanvas={() => setViewMode("color-canvas")}
                 />
               ))}
             </div>

@@ -40,6 +40,7 @@ export interface CanvasArtboardItem extends CanvasItemBase {
   type: "artboard"
   name: string
   background?: string
+  themeId?: string
   layout: {
     display: "flex" | "grid"
     direction?: "row" | "column"

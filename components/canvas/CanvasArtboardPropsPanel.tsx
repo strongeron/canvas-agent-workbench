@@ -1,10 +1,13 @@
 import { X } from "lucide-react"
 
+import type { ThemeOption } from "../../types/theme"
+
 interface CanvasArtboardPropsPanelProps {
   name: string
   background?: string
   themeId?: string
-  themes?: Array<{ id: string; label: string }>
+  activeThemeId?: string
+  themes?: ThemeOption[]
   layout: {
     display: "flex" | "grid"
     direction?: "row" | "column"
@@ -46,6 +49,7 @@ export function CanvasArtboardPropsPanel({
   name,
   background,
   themeId,
+  activeThemeId,
   themes,
   layout,
   size,
@@ -65,6 +69,12 @@ export function CanvasArtboardPropsPanel({
     padding: layout.padding ?? 24,
     columns: layout.columns ?? 2,
   }
+
+  const resolvedThemeId = themeId || activeThemeId || ""
+  const resolvedTheme = themes?.find((theme) => theme.id === resolvedThemeId)
+  const presetGroupId = resolvedTheme?.groupId || resolvedTheme?.id
+  const themePresets =
+    themes?.filter((theme) => theme.groupId === presetGroupId && theme.id !== presetGroupId) ?? []
 
   return (
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
@@ -101,6 +111,27 @@ export function CanvasArtboardPropsPanel({
                   </option>
                 ))}
               </select>
+              {themePresets.length > 0 && (
+                <div className="mt-3">
+                  <div className="mb-1 text-[11px] font-medium text-muted-foreground">Presets</div>
+                  <div className="flex flex-wrap gap-2">
+                    {themePresets.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => onChange({ themeId: preset.id })}
+                        className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                          themeId === preset.id
+                            ? "border-brand-500 bg-brand-50 text-brand-700"
+                            : "border-default text-muted-foreground hover:bg-surface-100"
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
