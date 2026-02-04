@@ -709,37 +709,51 @@ function App() {
       }
 
       const client = getPaperMcpClient()
-      if (!client) {
-        toast.error("Paper MCP client not available in this environment.")
-        return null
-      }
-
       const toastId = toast.loading("Importing from Paper...")
 
-      const basicInfo = await client.getBasicInfo().catch(() => ({}))
-      const selection = await importPaperSelection(client, { format: "tailwind" })
       const importKind = kind === "page" ? "page" : "ui"
       const importedAt = new Date().toISOString().split("T")[0]
+      let selection: Awaited<ReturnType<typeof importPaperSelection>> | null = null
+      let basicInfo: Record<string, any> = {}
+      let payload: Record<string, any> = {
+        projectId: selectedProjectId,
+        kind: importKind,
+        source: {
+          importedAt,
+        },
+      }
+
+      if (client) {
+        basicInfo = await client.getBasicInfo().catch(() => ({}))
+        selection = await importPaperSelection(client, { format: "tailwind" })
+        payload = {
+          ...payload,
+          name: selection.name,
+          jsx: selection.jsx,
+          source: {
+            ...payload.source,
+            fileName: basicInfo.fileName,
+            pageName: basicInfo.pageName,
+            nodeId: selection.nodeId,
+          },
+        }
+      }
+
       const response = await fetch("/api/paper/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: selectedProjectId,
-          name: selection.name,
-          jsx: selection.jsx,
-          kind: importKind,
-          source: {
-            fileName: (basicInfo as { fileName?: string }).fileName,
-            pageName: (basicInfo as { pageName?: string }).pageName,
-            nodeId: selection.nodeId,
-            importedAt,
-          },
-        }),
+        body: JSON.stringify(payload),
       })
 
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.componentId) {
-        toast.error(data.error || "Paper import failed.", { id: toastId })
+        const hint = response.status === 501
+          ? "Server MCP bridge not configured. Set PAPER_MCP_CLIENT_MODULE."
+          : ""
+        toast.error(
+          data.error || `Paper import failed (${response.status}). ${hint}`.trim(),
+          { id: toastId }
+        )
         return null
       }
 
@@ -750,10 +764,16 @@ function App() {
         toast.success("Imported from Paper.", { id: toastId })
       }
 
-      const size =
-        selection.width && selection.height
-          ? { width: selection.width, height: selection.height }
-          : undefined
+      const apiSelection = data.selection || null
+      const width = selection?.width ?? apiSelection?.width
+      const height = selection?.height ?? apiSelection?.height
+      const size = width && height ? { width, height } : undefined
+      const queueName = selection?.name || apiSelection?.name || data.componentName || "Paper Component"
+      const queueSource = {
+        fileName: basicInfo?.fileName ?? apiSelection?.fileName,
+        pageName: basicInfo?.pageName ?? apiSelection?.pageName,
+        nodeId: selection?.nodeId ?? apiSelection?.nodeId,
+      }
 
       return {
         componentId: data.componentId as string,
@@ -761,16 +781,12 @@ function App() {
         size,
         queueItem: {
           id: `${data.componentId}-${Date.now()}`,
-          name: selection.name,
+          name: queueName,
           componentId: data.componentId as string,
           projectId: selectedProjectId,
           kind: importKind,
           importedAt,
-          source: {
-            fileName: (basicInfo as { fileName?: string }).fileName,
-            pageName: (basicInfo as { pageName?: string }).pageName,
-            nodeId: selection.nodeId,
-          },
+          source: queueSource,
         },
       }
     },

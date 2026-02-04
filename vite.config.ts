@@ -2,12 +2,14 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path, { dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { pathToFileURL } from 'node:url'
 import { existsSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import {
   createPaperGalleryEntry,
   formatPaperComponentSource,
   formatPaperGalleryEntrySource,
+  importPaperSelection,
   slugify,
   toPascalCase,
 } from './core/mcp/paper'
@@ -16,6 +18,9 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const PROJECTS_ROOT = path.resolve(__dirname, 'projects')
+const PAPER_MCP_MODULE = process.env.PAPER_MCP_CLIENT_MODULE
+let cachedPaperClient = null
+let attemptedPaperClientLoad = false
 
 function sendJson(res, status, payload) {
   res.statusCode = status
@@ -70,6 +75,37 @@ async function ensureProjectScaffold(projectId, label) {
   }
 
   return projectDir
+}
+
+async function resolvePaperMcpClient() {
+  if (cachedPaperClient) return cachedPaperClient
+  if (attemptedPaperClientLoad) return null
+  attemptedPaperClientLoad = true
+
+  const globalClient = globalThis?.paperMcp || globalThis?.mcp?.paper
+  if (globalClient) {
+    cachedPaperClient = globalClient
+    return cachedPaperClient
+  }
+
+  if (!PAPER_MCP_MODULE) return null
+
+  try {
+    const resolved = path.isAbsolute(PAPER_MCP_MODULE)
+      ? PAPER_MCP_MODULE
+      : path.resolve(__dirname, PAPER_MCP_MODULE)
+    const mod = await import(pathToFileURL(resolved).href)
+    cachedPaperClient =
+      mod?.default ||
+      mod?.paperMcp ||
+      mod?.client ||
+      mod?.mcp?.paper ||
+      null
+    return cachedPaperClient
+  } catch (error) {
+    console.warn('[paper import] Failed to load PAPER_MCP_CLIENT_MODULE:', error)
+    return null
+  }
 }
 
 async function updateProjectRegistry(projectDir, entryId, kind) {
@@ -132,7 +168,38 @@ function paperImportPlugin() {
               return sendJson(res, 400, { error: 'projectId is required.' })
             }
 
-            const jsx = typeof body.jsx === 'string' ? body.jsx : ''
+            let jsx = typeof body.jsx === 'string' ? body.jsx : ''
+            let name = typeof body.name === 'string' ? body.name : ''
+            let selectionMeta = body.selection || null
+            let basicInfo = null
+
+            if (!jsx) {
+              const client = await resolvePaperMcpClient()
+              if (!client) {
+                return sendJson(res, 501, {
+                  error: 'Paper MCP client not available server-side. Set PAPER_MCP_CLIENT_MODULE or inject global mcp client.',
+                })
+              }
+
+              try {
+                basicInfo = await client.getBasicInfo?.()
+              } catch {
+                basicInfo = null
+              }
+
+              const selection = await importPaperSelection(client, { format: body.format || 'tailwind' })
+              jsx = selection.jsx
+              name = name || selection.name
+              selectionMeta = {
+                name: selection.name,
+                nodeId: selection.nodeId,
+                width: selection.width,
+                height: selection.height,
+                fileName: basicInfo?.fileName,
+                pageName: basicInfo?.pageName,
+              }
+            }
+
             if (!jsx) {
               return sendJson(res, 400, { error: 'jsx is required.' })
             }
@@ -142,15 +209,15 @@ function paperImportPlugin() {
             const configDir = path.join(projectDir, 'configs', 'paper')
 
             const baseName =
-              typeof body.name === 'string' && body.name.trim()
-                ? body.name.trim()
+              typeof name === 'string' && name.trim()
+                ? name.trim()
                 : 'PaperComponent'
             const { slug, componentName } = uniqueName(baseName, componentDir, configDir)
 
             const importPath = `@project/${projectId}/components/paper/${componentName}`
             const descriptionParts = []
-            if (body.source?.fileName) descriptionParts.push(body.source.fileName)
-            if (body.source?.nodeId) descriptionParts.push(`node ${body.source.nodeId}`)
+            if (selectionMeta?.fileName) descriptionParts.push(selectionMeta.fileName)
+            if (selectionMeta?.nodeId) descriptionParts.push(`node ${selectionMeta.nodeId}`)
             const description = descriptionParts.length > 0
               ? `Imported from Paper (${descriptionParts.join(' · ')})`
               : 'Imported from Paper MCP'
@@ -188,6 +255,7 @@ function paperImportPlugin() {
               componentName,
               importPath,
               reload: true,
+              selection: selectionMeta,
             })
           } catch (error) {
             return sendJson(res, 500, { error: error?.message || 'Paper import failed.' })
