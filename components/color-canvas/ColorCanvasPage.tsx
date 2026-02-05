@@ -236,10 +236,6 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     }
 
     if (connectMode === "contrast") {
-      if (sourceNode.type !== "semantic" || targetNode.type !== "semantic") {
-        setConnectSourceId(null)
-        return
-      }
       addTypedEdge(connectSourceId, nodeId, "contrast")
       setConnectSourceId(null)
       return
@@ -861,6 +857,28 @@ function ColorNode({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
+      {connectActive && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onClick(node.id)
+            }}
+            className="absolute -left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-brand-300 bg-white shadow-sm hover:border-brand-500"
+            aria-label="Start connection"
+          />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onClick(node.id)
+            }}
+            className="absolute -right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-brand-300 bg-white shadow-sm hover:border-brand-500"
+            aria-label="Finish connection"
+          />
+        </>
+      )}
       <div className="flex items-center gap-2">
         <div
           className="h-6 w-6 rounded border border-default"
