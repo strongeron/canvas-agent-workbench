@@ -10,8 +10,13 @@ interface RendererComponentProps {
   componentName: string
   importPath?: string
   variant: ComponentVariant
+  allowOverflow?: boolean
+  renderMode?: "card" | "standalone" | "canvas"
   propsOverride?: Record<string, unknown>
   onPropsChange?: (props: Record<string, unknown>) => void
+  showInteractivePanel?: boolean
+  hideHeader?: boolean
+  hideFooter?: boolean
 }
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"

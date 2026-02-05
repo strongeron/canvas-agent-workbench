@@ -20,6 +20,8 @@ import {
   CanvasTab,
   PortableComponentRenderer,
   PortableGalleryPage as GalleryPage,
+  type PaperImportContext,
+  type PaperImportResult,
 } from "../components"
 import { ColorCanvasPage } from "../components/color-canvas/ColorCanvasPage"
 
@@ -400,7 +402,6 @@ const modalEntry: GalleryEntry<ModalProps> = {
   category: "Overlay",
   importPath: "@/components/Modal",
   layoutSize: "large",
-  isModal: true,
   variants: [
     {
       name: "Default",
@@ -734,11 +735,7 @@ function App() {
     async ({
       projectId: targetProjectId,
       kind,
-    }: {
-      projectId?: string
-      artboardId?: string | null
-      kind?: "ui" | "page"
-    }) => {
+    }: PaperImportContext): Promise<PaperImportResult | null> => {
       const selectedProjectId = targetProjectId || projectId
       if (!selectedProjectId || !projectIds.includes(selectedProjectId)) {
         toast.error("Select a project pack before importing from Paper.")
@@ -748,7 +745,7 @@ function App() {
       const client = getPaperMcpClient()
       const toastId = toast.loading("Importing from Paper...")
 
-      const importKind = kind === "page" ? "page" : "ui"
+      const importKind: "ui" | "page" = kind === "page" ? "page" : "ui"
       const importedAt = new Date().toISOString().split("T")[0]
       let selection: Awaited<ReturnType<typeof importPaperSelection>> | null = null
       let basicInfo: Record<string, any> = {}

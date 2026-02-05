@@ -51,7 +51,7 @@ interface ComponentGroupProps {
 }
 
 function ComponentGroup({ component, isExpanded, onToggle }: ComponentGroupProps) {
-  const componentId = "id" in component ? (component.id as string) : component.name
+  const componentId = component.id
 
   return (
     <div className="border-b border-default last:border-b-0">

@@ -135,8 +135,8 @@ function ComponentNotFound({ name }: { name: string }) {
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
       <h4 className="font-medium text-amber-800">Component not found</h4>
       <p className="mt-1 text-sm text-amber-600">
-        The component "{name}" is not registered in the gallery adapter.
-        Make sure it's added to your componentMap.
+        The component &quot;{name}&quot; is not registered in the gallery adapter.
+        Make sure it&apos;s added to your componentMap.
       </p>
     </div>
   )

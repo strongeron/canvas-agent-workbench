@@ -1,5 +1,15 @@
 export type CanvasItem = CanvasComponentItem | CanvasEmbedItem | CanvasArtboardItem
 
+export type CanvasItemInput =
+  | Omit<CanvasComponentItem, "id" | "zIndex">
+  | Omit<CanvasEmbedItem, "id" | "zIndex">
+  | Omit<CanvasArtboardItem, "id" | "zIndex">
+
+export type CanvasItemUpdate =
+  | Partial<Omit<CanvasComponentItem, "id">>
+  | Partial<Omit<CanvasEmbedItem, "id">>
+  | Partial<Omit<CanvasArtboardItem, "id">>
+
 export interface CanvasItemBase {
   id: string
   position: { x: number; y: number }

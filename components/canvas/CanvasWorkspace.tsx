@@ -5,14 +5,14 @@ import type { ComponentType } from "react"
 import type {
   CanvasItem as CanvasItemType,
   CanvasComponentItem,
-  CanvasEmbedItem,
-  CanvasArtboardItem,
+  CanvasEmbedItem as CanvasEmbedItemType,
+  CanvasArtboardItem as CanvasArtboardItemType,
   CanvasTransform,
   CanvasGroup,
 } from "../../types/canvas"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
-import { CanvasArtboardItem } from "./CanvasArtboardItem"
-import { CanvasEmbedItem } from "./CanvasEmbedItem"
+import { CanvasArtboardItem as CanvasArtboardItemComponent } from "./CanvasArtboardItem"
+import { CanvasEmbedItem as CanvasEmbedItemComponent } from "./CanvasEmbedItem"
 import { CanvasLayoutComponentItem } from "./CanvasLayoutComponentItem"
 import { CanvasLayoutEmbedItem } from "./CanvasLayoutEmbedItem"
 import { CanvasItem } from "./CanvasItem"
@@ -135,7 +135,7 @@ export function CanvasWorkspace({
     }
   }, [interactMode])
 
-  const artboards = items.filter((item) => item.type === "artboard") as CanvasArtboardItem[]
+  const artboards = items.filter((item) => item.type === "artboard") as CanvasArtboardItemType[]
   const freeformItems = items.filter(
     (item) => item.type !== "artboard" && !item.parentId
   )
@@ -147,7 +147,7 @@ export function CanvasWorkspace({
     (artboardId: string) => {
       return items
         .filter(
-          (item): item is CanvasComponentItem | CanvasEmbedItem =>
+          (item): item is CanvasComponentItem | CanvasEmbedItemType =>
             item.type !== "artboard" && item.parentId === artboardId
         )
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -156,7 +156,7 @@ export function CanvasWorkspace({
   )
 
   const renderLayoutChild = useCallback(
-    (child: CanvasComponentItem | CanvasEmbedItem) => {
+    (child: CanvasComponentItem | CanvasEmbedItemType) => {
       const isSelected = selectedIds.includes(child.id)
 
       if (child.type === "embed") {
@@ -451,7 +451,7 @@ export function CanvasWorkspace({
 
         {/* Canvas items */}
       {sortedArtboards.map((item) => (
-        <CanvasArtboardItem
+        <CanvasArtboardItemComponent
           key={item.id}
           item={item}
           isSelected={selectedIds.includes(item.id)}
@@ -460,7 +460,7 @@ export function CanvasWorkspace({
             onSelectItem(item.id, addToSelection)
             onBringToFront(item.id)
           }}
-          onUpdate={(updates: Partial<Omit<CanvasArtboardItem, "id">>) =>
+          onUpdate={(updates: Partial<Omit<CanvasArtboardItemType, "id">>) =>
             onUpdateItem(item.id, updates)
           }
           onBringToFront={() => onBringToFront(item.id)}
@@ -468,12 +468,11 @@ export function CanvasWorkspace({
           interactMode={interactMode}
         >
           {getArtboardChildren(item.id).map((child) => renderLayoutChild(child))}
-        </CanvasArtboardItem>
+        </CanvasArtboardItemComponent>
       ))}
 
       {sortedFreeformItems.map((item) => {
           const commonProps = {
-            key: item.id,
             isSelected: selectedIds.includes(item.id),
             isMultiSelected: selectedIds.length > 1 && selectedIds.includes(item.id),
             groupColor: item.groupId
@@ -492,10 +491,11 @@ export function CanvasWorkspace({
 
           if (item.type === "embed") {
             return (
-              <CanvasEmbedItem
+              <CanvasEmbedItemComponent
+                key={item.id}
                 {...commonProps}
-                item={item as CanvasEmbedItem}
-                onUpdate={(updates: Partial<Omit<CanvasEmbedItem, "id">>) =>
+                item={item as CanvasEmbedItemType}
+                onUpdate={(updates: Partial<Omit<CanvasEmbedItemType, "id">>) =>
                   onUpdateItem(item.id, updates)
                 }
               />
@@ -504,6 +504,7 @@ export function CanvasWorkspace({
 
           return (
             <CanvasItem
+              key={item.id}
               {...commonProps}
               item={item as CanvasComponentItem}
               onUpdate={(updates: Partial<Omit<CanvasComponentItem, "id">>) =>

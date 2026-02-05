@@ -32,8 +32,13 @@ interface RendererComponentProps {
   componentName: string
   importPath?: string
   variant: ComponentVariant
+  allowOverflow?: boolean
+  renderMode?: "card" | "standalone" | "canvas"
   propsOverride?: Record<string, unknown>
   onPropsChange?: (props: Record<string, unknown>) => void
+  showInteractivePanel?: boolean
+  hideHeader?: boolean
+  hideFooter?: boolean
 }
 
 // Smart size defaults based on component's layoutSize from gallery config
@@ -599,8 +604,9 @@ export function CanvasTab({
       setPropsPanelVisible(true)
 
       if (result.queueItem) {
+        const queueItem = result.queueItem
         setImportQueue((prev) => {
-          const next = [result.queueItem, ...prev.filter((item) => item.id !== result.queueItem?.id)]
+          const next = [queueItem, ...prev.filter((item) => item.id !== queueItem.id)]
           return next.slice(0, 20)
         })
       }

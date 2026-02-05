@@ -39,10 +39,21 @@ export function parseColor(input: string): RGBA | null {
 
   const rgbMatch = value.match(/rgba?\(([^)]+)\)/)
   if (rgbMatch) {
-    const parts = rgbMatch[1]
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean)
+    const body = rgbMatch[1].trim()
+    const parts = body.includes(",")
+      ? body
+          .split(",")
+          .map((part) => part.trim())
+          .filter(Boolean)
+      : (() => {
+          const normalized = body.replace(/\s*\/\s*/g, " / ")
+          const tokens = normalized.split(/\s+/).filter(Boolean)
+          const slashIndex = tokens.indexOf("/")
+          if (slashIndex !== -1) {
+            return [...tokens.slice(0, slashIndex), tokens[slashIndex + 1]]
+          }
+          return tokens
+        })()
     if (parts.length < 3) return null
 
     const parseChannel = (raw: string) => {

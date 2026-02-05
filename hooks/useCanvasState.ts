@@ -2,7 +2,7 @@ import { useCallback } from "react"
 
 import { useLocalStorage } from "./useLocalStorage"
 
-import type { CanvasItem, CanvasState, CanvasGroup } from "../types/canvas"
+import type { CanvasItem, CanvasItemInput, CanvasItemUpdate, CanvasState, CanvasGroup } from "../types/canvas"
 import { GROUP_COLORS } from "../types/canvas"
 
 const DEFAULT_STATE: CanvasState = {
@@ -51,7 +51,7 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const addItem = useCallback(
-    (item: Omit<CanvasItem, "id" | "zIndex">) => {
+    (item: CanvasItemInput) => {
       const newId = `canvas-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
       setState((prev) => ({
         ...prev,
@@ -72,11 +72,11 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   )
 
   const updateItem = useCallback(
-    (id: string, updates: Partial<Omit<CanvasItem, "id">>) => {
+    (id: string, updates: CanvasItemUpdate) => {
       setState((prev) => ({
         ...prev,
         items: prev.items.map((item) =>
-          item.id === id ? { ...item, ...updates } : item
+          item.id === id ? ({ ...item, ...updates } as CanvasItem) : item
         ),
       }))
     },

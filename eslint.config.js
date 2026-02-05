@@ -12,9 +12,6 @@ const LINT_TARGETS = [
   "utils/**/*.{ts,tsx}",
   "demo/App.tsx",
   "demo/components/**/*.{ts,tsx}",
-  "demo-thicket/App.tsx",
-  "demo-thicket/TokenSection.tsx",
-  "demo-thicket/designTokens.ts",
 ]
 
 export default [

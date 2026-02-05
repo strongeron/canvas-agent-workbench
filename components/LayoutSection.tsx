@@ -75,6 +75,7 @@ export function LayoutSection({
   getPreviewPath,
   Renderer,
 }: LayoutSectionProps) {
+  const [entryStatusFilters, setEntryStatusFilters] = useState<Record<string, StatusFilter>>({})
   // Filter entries by view type
   let filteredEntries: (LayoutEntry | PagePatternEntry)[] = []
   if (viewType === 'all') {
@@ -88,12 +89,11 @@ export function LayoutSection({
   // Filter by context
   if (context !== 'all') {
     filteredEntries = filteredEntries.filter((entry) => {
-      if (entry.kind === 'layout') {
+      if (entry.kind === "layout") {
         return entry.layoutType === context
-      } else {
-        // For patterns, check if patternType matches context or is global
-        return context === 'global' || entry.patternType === context
       }
+      // Page patterns do not map to layout contexts (public/student/teacher)
+      return context === "global"
     })
   }
 
@@ -187,7 +187,7 @@ export function LayoutSection({
 
               <div className="space-y-12">
                 {categoryEntries.map((entry) => {
-                  const [localStatusFilter, setLocalStatusFilter] = useState<StatusFilter>(statusFilter)
+                  const localStatusFilter = entryStatusFilters[entry.id] ?? statusFilter
                   const variantStatusCounts = countVariantsByStatus(entry.variants)
 
                   let filteredVariants = entry.variants
@@ -232,7 +232,12 @@ export function LayoutSection({
                                 return (
                                   <button
                                     key={filter}
-                                    onClick={() => setLocalStatusFilter(filter)}
+                                    onClick={() =>
+                                      setEntryStatusFilters((prev) => ({
+                                        ...prev,
+                                        [entry.id]: filter,
+                                      }))
+                                    }
                                     className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
                                       localStatusFilter === filter
                                         ? filter === "wip"
@@ -259,7 +264,11 @@ export function LayoutSection({
                               layout={entry.kind === 'layout' ? entry : undefined}
                               pattern={entry.kind === 'page-pattern' ? entry : undefined}
                               variant={variant}
-                              allowOverflow={entry.allowOverflow}
+                              allowOverflow={
+                                "allowOverflow" in entry
+                                  ? (entry as { allowOverflow?: boolean }).allowOverflow
+                                  : undefined
+                              }
                             />
                           </div>
                         ))}
@@ -275,4 +284,3 @@ export function LayoutSection({
     </section>
   )
 }
-
