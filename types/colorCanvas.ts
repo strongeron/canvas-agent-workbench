@@ -1,6 +1,21 @@
-export type ColorCanvasNodeType = "token" | "semantic" | "component"
+export type ColorCanvasNodeType = "token" | "semantic" | "component" | "relative"
 export type ColorCanvasEdgeType = "map" | "contrast"
 export type ColorCanvasColorModel = "oklch" | "srgb"
+
+export type RelativeChannelMode = "inherit" | "delta" | "absolute"
+
+export interface RelativeColorSpec {
+  baseId?: string
+  model?: ColorCanvasColorModel
+  lMode?: RelativeChannelMode
+  lValue?: number
+  cMode?: RelativeChannelMode
+  cValue?: number
+  hMode?: RelativeChannelMode
+  hValue?: number
+  alphaMode?: RelativeChannelMode
+  alphaValue?: number
+}
 
 export interface ColorCanvasEdgeRule {
   model?: ColorCanvasColorModel
@@ -16,6 +31,7 @@ export interface ColorCanvasNode {
   role?: "text" | "surface" | "border" | "icon" | "accent"
   cssVar?: string
   value?: string
+  relative?: RelativeColorSpec
 }
 
 export interface ColorCanvasEdge {

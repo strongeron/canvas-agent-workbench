@@ -70,6 +70,33 @@ export function parseColor(input: string): RGBA | null {
     return { r, g, b, a }
   }
 
+  const srgbMatch = value.match(/^color\(srgb\s+([^)]+)\)$/)
+  if (srgbMatch) {
+    const body = srgbMatch[1].trim()
+    const normalized = body.replace(/\s*\/\s*/g, " / ")
+    const tokens = normalized.split(/\s+/).filter(Boolean)
+    const slashIndex = tokens.indexOf("/")
+    const channels =
+      slashIndex !== -1 ? tokens.slice(0, slashIndex) : tokens
+    const alphaToken = slashIndex !== -1 ? tokens[slashIndex + 1] : undefined
+
+    if (channels.length < 3) return null
+
+    const parseChannel = (raw: string) => {
+      if (raw.endsWith("%")) {
+        return clamp(parseFloat(raw) / 100)
+      }
+      const numeric = parseFloat(raw)
+      return clamp(numeric)
+    }
+
+    const r = parseChannel(channels[0])
+    const g = parseChannel(channels[1])
+    const b = parseChannel(channels[2])
+    const a = alphaToken ? clamp(parseFloat(alphaToken)) : 1
+    return { r, g, b, a }
+  }
+
   return null
 }
 
