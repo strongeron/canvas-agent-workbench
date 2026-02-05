@@ -11,8 +11,8 @@
     "create-project": "node scripts/create-project.mjs",
     "dev:paper": "node scripts/dev-paper.mjs",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.check.json --noEmit",
+    "test": "vitest run --root .",
     "check": "npm run lint && npm run typecheck && npm run test"
   },
   "peerDependencies": {

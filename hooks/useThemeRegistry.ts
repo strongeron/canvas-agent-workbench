@@ -93,7 +93,7 @@ export function useThemeRegistry({
         const entries = Object.entries(theme.vars ?? {})
         if (entries.length === 0) return ""
         const body = entries.map(([cssVar, value]) => `  ${cssVar}: ${value};`).join("\n")
-        return `[data-theme=\"${theme.id}\"] {\n${body}\n}`
+        return `[data-theme="${theme.id}"] {\n${body}\n}`
       })
       .filter(Boolean)
       .join("\n\n")

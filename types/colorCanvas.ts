@@ -31,5 +31,5 @@ export interface ColorCanvasState {
   edges: ColorCanvasEdge[]
   selectedNodeId?: string | null
   selectedEdgeId?: string | null
-  edgeUndoStack?: ColorCanvasEdge[]
+  edgeUndoStack: ColorCanvasEdge[]
 }

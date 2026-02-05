@@ -61,7 +61,7 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
             ...item,
             id: newId,
             zIndex: prev.nextZIndex,
-          },
+          } as CanvasItem,
         ],
         nextZIndex: prev.nextZIndex + 1,
         selectedIds: [newId], // Auto-select the new item

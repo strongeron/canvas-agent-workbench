@@ -210,7 +210,7 @@ export function useColorCanvasState(storageKey = "gallery-color-canvas") {
       targetId: string,
       type: ColorCanvasEdgeType
     ) => {
-      const rule =
+      const rule: ColorCanvasEdgeRule =
         type === "contrast"
           ? { model: DEFAULT_COLOR_MODEL, targetLc: DEFAULT_CONTRAST_TARGET_LC }
           : { model: DEFAULT_COLOR_MODEL }
