@@ -10,7 +10,7 @@
     "preview": "vite preview demo",
     "create-project": "node scripts/create-project.mjs",
     "dev:paper": "node scripts/dev-paper.mjs",
-    "lint": "eslint .",
+    "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run lint && npm run typecheck && npm run test"
@@ -30,7 +30,9 @@
     "autoprefixer": "^10.4.20",
     "@dnd-kit/core": "^6.3.1",
     "@eslint/js": "^9.20.0",
+    "@typescript-eslint/eslint-plugin": "^8.23.0",
     "@typescript-eslint/parser": "^8.23.0",
+    "globals": "^15.14.0",
     "postcss": "^8.4.49",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
