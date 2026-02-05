@@ -9,7 +9,7 @@ import { useLocalStorage } from "../../hooks/useLocalStorage"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import type { DragData, CanvasScene } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
-import { CanvasArtboardPropsPanel, type ColorAuditPair } from "./CanvasArtboardPropsPanel"
+import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasLayersPanel } from "./CanvasLayersPanel"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
@@ -20,7 +20,12 @@ import { CanvasToolbar } from "./CanvasToolbar"
 import { CanvasWorkspace } from "./CanvasWorkspace"
 import { useThemeRegistry } from "../../hooks/useThemeRegistry"
 import type { ThemeOption, ThemeToken } from "../../types/theme"
-import { apcaContrast, DEFAULT_CONTRAST_TARGET_LC, getApcaStatus } from "../../utils/apca"
+import {
+  apcaContrast,
+  DEFAULT_CONTRAST_TARGET_LC,
+  getApcaStatus,
+  parseColor,
+} from "../../utils/apca"
 
 /** Props for injected Renderer component */
 interface RendererComponentProps {
@@ -108,6 +113,88 @@ function buildColorAuditPairs(
   }
 
   return pairs.slice(0, 24)
+}
+
+function isTransparent(color: string | null | undefined) {
+  if (!color || color === "transparent") return true
+  const parsed = parseColor(color)
+  if (!parsed) return false
+  return parsed.a <= 0.01
+}
+
+function resolveBackgroundColor(element: HTMLElement, root: HTMLElement, fallback: string) {
+  let node: HTMLElement | null = element
+  while (node && node !== root) {
+    const styles = getComputedStyle(node)
+    const bg = styles.backgroundColor
+    if (styles.backgroundImage !== "none" && styles.backgroundImage) {
+      return bg
+    }
+    if (!isTransparent(bg)) {
+      return bg
+    }
+    node = node.parentElement
+  }
+  return isTransparent(fallback) ? "rgb(255, 255, 255)" : fallback
+}
+
+function buildLiveAuditPairs(
+  root: HTMLElement,
+  content: HTMLElement,
+  targetLc: number
+): LiveAuditPair[] {
+  const baseBackground = getComputedStyle(root).backgroundColor
+  const pairs = new Map<string, LiveAuditPair>()
+  const elements = Array.from(content.querySelectorAll<HTMLElement>("*"))
+  const limit = Math.min(elements.length, 300)
+
+  for (let i = 0; i < limit; i += 1) {
+    const el = elements[i]
+    if (el.closest("[data-artboard-handle='true']")) continue
+    if (el.closest("[data-canvas-ignore='true']")) continue
+
+    const style = getComputedStyle(el)
+    if (style.display === "none" || style.visibility === "hidden") continue
+    if (Number(style.opacity) <= 0.05) continue
+
+    const textNodes = Array.from(el.childNodes).filter(
+      (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()
+    )
+    if (textNodes.length === 0) continue
+
+    const textSample = textNodes
+      .map((node) => node.textContent?.trim() || "")
+      .join(" ")
+      .trim()
+    if (!textSample) continue
+
+    const textColor = style.color
+    if (!textColor || isTransparent(textColor)) continue
+
+    const backgroundColor = resolveBackgroundColor(el, root, baseBackground)
+    const contrast = apcaContrast(textColor, backgroundColor)
+    const key = `${textColor}|${backgroundColor}`
+    const existing = pairs.get(key)
+    if (existing) {
+      existing.count += 1
+      if (existing.sample.length < textSample.length) {
+        existing.sample = textSample.slice(0, 60)
+      }
+      continue
+    }
+
+    pairs.set(key, {
+      id: key,
+      sample: textSample.slice(0, 60),
+      textValue: textColor,
+      surfaceValue: backgroundColor,
+      contrast,
+      status: getApcaStatus(contrast, targetLc),
+      count: 1,
+    })
+  }
+
+  return Array.from(pairs.values()).slice(0, 24)
 }
 
 function getDefaultSizeForComponent(
@@ -282,6 +369,7 @@ export function CanvasTab({
   const selectedVariant = selectedComponent?.variants[selectedComponentItem?.variantIndex ?? 0]
   const artboardThemeId = selectedArtboardItem?.themeId || activeThemeId
   const [artboardTokenValues, setArtboardTokenValues] = useState<Record<string, string>>(tokenValues)
+  const [liveAuditPairs, setLiveAuditPairs] = useState<LiveAuditPair[]>([])
 
   useEffect(() => {
     if (!selectedArtboardItem) {
@@ -290,6 +378,7 @@ export function CanvasTab({
     }
     setArtboardTokenValues(getTokenValuesForTheme(artboardThemeId))
   }, [selectedArtboardItem, artboardThemeId, getTokenValuesForTheme, tokenValues])
+
   const artboardAuditPairs = useMemo(
     () =>
       selectedArtboardItem
@@ -297,6 +386,29 @@ export function CanvasTab({
         : [],
     [selectedArtboardItem, resolvedThemeTokens, artboardTokenValues]
   )
+
+  useEffect(() => {
+    if (!selectedArtboardItem || !canvasRootRef.current) {
+      setLiveAuditPairs([])
+      return
+    }
+
+    const root = canvasRootRef.current.querySelector<HTMLElement>(
+      `[data-artboard-id="${selectedArtboardItem.id}"]`
+    )
+    const content = root?.querySelector<HTMLElement>("[data-artboard-content='true']")
+
+    if (!root || !content) {
+      setLiveAuditPairs([])
+      return
+    }
+
+    const frame = requestAnimationFrame(() => {
+      setLiveAuditPairs(buildLiveAuditPairs(root, content, DEFAULT_CONTRAST_TARGET_LC))
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [selectedArtboardItem, items, themePanelVisible])
 
   // Get current props for selected item (customProps or default variant props)
   const selectedItemProps = selectedComponentItem?.customProps ?? selectedVariant?.props ?? {}
@@ -1017,6 +1129,8 @@ export function CanvasTab({
               themeId={selectedArtboardItem.themeId}
               colorAuditPairs={artboardAuditPairs}
               auditTargetLc={DEFAULT_CONTRAST_TARGET_LC}
+              liveAuditPairs={liveAuditPairs}
+              liveAuditTargetLc={DEFAULT_CONTRAST_TARGET_LC}
               onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
               importKind={importKind}
               onImportKindChange={setImportKind}

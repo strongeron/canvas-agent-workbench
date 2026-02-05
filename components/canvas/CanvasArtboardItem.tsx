@@ -280,6 +280,7 @@ export function CanvasArtboardItem({
           background: item.background || "white",
         }}
         data-theme={item.themeId || undefined}
+        data-artboard-id={item.id}
       >
         <div
           data-artboard-handle="true"
@@ -300,6 +301,7 @@ export function CanvasArtboardItem({
             gap: layout.gap ?? 12,
             padding: layout.padding ?? 16,
           }}
+          data-artboard-content="true"
         >
           {children}
         </div>

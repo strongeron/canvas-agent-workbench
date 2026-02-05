@@ -11,6 +11,8 @@ interface CanvasArtboardPropsPanelProps {
   themes?: ThemeOption[]
   colorAuditPairs?: ColorAuditPair[]
   auditTargetLc?: number
+  liveAuditPairs?: LiveAuditPair[]
+  liveAuditTargetLc?: number
   layout: {
     display: "flex" | "grid"
     direction?: "row" | "column"
@@ -44,6 +46,16 @@ export interface ColorAuditPair {
   status: "pass" | "fail" | "unknown"
 }
 
+export interface LiveAuditPair {
+  id: string
+  sample: string
+  textValue?: string | null
+  surfaceValue?: string | null
+  contrast: number | null
+  status: "pass" | "fail" | "unknown"
+  count: number
+}
+
 const ALIGN_OPTIONS = [
   { value: "start", label: "Start" },
   { value: "center", label: "Center" },
@@ -66,6 +78,8 @@ export function CanvasArtboardPropsPanel({
   themes,
   colorAuditPairs,
   auditTargetLc,
+  liveAuditPairs,
+  liveAuditTargetLc,
   layout,
   size,
   onImportFromPaper,
@@ -232,6 +246,62 @@ export function CanvasArtboardPropsPanel({
                   )
                 })}
               </div>
+            </div>
+          )}
+
+          {liveAuditPairs && (
+            <div>
+              <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                Live Audit (DOM)
+              </div>
+              {liveAuditTargetLc && (
+                <div className="mb-2 text-[11px] text-muted-foreground">
+                  Target Lc {liveAuditTargetLc}
+                </div>
+              )}
+              {liveAuditPairs.length === 0 ? (
+                <div className="rounded-md border border-dashed border-default bg-white px-3 py-2 text-[11px] text-muted-foreground">
+                  No text nodes found on this artboard yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {liveAuditPairs.map((pair) => {
+                    const statusClass =
+                      pair.status === "pass"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : pair.status === "fail"
+                          ? "bg-rose-100 text-rose-700"
+                          : "bg-slate-100 text-slate-600"
+                    return (
+                      <div
+                        key={pair.id}
+                        className="flex items-center justify-between gap-3 rounded-md border border-default bg-white px-2 py-2 text-[11px]"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className="h-4 w-4 rounded border border-default"
+                            style={{ background: pair.textValue || "transparent" }}
+                          />
+                          <span className="text-muted-foreground">on</span>
+                          <span
+                            className="h-4 w-4 rounded border border-default"
+                            style={{ background: pair.surfaceValue || "transparent" }}
+                          />
+                          <div className="min-w-0">
+                            <div className="truncate text-foreground">{pair.sample}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {pair.count} element{pair.count === 1 ? "" : "s"}
+                            </div>
+                          </div>
+                        </div>
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass}`}>
+                          {formatLc(pair.contrast)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
 

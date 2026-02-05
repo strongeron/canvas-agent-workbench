@@ -43,7 +43,7 @@ This document records the phases and steps for a project-wired Color Canvas that
 ## Phase 3 (Done): Artboard Audit
 ### Tasks
 - Artboard audit panel: collect token/semantic pairs and show APCA Lc values.
-- Optional DOM scan of rendered artboards (phase 3b) for real color usage.
+- DOM scan of rendered artboards (phase 3b) for real color usage.
 - Export graph state as JSON, optionally SVG snapshots.
 
 ### Review Checklist
