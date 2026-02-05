@@ -9,6 +9,7 @@ import type { ColorCanvasEdge, ColorCanvasNode } from "../../types/colorCanvas"
 import {
   APCA_TARGETS,
   DEFAULT_CONTRAST_TARGET_LC,
+  DEFAULT_COLOR_MODEL,
   apcaContrast,
   formatLc,
   getApcaStatus,
@@ -39,9 +40,15 @@ const SEMANTIC_PRESETS: Array<{ label: string; role: ColorCanvasNode["role"] }> 
 
 export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPageProps) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const workspaceRef = useRef<HTMLDivElement>(null)
   const [tokenQuery, setTokenQuery] = useState("")
   const [connectMode, setConnectMode] = useState<ConnectMode>(null)
   const [connectSourceId, setConnectSourceId] = useState<string | null>(null)
+  const [connectDrag, setConnectDrag] = useState<{ active: boolean; x: number; y: number }>({
+    active: false,
+    x: 0,
+    y: 0,
+  })
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>("all")
   const [panelMode, setPanelMode] = useState<"inspector" | "audit">("inspector")
@@ -90,6 +97,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     addSemanticNode,
     addComponentNode,
     addTypedEdge,
+    addEdge,
     removeNode,
     removeEdge,
     undoRemoveEdge,
@@ -242,6 +250,23 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     }
   }
 
+  const handleConnectStart = (nodeId: string, event: React.PointerEvent) => {
+    if (!connectMode) return
+    event.preventDefault()
+    event.stopPropagation()
+    setConnectSourceId(nodeId)
+    const rect = workspaceRef.current?.getBoundingClientRect()
+    if (rect) {
+      setConnectDrag({
+        active: true,
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      })
+    } else {
+      setConnectDrag({ active: true, x: event.clientX, y: event.clientY })
+    }
+  }
+
   const handleEdgeBadgeClick = (edgeId: string) => {
     selectEdge(edgeId)
   }
@@ -283,6 +308,93 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   const visibleEdges =
     edgeFilter === "all" ? edges : edges.filter((edge) => edge.type === edgeFilter)
   const contrastEdges = edges.filter((edge) => edge.type === "contrast")
+
+  const ensureEdge = useCallback(
+    (
+      sourceId: string,
+      targetId: string,
+      type: ColorCanvasEdge["type"],
+      rule?: ColorCanvasEdge["rule"]
+    ) => {
+      const exists = edges.some((edge) => {
+        if (edge.type !== type) return false
+        if (edge.sourceId === sourceId && edge.targetId === targetId) return true
+        if (type === "contrast" && edge.sourceId === targetId && edge.targetId === sourceId) return true
+        return false
+      })
+      if (exists) return
+      addEdge({ sourceId, targetId, type, rule })
+    },
+    [addEdge, edges]
+  )
+
+  const nodeMatchesRole = useCallback(
+    (node: ColorCanvasNode, role: NonNullable<ColorCanvasNode["role"]>) => {
+      if (node.role === role) return true
+      const haystack = `${node.label} ${node.cssVar ?? ""}`.toLowerCase()
+      const keywords: Record<NonNullable<ColorCanvasNode["role"]>, string[]> = {
+        text: ["text", "foreground", "content", "fg"],
+        surface: ["surface", "background", "canvas", "bg"],
+        border: ["border", "stroke"],
+        icon: ["icon"],
+        accent: ["accent", "brand", "primary", "secondary"],
+      }
+      return keywords[role].some((keyword) => haystack.includes(keyword))
+    },
+    []
+  )
+
+  const handleQuickConnect = useCallback(
+    (roleA: NonNullable<ColorCanvasNode["role"]>, roleB: NonNullable<ColorCanvasNode["role"]>) => {
+      const roleNodesA = nodes.filter(
+        (node) => node.type !== "component" && nodeMatchesRole(node, roleA)
+      )
+      const roleNodesB = nodes.filter(
+        (node) => node.type !== "component" && nodeMatchesRole(node, roleB)
+      )
+      roleNodesA.forEach((source) => {
+        roleNodesB.forEach((target) => {
+          if (source.id === target.id) return
+          ensureEdge(source.id, target.id, "contrast", {
+            model: DEFAULT_COLOR_MODEL,
+            targetLc: DEFAULT_CONTRAST_TARGET_LC,
+          })
+        })
+      })
+    },
+    [ensureEdge, nodeMatchesRole, nodes]
+  )
+
+  useEffect(() => {
+    if (!connectDrag.active) return
+    const handlePointerMove = (event: PointerEvent) => {
+      const rect = workspaceRef.current?.getBoundingClientRect()
+      if (rect) {
+        setConnectDrag((prev) => ({
+          ...prev,
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        }))
+      }
+    }
+    const handlePointerUp = (event: PointerEvent) => {
+      const el = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null
+      const nodeEl = el?.closest("[data-color-node='true']") as HTMLElement | null
+      const targetId = nodeEl?.dataset.nodeId
+      if (targetId) {
+        handleNodeClick(targetId)
+      } else {
+        setConnectSourceId(null)
+      }
+      setConnectDrag((prev) => ({ ...prev, active: false }))
+    }
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", handlePointerUp)
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
+    }
+  }, [connectDrag.active, handleNodeClick])
 
   return (
     <div
@@ -398,7 +510,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       </aside>
 
       <main className="relative flex flex-1 flex-col">
-        <div className="flex items-center justify-between border-b border-default bg-white px-4 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-default bg-white px-4 py-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground">Connect mode:</span>
             <button
@@ -406,6 +518,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               onClick={() => {
                 setConnectMode(connectMode === "map" ? null : "map")
                 setConnectSourceId(null)
+                setConnectDrag({ active: false, x: 0, y: 0 })
               }}
               className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
                 connectMode === "map"
@@ -420,6 +533,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               onClick={() => {
                 setConnectMode(connectMode === "contrast" ? null : "contrast")
                 setConnectSourceId(null)
+                setConnectDrag({ active: false, x: 0, y: 0 })
               }}
               className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
                 connectMode === "contrast"
@@ -431,9 +545,33 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
             </button>
             {connectMode && (
               <span className="text-[11px] text-muted-foreground">
-                {connectSourceId ? "Select target" : "Select source"}
+                {connectSourceId ? "Select target (or drag)" : "Select source"}
               </span>
             )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground">Quick connect:</span>
+            <button
+              type="button"
+              onClick={() => handleQuickConnect("text", "surface")}
+              className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
+            >
+              Text ↔ Surface
+            </button>
+            <button
+              type="button"
+              onClick={() => handleQuickConnect("icon", "surface")}
+              className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
+            >
+              Icon ↔ Surface
+            </button>
+            <button
+              type="button"
+              onClick={() => handleQuickConnect("accent", "surface")}
+              className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
+            >
+              Accent ↔ Surface
+            </button>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground">Edges:</span>
@@ -463,7 +601,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
           </div>
         </div>
 
-        <div className="relative flex-1 overflow-hidden" onClick={handleWorkspaceClick}>
+        <div
+          ref={workspaceRef}
+          className="relative flex-1 overflow-hidden"
+          onClick={handleWorkspaceClick}
+        >
           <svg className="absolute inset-0 h-full w-full">
             {visibleEdges.map((edge) => {
               const source = nodesById[edge.sourceId]
@@ -489,6 +631,24 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 />
               )
             })}
+            {connectMode && connectSourceId && connectDrag.active && (() => {
+              const source = nodesById[connectSourceId]
+              if (!source) return null
+              const sourceSize = NODE_SIZES[source.type]
+              const x1 = source.position.x + sourceSize.width / 2
+              const y1 = source.position.y + sourceSize.height / 2
+              return (
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={connectDrag.x}
+                  y2={connectDrag.y}
+                  stroke="#94a3b8"
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                />
+              )
+            })()}
           </svg>
 
           {visibleEdges.map((edge) => {
@@ -536,9 +696,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               tokenValues={tokenValues}
               selected={selectedNodeId === node.id}
               connectActive={connectMode !== null}
+              connectDragging={connectDrag.active}
               connectSourceId={connectSourceId}
               onMove={moveNode}
               onClick={handleNodeClick}
+              onConnectStart={handleConnectStart}
             />
           ))}
         </div>
@@ -788,18 +950,22 @@ function ColorNode({
   tokenValues,
   selected,
   connectActive,
+  connectDragging,
   connectSourceId,
   onMove,
   onClick,
+  onConnectStart,
 }: {
   node: ColorCanvasNode
   size: { width: number; height: number }
   tokenValues: Record<string, string>
   selected: boolean
   connectActive: boolean
+  connectDragging: boolean
   connectSourceId: string | null
   onMove: (id: string, position: { x: number; y: number }) => void
   onClick: (id: string) => void
+  onConnectStart: (id: string, event: React.PointerEvent) => void
 }) {
   const draggingRef = useRef(false)
   const offsetRef = useRef({ x: 0, y: 0 })
@@ -827,6 +993,9 @@ function ColorNode({
   }
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (connectDragging) {
+      return
+    }
     if (!draggingRef.current) {
       onClick(node.id)
       return
@@ -842,6 +1011,7 @@ function ColorNode({
   return (
     <div
       data-color-node="true"
+      data-node-id={node.id}
       role="button"
       tabIndex={0}
       className={`absolute rounded-xl border bg-white px-3 py-3 shadow-sm transition-shadow ${
@@ -861,19 +1031,13 @@ function ColorNode({
         <>
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onClick(node.id)
-            }}
+            onPointerDown={(e) => onConnectStart(node.id, e)}
             className="absolute -left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-brand-300 bg-white shadow-sm hover:border-brand-500"
             aria-label="Start connection"
           />
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onClick(node.id)
-            }}
+            onPointerDown={(e) => onConnectStart(node.id, e)}
             className="absolute -right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-brand-300 bg-white shadow-sm hover:border-brand-500"
             aria-label="Finish connection"
           />
