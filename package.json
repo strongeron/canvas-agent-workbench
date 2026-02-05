@@ -9,7 +9,11 @@
     "build": "tsc && vite build demo",
     "preview": "vite preview demo",
     "create-project": "node scripts/create-project.mjs",
-    "dev:paper": "node scripts/dev-paper.mjs"
+    "dev:paper": "node scripts/dev-paper.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run lint && npm run typecheck && npm run test"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
@@ -25,16 +29,22 @@
     "@plausible-analytics/tracker": "^0.3.0",
     "autoprefixer": "^10.4.20",
     "@dnd-kit/core": "^6.3.1",
+    "@eslint/js": "^9.20.0",
+    "@typescript-eslint/parser": "^8.23.0",
     "postcss": "^8.4.49",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "lucide-react": "^0.552.0",
+    "eslint": "^9.20.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.1.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "sonner": "^1.5.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^2.1.8"
   }
 }

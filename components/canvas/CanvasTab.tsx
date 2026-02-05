@@ -122,13 +122,25 @@ function isTransparent(color: string | null | undefined) {
   return parsed.a <= 0.01
 }
 
-function resolveBackgroundColor(element: HTMLElement, root: HTMLElement, fallback: string) {
-  let node: HTMLElement | null = element
+function extractGradientColor(backgroundImage: string) {
+  if (!backgroundImage || backgroundImage === "none") return null
+  const matches = [
+    backgroundImage.match(/#([0-9a-f]{3,8})/i)?.[0] ?? null,
+    backgroundImage.match(/rgba?\([^)]+\)/i)?.[0] ?? null,
+    backgroundImage.match(/hsla?\([^)]+\)/i)?.[0] ?? null,
+  ]
+  return matches.find(Boolean) || null
+}
+
+function resolveBackgroundColor(element: Element, root: HTMLElement, fallback: string) {
+  let node: Element | null = element
   while (node && node !== root) {
     const styles = getComputedStyle(node)
+    const bgImage = styles.backgroundImage
     const bg = styles.backgroundColor
-    if (styles.backgroundImage !== "none" && styles.backgroundImage) {
-      return bg
+    if (bgImage && bgImage !== "none") {
+      const gradientColor = extractGradientColor(bgImage)
+      return gradientColor || bg
     }
     if (!isTransparent(bg)) {
       return bg
@@ -145,19 +157,53 @@ function buildLiveAuditPairs(
 ): LiveAuditPair[] {
   const baseBackground = getComputedStyle(root).backgroundColor
   const pairs = new Map<string, LiveAuditPair>()
-  const elements = Array.from(content.querySelectorAll<HTMLElement>("*"))
+  const elements = Array.from(content.querySelectorAll("*"))
   const limit = Math.min(elements.length, 300)
 
   for (let i = 0; i < limit; i += 1) {
-    const el = elements[i]
-    if (el.closest("[data-artboard-handle='true']")) continue
-    if (el.closest("[data-canvas-ignore='true']")) continue
+    const element = elements[i]
+    const style = getComputedStyle(element)
+    if ((element as Element).closest("[data-artboard-handle='true']")) continue
+    if ((element as Element).closest("[data-canvas-ignore='true']")) continue
 
-    const style = getComputedStyle(el)
     if (style.display === "none" || style.visibility === "hidden") continue
     if (Number(style.opacity) <= 0.05) continue
 
-    const textNodes = Array.from(el.childNodes).filter(
+    if (element instanceof SVGElement) {
+      const fill = style.fill === "currentColor" ? style.color : style.fill
+      const stroke = style.stroke === "currentColor" ? style.color : style.stroke
+      const foreground =
+        fill && fill !== "none" && !isTransparent(fill) ? fill : stroke
+      if (!foreground || foreground === "none" || isTransparent(foreground)) {
+        continue
+      }
+      const backgroundColor = resolveBackgroundColor(element, root, baseBackground)
+      const contrast = apcaContrast(foreground, backgroundColor)
+      const key = `svg:${foreground}|${backgroundColor}`
+      const label =
+        element.getAttribute("aria-label") ||
+        element.getAttribute("data-icon") ||
+        "SVG Icon"
+      const existing = pairs.get(key)
+      if (existing) {
+        existing.count += 1
+        continue
+      }
+      pairs.set(key, {
+        id: key,
+        sample: label,
+        textValue: foreground,
+        surfaceValue: backgroundColor,
+        contrast,
+        status: getApcaStatus(contrast, targetLc),
+        count: 1,
+      })
+      continue
+    }
+
+    if (!(element instanceof HTMLElement)) continue
+
+    const textNodes = Array.from(element.childNodes).filter(
       (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()
     )
     if (textNodes.length === 0) continue
@@ -171,7 +217,7 @@ function buildLiveAuditPairs(
     const textColor = style.color
     if (!textColor || isTransparent(textColor)) continue
 
-    const backgroundColor = resolveBackgroundColor(el, root, baseBackground)
+    const backgroundColor = resolveBackgroundColor(element, root, baseBackground)
     const contrast = apcaContrast(textColor, backgroundColor)
     const key = `${textColor}|${backgroundColor}`
     const existing = pairs.get(key)

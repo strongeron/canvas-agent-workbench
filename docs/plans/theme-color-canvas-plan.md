@@ -44,6 +44,8 @@ This document records the phases and steps for a project-wired Color Canvas that
 ### Tasks
 - Artboard audit panel: collect token/semantic pairs and show APCA Lc values.
 - DOM scan of rendered artboards (phase 3b) for real color usage.
+  - Include SVG icon fills/strokes.
+  - Approximate gradient backgrounds via first stop color.
 - Export graph state as JSON, optionally SVG snapshots.
 
 ### Review Checklist
