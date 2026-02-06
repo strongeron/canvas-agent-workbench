@@ -39,6 +39,13 @@ export function useColorCanvasState(storageKey = "gallery-color-canvas") {
     [setRawState]
   )
 
+  const replaceState = useCallback(
+    (nextState: ColorCanvasState) => {
+      setRawState(normalizeState(nextState))
+    },
+    [setRawState]
+  )
+
   const addNode = useCallback(
     (node: Omit<ColorCanvasNode, "id">) => {
       const id = `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -258,5 +265,6 @@ export function useColorCanvasState(storageKey = "gallery-color-canvas") {
     addTokenNode,
     addComponentNode,
     addTypedEdge,
+    replaceState,
   }
 }

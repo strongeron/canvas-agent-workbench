@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CanvasThemePanel } from "../canvas/CanvasThemePanel"
 import { useThemeRegistry } from "../../hooks/useThemeRegistry"
 import { useColorCanvasState } from "../../hooks/useColorCanvasState"
+import { useLocalStorage } from "../../hooks/useLocalStorage"
 import type { ThemeToken } from "../../types/theme"
-import type { ColorCanvasEdge, ColorCanvasNode } from "../../types/colorCanvas"
+import type { ColorCanvasEdge, ColorCanvasNode, ColorCanvasState } from "../../types/colorCanvas"
 import {
   APCA_TARGETS,
   DEFAULT_CONTRAST_TARGET_LC,
@@ -63,6 +64,27 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   })
   const [templateBrand, setTemplateBrand] = useState("")
   const [templateAccent, setTemplateAccent] = useState("")
+
+  const sessionsKey = themeStorageKeyPrefix
+    ? `${themeStorageKeyPrefix}-color-canvas-sessions`
+    : "gallery-color-canvas-sessions"
+  const activeSessionKey = themeStorageKeyPrefix
+    ? `${themeStorageKeyPrefix}-color-canvas-session`
+    : "gallery-color-canvas-session"
+
+  const [sessions, setSessions] = useLocalStorage<Record<
+    string,
+    { id: string; name: string; state: ColorCanvasState; updatedAt: string }
+  >>(sessionsKey, {})
+  const [activeSessionId, setActiveSessionId] = useLocalStorage<string>(activeSessionKey, "")
+
+  const emptyState: ColorCanvasState = {
+    nodes: [],
+    edges: [],
+    selectedNodeId: null,
+    selectedEdgeId: null,
+    edgeUndoStack: [],
+  }
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>("all")
   const [panelMode, setPanelMode] = useState<"inspector" | "audit">("inspector")
@@ -105,6 +127,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   const {
     nodes,
     edges,
+    state,
     selectedNodeId,
     selectedEdgeId,
     addTokenNode,
@@ -126,6 +149,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     updateNodeValue,
     updateNodeRole,
     clearSelection,
+    replaceState,
   } = useColorCanvasState(
     themeStorageKeyPrefix
       ? `${themeStorageKeyPrefix}-color-canvas`
@@ -177,6 +201,28 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     const computed = getComputedStyle(probe).color
     return computed || null
   }, [])
+
+  useEffect(() => {
+    if (Object.keys(sessions).length === 0) {
+      const id = `session-${Date.now()}`
+      setSessions({
+        [id]: {
+          id,
+          name: "Session 1",
+          state: state ?? emptyState,
+          updatedAt: new Date().toISOString(),
+        },
+      })
+      setActiveSessionId(id)
+      return
+    }
+    if (activeSessionId && sessions[activeSessionId]) return
+    const [firstId] = Object.keys(sessions)
+    if (firstId) {
+      setActiveSessionId(firstId)
+      replaceState(sessions[firstId].state)
+    }
+  }, [activeSessionId, emptyState, replaceState, sessions, setActiveSessionId, setSessions, state])
 
   const upsertNode = useCallback(
     (config: {
@@ -506,6 +552,68 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     ensureEdge(brandBaseId, accentSemanticId, "map")
   }
 
+  const handleSaveSession = () => {
+    if (!activeSessionId) return
+    const current = sessions[activeSessionId]
+    setSessions((prev) => ({
+      ...prev,
+      [activeSessionId]: {
+        id: activeSessionId,
+        name: current?.name || "Session",
+        state: state ?? emptyState,
+        updatedAt: new Date().toISOString(),
+      },
+    }))
+  }
+
+  const handleNewSession = () => {
+    const nextIndex = Object.keys(sessions).length + 1
+    const id = `session-${Date.now()}`
+    const name = `Session ${nextIndex}`
+    setSessions((prev) => ({
+      ...prev,
+      [id]: {
+        id,
+        name,
+        state: emptyState,
+        updatedAt: new Date().toISOString(),
+      },
+    }))
+    setActiveSessionId(id)
+    replaceState(emptyState)
+  }
+
+  const handleClearSession = () => {
+    replaceState(emptyState)
+    if (!activeSessionId) return
+    setSessions((prev) => ({
+      ...prev,
+      [activeSessionId]: {
+        id: activeSessionId,
+        name: prev[activeSessionId]?.name || "Session",
+        state: emptyState,
+        updatedAt: new Date().toISOString(),
+      },
+    }))
+  }
+
+  const handleDeleteSession = () => {
+    if (!activeSessionId) return
+    setSessions((prev) => {
+      const next = { ...prev }
+      delete next[activeSessionId]
+      return next
+    })
+    const remaining = Object.keys(sessions).filter((id) => id !== activeSessionId)
+    if (remaining.length > 0) {
+      const nextId = remaining[0]
+      setActiveSessionId(nextId)
+      replaceState(sessions[nextId].state)
+    } else {
+      handleNewSession()
+    }
+  }
+
   const handleAddSemantic = (preset: { label: string; role: ColorCanvasNode["role"] }) => {
     const position = getNextPosition(nodes)
     addSemanticNode(preset.label, preset.role, position)
@@ -782,6 +890,74 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 Relative colors not supported in this browser.
               </span>
             )}
+          </div>
+        </div>
+
+        <div className="border-b border-default px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Sessions
+            </h3>
+            <span className="text-[11px] text-muted-foreground">
+              {Object.keys(sessions).length}
+            </span>
+          </div>
+          <select
+            value={activeSessionId}
+            onChange={(e) => {
+              const nextId = e.target.value
+              if (!nextId) return
+              if (activeSessionId) {
+                setSessions((prev) => ({
+                  ...prev,
+                  [activeSessionId]: {
+                    id: activeSessionId,
+                    name: prev[activeSessionId]?.name || "Session",
+                    state: state ?? emptyState,
+                    updatedAt: new Date().toISOString(),
+                  },
+                }))
+              }
+              setActiveSessionId(nextId)
+              replaceState(sessions[nextId]?.state ?? emptyState)
+            }}
+            className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
+          >
+            {Object.values(sessions).map((session) => (
+              <option key={session.id} value={session.id}>
+                {session.name}
+              </option>
+            ))}
+          </select>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleSaveSession}
+              className="rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-foreground hover:bg-surface-50"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={handleNewSession}
+              className="rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-foreground hover:bg-surface-50"
+            >
+              New
+            </button>
+            <button
+              type="button"
+              onClick={handleClearSession}
+              className="rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-foreground hover:bg-surface-50"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteSession}
+              className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+            >
+              Delete
+            </button>
           </div>
         </div>
 
