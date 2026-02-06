@@ -1,4 +1,4 @@
-import { Link2, Move, Palette, Plus, RotateCcw, Trash2, Type } from "lucide-react"
+import { Copy, Link2, Move, Palette, Plus, RotateCcw, Trash2, Type } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { CanvasThemePanel } from "../canvas/CanvasThemePanel"
@@ -17,6 +17,13 @@ import {
   getApcaStatus,
 } from "../../utils/apca"
 
+interface RGBA {
+  r: number
+  g: number
+  b: number
+  a: number
+}
+
 interface ColorCanvasPageProps {
   tokens: ThemeToken[]
   themeStorageKeyPrefix?: string
@@ -24,6 +31,16 @@ interface ColorCanvasPageProps {
 
 type ConnectMode = "map" | "contrast" | null
 type EdgeFilter = "all" | "map" | "contrast"
+type ContrastRule = {
+  id: string
+  label: string
+  foregroundRole: NonNullable<ColorCanvasNode["role"]>
+  backgroundRole: NonNullable<ColorCanvasNode["role"]>
+  targetLc: number
+  enabled: boolean
+}
+
+type DisplayEdge = ColorCanvasEdge & { auto?: boolean; ruleId?: string }
 
 const NODE_SIZES: Record<ColorCanvasNode["type"], { width: number; height: number }> = {
   token: { width: 180, height: 70 },
@@ -40,6 +57,41 @@ const SEMANTIC_PRESETS: Array<{ label: string; role: ColorCanvasNode["role"] }> 
   { label: "Border / Default", role: "border" },
   { label: "Icon / Default", role: "icon" },
   { label: "Accent / Primary", role: "accent" },
+]
+
+const DEFAULT_CONTRAST_RULES: ContrastRule[] = [
+  {
+    id: "text-surface",
+    label: "Text on Surface",
+    foregroundRole: "text",
+    backgroundRole: "surface",
+    targetLc: 60,
+    enabled: true,
+  },
+  {
+    id: "icon-surface",
+    label: "Icon on Surface",
+    foregroundRole: "icon",
+    backgroundRole: "surface",
+    targetLc: 45,
+    enabled: true,
+  },
+  {
+    id: "border-surface",
+    label: "Border on Surface",
+    foregroundRole: "border",
+    backgroundRole: "surface",
+    targetLc: 30,
+    enabled: false,
+  },
+  {
+    id: "accent-surface",
+    label: "Accent on Surface",
+    foregroundRole: "accent",
+    backgroundRole: "surface",
+    targetLc: 45,
+    enabled: false,
+  },
 ]
 
 const DEFAULT_RELATIVE_SPEC = {
@@ -63,8 +115,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     y: 0,
   })
   const [showDependencies, setShowDependencies] = useState(true)
+  const [showFullLabels, setShowFullLabels] = useState(false)
   const [templateBrand, setTemplateBrand] = useState("")
   const [templateAccent, setTemplateAccent] = useState("")
+  const [selectedAutoEdgeId, setSelectedAutoEdgeId] = useState<string | null>(null)
+  const [newThemeName, setNewThemeName] = useState("")
 
   const sessionsKey = themeStorageKeyPrefix
     ? `${themeStorageKeyPrefix}-color-canvas-sessions`
@@ -78,6 +133,18 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     { id: string; name: string; state: ColorCanvasState; updatedAt: string }
   >>(sessionsKey, {})
   const [activeSessionId, setActiveSessionId] = useLocalStorage<string>(activeSessionKey, "")
+  const [contrastRules, setContrastRules] = useLocalStorage<ContrastRule[]>(
+    themeStorageKeyPrefix
+      ? `${themeStorageKeyPrefix}-color-canvas-contrast-rules`
+      : "gallery-color-canvas-contrast-rules",
+    DEFAULT_CONTRAST_RULES
+  )
+  const [autoContrastEnabled, setAutoContrastEnabled] = useLocalStorage<boolean>(
+    themeStorageKeyPrefix
+      ? `${themeStorageKeyPrefix}-color-canvas-contrast-auto`
+      : "gallery-color-canvas-contrast-auto",
+    true
+  )
 
   const emptyState: ColorCanvasState = {
     nodes: [],
@@ -95,8 +162,16 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     [tokens]
   )
 
-  const { themes, activeThemeId, setActiveThemeId, tokenValues, addTheme, updateThemeVar } =
-    useThemeRegistry({
+  const {
+    themes,
+    activeThemeId,
+    setActiveThemeId,
+    setThemes,
+    tokenValues,
+    getTokenValuesForTheme,
+    addTheme,
+    updateThemeVar,
+  } = useThemeRegistry({
       storageKeyPrefix: themeStorageKeyPrefix,
       tokens,
       defaultThemes: [
@@ -175,6 +250,21 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
         index += 1
       }
       return `${base}-${index}`
+    },
+    [nodes]
+  )
+
+  const getNextCssVarFrom = useCallback(
+    (cssVar?: string) => {
+      if (!cssVar) return undefined
+      if (!nodes.some((node) => node.cssVar === cssVar)) return cssVar
+      let index = 2
+      let candidate = `${cssVar}-${index}`
+      while (nodes.some((node) => node.cssVar === candidate)) {
+        index += 1
+        candidate = `${cssVar}-${index}`
+      }
+      return candidate
     },
     [nodes]
   )
@@ -268,6 +358,12 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     }, {})
   }, [nodes])
 
+  const normalizeChromaValue = useCallback((value: number) => {
+    if (Number.isNaN(value)) return value
+    if (Math.abs(value) > 1) return value / 100
+    return value
+  }, [])
+
   const buildRelativeExpression = useCallback(
     (baseExpression: string, node: ColorCanvasNode) => {
       if (node.type !== "relative") return null
@@ -289,13 +385,13 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       }
 
       const l = channel(spec.lMode, spec.lValue, "l", (val) => `${val}%`)
-      const c = channel(spec.cMode, spec.cValue, "c", (val) => `${val}%`)
+      const c = channel(spec.cMode, spec.cValue, "c", (val) => `${normalizeChromaValue(val)}`)
       const h = channel(spec.hMode, spec.hValue, "h", (val) => `${val}deg`)
       const a = channel(spec.alphaMode, spec.alphaValue, "alpha", (val) => `${val}%`)
 
       return `oklch(from ${baseExpression} ${l} ${c} ${h} / ${a})`
     },
-    []
+    [normalizeChromaValue]
   )
 
   const getNodeColorExpression = useCallback(
@@ -307,11 +403,13 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       if (!node) return null
 
       if (node.type === "token") {
+        if (node.value) return node.value
         if (node.cssVar) return `var(${node.cssVar})`
-        return node.value ?? null
+        return null
       }
 
       if (node.type === "semantic") {
+        if (node.value) return node.value
         const mappingEdge = edges.find(
           (edge) => edge.type === "map" && edge.targetId === node.id
         )
@@ -322,10 +420,13 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       }
 
       if (node.type === "relative") {
+        if (node.value) {
+          return node.value
+        }
         const baseId = node.relative?.baseId
         const baseExpression = baseId
           ? getNodeColorExpression(baseId, visited)
-          : node.value ?? null
+          : null
         if (!baseExpression) return null
         return buildRelativeExpression(baseExpression, node)
       }
@@ -335,15 +436,105 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     [buildRelativeExpression, edges, nodesById]
   )
 
+  const resolveExpressionColor = useCallback(
+    (expression: string): RGBA | null => {
+      const resolved = resolveCssColor(expression)
+      if (resolved) return parseColor(resolved)
+      const parsed = parseColor(expression)
+      if (parsed) return parsed
+      const oklch = parseOklch(expression)
+      if (oklch) return oklchToSrgb(oklch)
+      return null
+    },
+    [resolveCssColor]
+  )
+
+  const resolveNodeRgba = useCallback(
+    (nodeId: string, visited = new Set<string>()): RGBA | null => {
+      if (visited.has(nodeId)) return null
+      visited.add(nodeId)
+
+      const node = nodesById[nodeId]
+      if (!node) return null
+
+      if (node.type === "token") {
+        if (node.value) return resolveExpressionColor(node.value)
+        if (node.cssVar) return resolveExpressionColor(`var(${node.cssVar})`)
+        return null
+      }
+
+      if (node.type === "semantic") {
+        if (node.value) return resolveExpressionColor(node.value)
+        const mappingEdge = edges.find(
+          (edge) => edge.type === "map" && edge.targetId === node.id
+        )
+        if (mappingEdge) {
+          return resolveNodeRgba(mappingEdge.sourceId, visited)
+        }
+        return null
+      }
+
+      if (node.type === "relative") {
+        if (node.value) {
+          const override = resolveExpressionColor(node.value)
+          if (override) return override
+        }
+        const baseId = node.relative?.baseId
+        if (!baseId) return null
+        const base = resolveNodeRgba(baseId, visited)
+        if (!base) return null
+        const baseOklch = srgbToOklch(base)
+        if (!baseOklch) return null
+
+        const spec = node.relative ?? {}
+        const nextL = applyRelativeChannel(baseOklch.l, spec.lMode, spec.lValue, 100, (value) => value)
+        const nextC = applyRelativeChannel(
+          baseOklch.c,
+          spec.cMode,
+          spec.cValue,
+          1,
+          (value) => normalizeChromaValue(value)
+        )
+        const nextH = applyRelativeChannel(baseOklch.h, spec.hMode, spec.hValue, 1, (value) =>
+          value
+        )
+        const nextA = applyRelativeChannel(base.a, spec.alphaMode, spec.alphaValue, 100, (value) => value)
+
+        const normalizedH = Number.isFinite(nextH) ? wrapDegrees(nextH) : baseOklch.h
+        const normalized = {
+          l: clampValue(nextL ?? baseOklch.l, 0, 1),
+          c: Math.max(0, nextC ?? baseOklch.c),
+          h: normalizedH,
+          a: clampValue(nextA ?? base.a, 0, 1),
+        }
+        const rgb = oklchToSrgb(normalized)
+        if (!rgb) return null
+        return { ...rgb, a: normalized.a }
+      }
+
+      return null
+    },
+    [edges, normalizeChromaValue, nodesById, resolveExpressionColor]
+  )
+
   const getNodeColor = useCallback(
     (nodeId: string): string | null => {
       const expression = getNodeColorExpression(nodeId)
-      if (!expression) return null
-      const resolved = resolveCssColor(expression)
-      if (resolved) return resolved
-      return parseColor(expression) ? expression : null
+      if (expression) {
+        const resolved = resolveCssColor(expression)
+        if (resolved) return resolved
+      }
+      const fallback = resolveNodeRgba(nodeId)
+      if (fallback) return rgbaToCss(fallback)
+      if (expression && parseColor(expression)) return expression
+      return null
     },
-    [getNodeColorExpression, resolveCssColor]
+    [getNodeColorExpression, resolveCssColor, resolveNodeRgba]
+  )
+
+  const getNodeLabel = useCallback(
+    (nodeId: string) => nodesById[nodeId]?.label || nodeId,
+    [nodesById]
   )
 
   const getEdgeContrast = useCallback(
@@ -624,10 +815,12 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     if ((e.target as HTMLElement).closest("[data-color-node='true']")) return
     clearSelection()
     setConnectSourceId(null)
+    setSelectedAutoEdgeId(null)
   }
 
   const handleNodeClick = (nodeId: string) => {
     selectNode(nodeId)
+    setSelectedAutoEdgeId(null)
   }
 
   const handleConnectTarget = (nodeId: string) => {
@@ -690,8 +883,14 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     }
   }
 
-  const handleEdgeBadgeClick = (edgeId: string) => {
-    selectEdge(edgeId)
+  const handleEdgeBadgeClick = (edge: DisplayEdge) => {
+    if (edge.auto) {
+      selectEdge(null)
+      setSelectedAutoEdgeId(edge.id)
+      return
+    }
+    setSelectedAutoEdgeId(null)
+    selectEdge(edge.id)
   }
 
   const handleEdgeFilterChange = (nextFilter: EdgeFilter) => {
@@ -701,6 +900,9 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       if (selected && nextFilter !== "all" && selected.type !== nextFilter) {
         selectEdge(null)
       }
+    }
+    if (selectedAutoEdgeId && nextFilter === "map") {
+      setSelectedAutoEdgeId(null)
     }
   }
 
@@ -727,14 +929,81 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   }, [selectedEdgeId, removeEdge, undoRemoveEdge, canUndoEdgeRemoval])
 
   const selectedNode = selectedNodeId ? nodesById[selectedNodeId] : null
-  const selectedEdge = selectedEdgeId ? edges.find((edge) => edge.id === selectedEdgeId) : null
+  const manualEdges = useMemo<DisplayEdge[]>(
+    () => edges.map((edge) => ({ ...edge, auto: false })),
+    [edges]
+  )
+  const selectedEdge = selectedEdgeId
+    ? manualEdges.find((edge) => edge.id === selectedEdgeId) ?? null
+    : null
+  const selectedPreviewColor = selectedNode ? getNodeColor(selectedNode.id) : null
   const relativeSpec =
     selectedNode?.type === "relative"
       ? { ...DEFAULT_RELATIVE_SPEC, ...(selectedNode.relative ?? {}) }
       : null
-  const visibleEdges =
-    edgeFilter === "all" ? edges : edges.filter((edge) => edge.type === edgeFilter)
-  const contrastEdges = edges.filter((edge) => edge.type === "contrast")
+  const autoContrastEdges = useMemo<DisplayEdge[]>(() => {
+    if (!autoContrastEnabled) return []
+    const activeRules = contrastRules.filter((rule) => rule.enabled)
+    if (activeRules.length === 0) return []
+    const manualContrastEdges = manualEdges.filter((edge) => edge.type === "contrast")
+    const manualPairKeys = new Set(
+      manualContrastEdges.map((edge) =>
+        [edge.sourceId, edge.targetId].sort().join("|")
+      )
+    )
+    const seen = new Set<string>()
+    const nextEdges: DisplayEdge[] = []
+    activeRules.forEach((rule) => {
+      const foregroundNodes = nodes.filter(
+        (node) => node.type !== "component" && nodeMatchesRole(node, rule.foregroundRole)
+      )
+      const backgroundNodes = nodes.filter(
+        (node) => node.type !== "component" && nodeMatchesRole(node, rule.backgroundRole)
+      )
+      foregroundNodes.forEach((foreground) => {
+        backgroundNodes.forEach((background) => {
+          if (foreground.id === background.id) return
+          const pairKey = [foreground.id, background.id].sort().join("|")
+          if (manualPairKeys.has(pairKey)) return
+          const edgeId = `auto-${rule.id}-${foreground.id}-${background.id}`
+          if (seen.has(edgeId)) return
+          seen.add(edgeId)
+          nextEdges.push({
+            id: edgeId,
+            sourceId: foreground.id,
+            targetId: background.id,
+            type: "contrast",
+            rule: { model: DEFAULT_COLOR_MODEL, targetLc: rule.targetLc },
+            auto: true,
+            ruleId: rule.id,
+          })
+        })
+      })
+    })
+    return nextEdges
+  }, [autoContrastEnabled, contrastRules, manualEdges, nodeMatchesRole, nodes])
+
+  const resolvedSelectedAutoEdge = useMemo(() => {
+    if (!selectedAutoEdgeId) return null
+    return autoContrastEdges.find((edge) => edge.id === selectedAutoEdgeId) ?? null
+  }, [autoContrastEdges, selectedAutoEdgeId])
+
+  const selectedEdgeData = resolvedSelectedAutoEdge ?? selectedEdge
+
+  const visibleEdges: DisplayEdge[] = useMemo(() => {
+    const manual =
+      edgeFilter === "all"
+        ? manualEdges
+        : manualEdges.filter((edge) => edge.type === edgeFilter)
+    if (edgeFilter === "map") return manual
+    if (autoContrastEdges.length === 0) return manual
+    return [...manual, ...autoContrastEdges]
+  }, [autoContrastEdges, edgeFilter, manualEdges])
+
+  const contrastEdges: DisplayEdge[] = useMemo(() => {
+    const manual = manualEdges.filter((edge) => edge.type === "contrast")
+    return [...manual, ...autoContrastEdges]
+  }, [autoContrastEdges, manualEdges])
   const dependencyEdges = useMemo(() => {
     return nodes
       .filter((node) => node.type === "relative" && node.relative?.baseId)
@@ -762,22 +1031,6 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       addEdge({ sourceId, targetId, type, rule })
     },
     [addEdge, edges]
-  )
-
-  const nodeMatchesRole = useCallback(
-    (node: ColorCanvasNode, role: NonNullable<ColorCanvasNode["role"]>) => {
-      if (node.role === role) return true
-      const haystack = `${node.label} ${node.cssVar ?? ""}`.toLowerCase()
-      const keywords: Record<NonNullable<ColorCanvasNode["role"]>, string[]> = {
-        text: ["text", "foreground", "content", "fg"],
-        surface: ["surface", "background", "canvas", "bg"],
-        border: ["border", "stroke"],
-        icon: ["icon"],
-        accent: ["accent", "brand", "primary", "secondary"],
-      }
-      return keywords[role].some((keyword) => haystack.includes(keyword))
-    },
-    []
   )
 
   const handleQuickConnect = useCallback(
@@ -819,6 +1072,90 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
     updates.forEach((update) => updateThemeVar(activeThemeId, update.cssVar, update.value))
   }, [activeThemeId, getNodeColorExpression, nodes, updateThemeVar])
+
+  const handleSaveThemeFromCanvas = useCallback(() => {
+    const label = newThemeName.trim()
+    const fallbackLabel = `Canvas Theme ${themes.length + 1}`
+    const nextLabel = label || fallbackLabel
+    const baseId = nextLabel
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)+/g, "")
+    let nextId = baseId || `theme-${themes.length + 1}`
+    let counter = 2
+    while (themes.some((theme) => theme.id === nextId)) {
+      nextId = `${baseId || "theme"}-${counter}`
+      counter += 1
+    }
+
+    const baseVars = getTokenValuesForTheme(activeThemeId)
+    const nextVars: Record<string, string> = { ...baseVars }
+    nodes.forEach((node) => {
+      if (!node.cssVar) return
+      if (node.type === "relative") {
+        const expression = getNodeColorExpression(node.id)
+        if (expression) nextVars[node.cssVar] = expression
+        return
+      }
+      if ((node.type === "token" || node.type === "semantic") && node.value) {
+        nextVars[node.cssVar] = node.value
+      }
+    })
+
+    const newTheme = {
+      id: nextId,
+      label: nextLabel,
+      description: "From Color Canvas",
+      vars: nextVars,
+      groupId: nextId,
+    }
+
+    setThemes((prev) => [...prev, newTheme])
+    setActiveThemeId(nextId)
+    setNewThemeName("")
+  }, [
+    activeThemeId,
+    getNodeColorExpression,
+    getTokenValuesForTheme,
+    newThemeName,
+    nodes,
+    setActiveThemeId,
+    setThemes,
+    themes,
+  ])
+
+  const resolveEdgeLabel = useCallback(
+    (edge: DisplayEdge) => {
+      const source = nodesById[edge.sourceId]
+      const target = nodesById[edge.targetId]
+      const fallback = `${source?.label ?? "Unknown"} → ${target?.label ?? "Unknown"}`
+      if (!edge.auto) return fallback
+      const rule = contrastRules.find((entry) => entry.id === edge.ruleId)
+      return rule ? `${rule.label} · ${fallback}` : fallback
+    },
+    [contrastRules, nodesById]
+  )
+
+  const handleDuplicateNode = useCallback(
+    (node: ColorCanvasNode) => {
+      const offset = { x: node.position.x + 24, y: node.position.y + 24 }
+      const baseLabel = node.label.endsWith(" copy") ? node.label : `${node.label} copy`
+      const nextCssVar =
+        node.type === "token" || node.type === "relative"
+          ? getNextCssVarFrom(node.cssVar)
+          : node.cssVar
+      addNode({
+        type: node.type,
+        label: baseLabel,
+        cssVar: nextCssVar,
+        value: node.value,
+        role: node.role,
+        relative: node.relative,
+        position: offset,
+      })
+    },
+    [addNode, getNextCssVarFrom]
+  )
 
   useEffect(() => {
     if (!connectDrag.active) return
@@ -901,6 +1238,23 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 Relative colors not supported in this browser.
               </span>
             )}
+          </div>
+          <div className="mt-3 space-y-2 rounded-md border border-default bg-surface-50 px-2 py-2">
+            <div className="text-[11px] font-medium text-muted-foreground">Save as new theme</div>
+            <input
+              type="text"
+              value={newThemeName}
+              onChange={(e) => setNewThemeName(e.target.value)}
+              placeholder="Theme name"
+              className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
+            />
+            <button
+              type="button"
+              onClick={handleSaveThemeFromCanvas}
+              className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-50"
+            >
+              Save theme from canvas
+            </button>
           </div>
         </div>
 
@@ -1206,6 +1560,28 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
             >
               Dependencies
             </button>
+            <button
+              type="button"
+              onClick={() => setAutoContrastEnabled((prev) => !prev)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                autoContrastEnabled
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-default text-muted-foreground hover:bg-surface-50"
+              }`}
+            >
+              Auto contrast
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowFullLabels((prev) => !prev)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                showFullLabels
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-default text-muted-foreground hover:bg-surface-50"
+              }`}
+            >
+              Full labels
+            </button>
           </div>
         </div>
 
@@ -1311,7 +1687,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               <button
                 key={`${edge.id}-badge`}
                 type="button"
-                onClick={() => handleEdgeBadgeClick(edge.id)}
+                onClick={() => handleEdgeBadgeClick(edge)}
                 className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-[10px] font-semibold shadow-sm ${badgeClass}`}
                 style={{ left: midX, top: midY }}
               >
@@ -1326,6 +1702,8 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               node={node}
               size={NODE_SIZES[node.type]}
               resolveColor={getNodeColor}
+              resolveExpression={getNodeColorExpression}
+              resolveLabel={getNodeLabel}
               selected={selectedNodeId === node.id}
               connectActive={connectMode !== null}
               connectDragging={connectDrag.active}
@@ -1333,6 +1711,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               onMove={moveNode}
               onClick={handleNodeClick}
               onConnectStart={handleConnectStart}
+              showFullLabels={showFullLabels}
             />
           ))}
         </div>
@@ -1409,16 +1788,20 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                           : status === "fail"
                             ? "bg-rose-100 text-rose-700"
                             : "bg-slate-100 text-slate-600"
-                      const source = nodesById[edge.sourceId]
-                      const targetNode = nodesById[edge.targetId]
-                      const label = `${source?.label ?? "Unknown"} → ${targetNode?.label ?? "Unknown"}`
+                      const label = resolveEdgeLabel(edge)
 
                       return (
                         <button
                           key={edge.id}
                           type="button"
                           onClick={() => {
-                            selectEdge(edge.id)
+                            if (edge.auto) {
+                              selectEdge(null)
+                              setSelectedAutoEdgeId(edge.id)
+                            } else {
+                              setSelectedAutoEdgeId(null)
+                              selectEdge(edge.id)
+                            }
                             setPanelMode("inspector")
                           }}
                           className="flex w-full items-center justify-between gap-2 rounded-md border border-default bg-white px-3 py-2 text-left text-xs hover:bg-surface-50"
@@ -1439,7 +1822,77 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 </div>
               ) : (
                 <>
-                  {!selectedNode && !selectedEdge && (
+                  <div className="mb-4 rounded-md border border-default bg-white px-3 py-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">Contrast rules</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          Auto edges based on roles
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAutoContrastEnabled((prev) => !prev)}
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                          autoContrastEnabled
+                            ? "border-brand-500 bg-brand-50 text-brand-700"
+                            : "border-default text-muted-foreground"
+                        }`}
+                      >
+                        {autoContrastEnabled ? "On" : "Off"}
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {contrastRules.map((rule) => (
+                        <div key={rule.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={rule.enabled}
+                            disabled={!autoContrastEnabled}
+                            onChange={(e) =>
+                              setContrastRules((prev) =>
+                                prev.map((entry) =>
+                                  entry.id === rule.id
+                                    ? { ...entry, enabled: e.target.checked }
+                                    : entry
+                                )
+                              )
+                            }
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[11px] font-semibold text-foreground">
+                              {rule.label}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {rule.foregroundRole} → {rule.backgroundRole}
+                            </div>
+                          </div>
+                          <select
+                            value={rule.targetLc}
+                            disabled={!autoContrastEnabled}
+                            onChange={(e) =>
+                              setContrastRules((prev) =>
+                                prev.map((entry) =>
+                                  entry.id === rule.id
+                                    ? { ...entry, targetLc: Number(e.target.value) }
+                                    : entry
+                                )
+                              )
+                            }
+                            className="rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground"
+                          >
+                            {APCA_TARGETS.map((target) => (
+                              <option key={target} value={target}>
+                                Lc {target}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {!selectedNode && !selectedEdgeData && (
                     <div className="rounded-md border border-dashed border-default bg-white px-3 py-2 text-xs text-muted-foreground">
                       Select a node or edge to inspect details.
                     </div>
@@ -1447,6 +1900,23 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
                   {selectedNode && (
                     <div className="space-y-3">
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">Preview</div>
+                        <div className="mt-1 flex items-center gap-2 rounded-md border border-default bg-surface-50 px-2 py-1">
+                          <div
+                            className="h-5 w-5 rounded border border-default"
+                            style={{ background: selectedPreviewColor || "transparent" }}
+                          />
+                          <div className="min-w-0 flex-1 truncate text-[11px] font-mono text-foreground">
+                            {selectedPreviewColor || "—"}
+                          </div>
+                        </div>
+                        {!selectedPreviewColor && selectedNode.type === "relative" && !supportsRelativeColor && (
+                          <div className="mt-1 text-[10px] text-amber-600">
+                            Relative colors are not supported in this browser, so preview may be empty.
+                          </div>
+                        )}
+                      </div>
                       <div>
                         <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Label</label>
                         <input
@@ -1459,6 +1929,12 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                       <div>
                         <div className="text-[11px] text-muted-foreground">Type</div>
                         <div className="text-xs font-semibold text-foreground">{selectedNode.type}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">Resolved expression</div>
+                        <div className="rounded-md border border-default bg-surface-50 px-2 py-1 text-[11px] font-mono text-foreground">
+                          {getNodeColorExpression(selectedNode.id) || "—"}
+                        </div>
                       </div>
                       {selectedNode.type === "semantic" && (
                         <div>
@@ -1510,6 +1986,27 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
                       {selectedNode.type === "relative" && relativeSpec && (
                         <div className="space-y-3">
+                          <div>
+                            <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                              Expression override (optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={selectedNode.value || ""}
+                              onChange={(e) => updateNodeValue(selectedNode.id, e.target.value)}
+                              className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
+                              placeholder="oklch(from var(--color-brand-500) l c h / alpha)"
+                            />
+                            {selectedNode.value && (
+                              <button
+                                type="button"
+                                onClick={() => updateNodeValue(selectedNode.id, "")}
+                                className="mt-2 rounded-md border border-default bg-white px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:bg-surface-50"
+                              >
+                                Clear override
+                              </button>
+                            )}
+                          </div>
                           <div>
                             <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Base node</label>
                             <select
@@ -1574,12 +2071,15 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                                   })
                                 }}
                                 className="rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
-                                placeholder={channel.unit}
+                                placeholder={channel.key === "c" ? "0.08" : channel.unit}
                               />
                             </div>
                           ))}
                           <div className="text-[11px] text-muted-foreground">
                             Relative syntax: oklch(from base l c h / alpha)
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            Chroma uses 0–0.4 range. Values above 1 are treated as percentages.
                           </div>
                         </div>
                       )}
@@ -1596,48 +2096,85 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                           />
                         </div>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => removeNode(selectedNode.id)}
-                        className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Remove node
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicateNode(selectedNode)}
+                          className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-foreground hover:bg-surface-50"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Duplicate
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeNode(selectedNode.id)}
+                          className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   )}
 
-                  {selectedEdge && (
+                  {selectedEdgeData && (
                     <div className="space-y-3">
                       <div>
                         <div className="text-[11px] text-muted-foreground">Edge type</div>
-                        <div className="text-xs font-semibold text-foreground">{selectedEdge.type}</div>
+                        <div className="text-xs font-semibold text-foreground">
+                          {selectedEdgeData.type}
+                          {selectedEdgeData.auto ? " · auto" : ""}
+                        </div>
                       </div>
-                      {selectedEdge.type === "contrast" && (
+                      {selectedEdgeData.type === "contrast" && (
                         <>
                           <div>
                             <div className="text-[11px] text-muted-foreground">APCA (approx)</div>
-                            <div className="text-xs font-semibold text-foreground">
-                              {formatLc(getEdgeContrast(selectedEdge))}
+                            <div className="space-y-1 text-xs font-semibold text-foreground">
+                              <div>
+                                Foreground → Background: {formatLc(getEdgeContrast(selectedEdgeData))}
+                              </div>
+                              <div className="text-[11px] font-normal text-muted-foreground">
+                                Background → Foreground:{" "}
+                                {formatLc(
+                                  getEdgeContrast({
+                                    ...selectedEdgeData,
+                                    sourceId: selectedEdgeData.targetId,
+                                    targetId: selectedEdgeData.sourceId,
+                                  })
+                                )}
+                              </div>
                             </div>
                           </div>
                           <div>
                             <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
                               Target Lc
                             </label>
-                            <select
-                              value={getEdgeTarget(selectedEdge)}
-                              onChange={(e) =>
-                                updateEdgeRule(selectedEdge.id, { targetLc: Number(e.target.value) })
-                              }
-                              className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
-                            >
-                              {APCA_TARGETS.map((target) => (
-                                <option key={target} value={target}>
-                                  Lc {target}
-                                </option>
-                              ))}
-                            </select>
+                            {selectedEdgeData.auto ? (
+                              <div className="rounded-md border border-default bg-surface-50 px-2 py-1 text-[11px] font-semibold text-foreground">
+                                Lc {getEdgeTarget(selectedEdgeData)}
+                              </div>
+                            ) : (
+                              <select
+                                value={getEdgeTarget(selectedEdgeData)}
+                                onChange={(e) =>
+                                  updateEdgeRule(selectedEdgeData.id, { targetLc: Number(e.target.value) })
+                                }
+                                className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
+                              >
+                                {APCA_TARGETS.map((target) => (
+                                  <option key={target} value={target}>
+                                    Lc {target}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-[11px] text-muted-foreground">Pair</div>
+                            <div className="text-xs font-semibold text-foreground">
+                              {resolveEdgeLabel(selectedEdgeData)}
+                            </div>
                           </div>
                           <div>
                             <div className="text-[11px] text-muted-foreground">Model</div>
@@ -1647,14 +2184,20 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                           </div>
                         </>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => removeEdge(selectedEdge.id)}
-                        className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Remove edge
-                      </button>
+                      {!selectedEdgeData.auto ? (
+                        <button
+                          type="button"
+                          onClick={() => removeEdge(selectedEdgeData.id)}
+                          className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Remove edge
+                        </button>
+                      ) : (
+                        <div className="rounded-md border border-dashed border-default bg-surface-50 px-2 py-1 text-[11px] text-muted-foreground">
+                          Auto edges are generated from contrast rules.
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -1673,6 +2216,19 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   )
 }
 
+function nodeMatchesRole(node: ColorCanvasNode, role: NonNullable<ColorCanvasNode["role"]>) {
+  if (node.role === role) return true
+  const haystack = `${node.label} ${node.cssVar ?? ""}`.toLowerCase()
+  const keywords: Record<NonNullable<ColorCanvasNode["role"]>, string[]> = {
+    text: ["text", "foreground", "content", "fg"],
+    surface: ["surface", "background", "canvas", "bg"],
+    border: ["border", "stroke"],
+    icon: ["icon"],
+    accent: ["accent", "brand", "primary", "secondary"],
+  }
+  return keywords[role].some((keyword) => haystack.includes(keyword))
+}
+
 function getNextPosition(nodes: ColorCanvasNode[]) {
   const baseX = 120
   const baseY = 80
@@ -1687,10 +2243,152 @@ function getNextPosition(nodes: ColorCanvasNode[]) {
   }
 }
 
+function formatRelativeChannel(
+  mode: string | undefined,
+  value: number | undefined,
+  unit: string,
+  transform: (value: number) => number = (val) => val
+) {
+  if (!mode || mode === "inherit") return "inherit"
+  if (value === undefined || Number.isNaN(value)) return "inherit"
+  const nextValue = transform(value)
+  if (Number.isNaN(nextValue)) return "inherit"
+  const sign = mode === "delta" && nextValue > 0 ? "+" : ""
+  return `${sign}${nextValue}${unit}`
+}
+
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function wrapDegrees(value: number) {
+  const mod = value % 360
+  return mod < 0 ? mod + 360 : mod
+}
+
+function applyRelativeChannel(
+  baseValue: number,
+  mode: string | undefined,
+  value: number | undefined,
+  percentScale: number,
+  normalize: (value: number) => number
+) {
+  if (!mode || mode === "inherit") return baseValue
+  if (value === undefined || Number.isNaN(value)) return baseValue
+  const normalized = normalize(value)
+  if (mode === "absolute") {
+    return normalized / percentScale
+  }
+  return baseValue + normalized / percentScale
+}
+
+function rgbaToCss(color: RGBA) {
+  const r = Math.round(clampValue(color.r, 0, 1) * 255)
+  const g = Math.round(clampValue(color.g, 0, 1) * 255)
+  const b = Math.round(clampValue(color.b, 0, 1) * 255)
+  const a = clampValue(color.a, 0, 1)
+  if (a >= 1) return `rgb(${r} ${g} ${b})`
+  return `rgb(${r} ${g} ${b} / ${Number(a.toFixed(3))})`
+}
+
+function parseOklch(input: string): { l: number; c: number; h: number; a: number } | null {
+  const match = input.trim().toLowerCase().match(/^oklch\(([^)]+)\)$/)
+  if (!match) return null
+  const body = match[1]
+  const [channelsPart, alphaPart] = body.split("/")
+  const parts = channelsPart.trim().split(/\s+/).filter(Boolean)
+  if (parts.length < 3) return null
+  const parsePercent = (raw: string) => {
+    const value = parseFloat(raw)
+    if (Number.isNaN(value)) return null
+    if (raw.includes("%") || value > 1) return value / 100
+    return value
+  }
+  const parseHue = (raw: string) => {
+    const value = parseFloat(raw)
+    if (Number.isNaN(value)) return null
+    return value
+  }
+  const l = parsePercent(parts[0])
+  if (l === null) return null
+  const c = parsePercent(parts[1])
+  if (c === null) return null
+  const h = parseHue(parts[2])
+  if (h === null) return null
+  let a = 1
+  if (alphaPart) {
+    const alphaRaw = alphaPart.trim()
+    if (alphaRaw) {
+      const alphaValue = parseFloat(alphaRaw)
+      if (Number.isNaN(alphaValue)) return null
+      a = alphaRaw.includes("%") || alphaValue > 1 ? alphaValue / 100 : alphaValue
+    }
+  }
+  return { l: clampValue(l, 0, 1), c: Math.max(0, c), h, a: clampValue(a, 0, 1) }
+}
+
+function srgbToLinear(channel: number) {
+  if (channel <= 0.04045) return channel / 12.92
+  return Math.pow((channel + 0.055) / 1.055, 2.4)
+}
+
+function linearToSrgb(channel: number) {
+  if (channel <= 0.0031308) return channel * 12.92
+  return 1.055 * Math.pow(channel, 1 / 2.4) - 0.055
+}
+
+function srgbToOklch(color: RGBA): { l: number; c: number; h: number } | null {
+  const r = srgbToLinear(clampValue(color.r, 0, 1))
+  const g = srgbToLinear(clampValue(color.g, 0, 1))
+  const b = srgbToLinear(clampValue(color.b, 0, 1))
+
+  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b
+  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b
+  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b
+
+  const lRoot = Math.cbrt(l)
+  const mRoot = Math.cbrt(m)
+  const sRoot = Math.cbrt(s)
+
+  const L = 0.2104542553 * lRoot + 0.793617785 * mRoot - 0.0040720468 * sRoot
+  const A = 1.9779984951 * lRoot - 2.428592205 * mRoot + 0.4505937099 * sRoot
+  const B = 0.0259040371 * lRoot + 0.7827717662 * mRoot - 0.808675766 * sRoot
+
+  const C = Math.sqrt(A * A + B * B)
+  const H = wrapDegrees((Math.atan2(B, A) * 180) / Math.PI)
+  return { l: clampValue(L, 0, 1), c: C, h: H }
+}
+
+function oklchToSrgb(color: { l: number; c: number; h: number; a?: number }): RGBA | null {
+  const L = clampValue(color.l, 0, 1)
+  const C = Math.max(0, color.c)
+  const H = (wrapDegrees(color.h) * Math.PI) / 180
+  const a = C * Math.cos(H)
+  const bLab = C * Math.sin(H)
+
+  const lRoot = L + 0.3963377774 * a + 0.2158037573 * bLab
+  const mRoot = L - 0.1055613458 * a - 0.0638541728 * bLab
+  const sRoot = L - 0.0894841775 * a - 1.291485548 * bLab
+
+  const l = lRoot ** 3
+  const m = mRoot ** 3
+  const s = sRoot ** 3
+
+  const rLinear = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s
+  const gLinear = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s
+  const bLinear = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s
+
+  const r = clampValue(linearToSrgb(rLinear), 0, 1)
+  const g = clampValue(linearToSrgb(gLinear), 0, 1)
+  const bOut = clampValue(linearToSrgb(bLinear), 0, 1)
+  return { r, g, b: bOut, a: color.a ?? 1 }
+}
 function ColorNode({
   node,
   size,
   resolveColor,
+  resolveExpression,
+  resolveLabel,
   selected,
   connectActive,
   connectDragging,
@@ -1698,10 +2396,13 @@ function ColorNode({
   onMove,
   onClick,
   onConnectStart,
+  showFullLabels,
 }: {
   node: ColorCanvasNode
   size: { width: number; height: number }
   resolveColor: (nodeId: string) => string | null
+  resolveExpression: (nodeId: string) => string | null
+  resolveLabel: (nodeId: string) => string
   selected: boolean
   connectActive: boolean
   connectDragging: boolean
@@ -1709,6 +2410,7 @@ function ColorNode({
   onMove: (id: string, position: { x: number; y: number }) => void
   onClick: (id: string) => void
   onConnectStart: (id: string, event: React.PointerEvent) => void
+  showFullLabels: boolean
 }) {
   const draggingRef = useRef(false)
   const offsetRef = useRef({ x: 0, y: 0 })
@@ -1745,10 +2447,33 @@ function ColorNode({
   }
 
   const colorSample = resolveColor(node.id)
+  const expression = resolveExpression(node.id)
+  const normalizeChroma = (value: number) => {
+    const normalized = Math.abs(value) > 1 ? value / 100 : value
+    return Number(normalized.toFixed(3))
+  }
+  const relativeSummary = (() => {
+    if (node.type !== "relative" || !node.relative) return null
+    const parts = [
+      { label: "L", value: formatRelativeChannel(node.relative.lMode, node.relative.lValue, "%") },
+      {
+        label: "C",
+        value: formatRelativeChannel(node.relative.cMode, node.relative.cValue, "", normalizeChroma),
+      },
+      { label: "H", value: formatRelativeChannel(node.relative.hMode, node.relative.hValue, "°") },
+      { label: "A", value: formatRelativeChannel(node.relative.alphaMode, node.relative.alphaValue, "%") },
+    ]
+    const changed = parts.filter((part) => part.value !== "inherit")
+    if (changed.length === 0) return "Inherits base"
+    return changed.map((part) => `${part.label} ${part.value}`).join(" · ")
+  })()
   const relativeBaseLabel =
-    node.type === "relative" && node.relative?.baseId
-      ? `From ${node.relative.baseId}`
+    showFullLabels && node.type === "relative" && node.relative?.baseId
+      ? `From ${resolveLabel(node.relative.baseId)}`
       : null
+  const labelLine = showFullLabels
+    ? expression || node.cssVar || node.role || node.type
+    : node.cssVar || node.role || node.type
 
   return (
     <div
@@ -1798,13 +2523,19 @@ function ColorNode({
         />
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs font-semibold text-foreground">{node.label}</div>
-          <div className="truncate text-[10px] text-muted-foreground">
-            {node.cssVar || node.role || node.type}
+          <div
+            className="truncate text-[10px] text-muted-foreground"
+            title={showFullLabels ? labelLine : undefined}
+          >
+            {labelLine}
           </div>
           {node.type === "relative" && (
             <div className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-semibold text-amber-700">
               Relative
             </div>
+          )}
+          {relativeSummary && (
+            <div className="mt-1 truncate text-[9px] text-muted-foreground">{relativeSummary}</div>
           )}
           {relativeBaseLabel && (
             <div className="mt-1 truncate text-[9px] text-muted-foreground">{relativeBaseLabel}</div>
