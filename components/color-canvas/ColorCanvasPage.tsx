@@ -38,6 +38,7 @@ const SEMANTIC_PRESETS: Array<{ label: string; role: ColorCanvasNode["role"] }> 
   { label: "Surface / Subtle", role: "surface" },
   { label: "Border / Default", role: "border" },
   { label: "Icon / Default", role: "icon" },
+  { label: "Accent / Primary", role: "accent" },
 ]
 
 const DEFAULT_RELATIVE_SPEC = {
@@ -60,6 +61,8 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     x: 0,
     y: 0,
   })
+  const [templateBrand, setTemplateBrand] = useState("")
+  const [templateAccent, setTemplateAccent] = useState("")
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>("all")
   const [panelMode, setPanelMode] = useState<"inspector" | "audit">("inspector")
@@ -174,6 +177,42 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     const computed = getComputedStyle(probe).color
     return computed || null
   }, [])
+
+  const upsertNode = useCallback(
+    (config: {
+      type: ColorCanvasNode["type"]
+      cssVar?: string
+      label: string
+      value?: string
+      role?: ColorCanvasNode["role"]
+      relative?: ColorCanvasNode["relative"]
+      position?: { x: number; y: number }
+    }) => {
+      const existing = config.cssVar
+        ? nodes.find((node) => node.cssVar === config.cssVar && node.type === config.type)
+        : nodes.find((node) => node.label === config.label && node.type === config.type)
+      if (existing) {
+        updateNode(existing.id, {
+          label: config.label,
+          value: config.value ?? existing.value,
+          cssVar: config.cssVar ?? existing.cssVar,
+          role: config.role ?? existing.role,
+          relative: config.relative ?? existing.relative,
+        })
+        return existing.id
+      }
+      return addNode({
+        type: config.type,
+        label: config.label,
+        cssVar: config.cssVar,
+        value: config.value,
+        role: config.role,
+        relative: config.relative,
+        position: config.position ?? getNextPosition(nodes),
+      })
+    },
+    [addNode, nodes, updateNode]
+  )
 
   const nodesById = useMemo(() => {
     return nodes.reduce<Record<string, ColorCanvasNode>>((acc, node) => {
@@ -320,6 +359,151 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
         alphaMode: "inherit",
       },
     })
+  }
+
+  const handleGenerateTemplate = () => {
+    const brandValue = templateBrand.trim()
+    if (!brandValue) return
+    let offset = 0
+    const positionFor = () => {
+      const baseX = 120
+      const baseY = 80
+      const spacingX = 220
+      const spacingY = 120
+      const index = nodes.length + offset
+      offset += 1
+      const col = index % 3
+      const row = Math.floor(index / 3)
+      return {
+        x: baseX + col * spacingX,
+        y: baseY + row * spacingY,
+      }
+    }
+
+    const brandBaseId = upsertNode({
+      type: "token",
+      label: "Brand 500",
+      cssVar: "--color-brand-500",
+      value: brandValue,
+      position: positionFor(),
+    })
+
+    const brandScale = [
+      { cssVar: "--color-brand-300", label: "Brand 300", l: 16, c: -4 },
+      { cssVar: "--color-brand-400", label: "Brand 400", l: 8, c: -2 },
+      { cssVar: "--color-brand-600", label: "Brand 600", l: -6, c: -3 },
+      { cssVar: "--color-brand-700", label: "Brand 700", l: -12, c: -5 },
+    ]
+
+    brandScale.forEach((entry) => {
+      upsertNode({
+        type: "relative",
+        label: entry.label,
+        cssVar: entry.cssVar,
+        position: positionFor(),
+        relative: {
+          model: DEFAULT_COLOR_MODEL,
+          baseId: brandBaseId,
+          lMode: "delta",
+          lValue: entry.l,
+          cMode: "delta",
+          cValue: entry.c,
+          hMode: "inherit",
+          alphaMode: "inherit",
+        },
+      })
+    })
+
+    const surfaceScale = [
+      { cssVar: "--color-surface-50", label: "Surface 50", l: 98, c: 2 },
+      { cssVar: "--color-surface-100", label: "Surface 100", l: 96, c: 3 },
+      { cssVar: "--color-surface-200", label: "Surface 200", l: 92, c: 4 },
+    ]
+
+    surfaceScale.forEach((entry) => {
+      upsertNode({
+        type: "relative",
+        label: entry.label,
+        cssVar: entry.cssVar,
+        position: positionFor(),
+        relative: {
+          model: DEFAULT_COLOR_MODEL,
+          baseId: brandBaseId,
+          lMode: "absolute",
+          lValue: entry.l,
+          cMode: "absolute",
+          cValue: entry.c,
+          hMode: "inherit",
+          alphaMode: "inherit",
+        },
+      })
+    })
+
+    const textScale = [
+      { cssVar: "--color-foreground", label: "Text Primary", l: 20 },
+      { cssVar: "--color-muted-foreground", label: "Text Secondary", l: 40 },
+    ]
+
+    textScale.forEach((entry) => {
+      upsertNode({
+        type: "relative",
+        label: entry.label,
+        cssVar: entry.cssVar,
+        position: positionFor(),
+        relative: {
+          model: DEFAULT_COLOR_MODEL,
+          baseId: brandBaseId,
+          lMode: "absolute",
+          lValue: entry.l,
+          cMode: "absolute",
+          cValue: 0,
+          hMode: "inherit",
+          alphaMode: "inherit",
+        },
+      })
+    })
+
+    const accentValue = templateAccent.trim()
+    if (accentValue) {
+      const accentBaseId = upsertNode({
+        type: "token",
+        label: "Accent 500",
+        cssVar: "--color-accent-500",
+        value: accentValue,
+        position: positionFor(),
+      })
+
+      const accentScale = [
+        { cssVar: "--color-accent-400", label: "Accent 400", l: 8, c: -2 },
+        { cssVar: "--color-accent-600", label: "Accent 600", l: -6, c: -3 },
+      ]
+      accentScale.forEach((entry) => {
+        upsertNode({
+          type: "relative",
+          label: entry.label,
+          cssVar: entry.cssVar,
+          position: positionFor(),
+          relative: {
+            model: DEFAULT_COLOR_MODEL,
+            baseId: accentBaseId,
+            lMode: "delta",
+            lValue: entry.l,
+            cMode: "delta",
+            cValue: entry.c,
+            hMode: "inherit",
+            alphaMode: "inherit",
+          },
+        })
+      })
+    }
+
+    const accentSemanticId = upsertNode({
+      type: "semantic",
+      label: "Accent / Primary",
+      role: "accent",
+      position: positionFor(),
+    })
+    ensureEdge(brandBaseId, accentSemanticId, "map")
   }
 
   const handleAddSemantic = (preset: { label: string; role: ColorCanvasNode["role"] }) => {
@@ -598,6 +782,44 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 Relative colors not supported in this browser.
               </span>
             )}
+          </div>
+        </div>
+
+        <div className="border-b border-default px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Theme Template
+            </h3>
+            <span className="text-[11px] text-muted-foreground">Brand seed</span>
+          </div>
+          <div className="space-y-2">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Brand color</label>
+              <input
+                type="text"
+                value={templateBrand}
+                onChange={(e) => setTemplateBrand(e.target.value)}
+                placeholder="e.g. #1d4ed8 or oklch(60% 0.18 240)"
+                className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Accent color (optional)</label>
+              <input
+                type="text"
+                value={templateAccent}
+                onChange={(e) => setTemplateAccent(e.target.value)}
+                placeholder="Optional secondary brand"
+                className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleGenerateTemplate}
+              className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-50"
+            >
+              Generate template nodes
+            </button>
           </div>
         </div>
 
