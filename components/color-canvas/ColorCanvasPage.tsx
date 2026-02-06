@@ -626,10 +626,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   }
 
   const handleNodeClick = (nodeId: string) => {
-    if (!connectMode) {
-      selectNode(nodeId)
-      return
-    }
+    selectNode(nodeId)
+  }
+
+  const handleConnectTarget = (nodeId: string) => {
+    if (!connectMode) return
 
     if (!connectSourceId) {
       setConnectSourceId(nodeId)
@@ -826,7 +827,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       const nodeEl = el?.closest("[data-color-node='true']") as HTMLElement | null
       const targetId = nodeEl?.dataset.nodeId
       if (targetId) {
-        handleNodeClick(targetId)
+        handleConnectTarget(targetId)
       } else {
         setConnectSourceId(null)
       }
@@ -838,7 +839,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       window.removeEventListener("pointermove", handlePointerMove)
       window.removeEventListener("pointerup", handlePointerUp)
     }
-  }, [connectDrag.active, handleNodeClick])
+  }, [connectDrag.active, handleConnectTarget])
 
   return (
     <div
@@ -1668,10 +1669,6 @@ function ColorNode({
   const offsetRef = useRef({ x: 0, y: 0 })
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (connectActive) {
-      onClick(node.id)
-      return
-    }
     e.stopPropagation()
     draggingRef.current = true
     offsetRef.current = {
@@ -1727,13 +1724,19 @@ function ColorNode({
         <>
           <button
             type="button"
-            onPointerDown={(e) => onConnectStart(node.id, e)}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              onConnectStart(node.id, e)
+            }}
             className="absolute -left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-brand-300 bg-white shadow-sm hover:border-brand-500"
             aria-label="Start connection"
           />
           <button
             type="button"
-            onPointerDown={(e) => onConnectStart(node.id, e)}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              onConnectStart(node.id, e)
+            }}
             className="absolute -right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-brand-300 bg-white shadow-sm hover:border-brand-500"
             aria-label="Finish connection"
           />
