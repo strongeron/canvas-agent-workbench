@@ -62,6 +62,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     x: 0,
     y: 0,
   })
+  const [showDependencies, setShowDependencies] = useState(true)
   const [templateBrand, setTemplateBrand] = useState("")
   const [templateAccent, setTemplateAccent] = useState("")
 
@@ -734,6 +735,15 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   const visibleEdges =
     edgeFilter === "all" ? edges : edges.filter((edge) => edge.type === edgeFilter)
   const contrastEdges = edges.filter((edge) => edge.type === "contrast")
+  const dependencyEdges = useMemo(() => {
+    return nodes
+      .filter((node) => node.type === "relative" && node.relative?.baseId)
+      .map((node) => ({
+        id: `dependency-${node.id}`,
+        sourceId: node.relative?.baseId as string,
+        targetId: node.id,
+      }))
+  }, [nodes])
 
   const ensureEdge = useCallback(
     (
@@ -1185,6 +1195,17 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               <RotateCcw className="h-3.5 w-3.5" />
               Undo
             </button>
+            <button
+              type="button"
+              onClick={() => setShowDependencies((prev) => !prev)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                showDependencies
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-default text-muted-foreground hover:bg-surface-50"
+              }`}
+            >
+              Dependencies
+            </button>
           </div>
         </div>
 
@@ -1194,6 +1215,30 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
           onClick={handleWorkspaceClick}
         >
           <svg className="absolute inset-0 h-full w-full">
+            {showDependencies &&
+              dependencyEdges.map((edge) => {
+                const source = nodesById[edge.sourceId]
+                const target = nodesById[edge.targetId]
+                if (!source || !target) return null
+                const sourceSize = NODE_SIZES[source.type]
+                const targetSize = NODE_SIZES[target.type]
+                const x1 = source.position.x + sourceSize.width / 2
+                const y1 = source.position.y + sourceSize.height / 2
+                const x2 = target.position.x + targetSize.width / 2
+                const y2 = target.position.y + targetSize.height / 2
+                return (
+                  <line
+                    key={edge.id}
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke="#94a3b8"
+                    strokeWidth={1.5}
+                    strokeDasharray="3 4"
+                  />
+                )
+              })}
             {visibleEdges.map((edge) => {
               const source = nodesById[edge.sourceId]
               const target = nodesById[edge.targetId]
@@ -1700,6 +1745,10 @@ function ColorNode({
   }
 
   const colorSample = resolveColor(node.id)
+  const relativeBaseLabel =
+    node.type === "relative" && node.relative?.baseId
+      ? `From ${node.relative.baseId}`
+      : null
 
   return (
     <div
@@ -1752,6 +1801,14 @@ function ColorNode({
           <div className="truncate text-[10px] text-muted-foreground">
             {node.cssVar || node.role || node.type}
           </div>
+          {node.type === "relative" && (
+            <div className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-semibold text-amber-700">
+              Relative
+            </div>
+          )}
+          {relativeBaseLabel && (
+            <div className="mt-1 truncate text-[9px] text-muted-foreground">{relativeBaseLabel}</div>
+          )}
         </div>
         <Link2 className="h-4 w-4 text-muted-foreground" />
       </div>
