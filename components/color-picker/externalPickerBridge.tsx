@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 
 import { OklchPicker, type Oklch, type PickerState } from "../oklch-picker-portable/src"
@@ -68,12 +68,55 @@ function OklchPortableField({
 }) {
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [draftValue, setDraftValue] = useState(value)
+  const rafRef = useRef<number | null>(null)
+  const pendingValueRef = useRef<string | null>(null)
   const initialState = useMemo(() => parseInitialState(value), [value])
-  const swatchColor = value?.trim() ? value : "transparent"
+  const pickerInitialState = useMemo<Partial<PickerState>>(
+    () => ({
+      mode: "shape",
+      plane: "HC_at_L",
+      resolution: 256,
+      ...initialState,
+    }),
+    [initialState]
+  )
+  const swatchColor = draftValue?.trim() ? draftValue : "transparent"
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (!open) {
+      setDraftValue(value)
+    }
+  }, [open, value])
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+      }
+    }
+  }, [])
+
+  const emitChange = useCallback(
+    (nextValue: string) => {
+      setDraftValue(nextValue)
+      pendingValueRef.current = nextValue
+      if (rafRef.current !== null) return
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null
+        const pending = pendingValueRef.current
+        if (pending !== null) {
+          onChange(pending)
+          pendingValueRef.current = null
+        }
+      })
+    },
+    [onChange]
+  )
 
   useEffect(() => {
     if (!open) return
@@ -108,9 +151,18 @@ function OklchPortableField({
               className="gallery-oklch-widget"
             >
               <header className="gallery-oklch-widget__header">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-foreground">Color Picker</div>
-                  <div className="truncate text-xs text-muted-foreground">{value || "No value selected"}</div>
+                <div className="min-w-0 flex items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="h-6 w-6 shrink-0 rounded-md border border-default"
+                    style={{ background: swatchColor }}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-foreground">Color Picker</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {draftValue || "No value selected"}
+                    </div>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -122,12 +174,11 @@ function OklchPortableField({
               </header>
               <div className="gallery-oklch-widget__body">
                 <OklchPicker
-                  key={value || "empty"}
                   className="gallery-oklch-picker"
-                  initialState={initialState}
+                  initialState={pickerInitialState}
                   onChange={(next) => {
                     const css = next.gamut === "p3" ? next.css : toOklchCss(next.color)
-                    onChange(css)
+                    emitChange(css)
                   }}
                 />
               </div>
@@ -148,8 +199,8 @@ function OklchPortableField({
         <input
           id={id}
           type="text"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
+          value={draftValue}
+          onChange={(event) => emitChange(event.target.value)}
           placeholder={placeholder}
           className={className}
           disabled={disabled}
