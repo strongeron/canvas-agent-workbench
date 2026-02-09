@@ -2,11 +2,17 @@ import { Copy, Link2, Move, Palette, Plus, RotateCcw, Trash2, Type } from "lucid
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { CanvasThemePanel } from "../canvas/CanvasThemePanel"
+import { ColorPickerField } from "../color-picker"
 import { useThemeRegistry } from "../../hooks/useThemeRegistry"
 import { useColorCanvasState } from "../../hooks/useColorCanvasState"
 import { useLocalStorage } from "../../hooks/useLocalStorage"
 import type { ThemeToken } from "../../types/theme"
-import type { ColorCanvasEdge, ColorCanvasNode, ColorCanvasState } from "../../types/colorCanvas"
+import type {
+  ColorCanvasEdge,
+  ColorCanvasNode,
+  ColorCanvasState,
+  RelativeColorSpec,
+} from "../../types/colorCanvas"
 import {
   APCA_TARGETS,
   DEFAULT_CONTRAST_TARGET_LC,
@@ -21,6 +27,13 @@ interface RGBA {
   r: number
   g: number
   b: number
+  a: number
+}
+
+export interface OklchColor {
+  l: number
+  c: number
+  h: number
   a: number
 }
 
@@ -273,6 +286,10 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     if (typeof CSS === "undefined" || typeof CSS.supports !== "function") return false
     return CSS.supports("color", "oklch(from white l c h)")
   }, [])
+  const supportsDisplayP3 = useMemo(() => {
+    if (typeof CSS === "undefined" || typeof CSS.supports !== "function") return false
+    return CSS.supports("color", "color(display-p3 1 1 1)")
+  }, [])
 
   const resolveCssColor = useCallback((value: string): string | null => {
     if (!value) return null
@@ -358,11 +375,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     }, {})
   }, [nodes])
 
-  const normalizeChromaValue = useCallback((value: number) => {
-    if (Number.isNaN(value)) return value
-    if (Math.abs(value) > 1) return value / 100
-    return value
-  }, [])
+  const normalizeChromaValue = useCallback((value: number) => normalizeRelativeChroma(value), [])
 
   const buildRelativeExpression = useCallback(
     (baseExpression: string, node: ColorCanvasNode) => {
@@ -438,6 +451,10 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
   const resolveExpressionColor = useCallback(
     (expression: string): RGBA | null => {
+      if (expression.startsWith("color(display-p3")) {
+        const p3 = parseDisplayP3(expression)
+        if (p3) return displayP3ToSrgb(p3)
+      }
       const resolved = resolveCssColor(expression)
       if (resolved) return parseColor(resolved)
       const parsed = parseColor(expression)
@@ -447,6 +464,77 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       return null
     },
     [resolveCssColor]
+  )
+
+  const resolveNodeOklch = useCallback(
+    (
+      nodeId: string,
+      visited = new Set<string>()
+    ): { l: number; c: number; h: number; a: number } | null => {
+      if (visited.has(nodeId)) return null
+      visited.add(nodeId)
+      const node = nodesById[nodeId]
+      if (!node) return null
+
+      const parseToOklch = (value: string) => {
+        const parsed = parseOklch(value)
+        if (parsed) return parsed
+        if (value.startsWith("color(display-p3")) {
+          const p3 = parseDisplayP3(value)
+          if (p3) {
+            const oklch = srgbToOklch(displayP3ToSrgb(p3))
+            if (oklch) return { ...oklch, a: p3.a }
+          }
+        }
+        const rgba = resolveExpressionColor(value)
+        if (rgba) {
+          const oklch = srgbToOklch(rgba)
+          if (oklch) return { ...oklch, a: rgba.a }
+        }
+        return null
+      }
+
+      if (node.type === "token") {
+        if (node.value) return parseToOklch(node.value)
+        if (node.cssVar) {
+          const resolved = resolveCssColor(`var(${node.cssVar})`)
+          if (!resolved) return null
+          const rgba = parseColor(resolved)
+          if (!rgba) return null
+          const oklch = srgbToOklch(rgba)
+          if (!oklch) return null
+          return { ...oklch, a: rgba.a }
+        }
+        return null
+      }
+
+      if (node.type === "semantic") {
+        if (node.value) return parseToOklch(node.value)
+        const mappingEdge = edges.find(
+          (edge) => edge.type === "map" && edge.targetId === node.id
+        )
+        if (mappingEdge) {
+          return resolveNodeOklch(mappingEdge.sourceId, visited)
+        }
+        return null
+      }
+
+      if (node.type === "relative") {
+        if (node.value) {
+          const override = parseToOklch(node.value)
+          if (override) return override
+        }
+        const baseId = node.relative?.baseId
+        if (!baseId) return null
+        const base = resolveNodeOklch(baseId, visited)
+        if (!base) return null
+        const spec = node.relative ?? {}
+        return resolveRelativeOklch(base, spec)
+      }
+
+      return null
+    },
+    [edges, nodesById, resolveCssColor, resolveExpressionColor]
   )
 
   const resolveNodeRgba = useCallback(
@@ -479,47 +567,33 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
           const override = resolveExpressionColor(node.value)
           if (override) return override
         }
-        const baseId = node.relative?.baseId
-        if (!baseId) return null
-        const base = resolveNodeRgba(baseId, visited)
-        if (!base) return null
-        const baseOklch = srgbToOklch(base)
-        if (!baseOklch) return null
-
-        const spec = node.relative ?? {}
-        const nextL = applyRelativeChannel(baseOklch.l, spec.lMode, spec.lValue, 100, (value) => value)
-        const nextC = applyRelativeChannel(
-          baseOklch.c,
-          spec.cMode,
-          spec.cValue,
-          1,
-          (value) => normalizeChromaValue(value)
-        )
-        const nextH = applyRelativeChannel(baseOklch.h, spec.hMode, spec.hValue, 1, (value) =>
-          value
-        )
-        const nextA = applyRelativeChannel(base.a, spec.alphaMode, spec.alphaValue, 100, (value) => value)
-
-        const normalizedH = Number.isFinite(nextH) ? wrapDegrees(nextH) : baseOklch.h
-        const normalized = {
-          l: clampValue(nextL ?? baseOklch.l, 0, 1),
-          c: Math.max(0, nextC ?? baseOklch.c),
-          h: normalizedH,
-          a: clampValue(nextA ?? base.a, 0, 1),
-        }
-        const rgb = oklchToSrgb(normalized)
+        const oklch = resolveNodeOklch(node.id)
+        if (!oklch) return null
+        const rgb = oklchToSrgb(oklch)
         if (!rgb) return null
-        return { ...rgb, a: normalized.a }
+        return { ...rgb, a: oklch.a }
       }
 
       return null
     },
-    [edges, normalizeChromaValue, nodesById, resolveExpressionColor]
+    [edges, nodesById, resolveExpressionColor, resolveNodeOklch]
   )
 
   const getNodeColor = useCallback(
     (nodeId: string): string | null => {
       const expression = getNodeColorExpression(nodeId)
+      if (expression?.startsWith("color(display-p3")) {
+        return expression
+      }
+      const oklch = resolveNodeOklch(nodeId)
+      if (oklch) {
+        const linearSrgb = oklchToLinearSrgb(oklch)
+        if (supportsDisplayP3 && isOutOfGamut(linearSrgb)) {
+          return oklchToDisplayP3Css(oklch)
+        }
+        const rgb = oklchToSrgb(oklch)
+        if (rgb) return rgbaToCss({ ...rgb, a: oklch.a })
+      }
       if (expression) {
         const resolved = resolveCssColor(expression)
         if (resolved) return resolved
@@ -529,12 +603,38 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       if (expression && parseColor(expression)) return expression
       return null
     },
-    [getNodeColorExpression, resolveCssColor, resolveNodeRgba]
+    [getNodeColorExpression, resolveCssColor, resolveNodeOklch, resolveNodeRgba, supportsDisplayP3]
+  )
+
+  const getNodeIsP3 = useCallback(
+    (nodeId: string) => {
+      const expression = getNodeColorExpression(nodeId)
+      if (expression?.startsWith("color(display-p3")) return true
+      const oklch = resolveNodeOklch(nodeId)
+      if (!oklch) return false
+      return isOutOfGamut(oklchToLinearSrgb(oklch))
+    },
+    [getNodeColorExpression, resolveNodeOklch]
   )
 
   const getNodeLabel = useCallback(
     (nodeId: string) => nodesById[nodeId]?.label || nodeId,
     [nodesById]
+  )
+
+  const getEdgeContrastRaw = useCallback(
+    (sourceId: string, targetId: string) => {
+      const sourceRgba = resolveNodeRgba(sourceId)
+      const targetRgba = resolveNodeRgba(targetId)
+      if (!sourceRgba || !targetRgba) {
+        const sourceFallback = getNodeColor(sourceId)
+        const targetFallback = getNodeColor(targetId)
+        if (!sourceFallback || !targetFallback) return null
+        return apcaContrast(sourceFallback, targetFallback)
+      }
+      return apcaContrast(rgbaToCss(sourceRgba), rgbaToCss(targetRgba))
+    },
+    [getNodeColor, resolveNodeRgba]
   )
 
   const getEdgeContrast = useCallback(
@@ -552,13 +652,17 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
         surfaceNode = source
       }
 
-      const textColor = getNodeColor(textNode.id)
-      const surfaceColor = getNodeColor(surfaceNode.id)
-      if (!textColor || !surfaceColor) return null
-
-      return apcaContrast(textColor, surfaceColor)
+      return getEdgeContrastRaw(textNode.id, surfaceNode.id)
     },
-    [getNodeColor, nodesById]
+    [getEdgeContrastRaw, nodesById]
+  )
+
+  const getEdgeContrastPair = useCallback(
+    (edge: DisplayEdge) => ({
+      forward: getEdgeContrastRaw(edge.sourceId, edge.targetId),
+      reverse: getEdgeContrastRaw(edge.targetId, edge.sourceId),
+    }),
+    [getEdgeContrastRaw]
   )
 
   const getEdgeTarget = useCallback(
@@ -937,6 +1041,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     ? manualEdges.find((edge) => edge.id === selectedEdgeId) ?? null
     : null
   const selectedPreviewColor = selectedNode ? getNodeColor(selectedNode.id) : null
+  const selectedPreviewIsP3 = selectedNode ? getNodeIsP3(selectedNode.id) : false
   const relativeSpec =
     selectedNode?.type === "relative"
       ? { ...DEFAULT_RELATIVE_SPEC, ...(selectedNode.relative ?? {}) }
@@ -1004,6 +1109,12 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     const manual = manualEdges.filter((edge) => edge.type === "contrast")
     return [...manual, ...autoContrastEdges]
   }, [autoContrastEdges, manualEdges])
+  const nodeContrastEdges = useMemo(() => {
+    if (!selectedNode) return []
+    return contrastEdges.filter(
+      (edge) => edge.sourceId === selectedNode.id || edge.targetId === selectedNode.id
+    )
+  }, [contrastEdges, selectedNode])
   const dependencyEdges = useMemo(() => {
     return nodes
       .filter((node) => node.type === "relative" && node.relative?.baseId)
@@ -1336,20 +1447,18 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
           <div className="space-y-2">
             <div>
               <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Brand color</label>
-              <input
-                type="text"
+              <ColorPickerField
                 value={templateBrand}
-                onChange={(e) => setTemplateBrand(e.target.value)}
+                onChange={setTemplateBrand}
                 placeholder="e.g. #1d4ed8 or oklch(60% 0.18 240)"
                 className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
               />
             </div>
             <div>
               <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Accent color (optional)</label>
-              <input
-                type="text"
+              <ColorPickerField
                 value={templateAccent}
-                onChange={(e) => setTemplateAccent(e.target.value)}
+                onChange={setTemplateAccent}
                 placeholder="Optional secondary brand"
                 className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
               />
@@ -1702,6 +1811,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               node={node}
               size={NODE_SIZES[node.type]}
               resolveColor={getNodeColor}
+              resolveIsP3={getNodeIsP3}
               resolveExpression={getNodeColorExpression}
               resolveLabel={getNodeLabel}
               selected={selectedNodeId === node.id}
@@ -1910,6 +2020,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                           <div className="min-w-0 flex-1 truncate text-[11px] font-mono text-foreground">
                             {selectedPreviewColor || "—"}
                           </div>
+                          {selectedPreviewIsP3 && (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                              P3
+                            </span>
+                          )}
                         </div>
                         {!selectedPreviewColor && selectedNode.type === "relative" && !supportsRelativeColor && (
                           <div className="mt-1 text-[10px] text-amber-600">
@@ -1931,12 +2046,98 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                         <div className="text-xs font-semibold text-foreground">{selectedNode.type}</div>
                       </div>
                       <div>
+                        <div className="text-[11px] text-muted-foreground">Contrast checks</div>
+                        {nodeContrastEdges.length === 0 ? (
+                          <div className="mt-1 rounded-md border border-dashed border-default bg-white px-2 py-1 text-[11px] text-muted-foreground">
+                            No contrast edges for this node yet.
+                          </div>
+                        ) : (
+                          <div className="mt-1 space-y-2">
+                            {nodeContrastEdges.map((edge) => {
+                              const pair = getEdgeContrastPair(edge)
+                              const target = getEdgeTarget(edge)
+                              const forwardStatus = getApcaStatus(pair.forward, target)
+                              const reverseStatus = getApcaStatus(pair.reverse, target)
+                              const forwardClass =
+                                forwardStatus === "pass"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : forwardStatus === "fail"
+                                    ? "bg-rose-100 text-rose-700"
+                                    : "bg-slate-100 text-slate-600"
+                              const reverseClass =
+                                reverseStatus === "pass"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : reverseStatus === "fail"
+                                    ? "bg-rose-100 text-rose-700"
+                                    : "bg-slate-100 text-slate-600"
+                              const source = nodesById[edge.sourceId]
+                              const targetNode = nodesById[edge.targetId]
+                              const forwardLabel = `${source?.label ?? "Unknown"} → ${targetNode?.label ?? "Unknown"}`
+                              const reverseLabel = `${targetNode?.label ?? "Unknown"} → ${source?.label ?? "Unknown"}`
+                              const isPrimary =
+                                edge.auto
+                                  ? edge.sourceId === selectedNode.id
+                                  : edge.sourceId === selectedNode.id
+                              return (
+                                <button
+                                  key={edge.id}
+                                  type="button"
+                                  onClick={() => {
+                                    if (edge.auto) {
+                                      selectEdge(null)
+                                      setSelectedAutoEdgeId(edge.id)
+                                    } else {
+                                      setSelectedAutoEdgeId(null)
+                                      selectEdge(edge.id)
+                                    }
+                                  }}
+                                  className="w-full rounded-md border border-default bg-white px-2 py-2 text-left text-[11px] hover:bg-surface-50"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="truncate text-xs font-semibold text-foreground">
+                                      {resolveEdgeLabel(edge)}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground">Required Lc {target}</div>
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${forwardClass}`}
+                                    >
+                                      {formatLc(pair.forward)}
+                                    </span>
+                                    <span className={`text-[10px] ${isPrimary ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                                      Actual (Fg→Bg): {forwardLabel}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {forwardStatus === "pass" ? "Pass" : forwardStatus === "fail" ? "Fail" : "—"}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${reverseClass}`}
+                                    >
+                                      {formatLc(pair.reverse)}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      Actual (Bg→Fg): {reverseLabel}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {reverseStatus === "pass" ? "Pass" : reverseStatus === "fail" ? "Fail" : "—"}
+                                    </span>
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div>
                         <div className="text-[11px] text-muted-foreground">Resolved expression</div>
                         <div className="rounded-md border border-default bg-surface-50 px-2 py-1 text-[11px] font-mono text-foreground">
                           {getNodeColorExpression(selectedNode.id) || "—"}
                         </div>
                       </div>
-                      {selectedNode.type === "semantic" && (
+                      {selectedNode.type !== "component" && (
                         <div>
                           <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Role</label>
                           <select
@@ -1953,6 +2154,9 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                             <option value="icon">Icon</option>
                             <option value="accent">Accent</option>
                           </select>
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            Roles drive auto-contrast rules.
+                          </div>
                         </div>
                       )}
 
@@ -1974,10 +2178,9 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                       {selectedNode.type === "token" && (
                         <div>
                           <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Value Override</label>
-                          <input
-                            type="text"
+                          <ColorPickerField
                             value={selectedNode.value || ""}
-                            onChange={(e) => updateNodeValue(selectedNode.id, e.target.value)}
+                            onChange={(value) => updateNodeValue(selectedNode.id, value)}
                             className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
                             placeholder="e.g. #1d4ed8 or rgb(0 0 0)"
                           />
@@ -1990,10 +2193,9 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                             <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
                               Expression override (optional)
                             </label>
-                            <input
-                              type="text"
+                            <ColorPickerField
                               value={selectedNode.value || ""}
-                              onChange={(e) => updateNodeValue(selectedNode.id, e.target.value)}
+                              onChange={(value) => updateNodeValue(selectedNode.id, value)}
                               className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
                               placeholder="oklch(from var(--color-brand-500) l c h / alpha)"
                             />
@@ -2087,10 +2289,9 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                       {selectedNode.type === "semantic" && (
                         <div>
                           <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Color Override</label>
-                          <input
-                            type="text"
+                          <ColorPickerField
                             value={selectedNode.value || ""}
-                            onChange={(e) => updateNodeValue(selectedNode.id, e.target.value)}
+                            onChange={(value) => updateNodeValue(selectedNode.id, value)}
                             className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
                             placeholder="e.g. rgb(0 0 0)"
                           />
@@ -2148,7 +2349,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                           </div>
                           <div>
                             <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
-                              Target Lc
+                              Required Lc
                             </label>
                             {selectedEdgeData.auto ? (
                               <div className="rounded-md border border-default bg-surface-50 px-2 py-1 text-[11px] font-semibold text-foreground">
@@ -2266,7 +2467,13 @@ function wrapDegrees(value: number) {
   return mod < 0 ? mod + 360 : mod
 }
 
-function applyRelativeChannel(
+export function normalizeRelativeChroma(value: number) {
+  if (Number.isNaN(value)) return value
+  if (Math.abs(value) > 1) return value / 100
+  return value
+}
+
+export function applyRelativeChannel(
   baseValue: number,
   mode: string | undefined,
   value: number | undefined,
@@ -2282,6 +2489,24 @@ function applyRelativeChannel(
   return baseValue + normalized / percentScale
 }
 
+export function resolveRelativeOklch(
+  base: OklchColor,
+  spec: RelativeColorSpec
+): OklchColor {
+  const nextL = applyRelativeChannel(base.l, spec.lMode, spec.lValue, 100, (value) => value)
+  const nextC = applyRelativeChannel(base.c, spec.cMode, spec.cValue, 1, (value) =>
+    normalizeRelativeChroma(value)
+  )
+  const nextH = applyRelativeChannel(base.h, spec.hMode, spec.hValue, 1, (value) => value)
+  const nextA = applyRelativeChannel(base.a, spec.alphaMode, spec.alphaValue, 100, (value) => value)
+  return {
+    l: clampValue(nextL ?? base.l, 0, 1),
+    c: Math.max(0, nextC ?? base.c),
+    h: wrapDegrees(nextH ?? base.h),
+    a: clampValue(nextA ?? base.a, 0, 1),
+  }
+}
+
 function rgbaToCss(color: RGBA) {
   const r = Math.round(clampValue(color.r, 0, 1) * 255)
   const g = Math.round(clampValue(color.g, 0, 1) * 255)
@@ -2291,7 +2516,7 @@ function rgbaToCss(color: RGBA) {
   return `rgb(${r} ${g} ${b} / ${Number(a.toFixed(3))})`
 }
 
-function parseOklch(input: string): { l: number; c: number; h: number; a: number } | null {
+export function parseOklch(input: string): { l: number; c: number; h: number; a: number } | null {
   const match = input.trim().toLowerCase().match(/^oklch\(([^)]+)\)$/)
   if (!match) return null
   const body = match[1]
@@ -2327,6 +2552,120 @@ function parseOklch(input: string): { l: number; c: number; h: number; a: number
   return { l: clampValue(l, 0, 1), c: Math.max(0, c), h, a: clampValue(a, 0, 1) }
 }
 
+export function parseDisplayP3(input: string): RGBA | null {
+  const match = input.trim().toLowerCase().match(/^color\(display-p3\s+([^)]+)\)$/)
+  if (!match) return null
+  const body = match[1].trim()
+  const normalized = body.replace(/\s*\/\s*/g, " / ")
+  const tokens = normalized.split(/\s+/).filter(Boolean)
+  const slashIndex = tokens.indexOf("/")
+  const channels = slashIndex !== -1 ? tokens.slice(0, slashIndex) : tokens
+  const alphaToken = slashIndex !== -1 ? tokens[slashIndex + 1] : undefined
+  if (channels.length < 3) return null
+
+  const parseChannel = (raw: string) => {
+    if (raw.endsWith("%")) {
+      return clampValue(parseFloat(raw) / 100, 0, 1)
+    }
+    const numeric = parseFloat(raw)
+    if (Number.isNaN(numeric)) return null
+    return clampValue(numeric, 0, 1)
+  }
+
+  const r = parseChannel(channels[0])
+  const g = parseChannel(channels[1])
+  const b = parseChannel(channels[2])
+  if (r === null || g === null || b === null) return null
+  let a = 1
+  if (alphaToken) {
+    const alphaValue = parseFloat(alphaToken)
+    if (!Number.isNaN(alphaValue)) {
+      a = alphaToken.includes("%") || alphaValue > 1 ? alphaValue / 100 : alphaValue
+      a = clampValue(a, 0, 1)
+    }
+  }
+  return { r, g, b, a }
+}
+
+export function displayP3ToSrgb(color: RGBA): RGBA {
+  const r = srgbToLinear(clampValue(color.r, 0, 1))
+  const g = srgbToLinear(clampValue(color.g, 0, 1))
+  const b = srgbToLinear(clampValue(color.b, 0, 1))
+
+  const x = 0.4865709486 * r + 0.2656676932 * g + 0.1982172852 * b
+  const y = 0.2289745641 * r + 0.6917385218 * g + 0.0792869141 * b
+  const z = 0.0451133819 * g + 1.0439443689 * b
+
+  const rLinear = 3.2409699419 * x - 1.5373831776 * y - 0.4986107603 * z
+  const gLinear = -0.9692436363 * x + 1.8759675015 * y + 0.0415550574 * z
+  const bLinear = 0.0556300797 * x - 0.2039769589 * y + 1.0569715142 * z
+
+  return {
+    r: clampValue(linearToSrgb(rLinear), 0, 1),
+    g: clampValue(linearToSrgb(gLinear), 0, 1),
+    b: clampValue(linearToSrgb(bLinear), 0, 1),
+    a: color.a,
+  }
+}
+
+export function oklchToLinearSrgb(color: { l: number; c: number; h: number }) {
+  const L = clampValue(color.l, 0, 1)
+  const C = Math.max(0, color.c)
+  const H = (wrapDegrees(color.h) * Math.PI) / 180
+  const a = C * Math.cos(H)
+  const b = C * Math.sin(H)
+
+  const lRoot = L + 0.3963377774 * a + 0.2158037573 * b
+  const mRoot = L - 0.1055613458 * a - 0.0638541728 * b
+  const sRoot = L - 0.0894841775 * a - 1.291485548 * b
+
+  const l = lRoot ** 3
+  const m = mRoot ** 3
+  const s = sRoot ** 3
+
+  return {
+    r: 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    g: -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    b: -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  }
+}
+
+export function isOutOfGamut(color: { r: number; g: number; b: number }) {
+  return color.r < 0 || color.r > 1 || color.g < 0 || color.g > 1 || color.b < 0 || color.b > 1
+}
+
+export function oklchToDisplayP3Css(color: { l: number; c: number; h: number; a?: number }) {
+  const L = clampValue(color.l, 0, 1)
+  const C = Math.max(0, color.c)
+  const H = (wrapDegrees(color.h) * Math.PI) / 180
+  const aLab = C * Math.cos(H)
+  const bLab = C * Math.sin(H)
+
+  const lRoot = L + 0.3963377774 * aLab + 0.2158037573 * bLab
+  const mRoot = L - 0.1055613458 * aLab - 0.0638541728 * bLab
+  const sRoot = L - 0.0894841775 * aLab - 1.291485548 * bLab
+
+  const l = lRoot ** 3
+  const m = mRoot ** 3
+  const s = sRoot ** 3
+
+  const x = 1.2270138511 * l - 0.5577999807 * m + 0.281256149 * s
+  const y = -0.0405801784 * l + 1.1122568696 * m - 0.0716766787 * s
+  const z = -0.0763812845 * l - 0.4214819784 * m + 1.5861632204 * s
+
+  const rLinear = 2.4934969119 * x - 0.9313836179 * y - 0.4027107845 * z
+  const gLinear = -0.8294889696 * x + 1.7626640603 * y + 0.0236246858 * z
+  const bLinear = 0.0358458302 * x - 0.0761723893 * y + 0.956884524 * z
+
+  const r = clampValue(linearToSrgb(rLinear), 0, 1)
+  const g = clampValue(linearToSrgb(gLinear), 0, 1)
+  const b = clampValue(linearToSrgb(bLinear), 0, 1)
+  const alpha = clampValue(color.a ?? 1, 0, 1)
+  const format = (value: number) => Number(value.toFixed(4))
+  if (alpha >= 1) return `color(display-p3 ${format(r)} ${format(g)} ${format(b)})`
+  return `color(display-p3 ${format(r)} ${format(g)} ${format(b)} / ${format(alpha)})`
+}
+
 function srgbToLinear(channel: number) {
   if (channel <= 0.04045) return channel / 12.92
   return Math.pow((channel + 0.055) / 1.055, 2.4)
@@ -2337,7 +2676,7 @@ function linearToSrgb(channel: number) {
   return 1.055 * Math.pow(channel, 1 / 2.4) - 0.055
 }
 
-function srgbToOklch(color: RGBA): { l: number; c: number; h: number } | null {
+export function srgbToOklch(color: RGBA): { l: number; c: number; h: number } | null {
   const r = srgbToLinear(clampValue(color.r, 0, 1))
   const g = srgbToLinear(clampValue(color.g, 0, 1))
   const b = srgbToLinear(clampValue(color.b, 0, 1))
@@ -2359,7 +2698,7 @@ function srgbToOklch(color: RGBA): { l: number; c: number; h: number } | null {
   return { l: clampValue(L, 0, 1), c: C, h: H }
 }
 
-function oklchToSrgb(color: { l: number; c: number; h: number; a?: number }): RGBA | null {
+export function oklchToSrgb(color: { l: number; c: number; h: number; a?: number }): RGBA | null {
   const L = clampValue(color.l, 0, 1)
   const C = Math.max(0, color.c)
   const H = (wrapDegrees(color.h) * Math.PI) / 180
@@ -2387,6 +2726,7 @@ function ColorNode({
   node,
   size,
   resolveColor,
+  resolveIsP3,
   resolveExpression,
   resolveLabel,
   selected,
@@ -2401,6 +2741,7 @@ function ColorNode({
   node: ColorCanvasNode
   size: { width: number; height: number }
   resolveColor: (nodeId: string) => string | null
+  resolveIsP3: (nodeId: string) => boolean
   resolveExpression: (nodeId: string) => string | null
   resolveLabel: (nodeId: string) => string
   selected: boolean
@@ -2447,6 +2788,7 @@ function ColorNode({
   }
 
   const colorSample = resolveColor(node.id)
+  const isP3 = resolveIsP3(node.id)
   const expression = resolveExpression(node.id)
   const normalizeChroma = (value: number) => {
     const normalized = Math.abs(value) > 1 ? value / 100 : value
@@ -2541,6 +2883,11 @@ function ColorNode({
             <div className="mt-1 truncate text-[9px] text-muted-foreground">{relativeBaseLabel}</div>
           )}
         </div>
+        {isP3 && (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-semibold text-emerald-700">
+            P3
+          </span>
+        )}
         <Link2 className="h-4 w-4 text-muted-foreground" />
       </div>
     </div>

@@ -1,0 +1,112 @@
+.oklch-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: #eef2ff;
+  background:
+    radial-gradient(100% 180% at 0% 0%, #1c2455 0%, #0a1025 60%),
+    linear-gradient(180deg, #0a1025, #090f20);
+  border: 1px solid #25356a;
+  border-radius: 14px;
+  padding: 16px;
+  font-family: "Space Grotesk", "Inter", "Segoe UI", sans-serif;
+}
+
+.oklch-demo__header h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.oklch-demo__header p {
+  margin: 6px 0 0;
+  color: #a9b8dd;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.oklch-demo__pickers {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.oklch-demo__picker-card h2,
+.oklch-demo__theme h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.oklch-demo__theme {
+  background: rgba(10, 18, 45, 0.7);
+  border: 1px solid #24345f;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oklch-demo__log-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.oklch-demo__log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid #2b3e71;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(12, 24, 57, 0.8);
+}
+
+.oklch-demo__log strong {
+  font-size: 12px;
+  color: #dce6ff;
+}
+
+.oklch-demo__log span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #9fb2e2;
+  overflow-wrap: anywhere;
+}
+
+.oklch-demo__chips {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.oklch-demo__chip {
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.oklch-demo__chip--outline {
+  background: transparent;
+  border-width: 2px;
+}
+
+@media (min-width: 1280px) {
+  .oklch-demo__pickers {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .oklch-demo__chips {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .oklch-demo__log-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

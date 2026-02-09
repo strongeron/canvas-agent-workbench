@@ -1,0 +1,102 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      apca-w3:
+        specifier: ^0.1.9
+        version: 0.1.9
+      apcach:
+        specifier: ^0.6.4
+        version: 0.6.4
+      colorjs.io:
+        specifier: ^0.5.2
+        version: 0.5.2
+      react:
+        specifier: ^18.2.0 || ^19.0.0
+        version: 19.2.4
+      react-dom:
+        specifier: ^18.2.0 || ^19.0.0
+        version: 19.2.4(react@19.2.4)
+
+packages:
+
+  apca-w3@0.1.9:
+    resolution: {integrity: sha512-Zrf6AeBeQjNe/fxK7U1jCo5zfdjDl6T4/kdw5Xlky3G7u+EJTZkyItjMYQGtwf9pkftsINxcYyOpuLkzKf1ITQ==}
+
+  apcach@0.6.4:
+    resolution: {integrity: sha512-btUArMSP/xPuI1eBFp2TrrgTy4vRsqekLDaxNbnY9nygd/oJCinFm5LunR3FX/81c+/25Fuol6pPYYg79uH7pw==}
+
+  colorjs.io@0.5.2:
+    resolution: {integrity: sha512-twmVoizEW7ylZSN32OgKdXRmo1qg+wT5/6C3xu5b9QsWzSFAhHLn2xd8ro0diCsKfCj1RdaTP/nrcW+vAoQPIw==}
+
+  colorparsley@0.1.8:
+    resolution: {integrity: sha512-rObESTTTE6G5qO5WFwFxWPggpw4KfpxnLC6Ssl8bITBnNVRhDsyCeTRAUxWQNVTx2pRknKlO2nddYTxjkdNFaw==}
+
+  culori@3.3.0:
+    resolution: {integrity: sha512-pHJg+jbuFsCjz9iclQBqyL3B2HLCBF71BwVNujUYEvCeQMvV97R59MNK3R2+jgJ3a1fcZgI9B3vYgz8lzr/BFQ==}
+    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
+
+  esm@3.2.25:
+    resolution: {integrity: sha512-U1suiZ2oDVWv4zPO56S0NcR5QriEahGtdN2OR6FiOG4WJvcjBVFB0qI4+eKoWFH483PKGuLuu6V8Z4T5g63UVA==}
+    engines: {node: '>=6'}
+
+  react-dom@19.2.4:
+    resolution: {integrity: sha512-AXJdLo8kgMbimY95O2aKQqsz2iWi9jMgKJhRBAxECE4IFxfcazB2LmzloIoibJI3C12IlY20+KFaLv+71bUJeQ==}
+    peerDependencies:
+      react: ^19.2.4
+
+  react@19.2.4:
+    resolution: {integrity: sha512-9nfp2hYpCwOjAN+8TZFGhtWEwgvWHXqESH8qT89AT/lWklpLON22Lc8pEtnpsZz7VmawabSU0gCjnj8aC0euHQ==}
+    engines: {node: '>=0.10.0'}
+
+  relative-luminance@2.0.1:
+    resolution: {integrity: sha512-wFuITNthJilFPwkK7gNJcULxXBcfFZvZORsvdvxeOdO44wCeZnuQkf3nFFzOR/dpJNxYsdRZJLsepWbyKhnMww==}
+
+  scheduler@0.27.0:
+    resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
+
+  wcag-contrast@3.0.0:
+    resolution: {integrity: sha512-RWbpg/S7FOXDCwqC2oFhN/vh8dHzj0OS6dpyOSDHyQFSmqmR+lAUStV/ziTT1GzDqL9wol+nZQB4vCi5yEak+w==}
+
+snapshots:
+
+  apca-w3@0.1.9:
+    dependencies:
+      colorparsley: 0.1.8
+
+  apcach@0.6.4:
+    dependencies:
+      apca-w3: 0.1.9
+      culori: 3.3.0
+      wcag-contrast: 3.0.0
+
+  colorjs.io@0.5.2: {}
+
+  colorparsley@0.1.8: {}
+
+  culori@3.3.0: {}
+
+  esm@3.2.25: {}
+
+  react-dom@19.2.4(react@19.2.4):
+    dependencies:
+      react: 19.2.4
+      scheduler: 0.27.0
+
+  react@19.2.4: {}
+
+  relative-luminance@2.0.1:
+    dependencies:
+      esm: 3.2.25
+
+  scheduler@0.27.0: {}
+
+  wcag-contrast@3.0.0:
+    dependencies:
+      relative-luminance: 2.0.1

@@ -8,6 +8,7 @@ import { LayoutSection } from "../components/LayoutSection"
 import { SnapshotManager } from "./SnapshotManager"
 import { TokenSection } from "./TokenSection"
 import { ColorCanvasPage } from "../components/color-canvas/ColorCanvasPage"
+import { ColorPickerProvider, externalColorPickerRenderer } from "../components/color-picker"
 import { ComponentRenderer } from "./ComponentRenderer"
 import { Button } from "./components/ui/button"
 import { Tooltip } from "./components/ui/tooltip"
@@ -71,20 +72,21 @@ export default function GalleryPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-surface-100">
-      <GalleryHeader
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        totals={{ 
-          components: totalComponents, 
-          variants: totalVariants, 
-          layouts: totalLayouts,
-          patterns: totalPagePatterns,
-          tokens: totalTokens 
-        }}
-      />
+    <ColorPickerProvider renderPicker={externalColorPickerRenderer}>
+      <div className="min-h-screen bg-surface-100">
+        <GalleryHeader
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          totals={{ 
+            components: totalComponents, 
+            variants: totalVariants, 
+            layouts: totalLayouts,
+            patterns: totalPagePatterns,
+            tokens: totalTokens 
+          }}
+        />
 
       {/* Canvas mode: full-width, no sidebar, no padding */}
       {viewMode === 'canvas' ? (
@@ -307,7 +309,8 @@ export default function GalleryPage() {
           {viewMode === 'snapshots' && <SnapshotManager />}
         </main>
         </div>
-      )}
-    </div>
+        )}
+      </div>
+    </ColorPickerProvider>
   )
 }

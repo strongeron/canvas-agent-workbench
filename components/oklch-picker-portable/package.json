@@ -1,0 +1,34 @@
+{
+  "name": "oklch-picker-portable",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./src/styles.css",
+    "./demo.css": "./src/demo.css"
+  },
+  "files": [
+    "dist",
+    "src/styles.css",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0 || ^19.0.0",
+    "react-dom": "^18.2.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "apca-w3": "^0.1.9",
+    "apcach": "^0.6.4",
+    "colorjs.io": "^0.5.2"
+  }
+}

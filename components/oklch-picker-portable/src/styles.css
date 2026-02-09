@@ -1,0 +1,331 @@
+.oklch-picker {
+  --picker-bg: #0b1020;
+  --picker-panel: #111a32;
+  --picker-panel-2: #0f1730;
+  --picker-border: #24345d;
+  --picker-text: #ecf2ff;
+  --picker-muted: #9fb1d9;
+  --picker-accent: #4da2ff;
+  --picker-good: #2ab673;
+  --picker-warn: #f4b740;
+  --picker-fail: #e35555;
+
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(420px, 1fr);
+  gap: 16px;
+  background: radial-gradient(140% 100% at 20% 0%, #1b2d5a 0%, var(--picker-bg) 55%);
+  border: 1px solid var(--picker-border);
+  border-radius: 14px;
+  color: var(--picker-text);
+  padding: 16px;
+  font-family: "Space Grotesk", "Inter", "Segoe UI", sans-serif;
+}
+
+.oklch-picker * {
+  box-sizing: border-box;
+}
+
+.oklch-picker__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: linear-gradient(180deg, #121d3a 0%, #0e1730 100%);
+  border: 1px solid var(--picker-border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.oklch-picker__title {
+  font-size: 18px;
+  margin: 0;
+}
+
+.oklch-picker__subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--picker-muted);
+  line-height: 1.45;
+}
+
+.oklch-picker__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oklch-picker__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.oklch-picker__label {
+  font-size: 12px;
+  color: var(--picker-muted);
+  margin: 0;
+}
+
+.oklch-picker__select,
+.oklch-picker__slider,
+.oklch-picker__target {
+  width: 100%;
+}
+
+.oklch-picker__select {
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--picker-border);
+  background: var(--picker-panel-2);
+  color: var(--picker-text);
+  padding: 0 10px;
+}
+
+.oklch-picker__slider {
+  accent-color: var(--picker-accent);
+}
+
+.oklch-picker__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--picker-muted);
+}
+
+.oklch-picker__targets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.oklch-picker__target {
+  border: 1px solid var(--picker-border);
+  border-radius: 8px;
+  background: #0f1833;
+  color: var(--picker-muted);
+  height: 30px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.oklch-picker__target.is-active {
+  background: #1b4f8f;
+  border-color: #3677c2;
+  color: #f5f9ff;
+}
+
+.oklch-picker__canvas-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.oklch-picker__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(12, 23, 48, 0.75);
+  border: 1px solid var(--picker-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.oklch-picker__meta-fixed {
+  color: var(--picker-muted);
+}
+
+.oklch-picker__canvas-wrap {
+  position: relative;
+  border-radius: 12px;
+  border: 1px solid var(--picker-border);
+  overflow: hidden;
+  background: linear-gradient(180deg, #090f1f 0%, #081020 100%);
+  aspect-ratio: 1 / 1;
+}
+
+.oklch-picker__canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: crisp-edges;
+}
+
+.oklch-picker__grid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.oklch-picker__grid-line.is-vertical {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  height: auto;
+}
+
+.oklch-picker__marker {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.oklch-picker__marker.is-hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.oklch-picker__marker.is-selected {
+  background: #fff;
+  border-color: #111;
+}
+
+.oklch-picker__corner-label {
+  position: absolute;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  padding: 2px 6px;
+  pointer-events: none;
+}
+
+.oklch-picker__corner-label.is-top {
+  top: 8px;
+  left: 8px;
+}
+
+.oklch-picker__corner-label.is-bottom {
+  bottom: 8px;
+  left: 8px;
+}
+
+.oklch-picker__corner-label.is-left {
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.oklch-picker__corner-label.is-right {
+  bottom: 8px;
+  right: 8px;
+}
+
+.oklch-picker__inspector {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  background: rgba(12, 23, 48, 0.75);
+  border: 1px solid var(--picker-border);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.oklch-picker__swatch {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.oklch-picker__inspector-title {
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.oklch-picker__inspector-sub {
+  color: var(--picker-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.oklch-picker__apca {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.oklch-picker__apca-value {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.oklch-picker__apca-tag {
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+}
+
+.oklch-picker__apca-tag.is-good {
+  background: rgba(42, 182, 115, 0.2);
+  border-color: rgba(42, 182, 115, 0.5);
+  color: #c8f7e2;
+}
+
+.oklch-picker__apca-tag.is-warn {
+  background: rgba(244, 183, 64, 0.2);
+  border-color: rgba(244, 183, 64, 0.45);
+  color: #ffe5b0;
+}
+
+.oklch-picker__apca-tag.is-fail {
+  background: rgba(227, 85, 85, 0.2);
+  border-color: rgba(227, 85, 85, 0.5);
+  color: #ffc8c8;
+}
+
+.oklch-picker__targets-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.oklch-picker__target-pill {
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+}
+
+.oklch-picker__target-pill.is-pass {
+  background: rgba(42, 182, 115, 0.2);
+  border-color: rgba(42, 182, 115, 0.5);
+  color: #ccf8e6;
+}
+
+.oklch-picker__target-pill.is-fail {
+  background: rgba(227, 85, 85, 0.2);
+  border-color: rgba(227, 85, 85, 0.45);
+  color: #ffd1d1;
+}
+
+.oklch-picker__target-pill.is-neutral {
+  background: rgba(77, 162, 255, 0.2);
+  border-color: rgba(77, 162, 255, 0.45);
+  color: #d7ebff;
+}
+
+@media (max-width: 980px) {
+  .oklch-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .oklch-picker__inspector {
+    grid-template-columns: 50px 1fr;
+  }
+
+  .oklch-picker__apca {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+  }
+}

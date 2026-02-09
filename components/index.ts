@@ -31,3 +31,9 @@ export { CanvasItem } from "./canvas/CanvasItem"
 export { CanvasScenesPanel } from "./canvas/CanvasScenesPanel"
 export { CanvasContextMenu } from "./canvas/CanvasContextMenu"
 export { CanvasHelpOverlay } from "./canvas/CanvasHelpOverlay"
+
+// Color picker module (package-style local adapter)
+export { ColorPickerField } from "./color-picker"
+export { ColorPickerProvider } from "./color-picker"
+export { externalColorPickerRenderer } from "./color-picker"
+export type { ColorPickerRenderProps, ColorPickerRenderer } from "./color-picker"
