@@ -4,6 +4,9 @@ import { sampleAt } from "./plane";
 import type { PickerState } from "./types";
 
 const DIM_ALPHA = 90;
+const APCA_PLANE_MAX_RESOLUTION = 96;
+const APCA_MODE_MAX_RESOLUTION = 192;
+const MAX_CHROMA_MODE_MAX_RESOLUTION = 256;
 
 function isStandardPlane(plane: PickerState["plane"]): boolean {
   return plane === "HC_at_L" || plane === "LC_at_H" || plane === "HL_at_C";
@@ -18,7 +21,14 @@ export interface RenderResult {
 
 export function renderRaster(state: PickerState): RenderResult {
   const standardPlane = isStandardPlane(state.plane);
-  const effectiveResolution = standardPlane ? state.resolution : Math.min(state.resolution, 256);
+  let effectiveResolution: number = state.resolution;
+  if (!standardPlane) {
+    effectiveResolution = Math.min(state.resolution, APCA_PLANE_MAX_RESOLUTION);
+  } else if (state.mode === "apca") {
+    effectiveResolution = Math.min(state.resolution, APCA_MODE_MAX_RESOLUTION);
+  } else if (state.mode === "maxChroma") {
+    effectiveResolution = Math.min(state.resolution, MAX_CHROMA_MODE_MAX_RESOLUTION);
+  }
 
   const width = effectiveResolution;
   const height = effectiveResolution;

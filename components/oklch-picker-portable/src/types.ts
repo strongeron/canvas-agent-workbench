@@ -31,7 +31,7 @@ export interface PickerState {
   plane: Plane;
   mode: ViewMode;
   gamut: Gamut;
-  resolution: 256 | 512 | 1024;
+  resolution: 128 | 256 | 512;
   L: number;
   C: number;
   h: number;

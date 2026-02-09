@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { APCA_MAX, APCA_MIN, apcaCategory, calculateApcaContrast } from "./apca";
-import { CMAX_DISPLAY, getDisplayCssAndGamut, oklchToCss, oklchToHex } from "./color";
+import {
+  CMAX_DISPLAY,
+  getDisplayCssAndGamut,
+  isInGamut,
+  oklchToCss,
+  oklchToHex,
+  parseCssToOklch,
+} from "./color";
 import { sampleAt } from "./plane";
 import { axisLabels, pointerToUv, renderRaster, yValueForLabel } from "./render";
 import type { OklchPickerProps, PickerChange, PickerSample, PickerState } from "./types";
@@ -11,7 +18,7 @@ const DEFAULT_STATE: PickerState = {
   plane: "HC_at_L",
   mode: "shape",
   gamut: "srgb",
-  resolution: 512,
+  resolution: 256,
   L: 0.7,
   C: 0.16,
   h: 240,
@@ -41,6 +48,28 @@ function clampState(input: PickerState): PickerState {
     apcaFixed: Math.max(APCA_MIN, Math.min(APCA_MAX, Math.round(input.apcaFixed))),
     maxChromaThreshold: Math.max(0.5, Math.min(1, input.maxChromaThreshold)),
   };
+}
+
+function stateToSample(state: PickerState): PickerSample | null {
+  let u: number | null = null;
+  let v: number | null = null;
+
+  if (state.plane === "HC_at_L") {
+    u = state.h / 360;
+    v = state.C / CMAX_DISPLAY;
+  } else if (state.plane === "LC_at_H") {
+    u = state.C / CMAX_DISPLAY;
+    v = state.L;
+  } else if (state.plane === "HL_at_C") {
+    u = state.h / 360;
+    v = state.L;
+  } else if (state.plane === "HC_at_APCA") {
+    u = state.h / 360;
+    v = state.C / CMAX_DISPLAY;
+  }
+
+  if (u === null || v === null) return null;
+  return sampleAt(u, v, state);
 }
 
 function toChange(sample: PickerSample, state: PickerState): PickerChange | null {
@@ -80,26 +109,17 @@ function formatSample(sample: PickerSample | null, state: PickerState): {
   }
 
   const display = getDisplayCssAndGamut(sample.color, state.gamut);
+  const lc = sample.inGamut
+    ? calculateApcaContrast(sample.color, state.apcaBg, state.gamut)
+    : null;
 
   return {
     title: oklchToCss(sample.color),
     css: display.css,
     hex: oklchToHex(sample.color),
-    lc: sample.lc,
+    lc,
     inGamut: sample.inGamut,
     apcaValue: sample.apcaValue,
-  };
-}
-
-function sampleWithComputedLc(sample: PickerSample, state: PickerState): PickerSample {
-  if (!sample.color || !sample.inGamut) {
-    return sample;
-  }
-
-  const lc = calculateApcaContrast(sample.color, state.apcaBg, state.gamut);
-  return {
-    ...sample,
-    lc,
   };
 }
 
@@ -107,27 +127,32 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
   const [state, setState] = useState<PickerState>(() => clampState({ ...DEFAULT_STATE, ...initialState }));
   const [hovered, setHovered] = useState<PickerSample | null>(null);
   const [selected, setSelected] = useState<PickerSample | null>(null);
+  const [apcaBgInput, setApcaBgInput] = useState(() => oklchToCss(clampState({ ...DEFAULT_STATE, ...initialState }).apcaBg));
+  const [apcaBgError, setApcaBgError] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hoverRafRef = useRef<number | null>(null);
+  const hoverPointRef = useRef<{ x: number; y: number } | null>(null);
+  const deferredState = useDeferredValue(state);
 
-  const labels = useMemo(() => axisLabels(state), [state]);
+  const labels = useMemo(() => axisLabels(deferredState), [deferredState]);
 
   const raster = useMemo(
-    () => renderRaster(state),
+    () => renderRaster(deferredState),
     [
-      state.apcaBg.C,
-      state.apcaBg.L,
-      state.apcaBg.h,
-      state.apcaFixed,
-      state.apcaTargets,
-      state.C,
-      state.L,
-      state.gamut,
-      state.h,
-      state.maxChromaThreshold,
-      state.mode,
-      state.plane,
-      state.resolution,
+      deferredState.apcaBg.C,
+      deferredState.apcaBg.L,
+      deferredState.apcaBg.h,
+      deferredState.apcaFixed,
+      deferredState.apcaTargets,
+      deferredState.C,
+      deferredState.L,
+      deferredState.gamut,
+      deferredState.h,
+      deferredState.maxChromaThreshold,
+      deferredState.mode,
+      deferredState.plane,
+      deferredState.resolution,
     ]
   );
 
@@ -135,7 +160,7 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d", state.gamut === "p3" ? ({ colorSpace: "display-p3" } as CanvasRenderingContext2DSettings) : undefined)
+    const ctx = canvas.getContext("2d", deferredState.gamut === "p3" ? ({ colorSpace: "display-p3" } as CanvasRenderingContext2DSettings) : undefined)
       ?? canvas.getContext("2d");
 
     if (!ctx) return;
@@ -153,21 +178,21 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
         imageBuffer,
         raster.width,
         raster.height,
-        state.gamut === "p3" ? ({ colorSpace: "display-p3" } as ImageDataSettings) : undefined
+        deferredState.gamut === "p3" ? ({ colorSpace: "display-p3" } as ImageDataSettings) : undefined
       );
     } catch {
       imageData = new ImageData(imageBuffer, raster.width, raster.height);
     }
 
     ctx.putImageData(imageData, 0, 0);
-  }, [raster, state.gamut]);
+  }, [deferredState.gamut, raster]);
 
   const active = selected ?? hovered;
   const activeInfo = formatSample(active, state);
 
-  const setPartialState = (next: Partial<PickerState>) => {
+  const setPartialState = useCallback((next: Partial<PickerState>) => {
     setState((previous) => clampState({ ...previous, ...next }));
-  };
+  }, []);
 
   const toggleApcaTarget = (value: number) => {
     setState((previous) => {
@@ -179,13 +204,13 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
     });
   };
 
-  const updateFromPointer = (clientX: number, clientY: number, select: boolean) => {
+  const updateFromPointer = useCallback((clientX: number, clientY: number, select: boolean) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const uv = pointerToUv(clientX, clientY, rect);
-    const nextSample = sampleWithComputedLc(sampleAt(uv.u, uv.v, state), state);
+    const nextSample = sampleAt(uv.u, uv.v, state);
 
     setHovered(nextSample);
 
@@ -204,7 +229,51 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
       C: nextSample.color.C,
       h: nextSample.color.h,
     });
-  };
+  }, [onChange, state, setPartialState]);
+
+  const scheduleHoverUpdate = useCallback((clientX: number, clientY: number) => {
+    hoverPointRef.current = { x: clientX, y: clientY };
+    if (hoverRafRef.current !== null) return;
+    hoverRafRef.current = requestAnimationFrame(() => {
+      hoverRafRef.current = null;
+      const point = hoverPointRef.current;
+      if (!point) return;
+      hoverPointRef.current = null;
+      updateFromPointer(point.x, point.y, false);
+    });
+  }, [updateFromPointer]);
+
+  const applyApcaBackgroundInput = useCallback(() => {
+    const parsed = parseCssToOklch(apcaBgInput);
+    if (!parsed) {
+      setApcaBgError("Invalid color expression");
+      return;
+    }
+    setApcaBgError(null);
+    setPartialState({ apcaBg: parsed });
+  }, [apcaBgInput, setPartialState]);
+
+  useEffect(() => {
+    const fromState = stateToSample(state);
+    if (fromState) {
+      setSelected(fromState);
+    }
+  }, [state.C, state.L, state.apcaFixed, state.h, state.plane, state.gamut, state.apcaBg.C, state.apcaBg.L, state.apcaBg.h]);
+
+  useEffect(() => {
+    setHovered((previous) => {
+      if (!previous?.color) return previous;
+      return { ...previous, inGamut: isInGamut(previous.color, state.gamut) };
+    });
+  }, [state.gamut]);
+
+  useEffect(() => {
+    return () => {
+      if (hoverRafRef.current !== null) {
+        cancelAnimationFrame(hoverRafRef.current);
+      }
+    };
+  }, []);
 
   const markerStyle = (sample: PickerSample | null): React.CSSProperties | undefined => {
     if (!sample?.color) return undefined;
@@ -278,12 +347,14 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
             value={state.resolution}
             onChange={(event) => setPartialState({ resolution: Number(event.target.value) as PickerState["resolution"] })}
           >
+            <option value={128}>128</option>
             <option value={256}>256</option>
             <option value={512}>512</option>
-            <option value={1024}>1024</option>
           </select>
           {raster.effectiveResolution !== state.resolution && (
-            <p className="oklch-picker__hint">APCA planes are rendered at up to 256 for responsiveness.</p>
+            <p className="oklch-picker__hint">
+              Rendering at {raster.effectiveResolution}px for responsiveness.
+            </p>
           )}
         </div>
 
@@ -371,7 +442,12 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
             max={1}
             step={0.01}
             value={state.apcaBg.L}
-            onChange={(event) => setPartialState({ apcaBg: { ...state.apcaBg, L: Number(event.target.value) } })}
+            onChange={(event) => {
+              const nextBg = { ...state.apcaBg, L: Number(event.target.value) };
+              setPartialState({ apcaBg: nextBg });
+              setApcaBgInput(oklchToCss(nextBg));
+              setApcaBgError(null);
+            }}
           />
         </div>
 
@@ -382,26 +458,65 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
               id="bg-chroma"
               className="oklch-picker__slider"
               type="range"
-              min={0}
-              max={CMAX_DISPLAY}
-              step={0.001}
-              value={state.apcaBg.C}
-              onChange={(event) => setPartialState({ apcaBg: { ...state.apcaBg, C: Number(event.target.value) } })}
-            />
-          </div>
+            min={0}
+            max={CMAX_DISPLAY}
+            step={0.001}
+            value={state.apcaBg.C}
+            onChange={(event) => {
+              const nextBg = { ...state.apcaBg, C: Number(event.target.value) };
+              setPartialState({ apcaBg: nextBg });
+              setApcaBgInput(oklchToCss(nextBg));
+              setApcaBgError(null);
+            }}
+          />
+        </div>
           <div className="oklch-picker__group">
             <label className="oklch-picker__label" htmlFor="bg-hue">APCA bg h {state.apcaBg.h.toFixed(0)}°</label>
             <input
               id="bg-hue"
               className="oklch-picker__slider"
               type="range"
-              min={0}
-              max={360}
-              step={1}
-              value={state.apcaBg.h}
-              onChange={(event) => setPartialState({ apcaBg: { ...state.apcaBg, h: Number(event.target.value) } })}
+            min={0}
+            max={360}
+            step={1}
+            value={state.apcaBg.h}
+            onChange={(event) => {
+              const nextBg = { ...state.apcaBg, h: Number(event.target.value) };
+              setPartialState({ apcaBg: nextBg });
+              setApcaBgInput(oklchToCss(nextBg));
+              setApcaBgError(null);
+            }}
+          />
+        </div>
+
+        <div className="oklch-picker__group">
+          <label className="oklch-picker__label" htmlFor="bg-color-input">APCA background color</label>
+          <div className="oklch-picker__bg-input-row">
+            <span
+              className="oklch-picker__bg-swatch"
+              style={{ background: getDisplayCssAndGamut(state.apcaBg, state.gamut).css }}
             />
+            <input
+              id="bg-color-input"
+              className="oklch-picker__select"
+              type="text"
+              value={apcaBgInput}
+              onChange={(event) => {
+                setApcaBgInput(event.target.value);
+                if (apcaBgError) setApcaBgError(null);
+              }}
+              onBlur={applyApcaBackgroundInput}
+            />
+            <button
+              type="button"
+              className="oklch-picker__target"
+              onClick={applyApcaBackgroundInput}
+            >
+              Apply
+            </button>
           </div>
+          {apcaBgError && <p className="oklch-picker__hint">{apcaBgError}</p>}
+        </div>
         </div>
 
         <div className="oklch-picker__group">
@@ -433,12 +548,12 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
           <canvas
             ref={canvasRef}
             className="oklch-picker__canvas"
-            onMouseMove={(event) => updateFromPointer(event.clientX, event.clientY, false)}
+            onMouseMove={(event) => scheduleHoverUpdate(event.clientX, event.clientY)}
             onClick={(event) => updateFromPointer(event.clientX, event.clientY, true)}
             onMouseLeave={() => setHovered(null)}
             onTouchMove={(event) => {
               const touch = event.touches[0];
-              if (touch) updateFromPointer(touch.clientX, touch.clientY, false);
+              if (touch) scheduleHoverUpdate(touch.clientX, touch.clientY);
             }}
             onTouchStart={(event) => {
               const touch = event.touches[0];

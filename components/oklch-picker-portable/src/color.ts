@@ -63,6 +63,25 @@ export function oklchToHex(color: Oklch): string {
   return converted;
 }
 
+export function parseCssToOklch(input: string): Oklch | null {
+  const value = input.trim();
+  if (!value) return null;
+  try {
+    const color = new Color(value).to("oklch");
+    const [LRaw, CRaw, hRaw] = color.coords;
+    if (!Number.isFinite(LRaw) || !Number.isFinite(CRaw) || !Number.isFinite(hRaw)) {
+      return null;
+    }
+    return normalizeOklch({
+      L: Number(LRaw),
+      C: Math.max(0, Number(CRaw)),
+      h: Number(hRaw),
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function getDisplayCssAndGamut(color: Oklch, gamut: Gamut): { css: string; inGamut: boolean } {
   const [r, g, b] = oklchToRgb(color, gamut);
   const inRange = rgbInGamut(r, g, b);

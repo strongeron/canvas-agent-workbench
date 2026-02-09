@@ -90,6 +90,20 @@
   color: var(--picker-muted);
 }
 
+.oklch-picker__bg-input-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.oklch-picker__bg-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--picker-border);
+}
+
 .oklch-picker__targets {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -102,6 +116,7 @@
   background: #0f1833;
   color: var(--picker-muted);
   height: 30px;
+  padding: 0 10px;
   cursor: pointer;
   font-size: 12px;
 }
