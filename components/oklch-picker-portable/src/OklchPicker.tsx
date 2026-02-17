@@ -206,21 +206,18 @@ export function OklchPicker({ className, style, initialState, onChange }: OklchP
 
     canvas.width = raster.width;
     canvas.height = raster.height;
-
-    // Copy into a fresh ArrayBuffer-backed typed array to satisfy ImageData typings
-    const imageBuffer = new Uint8ClampedArray(raster.rgba.length);
-    imageBuffer.set(raster.rgba);
+    const imageDataArray = raster.rgba as unknown as Uint8ClampedArray<ArrayBuffer>;
 
     let imageData: ImageData;
     try {
       imageData = new ImageData(
-        imageBuffer,
+        imageDataArray,
         raster.width,
         raster.height,
         deferredState.gamut === "p3" ? ({ colorSpace: "display-p3" } as ImageDataSettings) : undefined
       );
     } catch {
-      imageData = new ImageData(imageBuffer, raster.width, raster.height);
+      imageData = new ImageData(imageDataArray, raster.width, raster.height);
     }
 
     ctx.putImageData(imageData, 0, 0);

@@ -26,6 +26,7 @@ import {
 } from "../components"
 import { ColorCanvasPage } from "../components/color-canvas/ColorCanvasPage"
 import { ColorPickerProvider } from "../components/color-picker"
+import { OklchPickerLab } from "./OklchPickerLab"
 
 // Demo Components
 import { Button, type ButtonProps } from "./components/Button"
@@ -622,7 +623,7 @@ type ProjectId = string
 type ProjectOption = { id: string; label: string }
 
 function App() {
-  const [view, setView] = useState<"gallery" | "canvas" | "color-canvas">("canvas")
+  const [view, setView] = useState<"gallery" | "canvas" | "color-canvas" | "picker-lab">("canvas")
   const [searchQuery, setSearchQuery] = useState("")
   const [projectId, setProjectId] = useState<ProjectId>("demo")
   const [dynamicProjects, setDynamicProjects] = useState<ProjectOption[]>([])
@@ -981,6 +982,17 @@ function App() {
                 <Share2 className="h-4 w-4" />
                 Color Canvas
               </button>
+              <button
+                type="button"
+                onClick={() => setView("picker-lab")}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                  view === "picker-lab"
+                    ? "bg-gray-900 text-white"
+                    : "border border-gray-200 text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                Picker Lab
+              </button>
             </div>
           </div>
         </header>
@@ -1018,11 +1030,13 @@ function App() {
               onImportFromPaper={handleImportFromPaper}
               onOpenColorCanvas={() => setView("color-canvas")}
             />
-          ) : (
+          ) : view === "color-canvas" ? (
             <ColorCanvasPage
               tokens={themeTokens}
               themeStorageKeyPrefix={`gallery-${projectId}`}
             />
+          ) : (
+            <OklchPickerLab />
           )}
         </div>
         </div>
