@@ -619,11 +619,13 @@ function getPaperMcpClient(): PaperMcpClient | null {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ProjectId = string
+type ProjectOption = { id: string; label: string }
 
 function App() {
   const [view, setView] = useState<"gallery" | "canvas" | "color-canvas">("canvas")
   const [searchQuery, setSearchQuery] = useState("")
   const [projectId, setProjectId] = useState<ProjectId>("demo")
+  const [dynamicProjects, setDynamicProjects] = useState<ProjectOption[]>([])
   const [thicketPack, setThicketPack] = useState<null | {
     id: string
     label: string
@@ -644,6 +646,36 @@ function App() {
       })
       .finally(() => setIsThicketLoading(false))
   }, [projectId, thicketPack, isThicketLoading])
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const response = await fetch("/api/projects/list")
+      const data = await response.json().catch(() => ({}))
+      const projects = (data as { projects?: unknown }).projects
+      if (!response.ok || !Array.isArray(projects)) return
+
+      const normalized = projects
+        .filter(
+          (project: unknown): project is { id: string; label: string } =>
+            Boolean(
+              project &&
+              typeof project === "object" &&
+              typeof (project as { id?: unknown }).id === "string" &&
+              typeof (project as { label?: unknown }).label === "string"
+            )
+        )
+        .filter((project) => project.id !== "demo" && project.id !== "thicket")
+        .sort((a, b) => a.label.localeCompare(b.label))
+
+      setDynamicProjects(normalized)
+    } catch {
+      // ignore project listing failures; static packs still work
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadProjects()
+  }, [loadProjects])
 
   const demoPack = useMemo(
     () => ({
@@ -667,23 +699,49 @@ function App() {
     []
   )
 
-  const projectIds = useMemo(() => projectPackList.map((pack) => pack.id), [projectPackList])
+  const projectOptions = useMemo(() => {
+    const merged = new Map<string, string>()
 
-  const projectOptions = useMemo(
-    () => [
+    for (const pack of projectPackList) {
+      merged.set(pack.id, pack.label)
+    }
+    for (const project of dynamicProjects) {
+      if (!merged.has(project.id)) {
+        merged.set(project.id, project.label)
+      }
+    }
+
+    const dynamicOptions = Array.from(merged.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+
+    return [
       { id: "demo", label: "Demo" },
       { id: "thicket", label: "Thicket" },
-      ...projectPackList.map((pack) => ({ id: pack.id, label: pack.label })),
-    ],
-    [projectPackList]
-  )
+      ...dynamicOptions,
+    ]
+  }, [dynamicProjects, projectPackList])
 
-  const activePack =
-    projectId === "demo"
-      ? demoPack
-      : projectId === "thicket"
-        ? thicketPack
-        : projectPackList.find((pack) => pack.id === projectId)
+  const projectIds = useMemo(() => projectOptions.map((project) => project.id), [projectOptions])
+
+  const activePack = useMemo(() => {
+    if (projectId === "demo") return demoPack
+    if (projectId === "thicket") return thicketPack
+
+    const existingPack = projectPackList.find((pack) => pack.id === projectId)
+    if (existingPack) return existingPack
+
+    const fallbackLabel = projectOptions.find((project) => project.id === projectId)?.label ?? projectId
+    return {
+      id: projectId,
+      label: fallbackLabel,
+      entries: [],
+      layouts: [],
+      patterns: [],
+      componentMap: {},
+      ui: { Button: CanvasButton, Tooltip },
+    }
+  }, [demoPack, projectId, projectOptions, projectPackList, thicketPack])
 
   const tokenSource = useMemo(() => {
     if (projectId === "demo" || projectId === "thicket") return thicketTokens
@@ -728,10 +786,19 @@ function App() {
       return
     }
 
-    setProjectId(data.projectId)
-    toast.success("Project created. Reloading…")
-    window.location.reload()
-  }, [])
+    const createdProjectId = data.projectId as string
+    const createdProject = {
+      id: createdProjectId,
+      label,
+    }
+    setDynamicProjects((prev) => {
+      if (prev.some((project) => project.id === createdProjectId)) return prev
+      return [...prev, createdProject].sort((a, b) => a.label.localeCompare(b.label))
+    })
+    setProjectId(createdProjectId)
+    toast.success("Project created.")
+    void loadProjects()
+  }, [loadProjects])
 
   const handleImportFromPaper = useCallback(
     async ({

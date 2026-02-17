@@ -5,9 +5,9 @@
   "description": "Portable Component Gallery - A flexible design system documentation tool",
   "main": "index.ts",
   "scripts": {
-    "dev": "vite demo",
-    "build": "tsc && vite build demo",
-    "preview": "vite preview demo",
+    "dev": "vite --config vite.config.ts",
+    "build": "tsc && vite build --config vite.config.ts",
+    "preview": "vite preview --config vite.config.ts",
     "create-project": "node scripts/create-project.mjs",
     "dev:paper": "node scripts/dev-paper.mjs",
     "lint": "eslint",

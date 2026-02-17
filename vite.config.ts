@@ -74,7 +74,43 @@ async function ensureProjectScaffold(projectId, label) {
     await fs.writeFile(metaPath, JSON.stringify(meta, null, 2))
   }
 
+  const registryPath = path.join(projectDir, 'registry.json')
+  if (!existsSync(registryPath)) {
+    await fs.writeFile(registryPath, JSON.stringify({ ui: [], page: [] }, null, 2))
+  }
+
   return projectDir
+}
+
+async function listProjects() {
+  if (!existsSync(PROJECTS_ROOT)) return []
+  const entries = await fs.readdir(PROJECTS_ROOT, { withFileTypes: true })
+
+  const projects = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        const projectId = entry.name
+        const metaPath = path.join(PROJECTS_ROOT, projectId, 'project.json')
+        let label = projectId
+
+        if (existsSync(metaPath)) {
+          try {
+            const raw = await fs.readFile(metaPath, 'utf8')
+            const parsed = JSON.parse(raw)
+            if (typeof parsed?.label === 'string' && parsed.label.trim()) {
+              label = parsed.label.trim()
+            }
+          } catch {
+            // ignore malformed project metadata
+          }
+        }
+
+        return { id: projectId, label }
+      })
+  )
+
+  return projects.sort((a, b) => a.label.localeCompare(b.label))
 }
 
 async function resolvePaperMcpClient() {
@@ -143,8 +179,18 @@ function paperImportPlugin() {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url) return next()
+        const pathname = req.url.split('?')[0]
 
-        if (req.method === 'POST' && req.url === '/api/projects/create') {
+        if (req.method === 'GET' && pathname === '/api/projects/list') {
+          try {
+            const projects = await listProjects()
+            return sendJson(res, 200, { ok: true, projects })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to list projects.' })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/projects/create') {
           try {
             const body = await readJson(req)
             const rawId = typeof body.id === 'string' ? body.id : ''
@@ -160,7 +206,7 @@ function paperImportPlugin() {
           }
         }
 
-        if (req.method === 'POST' && req.url === '/api/paper/import') {
+        if (req.method === 'POST' && pathname === '/api/paper/import') {
           try {
             const body = await readJson(req)
             const projectId = typeof body.projectId === 'string' ? body.projectId : ''
