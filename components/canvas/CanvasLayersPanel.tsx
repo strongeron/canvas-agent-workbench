@@ -22,6 +22,18 @@ function getEmbedLabel(item: CanvasItem) {
   }
 }
 
+function getMediaLabel(item: CanvasItem) {
+  if (item.type !== "media") return ""
+  if (!item.src) return "Media"
+  try {
+    const parsed = new URL(item.src, typeof window === "undefined" ? "http://localhost" : window.location.href)
+    const fileName = parsed.pathname.split("/").filter(Boolean).pop()
+    return fileName || parsed.hostname || item.title || "Media"
+  } catch {
+    return item.title || "Media"
+  }
+}
+
 export function CanvasLayersPanel({
   items,
   selectedIds,
@@ -46,6 +58,7 @@ export function CanvasLayersPanel({
   const getItemLabel = (item: CanvasItem) => {
     if (item.type === "artboard") return item.name
     if (item.type === "embed") return getEmbedLabel(item)
+    if (item.type === "media") return getMediaLabel(item)
     const component = getComponentById(item.componentId)
     return component?.name || item.componentId
   }

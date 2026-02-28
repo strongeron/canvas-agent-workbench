@@ -26,6 +26,8 @@ Both app entry points are wrapped with `ColorPickerProvider`:
 - `demo/App.tsx`
 - `demo-thicket/App.tsx`
 
+`demo/App.tsx` now includes a **Picker Lab** view for visual state review.
+
 ## Wiring in Color Canvas
 
 Color input points in `components/color-canvas/ColorCanvasPage.tsx` now use `ColorPickerField`:
@@ -66,3 +68,12 @@ export const externalColorPickerRenderer: ColorPickerRenderer = ({
 ```
 
 Keep all existing canvas/app forms unchanged; they route through `ColorPickerField`.
+
+## Interactive state demo
+
+Use the **Picker Lab** button in the main demo header to open a storybook-style review page:
+
+- file: `demo/OklchPickerLab.tsx`
+- includes preset coverage for shape/max-chroma/APCA + APCA planes
+- includes floating widget bridge smoke test (`ColorPickerField`)
+- verifies Display P3 defaults where browser support exists

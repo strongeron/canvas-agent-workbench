@@ -2,6 +2,12 @@ import { RotateCw } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { CanvasEmbedItem as CanvasEmbedItemType } from "../../types/canvas"
+import { preflightEmbedFramePolicy } from "./embedFramePolicy"
+import {
+  requestEmbedSnapshot,
+  resolveEmbedPreviewMode,
+  startEmbedLiveSession,
+} from "./embedPreviewService"
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"
 
@@ -48,12 +54,41 @@ export function CanvasEmbedItem({
 }: CanvasEmbedItemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const onUpdateRef = useRef(onUpdate)
+  const preflightInFlightUrlRef = useRef<string | null>(null)
+  const snapshotInFlightUrlRef = useRef<string | null>(null)
+  const liveInFlightUrlRef = useRef<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const [isRotating, setIsRotating] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null)
   const [initialState, setInitialState] = useState({ x: 0, y: 0, width: 0, height: 0, rotation: 0 })
+  const frameStatus = item.embedFrameStatus ?? "unknown"
+  const requestedPreviewMode = item.embedPreviewMode ?? "auto"
+  const previewMode = resolveEmbedPreviewMode(requestedPreviewMode, frameStatus, item.url)
+  const showFrameFallback = frameStatus === "blocked" || frameStatus === "error"
+  const captureStatus = item.embedCaptureStatus ?? "idle"
+  const captureBadgeLabel = captureStatus === "capturing"
+    ? "Capture running"
+    : captureStatus === "ready"
+      ? "Capture ready"
+      : captureStatus === "error"
+        ? "Capture failed"
+        : null
+  const captureBadgeClass = captureStatus === "capturing"
+    ? "bg-brand-600/90 text-white"
+    : captureStatus === "ready"
+      ? "bg-emerald-600/90 text-white"
+      : "bg-red-600/90 text-white"
+
+  useEffect(() => {
+    onUpdateRef.current = onUpdate
+  }, [onUpdate])
+
+  const pushUpdate = useCallback((updates: Partial<Omit<CanvasEmbedItemType, "id">>) => {
+    onUpdateRef.current(updates)
+  }, [])
 
   const postToEmbed = useCallback(
     (message: Record<string, unknown>) => {
@@ -79,12 +114,184 @@ export function CanvasEmbedItem({
     try {
       const origin = new URL(item.url, window.location.href).origin
       if (origin && origin !== item.embedOrigin) {
-        onUpdate({ embedOrigin: origin })
+        pushUpdate({ embedOrigin: origin })
       }
     } catch {
       // Ignore invalid URLs
     }
-  }, [item.url, item.embedOrigin, onUpdate])
+  }, [item.url, item.embedOrigin, pushUpdate])
+
+  useEffect(() => {
+    if (!item.url || typeof window === "undefined") return
+    const checkedUrl = item.url.trim()
+    if (!checkedUrl) return
+
+    const alreadyChecked =
+      item.embedFrameCheckedUrl === checkedUrl &&
+      (frameStatus === "embeddable" || frameStatus === "blocked" || frameStatus === "error")
+    if (alreadyChecked) return
+    if (preflightInFlightUrlRef.current === checkedUrl) return
+
+    preflightInFlightUrlRef.current = checkedUrl
+    if (!(frameStatus === "checking" && item.embedFrameCheckedUrl === checkedUrl)) {
+      pushUpdate({
+        embedFrameStatus: "checking",
+        embedFrameReason: undefined,
+        embedFrameCheckedUrl: checkedUrl,
+      })
+    }
+
+    void (async () => {
+      try {
+        const result = await preflightEmbedFramePolicy(checkedUrl, window.location.origin)
+        if (result.status === "unknown") return
+
+        pushUpdate({
+          embedFrameStatus: result.status,
+          embedFrameReason: result.reason,
+          embedFrameCheckedAt: result.checkedAt,
+          embedFrameCheckedUrl: result.checkedUrl,
+        })
+      } finally {
+        if (preflightInFlightUrlRef.current === checkedUrl) {
+          preflightInFlightUrlRef.current = null
+        }
+      }
+    })()
+  }, [frameStatus, item.embedFrameCheckedUrl, item.url, pushUpdate])
+
+  useEffect(() => {
+    if (!item.url || previewMode !== "snapshot") return
+    const sourceUrl = item.url.trim()
+    if (!sourceUrl) return
+
+    const sameSource = item.embedSnapshotSourceUrl === sourceUrl
+    const status = item.embedSnapshotStatus ?? "idle"
+    const shouldFetch =
+      !sameSource ||
+      status === "idle" ||
+      status === "error" ||
+      status === "loading" ||
+      (status === "ready" && !item.embedSnapshotUrl)
+    if (!shouldFetch) return
+    if (snapshotInFlightUrlRef.current === sourceUrl) return
+
+    snapshotInFlightUrlRef.current = sourceUrl
+    if (!(status === "loading" && sameSource)) {
+      pushUpdate({
+        embedSnapshotStatus: "loading",
+        embedSnapshotReason: undefined,
+        embedSnapshotSourceUrl: sourceUrl,
+      })
+    }
+
+    void (async () => {
+      try {
+        const result = await requestEmbedSnapshot(
+          sourceUrl,
+          { width: item.size.width, height: item.size.height }
+        )
+        if (result.status === "unknown") return
+        if (result.status === "ready") {
+          pushUpdate({
+            embedSnapshotStatus: "ready",
+            embedSnapshotUrl: result.imageUrl,
+            embedSnapshotReason: result.reason,
+            embedSnapshotCapturedAt: result.capturedAt,
+            embedSnapshotProvider: result.provider,
+            embedSnapshotSourceUrl: result.sourceUrl,
+          })
+          return
+        }
+        pushUpdate({
+          embedSnapshotStatus: "error",
+          embedSnapshotReason: result.reason,
+          embedSnapshotCapturedAt: result.capturedAt,
+          embedSnapshotSourceUrl: result.sourceUrl,
+        })
+      } finally {
+        if (snapshotInFlightUrlRef.current === sourceUrl) {
+          snapshotInFlightUrlRef.current = null
+        }
+      }
+    })()
+  }, [
+    item.embedSnapshotSourceUrl,
+    item.embedSnapshotStatus,
+    item.embedSnapshotUrl,
+    item.size.height,
+    item.size.width,
+    item.url,
+    pushUpdate,
+    previewMode,
+  ])
+
+  useEffect(() => {
+    if (!item.url || previewMode !== "live") return
+    const sourceUrl = item.url.trim()
+    if (!sourceUrl) return
+
+    const sameSource = item.embedLiveSourceUrl === sourceUrl
+    const status = item.embedLiveStatus ?? "idle"
+    const shouldStart =
+      !sameSource ||
+      status === "idle" ||
+      status === "error" ||
+      status === "starting" ||
+      (status === "active" && !item.embedLiveUrl)
+    if (!shouldStart) return
+    if (liveInFlightUrlRef.current === sourceUrl) return
+
+    liveInFlightUrlRef.current = sourceUrl
+    if (!(status === "starting" && sameSource)) {
+      pushUpdate({
+        embedLiveStatus: "starting",
+        embedLiveReason: undefined,
+        embedLiveSourceUrl: sourceUrl,
+      })
+    }
+
+    void (async () => {
+      try {
+        const result = await startEmbedLiveSession(sourceUrl)
+        if (result.status === "unknown") return
+        if (result.status === "active") {
+          pushUpdate({
+            embedLiveStatus: "active",
+            embedLiveReason: result.reason,
+            embedLiveUrl: result.sessionUrl,
+            embedLiveProvider: result.provider,
+            embedLiveSessionId: result.sessionId,
+            embedLiveSourceUrl: result.sourceUrl,
+            embedLiveStartedAt: result.startedAt,
+            embedLiveExpiresAt: result.expiresAt,
+          })
+          return
+        }
+        pushUpdate({
+          embedLiveStatus: "error",
+          embedLiveReason: result.reason,
+          embedLiveUrl: undefined,
+          embedLiveSessionId: undefined,
+          embedLiveProvider: result.provider,
+          embedLiveSourceUrl: result.sourceUrl,
+          embedLiveStartedAt: result.startedAt,
+          embedLiveExpiresAt: undefined,
+        })
+      } finally {
+        if (liveInFlightUrlRef.current === sourceUrl) {
+          liveInFlightUrlRef.current = null
+        }
+      }
+    })()
+  }, [
+    item.embedLiveSourceUrl,
+    item.embedLiveStatus,
+    item.embedLiveUrl,
+    item.url,
+    pushUpdate,
+    previewMode,
+  ])
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -93,7 +300,7 @@ export function CanvasEmbedItem({
       if (!event.data || typeof event.data !== "object") return
       const data = event.data as { type?: string; payload?: unknown; version?: number }
       if (data.type !== "state") return
-      onUpdate({
+      pushUpdate({
         embedState: data.payload,
         embedStateVersion: data.version ?? 1,
         embedOrigin: item.embedOrigin ?? event.origin,
@@ -102,7 +309,7 @@ export function CanvasEmbedItem({
 
     window.addEventListener("message", handleMessage)
     return () => window.removeEventListener("message", handleMessage)
-  }, [item.embedOrigin, onUpdate])
+  }, [item.embedOrigin, pushUpdate])
 
   useEffect(() => {
     const handleRequest = (event: Event) => {
@@ -185,7 +392,7 @@ export function CanvasEmbedItem({
       if (isDragging) {
         const dx = (e.clientX - dragStart.x) / scale
         const dy = (e.clientY - dragStart.y) / scale
-        onUpdate({
+        pushUpdate({
           position: {
             x: initialState.x + dx,
             y: initialState.y + dy,
@@ -217,7 +424,7 @@ export function CanvasEmbedItem({
           newY = initialState.y + heightDelta
         }
 
-        onUpdate({
+        pushUpdate({
           position: { x: newX, y: newY },
           size: { width: newWidth, height: newHeight },
         })
@@ -232,7 +439,7 @@ export function CanvasEmbedItem({
           degrees = Math.round(degrees / 15) * 15
         }
 
-        onUpdate({ rotation: degrees })
+        pushUpdate({ rotation: degrees })
       }
     }
 
@@ -250,7 +457,7 @@ export function CanvasEmbedItem({
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [isDragging, isResizing, isRotating, dragStart, initialState, resizeHandle, scale, onUpdate])
+  }, [isDragging, isResizing, isRotating, dragStart, initialState, resizeHandle, scale, pushUpdate])
 
   const getBorderStyle = () => {
     if (isMultiSelected) {
@@ -294,30 +501,118 @@ export function CanvasEmbedItem({
       <div
         className={`h-full w-full overflow-hidden rounded-xl border bg-white shadow-card transition-shadow ${getBorderStyle()}`}
       >
-        <div className="h-full w-full">
+        <div className="relative h-full w-full">
           {item.url ? (
-            <iframe
-              ref={iframeRef}
-              title={item.title || item.url}
-              src={item.url}
-              allow={item.allow}
-              sandbox={item.sandbox}
-              className={`h-full w-full ${interactMode ? "pointer-events-auto" : "pointer-events-none"}`}
-              onLoad={() => {
-                if (item.embedState !== undefined) {
-                  postToEmbed({
-                    type: "setState",
-                    payload: item.embedState,
-                    version: item.embedStateVersion ?? 1,
-                  })
-                } else {
-                  requestEmbedState()
-                }
-              }}
-            />
+            previewMode === "live" ? (
+              item.embedLiveStatus === "active" && item.embedLiveUrl ? (
+                <iframe
+                  title={item.title || item.url}
+                  src={item.embedLiveUrl}
+                  allow="clipboard-read; clipboard-write; fullscreen"
+                  className={`h-full w-full ${interactMode ? "pointer-events-auto" : "pointer-events-none"}`}
+                />
+              ) : (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-surface-50 p-4 text-center">
+                  <p className="text-sm font-medium text-foreground">
+                    {item.embedLiveStatus === "starting" ? "Starting live session..." : "Live preview unavailable"}
+                  </p>
+                  <p className="max-w-[36ch] text-xs text-muted-foreground">
+                    {item.embedLiveReason || "Configure a live provider and click Start in the inspector."}
+                  </p>
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                  >
+                    Open in new tab
+                  </a>
+                </div>
+              )
+            ) : previewMode === "snapshot" ? (
+              item.embedSnapshotStatus === "ready" && item.embedSnapshotUrl ? (
+                <div className="relative h-full w-full bg-surface-100">
+                  <img
+                    src={item.embedSnapshotUrl}
+                    alt={item.title || item.url}
+                    className="h-full w-full object-cover"
+                    draggable={false}
+                  />
+                  <div className="pointer-events-none absolute right-2 top-2 rounded bg-surface-900/80 px-2 py-1 text-[10px] text-white">
+                    Snapshot
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-surface-50 p-4 text-center">
+                  <p className="text-sm font-medium text-foreground">
+                    {item.embedSnapshotStatus === "loading" ? "Capturing snapshot..." : "Snapshot unavailable"}
+                  </p>
+                  <p className="max-w-[36ch] text-xs text-muted-foreground">
+                    {item.embedSnapshotReason || "Snapshot fallback is loading."}
+                  </p>
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                  >
+                    Open in new tab
+                  </a>
+                </div>
+              )
+            ) : showFrameFallback ? (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-surface-50 p-4 text-center">
+                <p className="text-sm font-medium text-foreground">Cannot render this site in iframe</p>
+                <p className="max-w-[36ch] text-xs text-muted-foreground">
+                  {item.embedFrameReason || "This website blocks embedding via iframe policy."}
+                </p>
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                >
+                  Open in new tab
+                </a>
+              </div>
+            ) : (
+              <div className="relative h-full w-full">
+                <iframe
+                  ref={iframeRef}
+                  title={item.title || item.url}
+                  src={item.url}
+                  allow={item.allow}
+                  sandbox={item.sandbox}
+                  className={`h-full w-full ${interactMode ? "pointer-events-auto" : "pointer-events-none"}`}
+                  onLoad={() => {
+                    if (item.embedState !== undefined) {
+                      postToEmbed({
+                        type: "setState",
+                        payload: item.embedState,
+                        version: item.embedStateVersion ?? 1,
+                      })
+                    } else {
+                      requestEmbedState()
+                    }
+                  }}
+                />
+                {frameStatus === "checking" && (
+                  <div className="pointer-events-none absolute right-2 top-2 rounded bg-surface-900/80 px-2 py-1 text-[10px] text-white">
+                    Checking iframe policy...
+                  </div>
+                )}
+              </div>
+            )
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
               Add a URL to embed
+            </div>
+          )}
+          {captureBadgeLabel && (
+            <div
+              className={`pointer-events-none absolute left-2 top-2 rounded px-2 py-1 text-[10px] font-medium ${captureBadgeClass}`}
+            >
+              {captureBadgeLabel}
             </div>
           )}
         </div>

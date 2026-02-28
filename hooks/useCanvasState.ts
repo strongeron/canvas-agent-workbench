@@ -16,6 +16,9 @@ function normalizeItem(item: CanvasItem | any): CanvasItem {
   if (item?.type === "embed") {
     return { ...item, type: "embed" }
   }
+  if (item?.type === "media") {
+    return { ...item, type: "media" }
+  }
   if (item?.type === "artboard") {
     return { ...item, type: "artboard" }
   }

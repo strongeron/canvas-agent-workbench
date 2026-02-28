@@ -41,11 +41,12 @@ for (const match of themeCss.matchAll(/--shadow-([a-z0-9-]+)\s*:\s*[^;]+;/gi)) {
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
-    "./demo/**/*.{js,ts,jsx,tsx}",
-    "./demo-thicket/**/*.{js,ts,jsx,tsx}",
-    "./components/**/*.{js,ts,jsx,tsx}",
-    "./core/**/*.{js,ts,jsx,tsx}",
-    "./projects/**/*.{js,ts,jsx,tsx}",
+    "./demo/**/*.{ts,tsx}",
+    "./demo-thicket/**/*.{ts,tsx}",
+    "./components/{_reference,agent,canvas,color-canvas,color-picker}/**/*.{ts,tsx}",
+    "./components/oklch-picker-portable/src/**/*.{ts,tsx}",
+    "./core/**/*.{ts,tsx}",
+    "./projects/**/*.{ts,tsx}",
   ],
   theme: {
     extend: {

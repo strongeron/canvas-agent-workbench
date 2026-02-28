@@ -1,4 +1,5 @@
 import {
+  Bot,
   Copy,
   FolderOpen,
   Group,
@@ -56,6 +57,7 @@ interface CanvasToolbarProps {
   onUngroupSelected: () => void
   onDuplicateSelected: () => void
   onToggleThemePanel: () => void
+  onToggleCopilotPanel: () => void
   itemCount: number
   selectedCount: number
   canGroup: boolean
@@ -65,6 +67,7 @@ interface CanvasToolbarProps {
   scenesVisible: boolean
   layersVisible: boolean
   themePanelVisible: boolean
+  copilotPanelVisible: boolean
   importingPaper?: boolean
   /** Injected Button component */
   Button: React.ComponentType<ButtonComponentProps>
@@ -92,6 +95,7 @@ export function CanvasToolbar({
   onUngroupSelected,
   onDuplicateSelected,
   onToggleThemePanel,
+  onToggleCopilotPanel,
   itemCount,
   selectedCount,
   canGroup,
@@ -101,6 +105,7 @@ export function CanvasToolbar({
   scenesVisible,
   layersVisible,
   themePanelVisible,
+  copilotPanelVisible,
   importingPaper,
   Button,
   Tooltip,
@@ -382,6 +387,20 @@ export function CanvasToolbar({
           aria-label="Show help"
         >
           <HelpCircle className="h-5 w-5" />
+        </Button>
+      </Tooltip>
+
+      {/* Copilot */}
+      <Tooltip content="Canvas agent chat">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleCopilotPanel}
+          className={copilotPanelVisible ? activeIconButtonClass : iconButtonClass}
+          aria-label="Toggle canvas agent panel"
+          aria-pressed={copilotPanelVisible}
+        >
+          <Bot className="h-5 w-5" />
         </Button>
       </Tooltip>
     </div>

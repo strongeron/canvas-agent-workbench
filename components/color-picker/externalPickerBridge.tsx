@@ -76,6 +76,7 @@ function OklchPortableField({
     () => ({
       mode: "shape",
       plane: "HC_at_L",
+      gamut: "p3",
       resolution: 256,
       ...initialState,
     }),
