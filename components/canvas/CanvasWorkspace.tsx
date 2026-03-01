@@ -1,11 +1,13 @@
 import { useDroppable } from "@dnd-kit/core"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ComponentType } from "react"
 
 import type {
   CanvasItem as CanvasItemType,
+  CanvasItemUpdate,
   CanvasComponentItem,
   CanvasEmbedItem as CanvasEmbedItemType,
+  CanvasMediaItem as CanvasMediaItemType,
   CanvasArtboardItem as CanvasArtboardItemType,
   CanvasTransform,
   CanvasGroup,
@@ -15,6 +17,8 @@ import { CanvasArtboardItem as CanvasArtboardItemComponent } from "./CanvasArtbo
 import { CanvasEmbedItem as CanvasEmbedItemComponent } from "./CanvasEmbedItem"
 import { CanvasLayoutComponentItem } from "./CanvasLayoutComponentItem"
 import { CanvasLayoutEmbedItem } from "./CanvasLayoutEmbedItem"
+import { CanvasLayoutMediaItem } from "./CanvasLayoutMediaItem"
+import { CanvasMediaItem as CanvasMediaItemComponent } from "./CanvasMediaItem"
 import { CanvasItem } from "./CanvasItem"
 
 interface SelectionBox {
@@ -42,7 +46,7 @@ interface CanvasWorkspaceProps {
   onSelectItem: (id: string, addToSelection?: boolean) => void
   onSelectItems: (ids: string[]) => void
   onClearSelection: () => void
-  onUpdateItem: (id: string, updates: Partial<Omit<CanvasItemType, "id">>) => void
+  onUpdateItem: (id: string, updates: CanvasItemUpdate) => void
   onRemoveItem: (id: string) => void
   onDuplicateItem: (id: string) => void
   onBringToFront: (id: string) => void
@@ -54,6 +58,11 @@ interface CanvasWorkspaceProps {
   Renderer: ComponentType<RendererComponentProps>
   /** Function to look up component entry by ID */
   getComponentById: (id: string) => GalleryEntry | null
+  /** Optional native file drop handler for media assets */
+  onDropMediaFiles?: (input: {
+    files: File[]
+    position: { x: number; y: number }
+  }) => void | Promise<void>
 }
 
 export function CanvasWorkspace({
@@ -75,6 +84,7 @@ export function CanvasWorkspace({
   getGroupBounds,
   Renderer,
   getComponentById,
+  onDropMediaFiles,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -82,6 +92,7 @@ export function CanvasWorkspace({
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null)
   const [isSelecting, setIsSelecting] = useState(false)
+  const [isFileDragOver, setIsFileDragOver] = useState(false)
 
   const { setNodeRef, isOver } = useDroppable({
     id: "canvas-workspace",
@@ -135,19 +146,29 @@ export function CanvasWorkspace({
     }
   }, [interactMode])
 
-  const artboards = items.filter((item) => item.type === "artboard") as CanvasArtboardItemType[]
-  const freeformItems = items.filter(
-    (item) => item.type !== "artboard" && !item.parentId
+  const artboards = useMemo(
+    () => items.filter((item) => item.type === "artboard") as CanvasArtboardItemType[],
+    [items]
   )
-  const sortedArtboards = [...artboards].sort((a, b) => a.zIndex - b.zIndex)
-  const sortedFreeformItems = [...freeformItems].sort((a, b) => a.zIndex - b.zIndex)
-  const selectableItems = [...sortedArtboards, ...sortedFreeformItems]
+  const freeformItems = useMemo(
+    () => items.filter((item) => item.type !== "artboard" && !item.parentId),
+    [items]
+  )
+  const sortedArtboards = useMemo(() => [...artboards].sort((a, b) => a.zIndex - b.zIndex), [artboards])
+  const sortedFreeformItems = useMemo(
+    () => [...freeformItems].sort((a, b) => a.zIndex - b.zIndex),
+    [freeformItems]
+  )
+  const selectableItems = useMemo(
+    () => [...sortedArtboards, ...sortedFreeformItems],
+    [sortedArtboards, sortedFreeformItems]
+  )
 
   const getArtboardChildren = useCallback(
     (artboardId: string) => {
       return items
         .filter(
-          (item): item is CanvasComponentItem | CanvasEmbedItemType =>
+          (item): item is CanvasComponentItem | CanvasEmbedItemType | CanvasMediaItemType =>
             item.type !== "artboard" && item.parentId === artboardId
         )
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -156,7 +177,7 @@ export function CanvasWorkspace({
   )
 
   const renderLayoutChild = useCallback(
-    (child: CanvasComponentItem | CanvasEmbedItemType) => {
+    (child: CanvasComponentItem | CanvasEmbedItemType | CanvasMediaItemType) => {
       const isSelected = selectedIds.includes(child.id)
 
       if (child.type === "embed") {
@@ -168,6 +189,26 @@ export function CanvasWorkspace({
             data-artboard-child="true"
           >
             <CanvasLayoutEmbedItem
+              item={child}
+              isSelected={isSelected}
+              onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
+              onUpdate={(updates) => onUpdateItem(child.id, updates)}
+              scale={transform.scale}
+              interactMode={interactMode}
+            />
+          </div>
+        )
+      }
+
+      if (child.type === "media") {
+        return (
+          <div
+            key={child.id}
+            className="relative"
+            style={{ width: child.size.width, height: child.size.height }}
+            data-artboard-child="true"
+          >
+            <CanvasLayoutMediaItem
               item={child}
               isSelected={isSelected}
               onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
@@ -278,7 +319,7 @@ export function CanvasWorkspace({
         // If not holding shift, we'll clear selection when mouse up (if no drag)
       }
     },
-    [isSpaceHeld, screenToCanvas]
+    [interactMode, isSpaceHeld, screenToCanvas]
   )
 
   const handleMouseMove = useCallback(
@@ -305,7 +346,7 @@ export function CanvasWorkspace({
         )
       }
     },
-    [isPanning, panStart, onPan, isSelecting, selectionBox, screenToCanvas]
+    [interactMode, isPanning, panStart, onPan, isSelecting, selectionBox, screenToCanvas]
   )
 
   const handleMouseUp = useCallback(
@@ -354,6 +395,7 @@ export function CanvasWorkspace({
       itemIntersectsBox,
       onSelectItems,
       onClearSelection,
+      interactMode,
     ]
   )
 
@@ -364,7 +406,56 @@ export function CanvasWorkspace({
       setSelectionBox(null)
       setIsSelecting(false)
     }
-  }, [isSelecting])
+  }, [interactMode, isSelecting])
+
+  const handleNativeDragEnter = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      if (!onDropMediaFiles) return
+      const hasFiles = Array.from(e.dataTransfer?.types || []).includes("Files")
+      if (!hasFiles) return
+      e.preventDefault()
+      e.stopPropagation()
+      setIsFileDragOver(true)
+    },
+    [onDropMediaFiles]
+  )
+
+  const handleNativeDragOver = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      if (!onDropMediaFiles) return
+      const hasFiles = Array.from(e.dataTransfer?.types || []).includes("Files")
+      if (!hasFiles) return
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = "copy"
+      if (!isFileDragOver) {
+        setIsFileDragOver(true)
+      }
+    },
+    [isFileDragOver, onDropMediaFiles]
+  )
+
+  const handleNativeDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    const nextTarget = e.relatedTarget as Node | null
+    if (nextTarget && e.currentTarget.contains(nextTarget)) return
+    setIsFileDragOver(false)
+  }, [])
+
+  const handleNativeDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      if (!onDropMediaFiles) return
+      const files = Array.from(e.dataTransfer?.files || [])
+      if (files.length === 0) return
+
+      e.preventDefault()
+      e.stopPropagation()
+      setIsFileDragOver(false)
+
+      const position = screenToCanvas(e.clientX, e.clientY)
+      void onDropMediaFiles({ files, position })
+    },
+    [onDropMediaFiles, screenToCanvas]
+  )
 
   // Determine cursor based on state
   const getCursor = () => {
@@ -399,7 +490,7 @@ export function CanvasWorkspace({
         setNodeRef(node)
       }}
       className={`relative h-full flex-1 overflow-hidden ${getCursor()} ${
-        isOver ? "bg-brand-50/30" : "bg-surface-50"
+        isOver || isFileDragOver ? "bg-brand-50/30" : "bg-surface-50"
       }`}
       style={{
         backgroundImage: `
@@ -413,6 +504,10 @@ export function CanvasWorkspace({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
       onWheel={interactMode ? undefined : onWheel}
+      onDragEnter={handleNativeDragEnter}
+      onDragOver={handleNativeDragOver}
+      onDragLeave={handleNativeDragLeave}
+      onDrop={handleNativeDrop}
     >
       {/* Transform container */}
       <div
@@ -502,6 +597,19 @@ export function CanvasWorkspace({
             )
           }
 
+          if (item.type === "media") {
+            return (
+              <CanvasMediaItemComponent
+                key={item.id}
+                {...commonProps}
+                item={item as CanvasMediaItemType}
+                onUpdate={(updates: Partial<Omit<CanvasMediaItemType, "id">>) =>
+                  onUpdateItem(item.id, updates)
+                }
+              />
+            )
+          }
+
           return (
             <CanvasItem
               key={item.id}
@@ -538,6 +646,12 @@ export function CanvasWorkspace({
             <p className="mt-1 text-sm text-muted-foreground">
               Shift+click for multi-select • Drag to box-select
             </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Drop image/video/GIF files directly on canvas
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Paste screenshots with Cmd/Ctrl+V
+            </p>
             <p className="mt-3 text-xs text-muted">
               Press{" "}
               <kbd className="rounded border border-default bg-surface-100 px-1.5 py-0.5 font-mono text-[10px]">
@@ -550,7 +664,7 @@ export function CanvasWorkspace({
       )}
 
       {/* Drop indicator */}
-      {isOver && (
+      {(isOver || isFileDragOver) && (
         <div className="pointer-events-none absolute inset-4 rounded-xl border-2 border-dashed border-brand-400 bg-brand-50/30" />
       )}
 

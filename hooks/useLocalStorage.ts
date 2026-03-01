@@ -5,12 +5,15 @@
  * Includes SSR safety and JSON serialization.
  */
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 export function useLocalStorage<T>(
   key: string,
   initialValue: T
 ): [T, (value: T | ((prev: T) => T)) => void] {
+  const initialValueRef = useRef(initialValue)
+  initialValueRef.current = initialValue
+
   // Initialize state with stored value or initial value
   const [storedValue, setStoredValue] = useState<T>(() => {
     if (typeof window === "undefined") {
@@ -51,19 +54,23 @@ export function useLocalStorage<T>(
 
     try {
       const item = window.localStorage.getItem(key)
-      setStoredValue(item ? JSON.parse(item) : initialValue)
+      setStoredValue(item ? JSON.parse(item) : initialValueRef.current)
     } catch {
-      setStoredValue(initialValue)
+      setStoredValue(initialValueRef.current)
     }
-  }, [key, initialValue])
+  }, [key])
 
   // Sync across tabs
   useEffect(() => {
     if (typeof window === "undefined") return
 
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === key && e.newValue) {
+      if (e.key === key) {
         try {
+          if (e.newValue == null) {
+            setStoredValue(initialValueRef.current)
+            return
+          }
           setStoredValue(JSON.parse(e.newValue))
         } catch {
           // Ignore invalid JSON

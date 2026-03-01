@@ -1,23 +1,23 @@
 import { useDraggable } from "@dnd-kit/core"
 import { ChevronDown, ChevronRight, GripVertical, Plus, Search } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { GalleryEntry } from "../../core/types"
 import type { PaperImportQueueItem } from "./CanvasTab"
+import { fetchLocalApps, type LocalAppEntry } from "./localAppsService"
+import { inferMediaKindFromFile } from "./mediaStorageService"
 
 /** Component entry type for sidebar */
 type ComponentEntry = GalleryEntry
 
 interface DraggableVariantProps {
   componentId: string
-  componentName: string
   variantIndex: number
   variantName: string
 }
 
 function DraggableVariant({
   componentId,
-  componentName,
   variantIndex,
   variantName,
 }: DraggableVariantProps) {
@@ -75,7 +75,6 @@ function ComponentGroup({ component, isExpanded, onToggle }: ComponentGroupProps
             <DraggableVariant
               key={`${componentId}-${index}`}
               componentId={componentId}
-              componentName={component.name}
               variantIndex={index}
               variantName={variant.name}
             />
@@ -91,6 +90,12 @@ interface CanvasSidebarProps {
   entries: GalleryEntry[]
   /** Add an iframe/embed item to the canvas */
   onAddEmbed: (url: string) => void
+  /** Add a media node (image/video/gif URL) */
+  onAddMedia: (input: {
+    src?: string
+    file?: File
+    mediaKind?: "image" | "video" | "gif"
+  }) => void | Promise<void>
   /** Recent imports */
   importQueue?: PaperImportQueueItem[]
   onAddImportedComponent?: (componentId: string, variantIndex?: number) => void
@@ -105,6 +110,7 @@ interface CanvasSidebarProps {
 export function CanvasSidebar({
   entries,
   onAddEmbed,
+  onAddMedia,
   importQueue,
   onAddImportedComponent,
   onClearImportQueue,
@@ -115,8 +121,20 @@ export function CanvasSidebar({
 }: CanvasSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [embedUrl, setEmbedUrl] = useState("")
+  const [localPort, setLocalPort] = useState("3000")
+  const [localPath, setLocalPath] = useState("/")
+  const [localApps, setLocalApps] = useState<LocalAppEntry[]>([])
+  const [localAppsStatus, setLocalAppsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [localAppsSource, setLocalAppsSource] = useState<string | null>(null)
+  const [localAppsScannedPorts, setLocalAppsScannedPorts] = useState<number | null>(null)
+  const [localAppsError, setLocalAppsError] = useState<string | null>(null)
+  const [selectedLocalAppUrl, setSelectedLocalAppUrl] = useState("")
+  const [mediaUrl, setMediaUrl] = useState("")
+  const [mediaKind, setMediaKind] = useState<"image" | "video" | "gif">("image")
+  const [mediaFile, setMediaFile] = useState<File | null>(null)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedComponents, setExpandedComponents] = useState<Set<string>>(new Set())
+  const mediaFileInputRef = useRef<HTMLInputElement>(null)
 
   // Group entries by category
   const componentsByCategory = useMemo(() => {
@@ -169,6 +187,61 @@ export function CanvasSidebar({
     })
     .filter(({ components }) => components.length > 0)
 
+  const buildLocalEmbedUrl = useCallback(() => {
+    const port = Number(localPort)
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null
+    const cleanedPath = localPath.trim()
+    const normalizedPath = cleanedPath
+      ? cleanedPath.startsWith("/")
+        ? cleanedPath
+        : `/${cleanedPath}`
+      : "/"
+    return `http://localhost:${port}${normalizedPath}`
+  }, [localPath, localPort])
+
+  const handleDiscoverLocalApps = useCallback(
+    async (force = false) => {
+      if (localAppsStatus === "loading") return
+      const appOrigin =
+        typeof window === "undefined" ? "http://localhost:5173" : window.location.origin
+      setLocalAppsStatus("loading")
+      setLocalAppsError(null)
+      const result = await fetchLocalApps(appOrigin, { force })
+      if (result.status === "ready") {
+        setLocalApps(result.apps)
+        setLocalAppsSource(result.source || null)
+        setLocalAppsScannedPorts(
+          typeof result.scannedPorts === "number" ? result.scannedPorts : null
+        )
+        setLocalAppsStatus("ready")
+        if (result.apps.length > 0) {
+          setSelectedLocalAppUrl((previous) =>
+            previous && result.apps.some((app) => (app.finalUrl || app.url) === previous)
+              ? previous
+              : result.apps[0].finalUrl || result.apps[0].url
+          )
+        } else {
+          setSelectedLocalAppUrl("")
+        }
+        return
+      }
+
+      if (result.status === "unknown") {
+        setLocalAppsStatus("idle")
+        return
+      }
+
+      setLocalAppsStatus("error")
+      setLocalAppsError(result.reason || "Failed to discover localhost apps.")
+    },
+    [localAppsStatus]
+  )
+
+  useEffect(() => {
+    if (localAppsStatus !== "idle") return
+    void handleDiscoverLocalApps(false)
+  }, [handleDiscoverLocalApps, localAppsStatus])
+
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-default bg-white">
       {projects && projects.length > 0 && (
@@ -211,6 +284,77 @@ export function CanvasSidebar({
       )}
 
       <div className="border-b border-default p-3">
+        <h3 className="mb-2 text-sm font-semibold text-foreground">Media</h3>
+        <div className="space-y-2">
+          <input
+            type="url"
+            value={mediaUrl}
+            onChange={(e) => setMediaUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && mediaUrl.trim()) {
+                void onAddMedia({ src: mediaUrl.trim(), mediaKind })
+                setMediaUrl("")
+              }
+            }}
+            placeholder="Paste media URL (.png/.gif/.mp4/.webm)..."
+            className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          />
+          <select
+            value={mediaKind}
+            onChange={(e) => setMediaKind(e.target.value as "image" | "video" | "gif")}
+            className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          >
+            <option value="image">Image</option>
+            <option value="gif">GIF</option>
+            <option value="video">Video</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              if (!mediaUrl.trim()) return
+              void onAddMedia({ src: mediaUrl.trim(), mediaKind })
+              setMediaUrl("")
+            }}
+            className="w-full rounded-md border border-default bg-surface-50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+          >
+            Add media
+          </button>
+          <input
+            ref={mediaFileInputRef}
+            type="file"
+            accept="image/*,video/*,.gif,.mp4,.webm,.mov,.m4v,.ogg"
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null
+              setMediaFile(file)
+              if (file) {
+                setMediaKind(inferMediaKindFromFile(file))
+              }
+            }}
+            className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground file:mr-2 file:rounded file:border file:border-default file:bg-surface-50 file:px-2 file:py-1 file:text-[11px] file:font-semibold"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!mediaFile) return
+              void onAddMedia({ file: mediaFile, mediaKind })
+              setMediaFile(null)
+              if (mediaFileInputRef.current) {
+                mediaFileInputRef.current.value = ""
+              }
+            }}
+            className="w-full rounded-md border border-default bg-surface-50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!mediaFile}
+          >
+            Add file
+          </button>
+          <p className="text-[11px] text-muted-foreground">
+            URL and local file upload supported. Large files auto-fallback to local-session media
+            if they exceed persistent upload limits.
+          </p>
+        </div>
+      </div>
+
+      <div className="border-b border-default p-3">
         <h3 className="mb-2 text-sm font-semibold text-foreground">Embeds</h3>
         <div className="space-y-2">
           <input
@@ -237,6 +381,107 @@ export function CanvasSidebar({
           >
             Add embed
           </button>
+          <div className="rounded-md border border-default bg-surface-50 p-2">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Localhost app
+            </div>
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <label className="flex items-center rounded-md border border-default bg-white px-2">
+                <span className="text-[11px] text-muted-foreground">localhost:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  step={1}
+                  value={localPort}
+                  onChange={(e) => setLocalPort(e.target.value)}
+                  className="w-full border-0 bg-transparent px-1 py-1.5 text-xs text-foreground focus:outline-none"
+                  aria-label="Localhost port"
+                />
+              </label>
+              <input
+                type="text"
+                value={localPath}
+                onChange={(e) => setLocalPath(e.target.value)}
+                placeholder="/"
+                className="rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                aria-label="Localhost path"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const localUrl = buildLocalEmbedUrl()
+                if (!localUrl) return
+                onAddEmbed(localUrl)
+              }}
+              className="mt-2 w-full rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+            >
+              Add localhost embed
+            </button>
+            <div className="mt-2 rounded-md border border-default bg-white p-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-foreground">Detected local apps</span>
+                <button
+                  type="button"
+                  onClick={() => void handleDiscoverLocalApps(true)}
+                  className="rounded border border-default px-2 py-0.5 text-[10px] font-semibold text-foreground hover:bg-surface-100"
+                >
+                  {localAppsStatus === "loading" ? "Scanning..." : "Scan ports"}
+                </button>
+              </div>
+              <div className="mt-2">
+                <select
+                  value={selectedLocalAppUrl}
+                  onChange={(e) => setSelectedLocalAppUrl(e.target.value)}
+                  className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="">
+                    {localApps.length === 0 ? "No apps discovered yet" : "Select local app"}
+                  </option>
+                  {localApps.map((app) => {
+                    const optionUrl = app.finalUrl || app.url
+                    let hostLabel = optionUrl
+                    try {
+                      hostLabel = new URL(optionUrl).host
+                    } catch {
+                      hostLabel = optionUrl
+                    }
+                    const statusLabel = app.status ? ` · ${app.status}` : ""
+                    const liveLabel = app.live === false ? " · not live" : " · live"
+                    const frameLabel = app.embeddable ? "" : " · iframe blocked"
+                    const label = `${hostLabel}${statusLabel}${liveLabel}${frameLabel}`
+                    return (
+                      <option key={`${app.port}-${optionUrl}`} value={optionUrl}>
+                        {label}
+                      </option>
+                    )
+                  })}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!selectedLocalAppUrl) return
+                  onAddEmbed(selectedLocalAppUrl)
+                }}
+                disabled={!selectedLocalAppUrl}
+                className="mt-2 w-full rounded-md border border-default bg-surface-50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Add selected app
+              </button>
+              {(localAppsSource || localAppsScannedPorts !== null) && (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Source: {localAppsSource || "unknown"}
+                  {localAppsScannedPorts !== null ? ` · scanned ${localAppsScannedPorts} ports` : ""}
+                  {localApps.length > 0 ? ` · found ${localApps.length} live apps` : ""}
+                </p>
+              )}
+              {localAppsStatus === "error" && localAppsError && (
+                <p className="mt-1 text-[10px] text-red-600">{localAppsError}</p>
+              )}
+            </div>
+          </div>
           <p className="text-[11px] text-muted-foreground">
             Interactive iframes work best in Interact mode.
           </p>

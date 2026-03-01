@@ -1,16 +1,19 @@
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core"
 import { useCallback, useEffect, useState, useMemo, useRef } from "react"
+import { CopilotChat } from "@copilotkit/react-ui"
 
 import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShortcuts"
 import { useCanvasState } from "../../hooks/useCanvasState"
 import { useCanvasScenes } from "../../hooks/useCanvasScenes"
 import { useCanvasTransform } from "../../hooks/useCanvasTransform"
 import { useLocalStorage } from "../../hooks/useLocalStorage"
+import { useCopilotCanvasActions } from "../../hooks/useCopilotCanvasActions"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
-import type { DragData, CanvasScene } from "../../types/canvas"
+import type { DragData, CanvasMediaItem, CanvasScene } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
+import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasLayersPanel } from "./CanvasLayersPanel"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
 import { CanvasScenesPanel } from "./CanvasScenesPanel"
@@ -18,6 +21,15 @@ import { CanvasSidebar } from "./CanvasSidebar"
 import { CanvasThemePanel } from "./CanvasThemePanel"
 import { CanvasToolbar } from "./CanvasToolbar"
 import { CanvasWorkspace } from "./CanvasWorkspace"
+import { normalizeCanvasEmbedUrl } from "./embedUrl"
+import {
+  captureEmbedSnapshots,
+  resolveEmbedPreviewMode,
+  stopEmbedLiveSession,
+  type EmbedCaptureTarget,
+  type EmbedCaptureProvider,
+} from "./embedPreviewService"
+import { inferMediaKindFromFile, inferMediaKindFromSrc, storeLocalMediaFile } from "./mediaStorageService"
 import { useThemeRegistry } from "../../hooks/useThemeRegistry"
 import type { ThemeOption, ThemeToken } from "../../types/theme"
 import {
@@ -47,6 +59,50 @@ const LAYOUT_SIZE_DEFAULTS: Record<string, { width: number; minHeight: number }>
   medium: { width: 350, minHeight: 120 },  // cards, widgets
   large: { width: 500, minHeight: 200 },   // tables, lists
   full: { width: 600, minHeight: 250 },    // tabs, sidebars, full-width
+}
+
+function isEditablePasteTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  const tag = target.tagName
+  return tag === "INPUT" || tag === "TEXTAREA" || !!target.closest("[contenteditable='true']")
+}
+
+function extensionForClipboardMime(mime: string) {
+  const normalized = mime.toLowerCase()
+  if (normalized === "image/png") return ".png"
+  if (normalized === "image/jpeg") return ".jpg"
+  if (normalized === "image/webp") return ".webp"
+  if (normalized === "image/gif") return ".gif"
+  if (normalized === "image/svg+xml") return ".svg"
+  if (normalized === "video/mp4") return ".mp4"
+  if (normalized === "video/webm") return ".webm"
+  if (normalized === "video/quicktime") return ".mov"
+  if (normalized === "video/ogg") return ".ogg"
+  return ".bin"
+}
+
+function normalizeClipboardFile(file: File, index: number) {
+  if (file.name && file.name.trim()) return file
+  const ext = extensionForClipboardMime(file.type || "")
+  const name = `clipboard-${Date.now()}-${index}${ext}`
+  return new File([file], name, { type: file.type || "application/octet-stream" })
+}
+
+function getCaptureNodeSize(target: EmbedCaptureTarget, viewport?: { width?: number; height?: number }) {
+  const fallback = target === "mobile"
+    ? { width: 280, height: 600 }
+    : { width: 520, height: 320 }
+  const width = viewport?.width
+  const height = viewport?.height
+  if (!width || !height) return fallback
+  const maxWidth = target === "mobile" ? 320 : 540
+  const scaledWidth = Math.min(maxWidth, width)
+  const scaledHeight = Math.max(140, Math.round((height / width) * scaledWidth))
+  return {
+    width: scaledWidth,
+    height: scaledHeight,
+  }
 }
 
 const DEFAULT_THEMES: ThemeOption[] = [
@@ -81,6 +137,61 @@ const DEFAULT_THEME_TOKENS: ThemeToken[] = [
   { label: "Foreground", cssVar: "--color-foreground", category: "color", subcategory: "text" },
   { label: "Muted Foreground", cssVar: "--color-muted-foreground", category: "color", subcategory: "text" },
 ]
+
+const COPILOT_INSTRUCTIONS = `You are a canvas design assistant.
+
+Rules:
+- If the user asks to change the canvas, you MUST call tools. Do not only describe what you would do.
+- Use only these tools for mutations: createCanvasItem, updateCanvasItem, deleteCanvasItems.
+- Use listCanvasItemTypes when you need to discover allowed types/components.
+- After each successful tool call, reply with a short confirmation and include returned itemId when available.
+
+Create tool guidance:
+- createCanvasItem requires type.
+- For type=component: provide componentId (and optional variantIndex).
+- For type=embed: provide url.
+- For type=media: provide src (mediaKind optional).
+- For type=artboard: name is optional.
+- Use sensible defaults when position/size is not provided.
+
+Layout guidance:
+- Place related items near each other.
+- Default sizes: embed 640x360, media 480x270, artboard 800x600.
+- Use artboards to group sections. Use parentId for nesting inside artboards.`
+
+function areTokenValuesEqual(
+  left: Record<string, string>,
+  right: Record<string, string>
+): boolean {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  for (const key of leftKeys) {
+    if (left[key] !== right[key]) return false
+  }
+  return true
+}
+
+function areLiveAuditPairsEqual(left: LiveAuditPair[], right: LiveAuditPair[]): boolean {
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    const current = left[index]
+    const next = right[index]
+    if (!next) return false
+    if (
+      current.id !== next.id ||
+      current.sample !== next.sample ||
+      current.textValue !== next.textValue ||
+      current.surfaceValue !== next.surfaceValue ||
+      current.status !== next.status ||
+      current.contrast !== next.contrast ||
+      current.count !== next.count
+    ) {
+      return false
+    }
+  }
+  return true
+}
 
 function buildColorAuditPairs(
   tokens: ThemeToken[],
@@ -380,6 +491,7 @@ export function CanvasTab({
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
   const [layersPanelVisible, setLayersPanelVisible] = useState(false)
   const [themePanelVisible, setThemePanelVisible] = useState(false)
+  const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
   const [interactMode, setInteractMode] = useState(false)
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 })
   const [isImportingPaper, setIsImportingPaper] = useState(false)
@@ -415,7 +527,15 @@ export function CanvasTab({
     : null
   const selectedComponentItem = selectedItem?.type === "component" ? selectedItem : null
   const selectedEmbedItem = selectedItem?.type === "embed" ? selectedItem : null
+  const selectedMediaItem = selectedItem?.type === "media" ? selectedItem : null
   const selectedArtboardItem = selectedItem?.type === "artboard" ? selectedItem : null
+  const selectedEmbedRenderMode = selectedEmbedItem
+    ? resolveEmbedPreviewMode(
+        selectedEmbedItem.embedPreviewMode,
+        selectedEmbedItem.embedFrameStatus,
+        selectedEmbedItem.url
+      )
+    : "iframe"
   const selectedComponent = selectedComponentItem ? getComponentById(selectedComponentItem.componentId) : null
   const selectedVariant = selectedComponent?.variants[selectedComponentItem?.variantIndex ?? 0]
   const artboardThemeId = selectedArtboardItem?.themeId || activeThemeId
@@ -424,10 +544,15 @@ export function CanvasTab({
 
   useEffect(() => {
     if (!selectedArtboardItem) {
-      setArtboardTokenValues(tokenValues)
+      setArtboardTokenValues((previous) =>
+        areTokenValuesEqual(previous, tokenValues) ? previous : tokenValues
+      )
       return
     }
-    setArtboardTokenValues(getTokenValuesForTheme(artboardThemeId))
+    const nextValues = getTokenValuesForTheme(artboardThemeId)
+    setArtboardTokenValues((previous) =>
+      areTokenValuesEqual(previous, nextValues) ? previous : nextValues
+    )
   }, [selectedArtboardItem, artboardThemeId, getTokenValuesForTheme, tokenValues])
 
   const artboardAuditPairs = useMemo(
@@ -440,7 +565,7 @@ export function CanvasTab({
 
   useEffect(() => {
     if (!selectedArtboardItem || !canvasRootRef.current) {
-      setLiveAuditPairs([])
+      setLiveAuditPairs((previous) => (previous.length === 0 ? previous : []))
       return
     }
 
@@ -450,12 +575,15 @@ export function CanvasTab({
     const content = root?.querySelector<HTMLElement>("[data-artboard-content='true']")
 
     if (!root || !content) {
-      setLiveAuditPairs([])
+      setLiveAuditPairs((previous) => (previous.length === 0 ? previous : []))
       return
     }
 
     const frame = requestAnimationFrame(() => {
-      setLiveAuditPairs(buildLiveAuditPairs(root, content, DEFAULT_CONTRAST_TARGET_LC))
+      const nextPairs = buildLiveAuditPairs(root, content, DEFAULT_CONTRAST_TARGET_LC)
+      setLiveAuditPairs((previous) =>
+        areLiveAuditPairsEqual(previous, nextPairs) ? previous : nextPairs
+      )
     })
 
     return () => cancelAnimationFrame(frame)
@@ -552,7 +680,20 @@ export function CanvasTab({
       return next
     })
   }, [])
+  const toggleCopilotPanel = useCallback(() => {
+    setCopilotPanelVisible((prev) => !prev)
+  }, [])
   const toggleInteractMode = useCallback(() => setInteractMode((prev) => !prev), [])
+
+  useCopilotCanvasActions({
+    items,
+    selectedIds,
+    entries,
+    addItem,
+    updateItem,
+    removeItem,
+    clearCanvas,
+  })
 
   const handleImportFromPaper = useCallback(async () => {
     if (!onImportFromPaper || isImportingPaper) return
@@ -747,6 +888,7 @@ export function CanvasTab({
 
   const handleAddEmbed = useCallback(
     (url: string) => {
+      const normalized = normalizeCanvasEmbedUrl(url)
       const embedWidth = 640
       const embedHeight = 360
       const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
@@ -754,7 +896,12 @@ export function CanvasTab({
 
       addItem({
         type: "embed",
-        url,
+        url: normalized.url,
+        embedPreviewMode: "auto",
+        embedFrameStatus: "unknown",
+        embedSnapshotStatus: "idle",
+        embedLiveStatus: "idle",
+        embedCaptureStatus: "idle",
         position: {
           x: Math.max(0, centerX - embedWidth / 2),
           y: Math.max(0, centerY - embedHeight / 2),
@@ -763,9 +910,264 @@ export function CanvasTab({
         rotation: 0,
       })
 
+      if (normalized.wasNormalized && typeof window !== "undefined") {
+        window.console.info(`[Canvas Embed] ${normalized.reason || "URL normalized."}`)
+      }
       setPropsPanelVisible(true)
     },
     [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+  )
+
+  const handleAddMedia = useCallback(
+    async (input: {
+      src?: string
+      file?: File
+      mediaKind?: CanvasMediaItem["mediaKind"]
+      position?: { x: number; y: number }
+    }) => {
+      let src = input.src?.trim() || ""
+      let mediaKind = input.mediaKind
+      let title: string | undefined
+      let sourceUrl: string | undefined
+      let sourceProvider: string | undefined
+      let sourceCapturedAt: string | undefined
+
+      if (input.file) {
+        const stored = await storeLocalMediaFile(input.file)
+        if (stored.status !== "ready" || !stored.mediaUrl) {
+          const reason = stored.reason || "Failed to upload media file."
+          const canUseSessionBlob =
+            /too large|payload|413|max\s+\d+\s*mb/i.test(reason)
+
+          if (!canUseSessionBlob) {
+            if (typeof window !== "undefined") {
+              window.alert(reason)
+            }
+            return
+          }
+
+          src = URL.createObjectURL(input.file)
+          mediaKind = mediaKind || inferMediaKindFromFile(input.file)
+          title = input.file.name
+          sourceProvider = "local-session"
+          sourceCapturedAt = new Date().toISOString()
+          sourceUrl = `local://${input.file.name}`
+
+          if (typeof window !== "undefined") {
+            window.alert(
+              "File is above persistent upload limit. Added as local-session media (works now, but won’t survive full page reload)."
+            )
+          }
+        } else {
+          src = stored.mediaUrl
+          mediaKind = mediaKind || inferMediaKindFromFile(input.file)
+          title = input.file.name
+          sourceProvider = stored.provider || "local-media-store"
+          sourceCapturedAt = stored.storedAt
+        }
+      }
+
+      if (!src) return
+      mediaKind = mediaKind || inferMediaKindFromSrc(src)
+      sourceUrl = input.file ? undefined : src
+
+      const mediaWidth = 480
+      const mediaHeight = 270
+      const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+      const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+      const targetX = input.position ? input.position.x : centerX
+      const targetY = input.position ? input.position.y : centerY
+
+      addItem({
+        type: "media",
+        src,
+        mediaKind,
+        title,
+        sourceUrl,
+        sourceProvider,
+        sourceCapturedAt,
+        controls: mediaKind === "video",
+        muted: mediaKind === "video" ? true : undefined,
+        loop: mediaKind === "gif",
+        autoplay: false,
+        objectFit: "cover",
+        position: {
+          x: Math.max(0, targetX - mediaWidth / 2),
+          y: Math.max(0, targetY - mediaHeight / 2),
+        },
+        size: { width: mediaWidth, height: mediaHeight },
+        rotation: 0,
+      })
+      setPropsPanelVisible(true)
+    },
+    [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+  )
+
+  const handleDropMediaFiles = useCallback(
+    async (input: { files: File[]; position: { x: number; y: number } }) => {
+      if (!input.files.length) return
+      for (let index = 0; index < input.files.length; index += 1) {
+        const file = input.files[index]
+        await handleAddMedia({
+          file,
+          mediaKind: inferMediaKindFromFile(file),
+          position: {
+            x: input.position.x + index * 24,
+            y: input.position.y + index * 24,
+          },
+        })
+      }
+    },
+    [handleAddMedia]
+  )
+
+  const handlePasteMediaFiles = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return
+      for (let index = 0; index < files.length; index += 1) {
+        const normalized = normalizeClipboardFile(files[index], index)
+        await handleAddMedia({
+          file: normalized,
+          mediaKind: inferMediaKindFromFile(normalized),
+        })
+      }
+    },
+    [handleAddMedia]
+  )
+
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      if (isEditablePasteTarget(event.target)) return
+      const clipboard = event.clipboardData
+      if (!clipboard) return
+
+      const files = Array.from(clipboard.items || [])
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => !!file)
+        .filter((file) => {
+          const type = (file.type || "").toLowerCase()
+          return type.startsWith("image/") || type.startsWith("video/")
+        })
+
+      if (files.length === 0) return
+
+      event.preventDefault()
+      void handlePasteMediaFiles(files)
+      setPropsPanelVisible(true)
+    }
+
+    window.addEventListener("paste", handlePaste)
+    return () => window.removeEventListener("paste", handlePaste)
+  }, [handlePasteMediaFiles])
+
+  const handleCaptureEmbedSnapshots = useCallback(
+    async (input: { targets: EmbedCaptureTarget[]; provider: EmbedCaptureProvider }) => {
+      if (!selectedEmbedItem) return
+      const captureUrl = selectedEmbedItem.url?.trim()
+      if (!captureUrl) return
+      const requestedTargets = Array.from(new Set(input.targets))
+
+      updateItem(selectedEmbedItem.id, {
+        embedCaptureStatus: "capturing",
+        embedCaptureReason: undefined,
+        embedCaptureProvider: input.provider,
+        embedCaptureTargets: requestedTargets,
+      })
+
+      const result = await captureEmbedSnapshots(captureUrl, {
+        targets: requestedTargets,
+        provider: input.provider,
+      })
+
+      if (result.status !== "ready") {
+        updateItem(selectedEmbedItem.id, {
+          embedCaptureStatus: "error",
+          embedCaptureReason: result.reason || "Failed to capture website snapshots.",
+          embedCaptureCapturedAt: result.capturedAt || new Date().toISOString(),
+          embedCaptureProvider: input.provider,
+          embedCaptureTargets: requestedTargets,
+        })
+        return
+      }
+
+      const captureByTarget = new Map(
+        result.captures.map((capture) => [capture.target, capture])
+      )
+      const orderedCaptures = requestedTargets
+        .map((target) => captureByTarget.get(target))
+        .filter((capture): capture is NonNullable<typeof capture> => !!capture)
+      const readyCaptures = orderedCaptures.filter(
+        (capture) => capture.status === "ready" && capture.mediaUrl
+      )
+      const failedTargets = requestedTargets.filter(
+        (target) => !(captureByTarget.get(target)?.status === "ready" && captureByTarget.get(target)?.mediaUrl)
+      )
+
+      if (readyCaptures.length === 0) {
+        updateItem(selectedEmbedItem.id, {
+          embedCaptureStatus: "error",
+          embedCaptureReason: result.reason || "Capture finished but no images were returned.",
+          embedCaptureCapturedAt: result.capturedAt || new Date().toISOString(),
+          embedCaptureProvider: input.provider,
+          embedCaptureTargets: requestedTargets,
+        })
+        return
+      }
+
+      const siblingStartOrder = selectedEmbedItem.parentId
+        ? Math.max(
+            0,
+            ...items
+              .filter((item) => item.parentId === selectedEmbedItem.parentId)
+              .map((item) => item.order ?? 0)
+          ) + 1
+        : undefined
+      const baseX = selectedEmbedItem.position.x
+      const baseY = selectedEmbedItem.position.y + selectedEmbedItem.size.height + 28
+      let nextY = baseY
+      for (let index = 0; index < readyCaptures.length; index += 1) {
+        const capture = readyCaptures[index]
+        const size = getCaptureNodeSize(capture.target, capture.viewport)
+        addItem({
+          type: "media",
+          src: capture.mediaUrl!,
+          mediaKind: "image",
+          title: `${selectedEmbedItem.title || "Website capture"} · ${capture.target}`,
+          sourceUrl: captureUrl,
+          sourceProvider: capture.provider,
+          sourceCapturedAt: capture.capturedAt,
+          controls: false,
+          autoplay: false,
+          objectFit: "cover",
+          position: {
+            x: baseX,
+            y: nextY,
+          },
+          size,
+          rotation: 0,
+          parentId: selectedEmbedItem.parentId,
+          order:
+            siblingStartOrder !== undefined
+              ? siblingStartOrder + index
+              : undefined,
+        })
+        nextY += size.height + 20
+      }
+
+      selectItem(selectedEmbedItem.id)
+      const captureReason = failedTargets.length > 0
+        ? `Captured ${readyCaptures.length}/${requestedTargets.length}. Failed: ${failedTargets.join(", ")}.`
+        : `Captured ${readyCaptures.length} snapshot${readyCaptures.length > 1 ? "s" : ""}.`
+      updateItem(selectedEmbedItem.id, {
+        embedCaptureStatus: failedTargets.length > 0 ? "error" : "ready",
+        embedCaptureReason: captureReason,
+        embedCaptureCapturedAt: result.capturedAt || new Date().toISOString(),
+        embedCaptureProvider: input.provider,
+        embedCaptureTargets: requestedTargets,
+      })
+      setPropsPanelVisible(true)
+    },
+    [addItem, items, selectedEmbedItem, selectItem, updateItem]
   )
 
   const handleAddArtboard = useCallback(() => {
@@ -916,9 +1318,61 @@ export function CanvasTab({
             title: item.title,
             allow: item.allow,
             sandbox: item.sandbox,
+            embedFrameStatus: item.embedFrameStatus,
+            embedFrameReason: item.embedFrameReason,
+            embedFrameCheckedAt: item.embedFrameCheckedAt,
+            embedFrameCheckedUrl: item.embedFrameCheckedUrl,
+            embedPreviewMode: item.embedPreviewMode,
+            embedSnapshotStatus: item.embedSnapshotStatus,
+            embedSnapshotUrl: item.embedSnapshotUrl,
+            embedSnapshotReason: item.embedSnapshotReason,
+            embedSnapshotCapturedAt: item.embedSnapshotCapturedAt,
+            embedSnapshotSourceUrl: item.embedSnapshotSourceUrl,
+            embedSnapshotProvider: item.embedSnapshotProvider,
+            embedLiveStatus: item.embedLiveStatus,
+            embedLiveUrl: item.embedLiveUrl,
+            embedLiveSessionId: item.embedLiveSessionId,
+            embedLiveProvider: item.embedLiveProvider,
+            embedLiveReason: item.embedLiveReason,
+            embedLiveSourceUrl: item.embedLiveSourceUrl,
+            embedLiveStartedAt: item.embedLiveStartedAt,
+            embedLiveExpiresAt: item.embedLiveExpiresAt,
+            embedCaptureStatus: item.embedCaptureStatus,
+            embedCaptureReason: item.embedCaptureReason,
+            embedCaptureCapturedAt: item.embedCaptureCapturedAt,
+            embedCaptureProvider: item.embedCaptureProvider,
+            embedCaptureTargets: item.embedCaptureTargets,
             embedState: item.embedState,
             embedOrigin: item.embedOrigin,
             embedStateVersion: item.embedStateVersion,
+            position: { ...item.position },
+            size: { ...item.size },
+            rotation: item.rotation,
+            parentId,
+            order: item.order,
+          })
+          idMap.set(item.id, newId)
+          return
+        }
+
+        if (item.type === "media") {
+          const newId = addItem({
+            type: "media",
+            src: item.src,
+            alt: item.alt,
+            title: item.title,
+            poster: item.poster,
+            mediaKind: item.mediaKind,
+            controls: item.controls,
+            autoplay: item.autoplay,
+            muted: item.muted,
+            loop: item.loop,
+            clipStartSec: item.clipStartSec,
+            clipEndSec: item.clipEndSec,
+            objectFit: item.objectFit,
+            sourceUrl: item.sourceUrl,
+            sourceProvider: item.sourceProvider,
+            sourceCapturedAt: item.sourceCapturedAt,
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
@@ -1063,6 +1517,7 @@ export function CanvasTab({
           onToggleScenes={toggleScenes}
           onToggleLayers={toggleLayers}
           onToggleThemePanel={toggleThemePanel}
+          onToggleCopilotPanel={toggleCopilotPanel}
           onToggleInteractMode={toggleInteractMode}
           onAddArtboard={handleAddArtboard}
           onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
@@ -1080,6 +1535,7 @@ export function CanvasTab({
           scenesVisible={scenesPanelVisible}
           layersVisible={layersPanelVisible}
           themePanelVisible={themePanelVisible}
+          copilotPanelVisible={copilotPanelVisible}
           importingPaper={isImportingPaper}
           Button={Button}
           Tooltip={Tooltip}
@@ -1103,6 +1559,7 @@ export function CanvasTab({
               <CanvasSidebar
                 entries={entries}
                 onAddEmbed={handleAddEmbed}
+                onAddMedia={handleAddMedia}
                 importQueue={importQueue}
                 onAddImportedComponent={handleAddImportedComponent}
                 onClearImportQueue={() => setImportQueue([])}
@@ -1137,6 +1594,7 @@ export function CanvasTab({
             onWheel={handleWheel}
             onDimensionsChange={handleDimensionsChange}
             getGroupBounds={getGroupBounds}
+            onDropMediaFiles={handleDropMediaFiles}
           />
 
           {/* Right sidebar - Props Panel (single selection only) */}
@@ -1161,11 +1619,153 @@ export function CanvasTab({
               title={selectedEmbedItem.title}
               allow={selectedEmbedItem.allow}
               sandbox={selectedEmbedItem.sandbox}
+              embedPreviewMode={selectedEmbedItem.embedPreviewMode}
+              resolvedEmbedPreviewMode={selectedEmbedRenderMode}
+              embedFrameStatus={selectedEmbedItem.embedFrameStatus}
+              embedFrameReason={selectedEmbedItem.embedFrameReason}
+              embedFrameCheckedAt={selectedEmbedItem.embedFrameCheckedAt}
+              embedSnapshotStatus={selectedEmbedItem.embedSnapshotStatus}
+              embedSnapshotReason={selectedEmbedItem.embedSnapshotReason}
+              embedSnapshotCapturedAt={selectedEmbedItem.embedSnapshotCapturedAt}
+              embedSnapshotProvider={selectedEmbedItem.embedSnapshotProvider}
+              embedLiveStatus={selectedEmbedItem.embedLiveStatus}
+              embedLiveReason={selectedEmbedItem.embedLiveReason}
+              embedLiveProvider={selectedEmbedItem.embedLiveProvider}
+              embedLiveExpiresAt={selectedEmbedItem.embedLiveExpiresAt}
+              embedCaptureStatus={selectedEmbedItem.embedCaptureStatus}
+              embedCaptureReason={selectedEmbedItem.embedCaptureReason}
+              embedCaptureCapturedAt={selectedEmbedItem.embedCaptureCapturedAt}
+              embedCaptureProvider={selectedEmbedItem.embedCaptureProvider}
+              embedCaptureTargets={selectedEmbedItem.embedCaptureTargets}
               embedOrigin={selectedEmbedItem.embedOrigin}
               embedStateVersion={selectedEmbedItem.embedStateVersion}
               hasEmbedState={selectedEmbedItem.embedState !== undefined}
+              onCheckFramePolicy={() =>
+                updateItem(selectedEmbedItem.id, {
+                  embedFrameStatus: "unknown",
+                  embedFrameReason: undefined,
+                  embedFrameCheckedAt: undefined,
+                  embedFrameCheckedUrl: undefined,
+                })
+              }
+              onRefreshSnapshot={() =>
+                updateItem(selectedEmbedItem.id, {
+                  embedSnapshotStatus: "idle",
+                  embedSnapshotUrl: undefined,
+                  embedSnapshotReason: undefined,
+                  embedSnapshotCapturedAt: undefined,
+                  embedSnapshotSourceUrl: undefined,
+                  embedSnapshotProvider: undefined,
+                })
+              }
+              onStartLiveSession={() =>
+                updateItem(selectedEmbedItem.id, {
+                  embedPreviewMode: "live",
+                  embedLiveStatus: "idle",
+                  embedLiveReason: undefined,
+                  embedLiveSourceUrl: undefined,
+                })
+              }
+              onCaptureSnapshots={handleCaptureEmbedSnapshots}
+              onStopLiveSession={async () => {
+                if (selectedEmbedItem.embedLiveSessionId) {
+                  await stopEmbedLiveSession(selectedEmbedItem.embedLiveSessionId)
+                }
+                updateItem(selectedEmbedItem.id, {
+                  embedLiveStatus: "idle",
+                  embedLiveReason: undefined,
+                  embedLiveUrl: undefined,
+                  embedLiveSessionId: undefined,
+                  embedLiveProvider: undefined,
+                  embedLiveSourceUrl: undefined,
+                  embedLiveStartedAt: undefined,
+                  embedLiveExpiresAt: undefined,
+                })
+              }}
               onRequestState={() => requestSingleEmbedState(selectedEmbedItem.id)}
-              onChange={(updates) => updateItem(selectedEmbedItem.id, updates)}
+              onChange={(updates) => {
+                if (
+                  updates.embedPreviewMode !== undefined &&
+                  updates.embedPreviewMode !== "live" &&
+                  selectedEmbedItem.embedLiveSessionId
+                ) {
+                  void stopEmbedLiveSession(selectedEmbedItem.embedLiveSessionId)
+                }
+
+                if (updates.url !== undefined && updates.url !== selectedEmbedItem.url) {
+                  updateItem(selectedEmbedItem.id, {
+                    ...updates,
+                    embedFrameStatus: "unknown",
+                    embedFrameReason: undefined,
+                    embedFrameCheckedAt: undefined,
+                    embedFrameCheckedUrl: undefined,
+                    embedSnapshotStatus: "idle",
+                    embedSnapshotUrl: undefined,
+                    embedSnapshotReason: undefined,
+                    embedSnapshotCapturedAt: undefined,
+                    embedSnapshotSourceUrl: undefined,
+                    embedSnapshotProvider: undefined,
+                    embedCaptureStatus: "idle",
+                    embedCaptureReason: undefined,
+                    embedCaptureCapturedAt: undefined,
+                    embedCaptureProvider: undefined,
+                    embedCaptureTargets: undefined,
+                    embedLiveStatus: "idle",
+                    embedLiveUrl: undefined,
+                    embedLiveSessionId: undefined,
+                    embedLiveProvider: undefined,
+                    embedLiveReason: undefined,
+                    embedLiveSourceUrl: undefined,
+                    embedLiveStartedAt: undefined,
+                    embedLiveExpiresAt: undefined,
+                  })
+                  return
+                }
+
+                if (updates.embedPreviewMode === "live") {
+                  updateItem(selectedEmbedItem.id, {
+                    ...updates,
+                    embedLiveStatus: "idle",
+                    embedLiveReason: undefined,
+                    embedLiveSourceUrl: undefined,
+                  })
+                  return
+                }
+
+                if (updates.embedPreviewMode === "snapshot") {
+                  updateItem(selectedEmbedItem.id, {
+                    ...updates,
+                    embedSnapshotStatus: "idle",
+                    embedSnapshotReason: undefined,
+                    embedSnapshotSourceUrl: undefined,
+                  })
+                  return
+                }
+
+                updateItem(selectedEmbedItem.id, updates)
+              }}
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedMediaItem && (
+            <CanvasMediaPropsPanel
+              src={selectedMediaItem.src}
+              alt={selectedMediaItem.alt}
+              title={selectedMediaItem.title}
+              poster={selectedMediaItem.poster}
+              mediaKind={selectedMediaItem.mediaKind}
+              controls={selectedMediaItem.controls}
+              autoplay={selectedMediaItem.autoplay}
+              muted={selectedMediaItem.muted}
+              loop={selectedMediaItem.loop}
+              clipStartSec={selectedMediaItem.clipStartSec}
+              clipEndSec={selectedMediaItem.clipEndSec}
+              objectFit={selectedMediaItem.objectFit}
+              sourceUrl={selectedMediaItem.sourceUrl}
+              sourceProvider={selectedMediaItem.sourceProvider}
+              sourceCapturedAt={selectedMediaItem.sourceCapturedAt}
+              onChange={(updates) => updateItem(selectedMediaItem.id, updates)}
               onClose={handleClosePropsPanel}
             />
           )}
@@ -1240,6 +1840,19 @@ export function CanvasTab({
               onClose={() => setScenesPanelVisible(false)}
               Button={Button}
             />
+          )}
+
+          {copilotPanelVisible && (
+            <div
+              className="flex h-full w-[360px] shrink-0 border-l border-default bg-white"
+              data-canvas-ignore="true"
+            >
+              <CopilotChat
+                instructions={COPILOT_INSTRUCTIONS}
+                suggestions="manual"
+                className="h-full w-full"
+              />
+            </div>
           )}
 
           <DragOverlay>

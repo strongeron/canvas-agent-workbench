@@ -6,6 +6,14 @@ import type { Gamut, Oklch } from "./types";
 export const APCA_MIN = 15;
 export const APCA_MAX = 105;
 
+function toApcaLuminanceY(color: Oklch, gamut: Gamut): number {
+  const [r, g, b] = clampRgb(...oklchToRgb(color, gamut));
+  if (gamut === "srgb") {
+    return sRGBtoY([Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)]);
+  }
+  return displayP3toY([r, g, b]);
+}
+
 function cssToOklch(css: string): Oklch | null {
   const match = css.match(/oklch\(([^)]+)\)/);
   if (!match) return null;
@@ -31,19 +39,18 @@ function cssToOklch(css: string): Oklch | null {
 }
 
 export function calculateApcaContrast(foreground: Oklch, background: Oklch, gamut: Gamut): number {
-  const [fgR, fgG, fgB] = clampRgb(...oklchToRgb(foreground, gamut));
-  const [bgR, bgG, bgB] = clampRgb(...oklchToRgb(background, gamut));
+  const bgY = toApcaLuminanceY(background, gamut);
+  return calculateApcaContrastWithBackgroundY(foreground, bgY, gamut);
+}
 
-  const fgY = gamut === "srgb"
-    ? sRGBtoY([Math.round(fgR * 255), Math.round(fgG * 255), Math.round(fgB * 255)])
-    : displayP3toY([fgR, fgG, fgB]);
-
-  const bgY = gamut === "srgb"
-    ? sRGBtoY([Math.round(bgR * 255), Math.round(bgG * 255), Math.round(bgB * 255)])
-    : displayP3toY([bgR, bgG, bgB]);
-
-  const lc = APCAcontrast(fgY, bgY);
+export function calculateApcaContrastWithBackgroundY(foreground: Oklch, backgroundY: number, gamut: Gamut): number {
+  const fgY = toApcaLuminanceY(foreground, gamut);
+  const lc = APCAcontrast(fgY, backgroundY);
   return typeof lc === "number" ? Math.abs(lc) : 0;
+}
+
+export function precomputeApcaBackgroundY(background: Oklch, gamut: Gamut): number {
+  return toApcaLuminanceY(background, gamut);
 }
 
 export function generateApcaColor(
