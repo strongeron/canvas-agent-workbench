@@ -15,6 +15,7 @@ import {
   type GalleryEntry,
   type PaperMcpClient,
 } from "../core"
+import type { InteractivePropsSchema } from "../core/types"
 
 import {
   CanvasTab,
@@ -35,6 +36,7 @@ import { Input, type InputProps } from "./components/Input"
 import { Card, type CardProps } from "./components/Card"
 import { Modal, type ModalProps } from "./components/Modal"
 import { Select, type SelectProps } from "./components/Select"
+import { TypographyHero, type TypographyHeroProps } from "./components/TypographyHero"
 import { Tooltip } from "./components/Tooltip"
 import { projectPacks } from "../projects/pack"
 import { allTokens as thicketTokens, type DesignToken } from "../demo-thicket/designTokens"
@@ -548,11 +550,124 @@ const selectEntry: GalleryEntry<SelectProps> = {
   ],
 }
 
+const typographyHeroInteractiveSchema: InteractivePropsSchema = {
+  eyebrow: {
+    type: "text",
+    label: "Eyebrow",
+  },
+  headline: {
+    type: "textarea",
+    label: "Headline",
+  },
+  subheadline: {
+    type: "textarea",
+    label: "Subheadline",
+  },
+  ctaPrimary: {
+    type: "text",
+    label: "Primary CTA",
+  },
+  ctaSecondary: {
+    type: "text",
+    label: "Secondary CTA",
+  },
+  align: {
+    type: "radio",
+    label: "Alignment",
+    options: [
+      { value: "left", label: "Left" },
+      { value: "center", label: "Center" },
+    ],
+  },
+  displayFont: {
+    type: "text",
+    label: "Display Font Stack",
+    placeholder: "\"Manrope\", \"Inter\", system-ui, sans-serif",
+  },
+  bodyFont: {
+    type: "text",
+    label: "Body Font Stack",
+    placeholder: "\"Inter\", system-ui, sans-serif",
+  },
+}
+
+const typographyHeroEntry: GalleryEntry<TypographyHeroProps> = {
+  id: "marketing/typography-hero",
+  name: "Typography Hero",
+  category: "Typography",
+  importPath: "@/components/TypographyHero",
+  layoutSize: "full",
+  variants: [
+    {
+      name: "Default",
+      description: "Left-aligned hero powered by theme tokens.",
+      props: {
+        eyebrow: "Typography exploration",
+        headline: "Ship a hero that looks intentional, not generic.",
+        subheadline:
+          "Test headline rhythm, body readability, and CTA hierarchy side by side on one canvas.",
+        ctaPrimary: "Run comparison",
+        ctaSecondary: "Open style guide",
+        align: "left",
+        displayFont: "",
+        bodyFont: "",
+      },
+      status: "prod",
+      category: "variant",
+      interactiveSchema: typographyHeroInteractiveSchema,
+    },
+    {
+      name: "Centered Launch",
+      description: "Centered hero for launch and announcement layouts.",
+      props: {
+        eyebrow: "Launch campaign",
+        headline: "Find the font pair that turns browsing into action.",
+        subheadline:
+          "Explore combinations quickly, then lock your preferred typography system into the active theme.",
+        ctaPrimary: "Generate board",
+        ctaSecondary: "Compare in canvas",
+        align: "center",
+        displayFont: "",
+        bodyFont: "",
+      },
+      status: "prod",
+      category: "variant",
+      interactiveSchema: typographyHeroInteractiveSchema,
+    },
+    {
+      name: "Interactive",
+      description: "Tune copy, alignment, and explicit font stacks in the side panel.",
+      props: {
+        eyebrow: "Typography exploration",
+        headline: "Test multiple hero directions with AI and side-panel controls.",
+        subheadline:
+          "Use displayFont and bodyFont to override defaults, or leave them empty to follow theme tokens.",
+        ctaPrimary: "Try pair",
+        ctaSecondary: "Save direction",
+        align: "left",
+        displayFont: "",
+        bodyFont: "",
+      },
+      status: "prod",
+      category: "interactive",
+      interactiveSchema: typographyHeroInteractiveSchema,
+    },
+  ],
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ADAPTER SETUP
 // ─────────────────────────────────────────────────────────────────────────────
 
-const demoEntries = [buttonEntry, badgeEntry, inputEntry, cardEntry, modalEntry, selectEntry]
+const demoEntries = [
+  buttonEntry,
+  badgeEntry,
+  inputEntry,
+  cardEntry,
+  modalEntry,
+  selectEntry,
+  typographyHeroEntry,
+]
 
 const demoComponentMap = {
   Button,
@@ -561,6 +676,7 @@ const demoComponentMap = {
   Card,
   Modal,
   Select,
+  "Typography Hero": TypographyHero,
 }
 
 function CanvasButton({

@@ -7,6 +7,9 @@ import type {
   CanvasItemUpdate,
   CanvasComponentItem,
   CanvasEmbedItem as CanvasEmbedItemType,
+  CanvasMermaidItem as CanvasMermaidItemType,
+  CanvasExcalidrawItem as CanvasExcalidrawItemType,
+  CanvasMarkdownItem as CanvasMarkdownItemType,
   CanvasMediaItem as CanvasMediaItemType,
   CanvasArtboardItem as CanvasArtboardItemType,
   CanvasTransform,
@@ -16,8 +19,14 @@ import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import { CanvasArtboardItem as CanvasArtboardItemComponent } from "./CanvasArtboardItem"
 import { CanvasEmbedItem as CanvasEmbedItemComponent } from "./CanvasEmbedItem"
 import { CanvasLayoutComponentItem } from "./CanvasLayoutComponentItem"
+import { CanvasLayoutExcalidrawItem } from "./CanvasLayoutExcalidrawItem"
 import { CanvasLayoutEmbedItem } from "./CanvasLayoutEmbedItem"
 import { CanvasLayoutMediaItem } from "./CanvasLayoutMediaItem"
+import { CanvasLayoutMermaidItem } from "./CanvasLayoutMermaidItem"
+import { CanvasLayoutMarkdownItem } from "./CanvasLayoutMarkdownItem"
+import { CanvasExcalidrawItem as CanvasExcalidrawItemComponent } from "./CanvasExcalidrawItem"
+import { CanvasMarkdownItem as CanvasMarkdownItemComponent } from "./CanvasMarkdownItem"
+import { CanvasMermaidItem as CanvasMermaidItemComponent } from "./CanvasMermaidItem"
 import { CanvasMediaItem as CanvasMediaItemComponent } from "./CanvasMediaItem"
 import { CanvasItem } from "./CanvasItem"
 
@@ -168,7 +177,15 @@ export function CanvasWorkspace({
     (artboardId: string) => {
       return items
         .filter(
-          (item): item is CanvasComponentItem | CanvasEmbedItemType | CanvasMediaItemType =>
+          (
+            item
+          ): item is
+            | CanvasComponentItem
+            | CanvasEmbedItemType
+            | CanvasMediaItemType
+            | CanvasMermaidItemType
+            | CanvasExcalidrawItemType
+            | CanvasMarkdownItemType =>
             item.type !== "artboard" && item.parentId === artboardId
         )
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -177,7 +194,15 @@ export function CanvasWorkspace({
   )
 
   const renderLayoutChild = useCallback(
-    (child: CanvasComponentItem | CanvasEmbedItemType | CanvasMediaItemType) => {
+    (
+      child:
+        | CanvasComponentItem
+        | CanvasEmbedItemType
+        | CanvasMediaItemType
+        | CanvasMermaidItemType
+        | CanvasExcalidrawItemType
+        | CanvasMarkdownItemType
+    ) => {
       const isSelected = selectedIds.includes(child.id)
 
       if (child.type === "embed") {
@@ -209,6 +234,66 @@ export function CanvasWorkspace({
             data-artboard-child="true"
           >
             <CanvasLayoutMediaItem
+              item={child}
+              isSelected={isSelected}
+              onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
+              onUpdate={(updates) => onUpdateItem(child.id, updates)}
+              scale={transform.scale}
+              interactMode={interactMode}
+            />
+          </div>
+        )
+      }
+
+      if (child.type === "mermaid") {
+        return (
+          <div
+            key={child.id}
+            className="relative"
+            style={{ width: child.size.width, height: child.size.height }}
+            data-artboard-child="true"
+          >
+            <CanvasLayoutMermaidItem
+              item={child}
+              isSelected={isSelected}
+              onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
+              onUpdate={(updates) => onUpdateItem(child.id, updates)}
+              scale={transform.scale}
+              interactMode={interactMode}
+            />
+          </div>
+        )
+      }
+
+      if (child.type === "excalidraw") {
+        return (
+          <div
+            key={child.id}
+            className="relative"
+            style={{ width: child.size.width, height: child.size.height }}
+            data-artboard-child="true"
+          >
+            <CanvasLayoutExcalidrawItem
+              item={child}
+              isSelected={isSelected}
+              onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
+              onUpdate={(updates) => onUpdateItem(child.id, updates)}
+              scale={transform.scale}
+              interactMode={interactMode}
+            />
+          </div>
+        )
+      }
+
+      if (child.type === "markdown") {
+        return (
+          <div
+            key={child.id}
+            className="relative"
+            style={{ width: child.size.width, height: child.size.height }}
+            data-artboard-child="true"
+          >
+            <CanvasLayoutMarkdownItem
               item={child}
               isSelected={isSelected}
               onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
@@ -610,6 +695,45 @@ export function CanvasWorkspace({
             )
           }
 
+          if (item.type === "mermaid") {
+            return (
+              <CanvasMermaidItemComponent
+                key={item.id}
+                {...commonProps}
+                item={item as CanvasMermaidItemType}
+                onUpdate={(updates: Partial<Omit<CanvasMermaidItemType, "id">>) =>
+                  onUpdateItem(item.id, updates)
+                }
+              />
+            )
+          }
+
+          if (item.type === "excalidraw") {
+            return (
+              <CanvasExcalidrawItemComponent
+                key={item.id}
+                {...commonProps}
+                item={item as CanvasExcalidrawItemType}
+                onUpdate={(updates: Partial<Omit<CanvasExcalidrawItemType, "id">>) =>
+                  onUpdateItem(item.id, updates)
+                }
+              />
+            )
+          }
+
+          if (item.type === "markdown") {
+            return (
+              <CanvasMarkdownItemComponent
+                key={item.id}
+                {...commonProps}
+                item={item as CanvasMarkdownItemType}
+                onUpdate={(updates: Partial<Omit<CanvasMarkdownItemType, "id">>) =>
+                  onUpdateItem(item.id, updates)
+                }
+              />
+            )
+          }
+
           return (
             <CanvasItem
               key={item.id}
@@ -647,7 +771,7 @@ export function CanvasWorkspace({
               Shift+click for multi-select • Drag to box-select
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Drop image/video/GIF files directly on canvas
+              Drop image/video/GIF, `.md`, `.mmd`, or `.excalidraw` files on canvas
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               Paste screenshots with Cmd/Ctrl+V

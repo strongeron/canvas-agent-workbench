@@ -14,6 +14,7 @@ import { useState, useCallback, useMemo } from "react"
 
 import type { InteractivePropsSchema, ComponentVariant } from "../../core/types"
 import { PropControl } from "../PropControl"
+import { FONT_PAIR_PRESETS, getFontPairById } from "./fontPairs"
 
 /** Minimal component info needed for the props panel */
 interface ComponentInfo {
@@ -29,6 +30,7 @@ interface CanvasPropsPanelProps {
   schema: InteractivePropsSchema | null
   values: Record<string, unknown>
   onChange: (propName: string, value: unknown) => void
+  onChangeMany?: (updates: Record<string, unknown>) => void
   onReset: () => void
   onClose: () => void
   onVariantChange: (variantIndex: number) => void
@@ -42,6 +44,7 @@ export function CanvasPropsPanel({
   schema,
   values,
   onChange,
+  onChangeMany,
   onReset,
   onClose,
   onVariantChange,
@@ -54,6 +57,14 @@ export function CanvasPropsPanel({
 
   const hasSchema = schema && Object.keys(schema).length > 0
   const schemaEntries = hasSchema ? Object.entries(schema) : []
+  const hasTypographyControls = Boolean(
+    schema?.displayFont || schema?.bodyFont || schema?.fontPairId
+  )
+  const currentFontPairId = typeof values.fontPairId === "string" ? values.fontPairId : ""
+  const activeFontPair = useMemo(
+    () => getFontPairById(currentFontPairId),
+    [currentFontPairId]
+  )
 
   // Get all variants for the dropdown
   const variants = useMemo(() => {
@@ -80,21 +91,77 @@ export function CanvasPropsPanel({
   const handleJsonSave = useCallback(() => {
     try {
       const parsed = JSON.parse(jsonValue)
-      // Apply all props from JSON
-      Object.entries(parsed).forEach(([key, value]) => {
-        onChange(key, value)
-      })
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        if (onChangeMany) {
+          onChangeMany(parsed as Record<string, unknown>)
+        } else {
+          // Fallback for legacy caller
+          Object.entries(parsed).forEach(([key, value]) => {
+            onChange(key, value)
+          })
+        }
+      } else {
+        setJsonError("JSON must be an object")
+        return
+      }
       setJsonEditMode(false)
       setJsonError(null)
-    } catch (e) {
+    } catch {
       setJsonError("Invalid JSON")
     }
-  }, [jsonValue, onChange])
+  }, [jsonValue, onChange, onChangeMany])
 
   const handleJsonCancel = useCallback(() => {
     setJsonEditMode(false)
     setJsonError(null)
   }, [])
+
+  const handleApplyFontPair = useCallback(
+    (pairId: string) => {
+      if (!pairId) {
+        if (onChangeMany) {
+          onChangeMany({
+            fontPairId: "",
+            displayFont: "",
+            bodyFont: "",
+          })
+        } else {
+          onChange("fontPairId", "")
+          onChange("displayFont", "")
+          onChange("bodyFont", "")
+        }
+        return
+      }
+      const pair = getFontPairById(pairId)
+      if (!pair) return
+      if (onChangeMany) {
+        onChangeMany({
+          fontPairId: pair.id,
+          displayFont: pair.displayFamily,
+          bodyFont: pair.bodyFamily,
+        })
+      } else {
+        onChange("fontPairId", pair.id)
+        onChange("displayFont", pair.displayFamily)
+        onChange("bodyFont", pair.bodyFamily)
+      }
+    },
+    [onChange, onChangeMany]
+  )
+
+  const handleResetTypography = useCallback(() => {
+    if (onChangeMany) {
+      onChangeMany({
+        fontPairId: "",
+        displayFont: "",
+        bodyFont: "",
+      })
+      return
+    }
+    onChange("fontPairId", "")
+    onChange("displayFont", "")
+    onChange("bodyFont", "")
+  }, [onChange, onChangeMany])
 
   // Handle individual prop change for JSON-only mode
   const handleJsonPropChange = useCallback(
@@ -191,6 +258,40 @@ export function CanvasPropsPanel({
         {hasSchema ? (
           // Interactive schema controls
           <div className="space-y-4">
+            {hasTypographyControls && (
+              <div className="space-y-2 rounded-md border border-default bg-surface-50 p-3">
+                <label className="block text-[11px] font-medium text-muted-foreground">
+                  Typography Preset
+                </label>
+                <div className="relative">
+                  <select
+                    value={activeFontPair?.id || ""}
+                    onChange={(e) => handleApplyFontPair(e.target.value)}
+                    className="h-8 w-full appearance-none rounded-md border border-default bg-white px-2.5 pr-8 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+                  >
+                    <option value="">Theme/default fonts</option>
+                    {FONT_PAIR_PRESETS.map((pair) => (
+                      <option key={pair.id} value={pair.id}>
+                        {pair.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                </div>
+                {activeFontPair?.description && (
+                  <p className="text-[10px] leading-tight text-muted">
+                    {activeFontPair.description}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleResetTypography}
+                  className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+                >
+                  Use theme font tokens
+                </button>
+              </div>
+            )}
             {schemaEntries.map(([propName, propSchema]) => (
               <PropControl
                 key={propName}
