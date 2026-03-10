@@ -19,6 +19,15 @@ function normalizeItem(item: CanvasItem | any): CanvasItem {
   if (item?.type === "media") {
     return { ...item, type: "media" }
   }
+  if (item?.type === "mermaid") {
+    return { ...item, type: "mermaid" }
+  }
+  if (item?.type === "excalidraw") {
+    return { ...item, type: "excalidraw" }
+  }
+  if (item?.type === "markdown") {
+    return { ...item, type: "markdown" }
+  }
   if (item?.type === "artboard") {
     return { ...item, type: "artboard" }
   }

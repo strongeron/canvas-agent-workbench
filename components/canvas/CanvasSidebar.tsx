@@ -96,6 +96,23 @@ interface CanvasSidebarProps {
     file?: File
     mediaKind?: "image" | "video" | "gif"
   }) => void | Promise<void>
+  /** Add a Mermaid diagram node */
+  onAddMermaid?: (input: {
+    source?: string
+    title?: string
+    mermaidTheme?: "default" | "neutral" | "dark" | "forest" | "base"
+    background?: string
+  }) => void | Promise<void>
+  /** Add an Excalidraw sketch node */
+  onAddExcalidraw?: (input?: { title?: string }) => void | Promise<void>
+  /** Add a Markdown node */
+  onAddMarkdown?: (input?: {
+    source?: string
+    title?: string
+    background?: string
+  }) => void | Promise<void>
+  /** Import markdown/diagram files (.md/.mmd/.mermaid/.excalidraw) */
+  onImportDiagramFile?: (file: File) => void | Promise<void>
   /** Recent imports */
   importQueue?: PaperImportQueueItem[]
   onAddImportedComponent?: (componentId: string, variantIndex?: number) => void
@@ -111,6 +128,10 @@ export function CanvasSidebar({
   entries,
   onAddEmbed,
   onAddMedia,
+  onAddMermaid,
+  onAddExcalidraw,
+  onAddMarkdown,
+  onImportDiagramFile,
   importQueue,
   onAddImportedComponent,
   onClearImportQueue,
@@ -132,9 +153,19 @@ export function CanvasSidebar({
   const [mediaUrl, setMediaUrl] = useState("")
   const [mediaKind, setMediaKind] = useState<"image" | "video" | "gif">("image")
   const [mediaFile, setMediaFile] = useState<File | null>(null)
+  const [mermaidSource, setMermaidSource] = useState("")
+  const [mermaidTitle, setMermaidTitle] = useState("")
+  const [mermaidTheme, setMermaidTheme] = useState<"default" | "neutral" | "dark" | "forest" | "base">("default")
+  const [mermaidBackground, setMermaidBackground] = useState("")
+  const [excalidrawTitle, setExcalidrawTitle] = useState("")
+  const [markdownTitle, setMarkdownTitle] = useState("")
+  const [markdownBackground, setMarkdownBackground] = useState("")
+  const [markdownSource, setMarkdownSource] = useState("")
+  const [diagramFile, setDiagramFile] = useState<File | null>(null)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedComponents, setExpandedComponents] = useState<Set<string>>(new Set())
   const mediaFileInputRef = useRef<HTMLInputElement>(null)
+  const diagramFileInputRef = useRef<HTMLInputElement>(null)
 
   // Group entries by category
   const componentsByCategory = useMemo(() => {
@@ -243,7 +274,7 @@ export function CanvasSidebar({
   }, [handleDiscoverLocalApps, localAppsStatus])
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-default bg-white">
+    <aside className="flex h-full min-h-0 w-72 shrink-0 flex-col overflow-y-auto border-r border-default bg-white">
       {projects && projects.length > 0 && (
         <div className="border-b border-default p-3">
           <div className="mb-2 flex items-center justify-between">
@@ -488,6 +519,186 @@ export function CanvasSidebar({
         </div>
       </div>
 
+      {(onAddMermaid || onAddExcalidraw || onAddMarkdown || onImportDiagramFile) && (
+        <div className="border-b border-default p-3">
+          <h3 className="mb-2 text-sm font-semibold text-foreground">Diagrams</h3>
+          <div className="space-y-2">
+            {onAddMermaid && (
+              <div className="rounded-md border border-default bg-surface-50 p-2">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Mermaid
+                </div>
+                <input
+                  type="text"
+                  value={mermaidTitle}
+                  onChange={(event) => setMermaidTitle(event.target.value)}
+                  placeholder="Diagram title (optional)"
+                  className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <select
+                    value={mermaidTheme}
+                    onChange={(event) =>
+                      setMermaidTheme(
+                        event.target.value as "default" | "neutral" | "dark" | "forest" | "base"
+                      )
+                    }
+                    className="rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  >
+                    <option value="default">Default</option>
+                    <option value="neutral">Neutral</option>
+                    <option value="dark">Dark</option>
+                    <option value="forest">Forest</option>
+                    <option value="base">Base</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={mermaidBackground}
+                    onChange={(event) => setMermaidBackground(event.target.value)}
+                    placeholder="Background"
+                    className="rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                </div>
+                <textarea
+                  value={mermaidSource}
+                  onChange={(event) => setMermaidSource(event.target.value)}
+                  rows={6}
+                  placeholder={`flowchart LR
+A-->B`}
+                  className="mt-2 min-h-[110px] w-full rounded-md border border-default bg-white px-2 py-1.5 font-mono text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onAddMermaid({
+                      source: mermaidSource.trim() || undefined,
+                      title: mermaidTitle.trim() || undefined,
+                      mermaidTheme,
+                      background: mermaidBackground.trim() || undefined,
+                    })
+                    setMermaidTitle("")
+                  }}
+                  className="mt-2 w-full rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+                >
+                  Add Mermaid
+                </button>
+              </div>
+            )}
+
+            {onAddExcalidraw && (
+              <div className="rounded-md border border-default bg-surface-50 p-2">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Excalidraw
+                </div>
+                <input
+                  type="text"
+                  value={excalidrawTitle}
+                  onChange={(event) => setExcalidrawTitle(event.target.value)}
+                  placeholder="Sketch title (optional)"
+                  className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onAddExcalidraw({ title: excalidrawTitle.trim() || undefined })
+                    setExcalidrawTitle("")
+                  }}
+                  className="mt-2 w-full rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+                >
+                  Add Excalidraw
+                </button>
+              </div>
+            )}
+
+            {onAddMarkdown && (
+              <div className="rounded-md border border-default bg-surface-50 p-2">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Markdown
+                </div>
+                <input
+                  type="text"
+                  value={markdownTitle}
+                  onChange={(event) => setMarkdownTitle(event.target.value)}
+                  placeholder="Document title (optional)"
+                  className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <div className="mt-2 grid grid-cols-1 gap-2">
+                  <input
+                    type="text"
+                    value={markdownBackground}
+                    onChange={(event) => setMarkdownBackground(event.target.value)}
+                    placeholder="Background"
+                    className="rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                </div>
+                <textarea
+                  value={markdownSource}
+                  onChange={(event) => setMarkdownSource(event.target.value)}
+                  rows={5}
+                  placeholder={`# Document title\n\nAdd your markdown text here...`}
+                  className="mt-2 min-h-[110px] w-full rounded-md border border-default bg-white px-2 py-1.5 font-mono text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Mermaid fences are supported: <code className="font-mono">```mermaid</code>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onAddMarkdown({
+                      source: markdownSource.trim() || undefined,
+                      title: markdownTitle.trim() || undefined,
+                      background: markdownBackground.trim() || undefined,
+                    })
+                    setMarkdownTitle("")
+                    setMarkdownBackground("")
+                    setMarkdownSource("")
+                  }}
+                  className="mt-2 w-full rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+                >
+                  Add Markdown
+                </button>
+              </div>
+            )}
+
+            {onImportDiagramFile && (
+              <div className="rounded-md border border-default bg-surface-50 p-2">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Import Diagram File
+                </div>
+                <input
+                  ref={diagramFileInputRef}
+                  type="file"
+                  accept=".md,.markdown,.mmd,.mermaid,.mdm,.excalidraw,application/json,text/plain"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] || null
+                    setDiagramFile(file)
+                  }}
+                  className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground file:mr-2 file:rounded file:border file:border-default file:bg-surface-50 file:px-2 file:py-1 file:text-[11px] file:font-semibold"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!diagramFile) return
+                    void onImportDiagramFile(diagramFile)
+                    setDiagramFile(null)
+                    if (diagramFileInputRef.current) {
+                      diagramFileInputRef.current.value = ""
+                    }
+                  }}
+                  className="mt-2 w-full rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!diagramFile}
+                >
+                  Import file
+                </button>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Supports `.md`, `.mmd`, `.mermaid`, and `.excalidraw`.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {importQueue && importQueue.length > 0 && (
         <div className="border-b border-default p-3">
           <div className="mb-2 flex items-center justify-between">
@@ -555,7 +766,7 @@ export function CanvasSidebar({
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="pb-2">
         {filteredCategories.map(({ category, components }) => (
           <div key={category} className="border-b border-default">
             <button

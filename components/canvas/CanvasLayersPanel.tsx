@@ -59,6 +59,9 @@ export function CanvasLayersPanel({
     if (item.type === "artboard") return item.name
     if (item.type === "embed") return getEmbedLabel(item)
     if (item.type === "media") return getMediaLabel(item)
+    if (item.type === "mermaid") return item.title || "Mermaid diagram"
+    if (item.type === "excalidraw") return item.title || "Excalidraw sketch"
+    if (item.type === "markdown") return item.title || "Markdown note"
     const component = getComponentById(item.componentId)
     return component?.name || item.componentId
   }

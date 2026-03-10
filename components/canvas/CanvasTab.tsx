@@ -9,11 +9,20 @@ import { useCanvasTransform } from "../../hooks/useCanvasTransform"
 import { useLocalStorage } from "../../hooks/useLocalStorage"
 import { useCopilotCanvasActions } from "../../hooks/useCopilotCanvasActions"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
-import type { DragData, CanvasMediaItem, CanvasScene } from "../../types/canvas"
+import type {
+  DragData,
+  CanvasMediaItem,
+  CanvasScene,
+  CanvasMermaidItem,
+  CanvasExcalidrawItem,
+} from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
+import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
+import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
+import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
 import { CanvasLayersPanel } from "./CanvasLayersPanel"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
 import { CanvasScenesPanel } from "./CanvasScenesPanel"
@@ -21,6 +30,13 @@ import { CanvasSidebar } from "./CanvasSidebar"
 import { CanvasThemePanel } from "./CanvasThemePanel"
 import { CanvasToolbar } from "./CanvasToolbar"
 import { CanvasWorkspace } from "./CanvasWorkspace"
+import {
+  inferDiagramFileKind,
+  parseExcalidrawFileContent,
+  parseMarkdownFileContent,
+  parseMermaidFileContent,
+} from "./diagramFileImport"
+import { convertMermaidSourceToExcalidrawScene } from "./excalidrawMermaid"
 import { normalizeCanvasEmbedUrl } from "./embedUrl"
 import {
   captureEmbedSnapshots,
@@ -89,6 +105,12 @@ function normalizeClipboardFile(file: File, index: number) {
   return new File([file], name, { type: file.type || "application/octet-stream" })
 }
 
+function stripFileExtension(fileName: string) {
+  const trimmed = fileName.trim()
+  if (!trimmed) return ""
+  return trimmed.replace(/\.[^.]+$/, "")
+}
+
 function getCaptureNodeSize(target: EmbedCaptureTarget, viewport?: { width?: number; height?: number }) {
   const fallback = target === "mobile"
     ? { width: 280, height: 600 }
@@ -142,8 +164,18 @@ const COPILOT_INSTRUCTIONS = `You are a canvas design assistant.
 
 Rules:
 - If the user asks to change the canvas, you MUST call tools. Do not only describe what you would do.
-- Use only these tools for mutations: createCanvasItem, updateCanvasItem, deleteCanvasItems.
+- Use only these tools for mutations: createCanvasItem, createMermaidNode, createExcalidrawNode, remapExcalidrawFromMermaid, convertMermaidToExcalidraw, updateCanvasItem, deleteCanvasItems, setComponentProps, setThemeToken, applyFontPairToSelection, generateTypographyBoard.
 - Use listCanvasItemTypes when you need to discover allowed types/components.
+- Use search/research tools when user asks for references, links, routes, or assets:
+  searchWeb, getRoute, searchAssets, importAssetFromUrl, createMapNodeFromRoute.
+- For diagrams, prefer dedicated tools:
+  createMermaidNode for Mermaid, createExcalidrawNode for Excalidraw, remapExcalidrawFromMermaid to refresh existing Excalidraw from Mermaid source.
+- For typography workflows, prefer:
+  generateTypographyBoard for multi-variant hero exploration,
+  applyFontPairToSelection for node/artboard/theme font changes,
+  setComponentProps for per-node interactive props,
+  setThemeToken for token-level overrides.
+- Use convertMermaidToExcalidraw only when you need to create a new Excalidraw node from an existing Mermaid node.
 - After each successful tool call, reply with a short confirmation and include returned itemId when available.
 
 Create tool guidance:
@@ -151,13 +183,37 @@ Create tool guidance:
 - For type=component: provide componentId (and optional variantIndex).
 - For type=embed: provide url.
 - For type=media: provide src (mediaKind optional).
+- For type=markdown: provide source (title/background optional).
+- For type=mermaid or type=excalidraw via createCanvasItem, use only if dedicated diagram tools are unavailable.
+- For createMermaidNode: source optional (defaults to simple flowchart), mermaidTheme/title optional.
+- For createExcalidrawNode: optional title, optional sourceMermaid, optional scene.
+- For remapExcalidrawFromMermaid: pass excalidrawItemId and either mermaidItemId or source.
 - For type=artboard: name is optional.
 - Use sensible defaults when position/size is not provided.
+- For typography props use displayFont/bodyFont and fontPairId where possible.
 
 Layout guidance:
 - Place related items near each other.
-- Default sizes: embed 640x360, media 480x270, artboard 800x600.
+- Default sizes: embed 640x360, media 480x270, markdown 700x460, mermaid 640x420, excalidraw 760x500, artboard 800x600.
 - Use artboards to group sections. Use parentId for nesting inside artboards.`
+
+const DEFAULT_MERMAID_SOURCE = `flowchart LR
+  A[Start] --> B{Need references?}
+  B -->|yes| C[Search]
+  B -->|no| D[Draft]
+  C --> D
+  D --> E[Ship]`
+
+const DEFAULT_MARKDOWN_SOURCE = `# Markdown Node
+
+Drop a \`.md\` file or paste markdown here.
+
+## Why this helps
+
+- Keep architecture notes inside canvas
+- Mix docs with embeds, media, and diagrams
+- Give Copilot context directly on the board
+`
 
 function areTokenValuesEqual(
   left: Record<string, string>,
@@ -457,7 +513,6 @@ export function CanvasTab({
     createGroup,
     ungroup,
     getGroupBounds,
-    getItemGroup,
     removeSelected,
     duplicateSelected,
     duplicateItem,
@@ -528,6 +583,9 @@ export function CanvasTab({
   const selectedComponentItem = selectedItem?.type === "component" ? selectedItem : null
   const selectedEmbedItem = selectedItem?.type === "embed" ? selectedItem : null
   const selectedMediaItem = selectedItem?.type === "media" ? selectedItem : null
+  const selectedMarkdownItem = selectedItem?.type === "markdown" ? selectedItem : null
+  const selectedMermaidItem = selectedItem?.type === "mermaid" ? selectedItem : null
+  const selectedExcalidrawItem = selectedItem?.type === "excalidraw" ? selectedItem : null
   const selectedArtboardItem = selectedItem?.type === "artboard" ? selectedItem : null
   const selectedEmbedRenderMode = selectedEmbedItem
     ? resolveEmbedPreviewMode(
@@ -623,6 +681,16 @@ export function CanvasTab({
     [selectedComponentItem, selectedVariant, updateItem]
   )
 
+  const handlePropChanges = useCallback(
+    (updates: Record<string, unknown>) => {
+      if (!selectedComponentItem || !selectedVariant?.props) return
+      const currentProps = selectedComponentItem.customProps ?? selectedVariant.props
+      const newProps = { ...currentProps, ...updates }
+      updateItem(selectedComponentItem.id, { customProps: newProps })
+    },
+    [selectedComponentItem, selectedVariant, updateItem]
+  )
+
   // Reset props to defaults
   const handleResetProps = useCallback(() => {
     if (!selectedComponentItem) return
@@ -689,10 +757,13 @@ export function CanvasTab({
     items,
     selectedIds,
     entries,
+    themes,
+    activeThemeId,
     addItem,
     updateItem,
     removeItem,
     clearCanvas,
+    updateThemeVar,
   })
 
   const handleImportFromPaper = useCallback(async () => {
@@ -758,6 +829,7 @@ export function CanvasTab({
     activeProjectId,
     addItem,
     getComponentById,
+    importKind,
     isImportingPaper,
     items,
     onImportFromPaper,
@@ -1003,22 +1075,216 @@ export function CanvasTab({
     [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
+  const handleAddMermaid = useCallback(
+    (input?: {
+      source?: string
+      title?: string
+      mermaidTheme?: CanvasMermaidItem["mermaidTheme"]
+      background?: string
+      position?: { x: number; y: number }
+    }) => {
+      const source = input?.source?.trim() || DEFAULT_MERMAID_SOURCE
+      const mermaidWidth = 640
+      const mermaidHeight = 420
+      const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+      const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+      const targetX = input?.position ? input.position.x : centerX
+      const targetY = input?.position ? input.position.y : centerY
+
+      addItem({
+        type: "mermaid",
+        source,
+        title: input?.title?.trim() || "Mermaid diagram",
+        mermaidTheme: input?.mermaidTheme || "default",
+        background: input?.background || undefined,
+        position: {
+          x: Math.max(0, targetX - mermaidWidth / 2),
+          y: Math.max(0, targetY - mermaidHeight / 2),
+        },
+        size: { width: mermaidWidth, height: mermaidHeight },
+        rotation: 0,
+      })
+      setPropsPanelVisible(true)
+    },
+    [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+  )
+
+  const handleAddMarkdown = useCallback(
+    (input?: {
+      source?: string
+      title?: string
+      background?: string
+      position?: { x: number; y: number }
+    }) => {
+      const source = input?.source?.trim() || DEFAULT_MARKDOWN_SOURCE
+      const markdownWidth = 700
+      const markdownHeight = 460
+      const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+      const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+      const targetX = input?.position ? input.position.x : centerX
+      const targetY = input?.position ? input.position.y : centerY
+
+      addItem({
+        type: "markdown",
+        source,
+        title: input?.title?.trim() || "Markdown note",
+        background: input?.background || undefined,
+        position: {
+          x: Math.max(0, targetX - markdownWidth / 2),
+          y: Math.max(0, targetY - markdownHeight / 2),
+        },
+        size: { width: markdownWidth, height: markdownHeight },
+        rotation: 0,
+      })
+      setPropsPanelVisible(true)
+    },
+    [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+  )
+
+  const handleAddExcalidraw = useCallback(
+    (input?: {
+      title?: string
+      scene?: CanvasExcalidrawItem["scene"]
+      sourceMermaid?: string
+      position?: { x: number; y: number }
+    }) => {
+      const excalidrawWidth = 760
+      const excalidrawHeight = 500
+      const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+      const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+      const targetX = input?.position ? input.position.x : centerX
+      const targetY = input?.position ? input.position.y : centerY
+
+      addItem({
+        type: "excalidraw",
+        title: input?.title?.trim() || "Excalidraw sketch",
+        scene: input?.scene || {
+          elements: [],
+          appState: {
+            viewBackgroundColor: "#ffffff",
+          },
+          files: {},
+        },
+        sourceMermaid: input?.sourceMermaid,
+        position: {
+          x: Math.max(0, targetX - excalidrawWidth / 2),
+          y: Math.max(0, targetY - excalidrawHeight / 2),
+        },
+        size: { width: excalidrawWidth, height: excalidrawHeight },
+        rotation: 0,
+      })
+      setPropsPanelVisible(true)
+    },
+    [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+  )
+
+  const handleImportDiagramFile = useCallback(
+    async (file: File, position?: { x: number; y: number }) => {
+      const kind = inferDiagramFileKind(file.name, file.type)
+      if (!kind) return false
+
+      try {
+        const content = await file.text()
+
+        if (kind === "markdown") {
+          const source = parseMarkdownFileContent(content)
+          handleAddMarkdown({
+            source,
+            title: stripFileExtension(file.name) || "Markdown note",
+            position,
+          })
+          return true
+        }
+
+        if (kind === "mermaid") {
+          const source = parseMermaidFileContent(content)
+          handleAddMermaid({
+            source,
+            title: stripFileExtension(file.name) || "Mermaid diagram",
+            position,
+          })
+          return true
+        }
+
+        const parsed = parseExcalidrawFileContent(content)
+        handleAddExcalidraw({
+          title: parsed.title || stripFileExtension(file.name) || "Excalidraw sketch",
+          scene: parsed.scene,
+          sourceMermaid: parsed.sourceMermaid,
+          position,
+        })
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to import diagram file."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+        return true
+      }
+    },
+    [handleAddExcalidraw, handleAddMarkdown, handleAddMermaid]
+  )
+
+  const handleConvertMermaidToExcalidraw = useCallback(
+    async (mermaidItemId: string, options?: { keepOriginal?: boolean }) => {
+      const sourceItem = items.find((item) => item.id === mermaidItemId)
+      if (!sourceItem || sourceItem.type !== "mermaid") return
+
+      try {
+        const scene = await convertMermaidSourceToExcalidrawScene(sourceItem.source)
+        addItem({
+          type: "excalidraw",
+          title: sourceItem.title ? `${sourceItem.title} (Excalidraw)` : "Excalidraw sketch",
+          scene,
+          sourceMermaid: sourceItem.source,
+          position: {
+            x: sourceItem.position.x + 48,
+            y: sourceItem.position.y + 48,
+          },
+          size: {
+            width: Math.max(480, sourceItem.size.width),
+            height: Math.max(320, sourceItem.size.height),
+          },
+          rotation: sourceItem.rotation,
+          parentId: sourceItem.parentId,
+          order: sourceItem.order,
+        })
+        if (!options?.keepOriginal) {
+          removeItem(sourceItem.id)
+        }
+        setPropsPanelVisible(true)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to convert Mermaid to Excalidraw."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [addItem, items, removeItem]
+  )
+
   const handleDropMediaFiles = useCallback(
     async (input: { files: File[]; position: { x: number; y: number } }) => {
       if (!input.files.length) return
       for (let index = 0; index < input.files.length; index += 1) {
         const file = input.files[index]
+        const targetPosition = {
+          x: input.position.x + index * 24,
+          y: input.position.y + index * 24,
+        }
+        const importedDiagram = await handleImportDiagramFile(file, targetPosition)
+        if (importedDiagram) {
+          continue
+        }
         await handleAddMedia({
           file,
           mediaKind: inferMediaKindFromFile(file),
-          position: {
-            x: input.position.x + index * 24,
-            y: input.position.y + index * 24,
-          },
+          position: targetPosition,
         })
       }
     },
-    [handleAddMedia]
+    [handleAddMedia, handleImportDiagramFile]
   )
 
   const handlePasteMediaFiles = useCallback(
@@ -1383,6 +1649,67 @@ export function CanvasTab({
           return
         }
 
+        if (item.type === "mermaid") {
+          const newId = addItem({
+            type: "mermaid",
+            source: item.source,
+            title: item.title,
+            mermaidTheme: item.mermaidTheme,
+            background: item.background,
+            position: { ...item.position },
+            size: { ...item.size },
+            rotation: item.rotation,
+            parentId,
+            order: item.order,
+          })
+          idMap.set(item.id, newId)
+          return
+        }
+
+        if (item.type === "excalidraw") {
+          const newId = addItem({
+            type: "excalidraw",
+            title: item.title,
+            scene: item.scene
+              ? {
+                  elements: Array.isArray(item.scene.elements)
+                    ? JSON.parse(JSON.stringify(item.scene.elements))
+                    : [],
+                  appState: item.scene.appState
+                    ? JSON.parse(JSON.stringify(item.scene.appState))
+                    : undefined,
+                  files: item.scene.files
+                    ? JSON.parse(JSON.stringify(item.scene.files))
+                    : undefined,
+                }
+              : undefined,
+            sourceMermaid: item.sourceMermaid,
+            position: { ...item.position },
+            size: { ...item.size },
+            rotation: item.rotation,
+            parentId,
+            order: item.order,
+          })
+          idMap.set(item.id, newId)
+          return
+        }
+
+        if (item.type === "markdown") {
+          const newId = addItem({
+            type: "markdown",
+            source: item.source,
+            title: item.title,
+            background: item.background,
+            position: { ...item.position },
+            size: { ...item.size },
+            rotation: item.rotation,
+            parentId,
+            order: item.order,
+          })
+          idMap.set(item.id, newId)
+          return
+        }
+
         const newId = addItem({
           type: "component",
           componentId: item.componentId,
@@ -1560,6 +1887,12 @@ export function CanvasTab({
                 entries={entries}
                 onAddEmbed={handleAddEmbed}
                 onAddMedia={handleAddMedia}
+                onAddMarkdown={handleAddMarkdown}
+                onAddMermaid={handleAddMermaid}
+                onAddExcalidraw={handleAddExcalidraw}
+                onImportDiagramFile={async (file) => {
+                  await handleImportDiagramFile(file)
+                }}
                 importQueue={importQueue}
                 onAddImportedComponent={handleAddImportedComponent}
                 onClearImportQueue={() => setImportQueue([])}
@@ -1607,6 +1940,7 @@ export function CanvasTab({
               schema={selectedVariant.interactiveSchema || null}
               values={selectedItemProps}
               onChange={handlePropChange}
+              onChangeMany={handlePropChanges}
               onReset={handleResetProps}
               onClose={handleClosePropsPanel}
               onVariantChange={handleVariantChange}
@@ -1766,6 +2100,62 @@ export function CanvasTab({
               sourceProvider={selectedMediaItem.sourceProvider}
               sourceCapturedAt={selectedMediaItem.sourceCapturedAt}
               onChange={(updates) => updateItem(selectedMediaItem.id, updates)}
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedMarkdownItem && (
+            <CanvasMarkdownPropsPanel
+              source={selectedMarkdownItem.source}
+              title={selectedMarkdownItem.title}
+              background={selectedMarkdownItem.background}
+              onChange={(updates) => updateItem(selectedMarkdownItem.id, updates)}
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedMermaidItem && (
+            <CanvasMermaidPropsPanel
+              source={selectedMermaidItem.source}
+              title={selectedMermaidItem.title}
+              mermaidTheme={selectedMermaidItem.mermaidTheme}
+              background={selectedMermaidItem.background}
+              onChange={(updates) => updateItem(selectedMermaidItem.id, updates)}
+              onConvertToExcalidraw={() =>
+                void handleConvertMermaidToExcalidraw(selectedMermaidItem.id)
+              }
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedExcalidrawItem && (
+            <CanvasExcalidrawPropsPanel
+              title={selectedExcalidrawItem.title}
+              scene={selectedExcalidrawItem.scene}
+              sourceMermaid={selectedExcalidrawItem.sourceMermaid}
+              onChange={(updates) => updateItem(selectedExcalidrawItem.id, updates)}
+              onRemapFromMermaid={
+                selectedExcalidrawItem.sourceMermaid
+                  ? () => {
+                      void (async () => {
+                        try {
+                          const scene = await convertMermaidSourceToExcalidrawScene(
+                            selectedExcalidrawItem.sourceMermaid!
+                          )
+                          updateItem(selectedExcalidrawItem.id, { scene })
+                        } catch (error) {
+                          const message =
+                            error instanceof Error
+                              ? error.message
+                              : "Failed to regenerate Excalidraw from Mermaid."
+                          if (typeof window !== "undefined") {
+                            window.alert(message)
+                          }
+                        }
+                      })()
+                    }
+                  : undefined
+              }
               onClose={handleClosePropsPanel}
             />
           )}

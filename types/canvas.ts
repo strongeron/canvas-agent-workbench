@@ -2,18 +2,27 @@ export type CanvasItem =
   | CanvasComponentItem
   | CanvasEmbedItem
   | CanvasMediaItem
+  | CanvasMermaidItem
+  | CanvasExcalidrawItem
+  | CanvasMarkdownItem
   | CanvasArtboardItem
 
 export type CanvasItemInput =
   | Omit<CanvasComponentItem, "id" | "zIndex">
   | Omit<CanvasEmbedItem, "id" | "zIndex">
   | Omit<CanvasMediaItem, "id" | "zIndex">
+  | Omit<CanvasMermaidItem, "id" | "zIndex">
+  | Omit<CanvasExcalidrawItem, "id" | "zIndex">
+  | Omit<CanvasMarkdownItem, "id" | "zIndex">
   | Omit<CanvasArtboardItem, "id" | "zIndex">
 
 export type CanvasItemUpdate =
   | Partial<Omit<CanvasComponentItem, "id">>
   | Partial<Omit<CanvasEmbedItem, "id">>
   | Partial<Omit<CanvasMediaItem, "id">>
+  | Partial<Omit<CanvasMermaidItem, "id">>
+  | Partial<Omit<CanvasExcalidrawItem, "id">>
+  | Partial<Omit<CanvasMarkdownItem, "id">>
   | Partial<Omit<CanvasArtboardItem, "id">>
 
 export interface CanvasItemBase {
@@ -122,6 +131,36 @@ export interface CanvasMediaItem extends CanvasItemBase {
   sourceProvider?: string
   /** ISO timestamp when media was generated/captured */
   sourceCapturedAt?: string
+}
+
+export type CanvasMermaidTheme = "default" | "neutral" | "dark" | "forest" | "base"
+
+export interface CanvasMermaidItem extends CanvasItemBase {
+  type: "mermaid"
+  source: string
+  title?: string
+  mermaidTheme?: CanvasMermaidTheme
+  background?: string
+}
+
+export interface CanvasExcalidrawScene {
+  elements?: unknown[]
+  appState?: Record<string, unknown>
+  files?: Record<string, unknown>
+}
+
+export interface CanvasExcalidrawItem extends CanvasItemBase {
+  type: "excalidraw"
+  title?: string
+  scene?: CanvasExcalidrawScene
+  sourceMermaid?: string
+}
+
+export interface CanvasMarkdownItem extends CanvasItemBase {
+  type: "markdown"
+  source: string
+  title?: string
+  background?: string
 }
 
 export interface CanvasArtboardItem extends CanvasItemBase {
