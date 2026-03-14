@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type {
   CanvasAgentDefinition,
+  CanvasAgentSessionDebug,
   CanvasAgentSession,
+  CanvasAgentTranscriptEntry,
   CanvasRemoteOperation,
   CanvasStateSnapshot,
 } from "../types/canvas"
@@ -28,9 +30,11 @@ export interface UseCanvasAgentBridgeResult {
   sessions: CanvasAgentSession[]
   status: CanvasAgentBridgeStatus
   outputBySession: Record<string, string>
+  debugBySession: Record<string, CanvasAgentSessionDebug>
   refreshSessions: () => Promise<void>
   createSession: (agentId: string) => Promise<CanvasAgentSession | null>
   loadSessionOutput: (sessionId: string) => Promise<string>
+  loadSessionDebug: (sessionId: string) => Promise<CanvasAgentSessionDebug | null>
   startSession: (sessionId: string, size?: { cols: number; rows: number }) => Promise<CanvasAgentSession | null>
   stopSession: (sessionId: string) => Promise<CanvasAgentSession | null>
   writeSessionInput: (sessionId: string, input: string) => Promise<void>
@@ -48,6 +52,10 @@ function buildQuery(params: Record<string, string | undefined>) {
 
 function trimSessionOutput(value: string) {
   return value.length <= 200_000 ? value : value.slice(value.length - 200_000)
+}
+
+function trimTranscriptEntries(entries: CanvasAgentTranscriptEntry[]) {
+  return entries.length <= 120 ? entries : entries.slice(entries.length - 120)
 }
 
 export function useCanvasAgentBridge({
@@ -68,6 +76,7 @@ export function useCanvasAgentBridge({
   const [error, setError] = useState<string | null>(null)
   const [bridgeReady, setBridgeReady] = useState(false)
   const [outputBySession, setOutputBySession] = useState<Record<string, string>>({})
+  const [debugBySession, setDebugBySession] = useState<Record<string, CanvasAgentSessionDebug>>({})
 
   const upsertSession = useCallback((session: CanvasAgentSession) => {
     setSessions((previous) => {
@@ -151,6 +160,33 @@ export function useCanvasAgentBridge({
     }
     return output
   }, [upsertSession])
+
+  const loadSessionDebug = useCallback(
+    async (sessionId: string) => {
+      const response = await fetch(`/api/canvas-agent/sessions/${encodeURIComponent(sessionId)}/debug`)
+      if (!response.ok) {
+        throw new Error("Failed to load session debug state.")
+      }
+      const data = await response.json()
+      const debug = (data.debug ?? null) as CanvasAgentSessionDebug | null
+      if (!debug) return null
+
+      setOutputBySession((previous) => ({
+        ...previous,
+        [sessionId]: trimSessionOutput(debug.output ?? ""),
+      }))
+      setDebugBySession((previous) => ({
+        ...previous,
+        [sessionId]: {
+          ...debug,
+          transcript: trimTranscriptEntries(Array.isArray(debug.transcript) ? debug.transcript : []),
+        },
+      }))
+      upsertSession(debug.session)
+      return debug
+    },
+    [upsertSession]
+  )
 
   const postSessionAction = useCallback(
     async <T,>(sessionId: string, action: string, payload?: Record<string, unknown>) => {
@@ -236,6 +272,8 @@ export function useCanvasAgentBridge({
       setSyncState("idle")
       setLastRemoteStateAt(null)
       setSessions([])
+      setDebugBySession({})
+      setOutputBySession({})
       return () => {
         cancelled = true
       }
@@ -329,15 +367,42 @@ export function useCanvasAgentBridge({
       setLastEventAt(new Date().toISOString())
     }
 
+    const handleSessionTranscript = (event: MessageEvent) => {
+      const payload = JSON.parse(event.data) as {
+        sessionId?: string
+        entry?: CanvasAgentTranscriptEntry
+      }
+      if (!payload.sessionId || !payload.entry) return
+      const entry = payload.entry
+      setDebugBySession((previous) => {
+        const existing = previous[payload.sessionId!]
+        if (!existing) return previous
+        return {
+          ...previous,
+          [payload.sessionId!]: {
+            ...existing,
+            transcript: trimTranscriptEntries([...existing.transcript, entry]),
+          },
+        }
+      })
+      setLastEventAt(new Date().toISOString())
+    }
+
     const handleCanvasOperation = (event: MessageEvent) => {
       const payload = JSON.parse(event.data) as {
         sourceClientId?: string
+        sessionId?: string
         operation?: CanvasRemoteOperation
       }
       if (!payload.operation || payload.sourceClientId === clientIdRef.current) {
         return
       }
       applyRemoteOperation(payload.operation)
+      if (payload.sessionId) {
+        void loadSessionDebug(payload.sessionId).catch(() => {
+          // Session debug is supplemental; ignore fetch failures here.
+        })
+      }
       setLastEventAt(new Date().toISOString())
     }
 
@@ -351,16 +416,18 @@ export function useCanvasAgentBridge({
     source.addEventListener("session-created", handleSessionCreated)
     source.addEventListener("session-updated", handleSessionUpdated)
     source.addEventListener("session-output", handleSessionOutput)
+    source.addEventListener("session-transcript", handleSessionTranscript)
     source.addEventListener("canvas-operation", handleCanvasOperation)
 
     return () => {
       source.removeEventListener("session-created", handleSessionCreated)
       source.removeEventListener("session-updated", handleSessionUpdated)
       source.removeEventListener("session-output", handleSessionOutput)
+      source.removeEventListener("session-transcript", handleSessionTranscript)
       source.removeEventListener("canvas-operation", handleCanvasOperation)
       source.close()
     }
-  }, [applyRemoteOperation, projectId, upsertSession])
+  }, [applyRemoteOperation, loadSessionDebug, projectId, upsertSession])
 
   useEffect(() => {
     if (!projectId || !bridgeReady) return
@@ -416,9 +483,11 @@ export function useCanvasAgentBridge({
     sessions,
     status,
     outputBySession,
+    debugBySession,
     refreshSessions,
     createSession,
     loadSessionOutput,
+    loadSessionDebug,
     startSession,
     stopSession,
     writeSessionInput,

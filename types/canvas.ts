@@ -247,6 +247,7 @@ export interface CanvasAgentSession {
   title: string
   cwd: string
   launchCommand: string
+  toolCommand: string
   transport: "manual-cli" | "pty"
   status: "configured" | "starting" | "running" | "stopped" | "exited" | "error"
   createdAt: string
@@ -258,6 +259,45 @@ export interface CanvasAgentSession {
   endedAt?: string | null
   exitCode?: number | null
   errorMessage?: string | null
+}
+
+export interface CanvasAgentTranscriptEntry {
+  id: string
+  sessionId: string
+  at: string
+  kind:
+    | "session-created"
+    | "session-started"
+    | "session-stopped"
+    | "session-exited"
+    | "session-error"
+    | "tool-call"
+    | "canvas-operation"
+    | "output"
+  text: string
+  meta?: Record<string, string | number | boolean | null>
+}
+
+export interface CanvasAgentStateHistoryEntry {
+  id: string
+  at: string
+  source: string
+  itemCount: number
+  groupCount: number
+  selectedIds: string[]
+  operationType?: CanvasRemoteOperation["type"] | null
+  sessionId?: string | null
+  toolName?: string | null
+}
+
+export interface CanvasAgentSessionDebug {
+  session: CanvasAgentSession
+  output: string
+  transcript: CanvasAgentTranscriptEntry[]
+  projectState: CanvasStateSnapshot | null
+  stateHistory: CanvasAgentStateHistoryEntry[]
+  toolCommand: string
+  toolExamples: string[]
 }
 
 export interface CanvasTransform {

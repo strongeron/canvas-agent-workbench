@@ -18,6 +18,14 @@ function formatTimestamp(value: string | null) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
+function buildTranscriptText(
+  entries: NonNullable<UseCanvasAgentBridgeResult["debugBySession"][string]>["transcript"]
+) {
+  return entries
+    .map((entry) => `[${entry.at}] ${entry.kind}: ${entry.text}`)
+    .join("\n")
+}
+
 export function CanvasAgentPanel({
   projectId,
   instructions,
@@ -37,6 +45,7 @@ export function CanvasAgentPanel({
   const activeSession =
     bridge.sessions.find((session) => session.id === activeSessionId) ?? bridge.sessions[0] ?? null
   const activeOutput = activeSession ? bridge.outputBySession[activeSession.id] ?? "" : ""
+  const activeDebug = activeSession ? bridge.debugBySession[activeSession.id] ?? null : null
 
   useEffect(() => {
     if (bridge.sessions.length === 0) {
@@ -52,6 +61,14 @@ export function CanvasAgentPanel({
     if (!activeSession) return
     if (Object.prototype.hasOwnProperty.call(bridge.outputBySession, activeSession.id)) return
     void bridge.loadSessionOutput(activeSession.id).catch(() => {
+      // Surface session/action failures through the panel status instead.
+    })
+  }, [activeSession, bridge])
+
+  useEffect(() => {
+    if (!activeSession) return
+    if (Object.prototype.hasOwnProperty.call(bridge.debugBySession, activeSession.id)) return
+    void bridge.loadSessionDebug(activeSession.id).catch(() => {
       // Surface session/action failures through the panel status instead.
     })
   }, [activeSession, bridge])
@@ -134,6 +151,16 @@ export function CanvasAgentPanel({
     } catch {
       // Ignore transient resize failures during panel mount/unmount.
     }
+  }
+
+  const handleCopyTranscript = async () => {
+    if (!activeDebug) return
+    await handleCopy(buildTranscriptText(activeDebug.transcript))
+  }
+
+  const handleCopyDebug = async () => {
+    if (!activeDebug) return
+    await handleCopy(JSON.stringify(activeDebug, null, 2))
   }
 
   return (
@@ -321,6 +348,69 @@ export function CanvasAgentPanel({
                 <div className="mt-2 text-[11px] text-gray-500">
                   CWD: {activeSession.cwd}
                 </div>
+                <div className="mt-3 rounded-md border border-default bg-gray-50 px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                    Canvas Tool Adapter
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <div className="font-mono text-[11px] text-gray-900">
+                      {activeSession.toolCommand}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(activeSession.toolCommand)}
+                      className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1 text-xs font-medium text-gray-700 hover:bg-white"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      Copy
+                    </button>
+                  </div>
+                  <div className="mt-2 text-[11px] text-gray-500">
+                    Inside Codex or Claude, use `{activeSession.toolCommand} help` to inspect state
+                    and apply canvas operations directly.
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyTranscript}
+                    disabled={!activeDebug}
+                    className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy transcript
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyDebug}
+                    disabled={!activeDebug}
+                    className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy debug JSON
+                  </button>
+                </div>
+                {activeDebug && (
+                  <div className="mt-3 rounded-md border border-default bg-gray-50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3 text-[11px] text-gray-500">
+                      <span>{activeDebug.transcript.length} transcript entries</span>
+                      <span>{activeDebug.stateHistory.length} state events</span>
+                    </div>
+                    <div className="mt-2 max-h-36 overflow-y-auto rounded bg-white p-2 font-mono text-[11px] leading-5 text-gray-700">
+                      {activeDebug.transcript.length === 0 ? (
+                        <div className="text-gray-500">No transcript captured yet.</div>
+                      ) : (
+                        activeDebug.transcript.slice(-8).map((entry) => (
+                          <div key={entry.id}>
+                            <span className="text-gray-400">{formatTimestamp(entry.at)}</span>{" "}
+                            <span className="font-semibold text-gray-900">{entry.kind}</span>{" "}
+                            <span>{entry.text}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
                 {activeSession.errorMessage && (
                   <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                     {activeSession.errorMessage}

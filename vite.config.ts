@@ -152,12 +152,17 @@ const CANVAS_AGENT_DEFINITIONS = [
   },
 ]
 
+const CANVAS_AGENT_RUNTIME_ROOT = path.join(__dirname, '.canvas-agent', 'servers')
 const CANVAS_AGENT_DEFAULT_TERMINAL = {
   cols: 96,
   rows: 28,
 }
 
+const CANVAS_AGENT_TOOL_COMMAND =
+  process.platform === 'win32' ? 'node .\\\\bin\\\\canvas-agent' : 'bin/canvas-agent'
 const CANVAS_AGENT_OUTPUT_LIMIT = 200_000
+const CANVAS_AGENT_TRANSCRIPT_LIMIT = 240
+const CANVAS_AGENT_STATE_HISTORY_LIMIT = 80
 
 function deriveCanvasNextZIndex(items) {
   return items.reduce((max, item) => Math.max(max, Number(item?.zIndex || 0) + 1), 1)
@@ -258,6 +263,27 @@ function trimCanvasAgentOutput(value) {
   return value.slice(value.length - CANVAS_AGENT_OUTPUT_LIMIT)
 }
 
+function trimCanvasAgentTranscript(entries) {
+  if (!Array.isArray(entries)) return []
+  if (entries.length <= CANVAS_AGENT_TRANSCRIPT_LIMIT) return entries
+  return entries.slice(entries.length - CANVAS_AGENT_TRANSCRIPT_LIMIT)
+}
+
+function trimCanvasAgentStateHistory(entries) {
+  if (!Array.isArray(entries)) return []
+  if (entries.length <= CANVAS_AGENT_STATE_HISTORY_LIMIT) return entries
+  return entries.slice(entries.length - CANVAS_AGENT_STATE_HISTORY_LIMIT)
+}
+
+function sanitizeCanvasAgentTranscriptText(value) {
+  if (typeof value !== 'string') return ''
+  return value
+    .replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+    .replace(/\r/g, '')
+    .trim()
+    .slice(0, 1_000)
+}
+
 function resolveCanvasAgentShell() {
   const preferredShell = process.env.SHELL?.trim()
   if (preferredShell && existsSync(preferredShell)) {
@@ -284,6 +310,20 @@ function buildCanvasAgentEnv(cwd, shell) {
     SHELL: shell,
     TERM: 'xterm-256color',
   }
+}
+
+function resolveCanvasAgentServerUrl(server) {
+  const localUrl = server.resolvedUrls?.local?.[0]
+  if (typeof localUrl === 'string' && localUrl.length > 0) {
+    return localUrl.replace(/\/$/, '')
+  }
+
+  const address = server.httpServer?.address?.()
+  if (address && typeof address === 'object' && typeof address.port === 'number') {
+    return `http://127.0.0.1:${address.port}`
+  }
+
+  return 'http://127.0.0.1:5173'
 }
 
 function resolveCanvasAgentSpawn(definition, session) {
@@ -2995,6 +3035,14 @@ function paperImportPlugin() {
       const canvasAgentClientsByProject = new Map()
       const canvasAgentPtysBySession = new Map()
       const canvasAgentOutputBySession = new Map()
+      const canvasAgentTranscriptBySession = new Map()
+      const canvasAgentStateHistoryByProject = new Map()
+      const canvasAgentQueueActive = new Set()
+      const canvasAgentServerRuntimeRoot = path.join(
+        CANVAS_AGENT_RUNTIME_ROOT,
+        String(process.pid),
+        'sessions'
+      )
 
       const getCanvasAgentSessions = (projectId) => {
         if (!canvasAgentSessionsByProject.has(projectId)) {
@@ -3010,12 +3058,39 @@ function paperImportPlugin() {
         return canvasAgentClientsByProject.get(projectId)
       }
 
+      const getCanvasAgentTranscript = (sessionId) => {
+        if (!canvasAgentTranscriptBySession.has(sessionId)) {
+          canvasAgentTranscriptBySession.set(sessionId, [])
+        }
+        return canvasAgentTranscriptBySession.get(sessionId)
+      }
+
+      const getCanvasAgentStateHistory = (projectId) => {
+        if (!canvasAgentStateHistoryByProject.has(projectId)) {
+          canvasAgentStateHistoryByProject.set(projectId, [])
+        }
+        return canvasAgentStateHistoryByProject.get(projectId)
+      }
+
       const findCanvasAgentSession = (sessionId) => {
         for (const sessions of canvasAgentSessionsByProject.values()) {
           const session = sessions.find((item) => item.id === sessionId)
           if (session) return session
         }
         return null
+      }
+
+      const getCanvasAgentSessionDir = (sessionId) =>
+        path.join(canvasAgentServerRuntimeRoot, sessionId)
+
+      const getCanvasAgentSessionFile = (sessionId, filename) =>
+        path.join(getCanvasAgentSessionDir(sessionId), filename)
+
+      const ensureCanvasAgentSessionDir = async (sessionId) => {
+        const sessionDir = getCanvasAgentSessionDir(sessionId)
+        await fs.mkdir(path.join(sessionDir, 'queue'), { recursive: true })
+        await fs.mkdir(path.join(sessionDir, 'results'), { recursive: true })
+        return sessionDir
       }
 
       const broadcastCanvasAgentEvent = (projectId, eventName, payload, excludeClientId) => {
@@ -3043,12 +3118,123 @@ function paperImportPlugin() {
           broadcastCanvasAgentEvent(projectId, 'session-updated', {
             session: nextSession,
           })
+          void syncCanvasAgentSessionArtifacts(sessionId)
           return nextSession
         }
         return null
       }
 
-      const upsertCanvasAgentState = (projectId, state, sourceClientId) => {
+      const syncCanvasAgentSessionArtifacts = async (sessionId) => {
+        const session = findCanvasAgentSession(sessionId)
+        if (!session) return
+
+        await ensureCanvasAgentSessionDir(sessionId)
+        const stateRecord = canvasAgentStateByProject.get(session.projectId) || null
+        const transcript = getCanvasAgentTranscript(sessionId)
+        const stateHistory = getCanvasAgentStateHistory(session.projectId)
+        const toolCommand = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
+        const debugPayload = {
+          session,
+          output: canvasAgentOutputBySession.get(sessionId) || '',
+          transcript,
+          projectState: stateRecord?.state || null,
+          stateHistory,
+          toolCommand,
+          toolExamples: [
+            `${toolCommand} state`,
+            `${toolCommand} create-item ./payload.json`,
+            `${toolCommand} update-item item-id ./updates.json`,
+            `${toolCommand} transcript`,
+          ],
+        }
+
+        await Promise.all([
+          fs.writeFile(
+            getCanvasAgentSessionFile(sessionId, 'context.json'),
+            JSON.stringify(
+              {
+                session,
+                toolCommand,
+                projectStateUpdatedAt: stateRecord?.updatedAt || null,
+              },
+              null,
+              2
+            )
+          ),
+          fs.writeFile(
+            getCanvasAgentSessionFile(sessionId, 'state.json'),
+            JSON.stringify(
+              {
+                state: stateRecord?.state || null,
+                updatedAt: stateRecord?.updatedAt || null,
+              },
+              null,
+              2
+            )
+          ),
+          fs.writeFile(
+            getCanvasAgentSessionFile(sessionId, 'transcript.json'),
+            JSON.stringify(transcript, null, 2)
+          ),
+          fs.writeFile(
+            getCanvasAgentSessionFile(sessionId, 'debug.json'),
+            JSON.stringify(debugPayload, null, 2)
+          ),
+        ])
+      }
+
+      const syncCanvasAgentProjectArtifacts = async (projectId) => {
+        const sessions = getCanvasAgentSessions(projectId)
+        await Promise.all(sessions.map((session) => syncCanvasAgentSessionArtifacts(session.id)))
+      }
+
+      const pushCanvasAgentTranscript = (sessionId, kind, text, meta = undefined) => {
+        const session = findCanvasAgentSession(sessionId)
+        if (!session) return null
+
+        const sanitizedText = sanitizeCanvasAgentTranscriptText(text)
+        if (!sanitizedText) return null
+
+        const entry = {
+          id: `canvas-agent-transcript-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          sessionId,
+          at: new Date().toISOString(),
+          kind,
+          text: sanitizedText,
+          meta,
+        }
+        const transcript = getCanvasAgentTranscript(sessionId)
+        transcript.push(entry)
+        canvasAgentTranscriptBySession.set(sessionId, trimCanvasAgentTranscript(transcript))
+        broadcastCanvasAgentEvent(session.projectId, 'session-transcript', {
+          sessionId,
+          entry,
+        })
+        void syncCanvasAgentSessionArtifacts(sessionId)
+        return entry
+      }
+
+      const pushCanvasAgentStateHistory = (projectId, entry) => {
+        const history = getCanvasAgentStateHistory(projectId)
+        const previousEntry = history[history.length - 1]
+        if (
+          previousEntry &&
+          previousEntry.source === entry.source &&
+          previousEntry.itemCount === entry.itemCount &&
+          previousEntry.groupCount === entry.groupCount &&
+          previousEntry.operationType === entry.operationType &&
+          previousEntry.sessionId === entry.sessionId &&
+          previousEntry.toolName === entry.toolName &&
+          JSON.stringify(previousEntry.selectedIds) === JSON.stringify(entry.selectedIds)
+        ) {
+          return previousEntry
+        }
+        history.push(entry)
+        canvasAgentStateHistoryByProject.set(projectId, trimCanvasAgentStateHistory(history))
+        return entry
+      }
+
+      const upsertCanvasAgentState = (projectId, state, sourceClientId, meta = {}) => {
         const normalizedState = normalizeCanvasStateSnapshot(state)
         const record = {
           projectId,
@@ -3057,6 +3243,23 @@ function paperImportPlugin() {
           sourceClientId: sourceClientId || null,
         }
         canvasAgentStateByProject.set(projectId, record)
+        pushCanvasAgentStateHistory(projectId, {
+          id: `canvas-agent-state-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          at: record.updatedAt,
+          source:
+            typeof meta.source === 'string' && meta.source.trim()
+              ? meta.source.trim()
+              : sourceClientId
+                ? 'canvas-ui'
+                : 'system',
+          itemCount: normalizedState.items.length,
+          groupCount: normalizedState.groups.length,
+          selectedIds: normalizedState.selectedIds,
+          operationType: meta.operationType || null,
+          sessionId: meta.sessionId || null,
+          toolName: meta.toolName || null,
+        })
+        void syncCanvasAgentProjectArtifacts(projectId)
         return record
       }
 
@@ -3078,6 +3281,7 @@ function paperImportPlugin() {
               : `${definition.label} session`,
           cwd: safeCwd,
           launchCommand: `cd ${JSON.stringify(safeCwd)} && ${definition.launchCommand}`,
+          toolCommand: CANVAS_AGENT_TOOL_COMMAND,
           transport: 'manual-cli',
           status: 'configured',
           createdAt: now,
@@ -3092,11 +3296,18 @@ function paperImportPlugin() {
         }
         const sessions = getCanvasAgentSessions(projectId)
         sessions.unshift(session)
+        pushCanvasAgentTranscript(
+          session.id,
+          'session-created',
+          `Created ${definition.label} session.`,
+          { agentId: definition.id }
+        )
         return session
       }
 
       const stopCanvasAgentSession = (sessionId, reason = 'stopped') => {
         const ptyProcess = canvasAgentPtysBySession.get(sessionId)
+        const session = findCanvasAgentSession(sessionId)
         if (ptyProcess) {
           try {
             ptyProcess.kill()
@@ -3106,11 +3317,22 @@ function paperImportPlugin() {
           canvasAgentPtysBySession.delete(sessionId)
         }
 
-        return updateCanvasAgentSession(sessionId, {
+        const nextSession = updateCanvasAgentSession(sessionId, {
           transport: 'pty',
           status: reason === 'error' ? 'error' : 'stopped',
           endedAt: new Date().toISOString(),
         })
+        if (session) {
+          pushCanvasAgentTranscript(
+            sessionId,
+            reason === 'error' ? 'session-error' : 'session-stopped',
+            reason === 'error'
+              ? `Session stopped with an error.`
+              : `Session stopped by request.`,
+            { status: nextSession?.status || session.status }
+          )
+        }
+        return nextSession
       }
 
       const appendCanvasAgentOutput = (session, chunk) => {
@@ -3123,6 +3345,7 @@ function paperImportPlugin() {
           sessionId: session.id,
           chunk,
         })
+        pushCanvasAgentTranscript(session.id, 'output', chunk)
       }
 
       const startCanvasAgentSession = (sessionId, dimensions) => {
@@ -3142,13 +3365,19 @@ function paperImportPlugin() {
         const cols = Math.max(40, Number(dimensions?.cols || session.cols || CANVAS_AGENT_DEFAULT_TERMINAL.cols))
         const rows = Math.max(10, Number(dimensions?.rows || session.rows || CANVAS_AGENT_DEFAULT_TERMINAL.rows))
         const spawnConfig = resolveCanvasAgentSpawn(definition, session)
+        const sessionEnv = buildCanvasAgentEnv(spawnConfig.cwd, spawnConfig.shell)
+        sessionEnv.CANVAS_AGENT_PROJECT_ID = session.projectId
+        sessionEnv.CANVAS_AGENT_SERVER_URL = resolveCanvasAgentServerUrl(server)
+        sessionEnv.CANVAS_AGENT_SESSION_ID = session.id
+        sessionEnv.CANVAS_AGENT_SESSION_DIR = getCanvasAgentSessionDir(session.id)
+        sessionEnv.CANVAS_AGENT_TOOL_COMMAND = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
 
         const ptyProcess = nodePty.spawn(spawnConfig.shell, spawnConfig.args, {
           name: 'xterm-256color',
           cols,
           rows,
           cwd: spawnConfig.cwd,
-          env: buildCanvasAgentEnv(spawnConfig.cwd, spawnConfig.shell),
+          env: sessionEnv,
         })
 
         canvasAgentPtysBySession.set(sessionId, ptyProcess)
@@ -3165,6 +3394,12 @@ function paperImportPlugin() {
           exitCode: null,
           errorMessage: null,
         })
+        pushCanvasAgentTranscript(
+          sessionId,
+          'session-started',
+          `Started ${definition.label} session at ${cols}x${rows}.`,
+          { cols, rows, pid: ptyProcess.pid }
+        )
 
         ptyProcess.onData((data) => {
           appendCanvasAgentOutput(runningSession || session, data)
@@ -3178,12 +3413,163 @@ function paperImportPlugin() {
             exitCode: Number.isFinite(exitCode) ? exitCode : null,
             pid: null,
           })
+          pushCanvasAgentTranscript(
+            sessionId,
+            'session-exited',
+            `Session exited${Number.isFinite(exitCode) ? ` with code ${exitCode}` : ''}${signal ? ` (${signal})` : ''}.`,
+            {
+              exitCode: Number.isFinite(exitCode) ? exitCode : null,
+              signal: signal || null,
+            }
+          )
           const message = `\r\n[session exited${Number.isFinite(exitCode) ? `: ${exitCode}` : ''}${signal ? `, signal ${signal}` : ''}]\r\n`
           appendCanvasAgentOutput(runningSession || session, message)
         })
 
         appendCanvasAgentOutput(runningSession || session, `[starting ${definition.label}]\r\n`)
+        appendCanvasAgentOutput(
+          runningSession || session,
+          `[canvas tool] ${session.toolCommand || CANVAS_AGENT_TOOL_COMMAND} help\r\n`
+        )
         return runningSession || session
+      }
+
+      const applyCanvasAgentOperation = ({
+        projectId,
+        operation,
+        clientId = null,
+        sessionId = null,
+        source = 'canvas-operation',
+        toolName = null,
+      }) => {
+        const currentRecord =
+          canvasAgentStateByProject.get(projectId) ||
+          upsertCanvasAgentState(projectId, { items: [], groups: [], nextZIndex: 1, selectedIds: [] }, null)
+        const nextState = applyCanvasRemoteOperationToState(currentRecord.state, operation)
+        const updatedRecord = upsertCanvasAgentState(projectId, nextState, clientId, {
+          source,
+          operationType: operation?.type || null,
+          sessionId,
+          toolName,
+        })
+
+        if (sessionId) {
+          pushCanvasAgentTranscript(
+            sessionId,
+            toolName ? 'tool-call' : 'canvas-operation',
+            toolName
+              ? `${toolName} applied ${operation?.type || 'operation'}.`
+              : `Applied ${operation?.type || 'operation'}.`,
+            {
+              operationType: operation?.type || null,
+              toolName: toolName || null,
+            }
+          )
+        }
+
+        broadcastCanvasAgentEvent(
+          projectId,
+          'canvas-operation',
+          {
+            operation,
+            sourceClientId: clientId || null,
+            sessionId,
+            source,
+            toolName,
+            updatedAt: updatedRecord.updatedAt,
+          },
+          clientId || undefined
+        )
+
+        return updatedRecord
+      }
+
+      const processCanvasAgentQueueFile = async (filePath) => {
+        const normalizedPath = path.resolve(filePath)
+        const requestRaw = await fs.readFile(normalizedPath, 'utf8')
+        const request = JSON.parse(requestRaw)
+        const derivedSessionId = path.basename(path.dirname(path.dirname(normalizedPath)))
+        const sessionId =
+          typeof request.sessionId === 'string' && request.sessionId.trim()
+            ? request.sessionId.trim()
+            : derivedSessionId
+        const session = findCanvasAgentSession(sessionId)
+        if (!session) {
+          throw new Error(`Canvas agent session not found for queue file ${normalizedPath}`)
+        }
+
+        const updatedRecord = applyCanvasAgentOperation({
+          projectId: session.projectId,
+          operation: request.operation,
+          sessionId,
+          source:
+            typeof request.source === 'string' && request.source.trim()
+              ? request.source.trim()
+              : 'canvas-agent-cli',
+          toolName:
+            typeof request.toolName === 'string' && request.toolName.trim()
+              ? request.toolName.trim()
+              : null,
+        })
+
+        const resultPath = getCanvasAgentSessionFile(
+          sessionId,
+          path.join('results', `${request.id || path.basename(normalizedPath, '.json')}.json`)
+        )
+        await fs.writeFile(
+          resultPath,
+          JSON.stringify(
+            {
+              ok: true,
+              updatedAt: updatedRecord.updatedAt,
+              state: updatedRecord.state,
+            },
+            null,
+            2
+          )
+        )
+        await fs.unlink(normalizedPath).catch(() => {})
+      }
+
+      const handleCanvasAgentQueueEvent = (filePath) => {
+        const normalizedPath = path.resolve(filePath)
+        if (!normalizedPath.startsWith(canvasAgentServerRuntimeRoot)) return
+        if (!normalizedPath.endsWith('.json')) return
+        if (!normalizedPath.includes(`${path.sep}queue${path.sep}`)) return
+        if (canvasAgentQueueActive.has(normalizedPath)) return
+
+        canvasAgentQueueActive.add(normalizedPath)
+        void (async () => {
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 25))
+            await processCanvasAgentQueueFile(normalizedPath)
+          } catch (error) {
+            const sessionId = path.basename(path.dirname(path.dirname(normalizedPath)))
+            pushCanvasAgentTranscript(
+              sessionId,
+              'session-error',
+              error?.message || 'Failed to process canvas agent queue item.'
+            )
+            const resultPath = getCanvasAgentSessionFile(
+              sessionId,
+              path.join('results', `${path.basename(normalizedPath, '.json')}.json`)
+            )
+            await ensureCanvasAgentSessionDir(sessionId).catch(() => {})
+            await fs.writeFile(
+              resultPath,
+              JSON.stringify(
+                {
+                  ok: false,
+                  error: error?.message || 'Failed to process canvas agent queue item.',
+                },
+                null,
+                2
+              )
+            ).catch(() => {})
+          } finally {
+            canvasAgentQueueActive.delete(normalizedPath)
+          }
+        })()
       }
 
       const registerLocalScanProject = (project) => {
@@ -3263,6 +3649,10 @@ function paperImportPlugin() {
       server.watcher.on('add', handleLocalScanEvent)
       server.watcher.on('change', handleLocalScanEvent)
       server.watcher.on('unlink', handleLocalScanEvent)
+      await fs.mkdir(canvasAgentServerRuntimeRoot, { recursive: true })
+      server.watcher.add(canvasAgentServerRuntimeRoot)
+      server.watcher.on('add', handleCanvasAgentQueueEvent)
+      server.watcher.on('change', handleCanvasAgentQueueEvent)
 
       server.httpServer?.once('close', () => {
         for (const sessionId of canvasAgentPtysBySession.keys()) {
@@ -3345,6 +3735,35 @@ function paperImportPlugin() {
           })
         }
 
+        const canvasAgentSessionDebugMatch = pathname.match(/^\/api\/canvas-agent\/sessions\/([^/]+)\/debug$/)
+        if (req.method === 'GET' && canvasAgentSessionDebugMatch) {
+          const sessionId = decodeURIComponent(canvasAgentSessionDebugMatch[1])
+          const session = findCanvasAgentSession(sessionId)
+          if (!session) {
+            return sendJson(res, 404, { error: 'Canvas agent session not found.' })
+          }
+
+          const stateRecord = canvasAgentStateByProject.get(session.projectId) || null
+          const toolCommand = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
+          return sendJson(res, 200, {
+            ok: true,
+            debug: {
+              session,
+              output: canvasAgentOutputBySession.get(sessionId) || '',
+              transcript: getCanvasAgentTranscript(sessionId),
+              projectState: stateRecord?.state || null,
+              stateHistory: getCanvasAgentStateHistory(session.projectId),
+              toolCommand,
+              toolExamples: [
+                `${toolCommand} state`,
+                `${toolCommand} create-item ./payload.json`,
+                `${toolCommand} update-item item-id ./updates.json`,
+                `${toolCommand} transcript`,
+              ],
+            },
+          })
+        }
+
         const canvasAgentSessionActionMatch = pathname.match(
           /^\/api\/canvas-agent\/sessions\/([^/]+)\/(start|stop|input|resize)$/
         )
@@ -3367,6 +3786,11 @@ function paperImportPlugin() {
                   session: startedSession,
                 })
               } catch (error) {
+                pushCanvasAgentTranscript(
+                  sessionId,
+                  'session-error',
+                  error?.message || 'Failed to start agent session.'
+                )
                 const failedSession = updateCanvasAgentSession(sessionId, {
                   transport: 'pty',
                   status: 'error',
@@ -3443,7 +3867,20 @@ function paperImportPlugin() {
               return sendJson(res, 400, { error: 'projectId is required.' })
             }
 
-            const stateRecord = upsertCanvasAgentState(projectId, body.state, body.clientId)
+            const stateRecord = upsertCanvasAgentState(projectId, body.state, body.clientId, {
+              source:
+                typeof body.source === 'string' && body.source.trim()
+                  ? body.source.trim()
+                  : 'canvas-ui',
+              sessionId:
+                typeof body.sessionId === 'string' && body.sessionId.trim()
+                  ? body.sessionId.trim()
+                  : null,
+              toolName:
+                typeof body.toolName === 'string' && body.toolName.trim()
+                  ? body.toolName.trim()
+                  : null,
+            })
             return sendJson(res, 200, {
               ok: true,
               updatedAt: stateRecord.updatedAt,
@@ -3459,26 +3896,28 @@ function paperImportPlugin() {
           try {
             const body = await readJson(req)
             const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : ''
+            const sessionId =
+              typeof body.sessionId === 'string' && body.sessionId.trim() ? body.sessionId.trim() : null
+            const toolName =
+              typeof body.toolName === 'string' && body.toolName.trim() ? body.toolName.trim() : null
+            const source =
+              typeof body.source === 'string' && body.source.trim()
+                ? body.source.trim()
+                : toolName
+                  ? `canvas-tool:${toolName}`
+                  : 'canvas-operation'
             if (!projectId) {
               return sendJson(res, 400, { error: 'projectId is required.' })
             }
 
-            const currentRecord =
-              canvasAgentStateByProject.get(projectId) ||
-              upsertCanvasAgentState(projectId, { items: [], groups: [], nextZIndex: 1, selectedIds: [] }, null)
-            const nextState = applyCanvasRemoteOperationToState(currentRecord.state, body.operation)
-            const updatedRecord = upsertCanvasAgentState(projectId, nextState, body.clientId)
-
-            broadcastCanvasAgentEvent(
+            const updatedRecord = applyCanvasAgentOperation({
               projectId,
-              'canvas-operation',
-              {
-                operation: body.operation,
-                sourceClientId: body.clientId || null,
-                updatedAt: updatedRecord.updatedAt,
-              },
-              body.clientId || undefined
-            )
+              operation: body.operation,
+              clientId: body.clientId || null,
+              sessionId,
+              source,
+              toolName,
+            })
 
             return sendJson(res, 200, {
               ok: true,
