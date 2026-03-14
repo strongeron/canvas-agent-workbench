@@ -33,10 +33,19 @@ const DEFAULT_MERMAID_SIZE = { width: 640, height: 420 }
 const DEFAULT_EXCALIDRAW_SIZE = { width: 760, height: 500 }
 const DEFAULT_ARTBOARD_SIZE = { width: 800, height: 600 }
 const DEFAULT_TYPOGRAPHY_BOARD_SIZE = { width: 1560, height: 1120 }
+const DEFAULT_PRIMITIVE_BOARD_SIZE = { width: 1440, height: 960 }
 const DEFAULT_TYPOGRAPHY_COMPONENT_CANDIDATES = [
   "marketing/typography-hero",
   "ui/typography-hero",
 ]
+const FOUNDATION_PRIMITIVE_IDS = {
+  heading: "primitive/heading",
+  text: "primitive/text",
+  button: "primitive/button",
+  surface: "primitive/surface",
+  stack: "primitive/stack",
+  box: "primitive/box",
+} as const
 
 interface Point {
   x: number
@@ -172,6 +181,16 @@ interface GenerateTypographyBoardArgs {
   position?: Point
   size?: Size
   columns?: number
+}
+
+interface CreatePrimitiveBoardArgs {
+  name?: string
+  title?: string
+  description?: string
+  ctaLabel?: string
+  position?: Point
+  size?: Size
+  themeId?: string
 }
 
 interface UseCopilotCanvasActionsInput {
@@ -389,6 +408,21 @@ export function useCopilotCanvasActions({
   })
 
   useCopilotReadable({
+    description:
+      "Foundation primitives that are safe for HTML/CSS-native design system composition on canvas.",
+    value: entries
+      .filter((entry) => entry.primitive?.exportable)
+      .map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        family: entry.primitive?.family,
+        level: entry.primitive?.level,
+        htmlTag: entry.primitive?.htmlTag,
+      })),
+    parentId: canvasReadableId,
+  })
+
+  useCopilotReadable({
     description: "Theme ids available for token updates.",
     value: themes.map((theme) => ({
       id: theme.id,
@@ -428,6 +462,9 @@ export function useCopilotCanvasActions({
     }
     return entries[0] || null
   }
+
+  const getPrimitiveEntry = (componentId: string) =>
+    entries.find((entry) => entry.id === componentId && Boolean(entry.primitive?.exportable)) || null
 
   useCopilotAction({
     name: "createCanvasItem",
@@ -1145,6 +1182,196 @@ export function useCopilotCanvasActions({
         variantIndex,
         itemCount: created.length,
         items: created,
+      }
+    },
+  })
+
+  useCopilotAction({
+    name: "createPrimitiveBoard",
+    description:
+      "Create an artboard populated with HTML/CSS-native design system primitives from the foundation pack.",
+    parameters: [
+      { name: "name", type: "string", required: false },
+      { name: "title", type: "string", required: false },
+      { name: "description", type: "string", required: false },
+      { name: "ctaLabel", type: "string", required: false },
+      {
+        name: "position",
+        type: "object",
+        required: false,
+        attributes: [
+          { name: "x", type: "number", required: false },
+          { name: "y", type: "number", required: false },
+        ],
+      },
+      {
+        name: "size",
+        type: "object",
+        required: false,
+        attributes: [
+          { name: "width", type: "number", required: false },
+          { name: "height", type: "number", required: false },
+        ],
+      },
+      { name: "themeId", type: "string", required: false },
+    ],
+    handler: async (rawArgs: unknown) => {
+      const args = (rawArgs || {}) as CreatePrimitiveBoardArgs
+      const requiredEntries = {
+        heading: getPrimitiveEntry(FOUNDATION_PRIMITIVE_IDS.heading),
+        text: getPrimitiveEntry(FOUNDATION_PRIMITIVE_IDS.text),
+        button: getPrimitiveEntry(FOUNDATION_PRIMITIVE_IDS.button),
+        surface: getPrimitiveEntry(FOUNDATION_PRIMITIVE_IDS.surface),
+        stack: getPrimitiveEntry(FOUNDATION_PRIMITIVE_IDS.stack),
+        box: getPrimitiveEntry(FOUNDATION_PRIMITIVE_IDS.box),
+      }
+
+      const missing = Object.entries(requiredEntries)
+        .filter(([, entry]) => !entry)
+        .map(([key]) => key)
+      if (missing.length > 0) {
+        return {
+          ok: false,
+          error: `Missing foundation primitives: ${missing.join(", ")}. Switch to the Design System Foundation project pack.`,
+        }
+      }
+
+      const boardSize = clampSize(args.size, DEFAULT_PRIMITIVE_BOARD_SIZE)
+      const boardPosition = clampPosition(args.position)
+      const themeId = args.themeId?.trim() || activeThemeId
+      if (!themes.some((theme) => theme.id === themeId)) {
+        return { ok: false, error: `Theme not found: ${themeId}` }
+      }
+
+      const artboardId = addItem({
+        type: "artboard",
+        name: args.name?.trim() || "Primitive Board",
+        position: boardPosition,
+        size: boardSize,
+        rotation: 0,
+        background: "white",
+        themeId,
+        layout: {
+          display: "grid",
+          columns: 2,
+          gap: 24,
+          padding: 24,
+        },
+      })
+
+      const title = args.title?.trim() || "Build the system from primitives."
+      const description =
+        args.description?.trim() ||
+        "These nodes are real React components backed by DOM, CSS tokens, and canvas metadata."
+      const ctaLabel = args.ctaLabel?.trim() || "Generate section"
+
+      const created = [
+        addItem({
+          type: "component",
+          componentId: requiredEntries.heading!.id,
+          variantIndex: 2,
+          position: { x: 0, y: 0 },
+          size: getDefaultComponentSize(entries, requiredEntries.heading!.id),
+          rotation: 0,
+          parentId: artboardId,
+          order: 0,
+          customProps: {
+            as: "h1",
+            children: title,
+            tone: "default",
+            align: "left",
+          },
+        }),
+        addItem({
+          type: "component",
+          componentId: requiredEntries.text!.id,
+          variantIndex: 2,
+          position: { x: 0, y: 0 },
+          size: getDefaultComponentSize(entries, requiredEntries.text!.id),
+          rotation: 0,
+          parentId: artboardId,
+          order: 1,
+          customProps: {
+            children: description,
+            tone: "muted",
+            size: "lg",
+          },
+        }),
+        addItem({
+          type: "component",
+          componentId: requiredEntries.button!.id,
+          variantIndex: 2,
+          position: { x: 0, y: 0 },
+          size: getDefaultComponentSize(entries, requiredEntries.button!.id),
+          rotation: 0,
+          parentId: artboardId,
+          order: 2,
+          customProps: {
+            children: ctaLabel,
+            variant: "primary",
+            size: "lg",
+            fullWidth: true,
+          },
+        }),
+        addItem({
+          type: "component",
+          componentId: requiredEntries.surface!.id,
+          variantIndex: 2,
+          position: { x: 0, y: 0 },
+          size: getDefaultComponentSize(entries, requiredEntries.surface!.id),
+          rotation: 0,
+          parentId: artboardId,
+          order: 3,
+          customProps: {
+            eyebrow: "Composite",
+            title: "Surface composes primitive typography and box framing.",
+            description:
+              "Use it for cards, callouts, panels, and grouped controls while staying exportable.",
+          },
+        }),
+        addItem({
+          type: "component",
+          componentId: requiredEntries.stack!.id,
+          variantIndex: 2,
+          position: { x: 0, y: 0 },
+          size: getDefaultComponentSize(entries, requiredEntries.stack!.id),
+          rotation: 0,
+          parentId: artboardId,
+          order: 4,
+          customProps: {
+            direction: "vertical",
+            gap: "sm",
+            items: ["Box", "Stack", "Text", "Heading", "Surface", "Button"],
+          },
+        }),
+        addItem({
+          type: "component",
+          componentId: requiredEntries.box!.id,
+          variantIndex: 2,
+          position: { x: 0, y: 0 },
+          size: getDefaultComponentSize(entries, requiredEntries.box!.id),
+          rotation: 0,
+          parentId: artboardId,
+          order: 5,
+          customProps: {
+            as: "section",
+            children:
+              "Box stays deliberately neutral. It is the framing layer behind more expressive patterns.",
+            padding: "xl",
+            surface: "subtle",
+            border: true,
+            radius: "xl",
+            shadow: "none",
+          },
+        }),
+      ]
+
+      return {
+        ok: true,
+        artboardId,
+        itemIds: created,
+        themeId,
+        componentIds: Object.values(FOUNDATION_PRIMITIVE_IDS),
       }
     },
   })
