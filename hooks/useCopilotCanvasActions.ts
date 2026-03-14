@@ -204,6 +204,13 @@ function clampSize(size: Size | undefined, fallback: Size): Size {
 function getDefaultComponentSize(entries: GalleryEntry[], componentId: string | undefined): Size {
   if (!componentId) return COMPONENT_LAYOUT_DEFAULTS.medium
   const entry = entries.find((candidate) => candidate.id === componentId)
+  const canvasSize = entry?.canvas?.defaultSize
+  if (canvasSize) {
+    return {
+      width: Math.max(100, Number(canvasSize.width) || COMPONENT_LAYOUT_DEFAULTS.medium.width),
+      height: Math.max(50, Number(canvasSize.height) || COMPONENT_LAYOUT_DEFAULTS.medium.height),
+    }
+  }
   const layoutSize = entry?.layoutSize || "medium"
   return COMPONENT_LAYOUT_DEFAULTS[layoutSize] || COMPONENT_LAYOUT_DEFAULTS.medium
 }

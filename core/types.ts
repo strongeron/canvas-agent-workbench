@@ -25,6 +25,11 @@ export type GalleryKind = "component" | "layout" | "page-pattern"
 
 export type ComponentCategory = string
 
+export interface CanvasSize {
+  width: number
+  height: number
+}
+
 /**
  * Layout size for optimal component display in gallery grid
  */
@@ -151,6 +156,26 @@ export interface BaseGalleryMeta {
   description?: string
   status?: ComponentStatus
   layoutSize?: ComponentLayoutSize
+  canvas?: CanvasEntryMeta
+  primitive?: PrimitiveMeta
+}
+
+export interface CanvasEntryMeta {
+  defaultSize?: CanvasSize
+  minSize?: CanvasSize
+  lockAspectRatio?: boolean
+  resizable?: boolean
+}
+
+export type PrimitiveLevel = "primitive" | "composite"
+
+export interface PrimitiveMeta {
+  primitiveId: string
+  family: string
+  level: PrimitiveLevel
+  htmlTag?: string
+  exportable?: boolean
+  tokenUsage?: string[]
 }
 
 export interface GalleryEntry<TProps = any> extends BaseGalleryMeta {

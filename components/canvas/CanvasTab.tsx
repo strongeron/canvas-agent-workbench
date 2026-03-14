@@ -420,6 +420,13 @@ function getDefaultSizeForComponent(
   getComponentById: (id: string) => GalleryEntry | null
 ): { width: number; height: number } {
   const component = getComponentById(componentId)
+  const canvasSize = component?.canvas?.defaultSize
+  if (canvasSize) {
+    return {
+      width: Math.max(100, Number(canvasSize.width) || LAYOUT_SIZE_DEFAULTS.medium.width),
+      height: Math.max(50, Number(canvasSize.height) || LAYOUT_SIZE_DEFAULTS.medium.minHeight),
+    }
+  }
   const layoutSize = component?.layoutSize || "medium"
   const defaults = LAYOUT_SIZE_DEFAULTS[layoutSize] || LAYOUT_SIZE_DEFAULTS.medium
   return { width: defaults.width, height: defaults.minHeight }

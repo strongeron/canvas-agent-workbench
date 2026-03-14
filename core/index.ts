@@ -47,3 +47,6 @@ export {
 
 // MCP Bridges
 export * from "./mcp/paper"
+
+// Primitives
+export * from "./primitives"
