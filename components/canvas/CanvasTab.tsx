@@ -1,7 +1,7 @@
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core"
 import { useCallback, useEffect, useState, useMemo, useRef } from "react"
-import { CopilotChat } from "@copilotkit/react-ui"
 
+import { useCanvasAgentBridge } from "../../hooks/useCanvasAgentBridge"
 import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShortcuts"
 import { useCanvasState } from "../../hooks/useCanvasState"
 import { useCanvasScenes } from "../../hooks/useCanvasScenes"
@@ -23,6 +23,7 @@ import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
+import { CanvasAgentPanel } from "./CanvasAgentPanel"
 import { CanvasLayersPanel } from "./CanvasLayersPanel"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
 import { CanvasScenesPanel } from "./CanvasScenesPanel"
@@ -527,6 +528,7 @@ export function CanvasTab({
     items,
     groups,
     selectedIds,
+    nextZIndex,
     addItem,
     updateItem,
     removeItem,
@@ -542,6 +544,8 @@ export function CanvasTab({
     removeSelected,
     duplicateSelected,
     duplicateItem,
+    replaceState,
+    applyRemoteOperation,
   } = useCanvasState(storageKey ? `${storageKey}-state` : undefined)
 
   const {
@@ -625,6 +629,17 @@ export function CanvasTab({
   const artboardThemeId = selectedArtboardItem?.themeId || activeThemeId
   const [artboardTokenValues, setArtboardTokenValues] = useState<Record<string, string>>(tokenValues)
   const [liveAuditPairs, setLiveAuditPairs] = useState<LiveAuditPair[]>([])
+  const agentBridge = useCanvasAgentBridge({
+    projectId: activeProjectId,
+    snapshot: {
+      items,
+      groups,
+      selectedIds,
+      nextZIndex,
+    },
+    replaceState,
+    applyRemoteOperation,
+  })
 
   useEffect(() => {
     if (!selectedArtboardItem) {
@@ -2260,16 +2275,11 @@ export function CanvasTab({
           )}
 
           {copilotPanelVisible && (
-            <div
-              className="flex h-full w-[360px] shrink-0 border-l border-default bg-white"
-              data-canvas-ignore="true"
-            >
-              <CopilotChat
-                instructions={COPILOT_INSTRUCTIONS}
-                suggestions="manual"
-                className="h-full w-full"
-              />
-            </div>
+            <CanvasAgentPanel
+              projectId={activeProjectId}
+              instructions={COPILOT_INSTRUCTIONS}
+              bridge={agentBridge}
+            />
           )}
 
           <DragOverlay>
