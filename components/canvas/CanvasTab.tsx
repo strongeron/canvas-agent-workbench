@@ -443,10 +443,24 @@ interface CanvasTabProps {
   /** Optional theme token list (full token set) */
   themeTokens?: ThemeToken[]
   /** Optional project selector */
-  projects?: Array<{ id: string; label: string }>
+  projects?: Array<{
+    id: string
+    label: string
+    localScan?: {
+      enabled: boolean
+      watching: boolean
+      repoPath: string
+      repoLabel: string
+      scannedAt?: string | null
+      detectedCount?: number | null
+      createdEntries?: number | null
+      scannedFiles?: number | null
+    } | null
+  }>
   activeProjectId?: string
   onSelectProject?: (id: string) => void
   onCreateProject?: () => void
+  onScanLocalProject?: () => void | Promise<void>
   /** Optional handler to open dedicated color canvas view */
   onOpenColorCanvas?: () => void
   /** Optional Paper import handler */
@@ -494,6 +508,7 @@ export function CanvasTab({
   activeProjectId,
   onSelectProject,
   onCreateProject,
+  onScanLocalProject,
   onOpenColorCanvas,
   onImportFromPaper,
 }: CanvasTabProps) {
@@ -1900,6 +1915,7 @@ export function CanvasTab({
                 activeProjectId={activeProjectId}
                 onSelectProject={onSelectProject}
                 onCreateProject={onCreateProject}
+                onScanLocalProject={onScanLocalProject}
               />
             </div>
           </div>

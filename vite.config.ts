@@ -31,6 +31,36 @@ for (const [key, value] of Object.entries(loadedEnv)) {
 const ENV_LOCAL_PATH = path.resolve(__dirname, '.env.local')
 
 const PROJECTS_ROOT = path.resolve(__dirname, 'projects')
+const LOCAL_SCAN_ALLOWED_ROOTS = [
+  __dirname,
+  ...String(process.env.LOCAL_SCAN_ALLOWED_ROOTS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => path.resolve(value)),
+  ...(process.env.HOME ? [path.resolve(process.env.HOME)] : []),
+]
+const LOCAL_SCAN_MAX_FILES = Number(process.env.LOCAL_SCAN_MAX_FILES || 4000)
+const LOCAL_SCAN_MAX_COMPONENTS = Number(process.env.LOCAL_SCAN_MAX_COMPONENTS || 120)
+const LOCAL_SCAN_AUTO_SYNC =
+  String(process.env.LOCAL_SCAN_AUTO_SYNC || 'true').trim().toLowerCase() !== 'false'
+const LOCAL_SCAN_WATCH_DEBOUNCE_MS = Number(process.env.LOCAL_SCAN_WATCH_DEBOUNCE_MS || 700)
+const LOCAL_SCAN_IGNORE_DIRS = new Set([
+  '.git',
+  '.next',
+  '.turbo',
+  '.cache',
+  '.idea',
+  '.vscode',
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+  'out',
+  'tmp',
+  'vendor',
+])
+const LOCAL_SCAN_SOURCE_EXTENSIONS = new Set(['.tsx', '.jsx'])
 const PAPER_MCP_MODULE = process.env.PAPER_MCP_CLIENT_MODULE
 const EMBED_SNAPSHOT_TEMPLATE = process.env.EMBED_SNAPSHOT_TEMPLATE
 const EMBED_LIVE_TEMPLATE = process.env.EMBED_LIVE_TEMPLATE
@@ -149,6 +179,83 @@ async function ensureProjectScaffold(projectId, label) {
   return projectDir
 }
 
+async function readProjectMeta(projectDir, projectId) {
+  const metaPath = path.join(projectDir, 'project.json')
+  if (!existsSync(metaPath)) {
+    return { label: projectId }
+  }
+
+  try {
+    const raw = await fs.readFile(metaPath, 'utf8')
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : { label: projectId }
+  } catch {
+    return { label: projectId }
+  }
+}
+
+async function writeProjectMeta(projectDir, meta) {
+  const metaPath = path.join(projectDir, 'project.json')
+  const nextRaw = JSON.stringify(meta, null, 2)
+  if (existsSync(metaPath)) {
+    try {
+      const currentRaw = await fs.readFile(metaPath, 'utf8')
+      if (currentRaw === nextRaw) return false
+    } catch {
+      // fall through and rewrite malformed metadata
+    }
+  }
+
+  await fs.writeFile(metaPath, nextRaw)
+  return true
+}
+
+async function writeTextFileIfChanged(filePath, content) {
+  if (existsSync(filePath)) {
+    try {
+      const current = await fs.readFile(filePath, 'utf8')
+      if (current === content) return false
+    } catch {
+      // fall through and rewrite
+    }
+  }
+
+  await fs.writeFile(filePath, content)
+  return true
+}
+
+function normalizeLocalScanState(localScan) {
+  if (!localScan || typeof localScan !== 'object') return null
+
+  const repoPath =
+    typeof localScan.repoPath === 'string' && localScan.repoPath.trim()
+      ? path.resolve(localScan.repoPath.trim())
+      : ''
+  if (!repoPath) return null
+
+  const detectedCount = Number(localScan.detectedCount)
+  const createdEntries = Number(localScan.createdEntries)
+  const scannedFiles = Number(localScan.scannedFiles)
+  const enabled = localScan.enabled !== false
+
+  return {
+    enabled,
+    watching: enabled && LOCAL_SCAN_AUTO_SYNC,
+    repoPath,
+    repoLabel:
+      typeof localScan.repoLabel === 'string' && localScan.repoLabel.trim()
+        ? localScan.repoLabel.trim()
+        : path.basename(repoPath),
+    scannedAt:
+      typeof localScan.scannedAt === 'string' && localScan.scannedAt.trim()
+        ? localScan.scannedAt
+        : null,
+    detectedCount: Number.isFinite(detectedCount) ? detectedCount : null,
+    createdEntries: Number.isFinite(createdEntries) ? createdEntries : null,
+    scannedFiles: Number.isFinite(scannedFiles) ? scannedFiles : null,
+  }
+}
+
 async function listProjects() {
   if (!existsSync(PROJECTS_ROOT)) return []
   const entries = await fs.readdir(PROJECTS_ROOT, { withFileTypes: true })
@@ -158,22 +265,17 @@ async function listProjects() {
       .filter((entry) => entry.isDirectory())
       .map(async (entry) => {
         const projectId = entry.name
-        const metaPath = path.join(PROJECTS_ROOT, projectId, 'project.json')
-        let label = projectId
+        const meta = await readProjectMeta(path.join(PROJECTS_ROOT, projectId), projectId)
+        const label =
+          typeof meta?.label === 'string' && meta.label.trim()
+            ? meta.label.trim()
+            : projectId
 
-        if (existsSync(metaPath)) {
-          try {
-            const raw = await fs.readFile(metaPath, 'utf8')
-            const parsed = JSON.parse(raw)
-            if (typeof parsed?.label === 'string' && parsed.label.trim()) {
-              label = parsed.label.trim()
-            }
-          } catch {
-            // ignore malformed project metadata
-          }
+        return {
+          id: projectId,
+          label,
+          localScan: normalizeLocalScanState(meta?.localScan),
         }
-
-        return { id: projectId, label }
       })
   )
 
@@ -238,6 +340,689 @@ async function updateProjectRegistry(projectDir, entryId, kind) {
   normalized[other] = normalized[other].filter((id) => id !== entryId)
 
   await fs.writeFile(registryPath, JSON.stringify(normalized, null, 2))
+}
+
+async function updateProjectRegistryBulk(projectDir, entryIds, kind) {
+  const normalizedIds = Array.from(
+    new Set(
+      (entryIds || [])
+        .map((id) => (typeof id === 'string' ? id.trim() : ''))
+        .filter(Boolean)
+    )
+  )
+  if (normalizedIds.length === 0) return
+
+  const registryPath = path.join(projectDir, 'registry.json')
+  const fallback = { ui: [], page: [] }
+  let registry = fallback
+
+  if (existsSync(registryPath)) {
+    try {
+      const raw = await fs.readFile(registryPath, 'utf8')
+      registry = JSON.parse(raw)
+    } catch {
+      registry = fallback
+    }
+  }
+
+  const normalized = {
+    ui: Array.isArray(registry.ui) ? registry.ui : [],
+    page: Array.isArray(registry.page) ? registry.page : [],
+  }
+
+  const bucket = kind === 'page' ? 'page' : 'ui'
+  const other = bucket === 'page' ? 'ui' : 'page'
+  const bucketSet = new Set(normalized[bucket])
+  normalizedIds.forEach((id) => bucketSet.add(id))
+  normalized[bucket] = Array.from(bucketSet)
+  normalized[other] = normalized[other].filter((id) => !normalizedIds.includes(id))
+
+  await fs.writeFile(registryPath, JSON.stringify(normalized, null, 2))
+}
+
+async function syncProjectLocalScanRegistry(projectDir, entryIds) {
+  const normalizedIds = Array.from(
+    new Set(
+      (entryIds || [])
+        .map((id) => (typeof id === 'string' ? id.trim() : ''))
+        .filter(Boolean)
+    )
+  )
+  const registryPath = path.join(projectDir, 'registry.json')
+  const fallback = { ui: [], page: [] }
+  let registry = fallback
+
+  if (existsSync(registryPath)) {
+    try {
+      const raw = await fs.readFile(registryPath, 'utf8')
+      registry = JSON.parse(raw)
+    } catch {
+      registry = fallback
+    }
+  }
+
+  const normalized = {
+    ui: Array.isArray(registry.ui) ? registry.ui : [],
+    page: Array.isArray(registry.page) ? registry.page : [],
+  }
+
+  const nextRegistry = {
+    ui: [
+      ...normalized.ui.filter((id) => typeof id === 'string' && !id.startsWith('local-scan/')),
+      ...normalizedIds,
+    ],
+    page: normalized.page.filter((id) => typeof id === 'string' && !id.startsWith('local-scan/')),
+  }
+
+  const nextRaw = JSON.stringify(nextRegistry, null, 2)
+  if (existsSync(registryPath)) {
+    try {
+      const currentRaw = await fs.readFile(registryPath, 'utf8')
+      if (currentRaw === nextRaw) return false
+    } catch {
+      // fall through and rewrite malformed registry
+    }
+  }
+
+  await fs.writeFile(registryPath, nextRaw)
+  return true
+}
+
+function shouldHandleLocalScanPath(filePath) {
+  const normalized = path.resolve(filePath)
+  const segments = normalized.split(path.sep).filter(Boolean)
+  if (segments.some((segment) => LOCAL_SCAN_IGNORE_DIRS.has(segment))) {
+    return false
+  }
+
+  const ext = path.extname(normalized).toLowerCase()
+  if (!ext) return true
+  return LOCAL_SCAN_SOURCE_EXTENSIONS.has(ext)
+}
+
+function getCommonPathPrefix(paths) {
+  if (!Array.isArray(paths) || paths.length === 0) return null
+  const segmentLists = paths.map((value) => path.resolve(value).split(path.sep).filter(Boolean))
+  const firstSegments = segmentLists[0]
+  const shared = []
+
+  for (let index = 0; index < firstSegments.length; index += 1) {
+    const segment = firstSegments[index]
+    if (segmentLists.every((segments) => segments[index] === segment)) {
+      shared.push(segment)
+      continue
+    }
+    break
+  }
+
+  if (shared.length === 0) {
+    return path.parse(path.resolve(paths[0])).root
+  }
+
+  const root = path.parse(path.resolve(paths[0])).root
+  return path.join(root, ...shared)
+}
+
+function findLocalScanRootCandidate(startPath) {
+  const markers = [
+    'package.json',
+    'pnpm-workspace.yaml',
+    'package-lock.json',
+    'yarn.lock',
+    'tsconfig.json',
+    'vite.config.ts',
+    'vite.config.js',
+    'next.config.ts',
+    'next.config.js',
+  ]
+  let current = path.resolve(startPath)
+
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (markers.some((marker) => existsSync(path.join(current, marker)))) {
+      return current
+    }
+    const parent = path.dirname(current)
+    if (parent === current) break
+    current = parent
+  }
+
+  return path.resolve(startPath)
+}
+
+async function inferLocalScanProjectFromFiles(projectDir, projectId, label) {
+  const localConfigDir = path.join(projectDir, 'configs', 'local')
+  if (!existsSync(localConfigDir)) return null
+
+  const configFiles = (await fs.readdir(localConfigDir, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.startsWith('scan-') && entry.name.endsWith('.gallery.ts'))
+    .map((entry) => path.join(localConfigDir, entry.name))
+
+  if (configFiles.length === 0) return null
+
+  const sourcePaths = []
+  for (const filePath of configFiles.slice(0, 40)) {
+    const raw = await fs.readFile(filePath, 'utf8').catch(() => '')
+    if (!raw) continue
+    const matches = raw.matchAll(/"sourcePath":\s*"([^"]+)"/g)
+    for (const match of matches) {
+      try {
+        sourcePaths.push(JSON.parse(`"${match[1]}"`))
+      } catch {
+        sourcePaths.push(match[1])
+      }
+    }
+  }
+
+  if (sourcePaths.length === 0) return null
+  const sharedPath = getCommonPathPrefix(sourcePaths.map((value) => path.dirname(value)))
+  const repoPath = sharedPath ? findLocalScanRootCandidate(sharedPath) : null
+  if (!repoPath) return null
+
+  return {
+    projectId,
+    projectDir,
+    label,
+    repoPath,
+    repoLabel: path.basename(repoPath),
+  }
+}
+
+async function listLocalScanProjects() {
+  if (!existsSync(PROJECTS_ROOT)) return []
+  const entries = await fs.readdir(PROJECTS_ROOT, { withFileTypes: true })
+  const projects = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const projectId = entry.name
+    const projectDir = path.join(PROJECTS_ROOT, projectId)
+    const meta = await readProjectMeta(projectDir, projectId)
+    const localScan = meta?.localScan
+    const label =
+      typeof meta?.label === 'string' && meta.label.trim()
+        ? meta.label.trim()
+        : projectId
+
+    if (localScan && typeof localScan === 'object') {
+      const repoPathRaw =
+        typeof localScan.repoPath === 'string' ? localScan.repoPath.trim() : ''
+      if (repoPathRaw && localScan.enabled !== false) {
+        const normalizedRepoPath = findLocalScanRootCandidate(path.resolve(repoPathRaw))
+        const repoLabel =
+          typeof localScan.repoLabel === 'string' && localScan.repoLabel.trim()
+            ? localScan.repoLabel.trim()
+            : path.basename(normalizedRepoPath)
+        if (normalizedRepoPath !== path.resolve(repoPathRaw) || repoLabel !== localScan.repoLabel) {
+          await writeProjectMeta(projectDir, {
+            ...meta,
+            label,
+            localScan: {
+              ...localScan,
+              enabled: true,
+              repoPath: normalizedRepoPath,
+              repoLabel: path.basename(normalizedRepoPath),
+            },
+          })
+        }
+        projects.push({
+          projectId,
+          projectDir,
+          label,
+          repoPath: normalizedRepoPath,
+          repoLabel: path.basename(normalizedRepoPath),
+        })
+        continue
+      }
+    }
+
+    const inferredProject = await inferLocalScanProjectFromFiles(projectDir, projectId, label)
+    if (inferredProject) {
+      await writeProjectMeta(projectDir, {
+        ...meta,
+        label,
+        localScan: {
+          ...(meta?.localScan && typeof meta.localScan === 'object' ? meta.localScan : {}),
+          enabled: true,
+          repoPath: inferredProject.repoPath,
+          repoLabel: inferredProject.repoLabel,
+          inferredAt: new Date().toISOString(),
+        },
+      })
+      projects.push(inferredProject)
+    }
+  }
+
+  return projects
+}
+
+function isSubPath(parentPath, candidatePath) {
+  const relative = path.relative(parentPath, candidatePath)
+  if (!relative) return true
+  return !relative.startsWith('..') && !path.isAbsolute(relative)
+}
+
+function assertLocalScanPathAllowed(repoPath) {
+  const normalizedRepoPath = path.resolve(repoPath)
+  const allowed = LOCAL_SCAN_ALLOWED_ROOTS.some((rootPath) => isSubPath(rootPath, normalizedRepoPath))
+  if (!allowed) {
+    const listed = LOCAL_SCAN_ALLOWED_ROOTS.join(', ')
+    throw new Error(
+      `Path is outside allowed scanner roots. Configure LOCAL_SCAN_ALLOWED_ROOTS. Allowed: ${listed}`
+    )
+  }
+}
+
+function normalizeFsPathForUrl(filePath) {
+  const normalized = filePath.replace(/\\/g, '/')
+  return normalized.startsWith('/') ? normalized : `/${normalized}`
+}
+
+function toFsModuleUrl(filePath) {
+  return `/@fs${encodeURI(normalizeFsPathForUrl(filePath))}`
+}
+
+function inferLocalComponentNameFromFile(filePath) {
+  const baseName = path.basename(filePath, path.extname(filePath))
+  return toPascalCase(baseName || 'LocalComponent')
+}
+
+function extractReactComponentExports(source, filePath) {
+  const results = []
+  const seen = new Set()
+
+  const pushExport = (componentName, exportName) => {
+    const key = `${componentName}:${exportName}`
+    if (seen.has(key)) return
+    seen.add(key)
+    results.push({
+      componentName,
+      exportName,
+    })
+  }
+
+  const defaultFunctionMatches = source.matchAll(/export\s+default\s+function\s+([A-Z][A-Za-z0-9_]*)/g)
+  for (const match of defaultFunctionMatches) {
+    pushExport(match[1], 'default')
+  }
+
+  const defaultClassMatches = source.matchAll(/export\s+default\s+class\s+([A-Z][A-Za-z0-9_]*)/g)
+  for (const match of defaultClassMatches) {
+    pushExport(match[1], 'default')
+  }
+
+  const defaultIdentifierMatches = source.matchAll(/export\s+default\s+([A-Z][A-Za-z0-9_]*)\b/g)
+  for (const match of defaultIdentifierMatches) {
+    pushExport(match[1], 'default')
+  }
+
+  const hasAnonymousDefault =
+    /export\s+default\s+function\b(?!\s+[A-Z][A-Za-z0-9_]*)/.test(source) ||
+    /export\s+default\s+class\b(?!\s+[A-Z][A-Za-z0-9_]*)/.test(source)
+  if (hasAnonymousDefault) {
+    pushExport(inferLocalComponentNameFromFile(filePath), 'default')
+  }
+
+  const namedMatches = source.matchAll(
+    /export\s+(?:const|let|var|function|class)\s+([A-Z][A-Za-z0-9_]*)\b/g
+  )
+  for (const match of namedMatches) {
+    pushExport(match[1], match[1])
+  }
+
+  return results
+}
+
+async function collectLocalComponentCandidates(repoPath) {
+  const queue = [repoPath]
+  const files = []
+
+  while (queue.length > 0) {
+    const current = queue.pop()
+    if (!current) continue
+    const entries = await fs.readdir(current, { withFileTypes: true })
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name)
+      if (entry.isDirectory()) {
+        if (LOCAL_SCAN_IGNORE_DIRS.has(entry.name)) continue
+        queue.push(fullPath)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const ext = path.extname(entry.name).toLowerCase()
+      if (!LOCAL_SCAN_SOURCE_EXTENSIONS.has(ext)) continue
+      files.push(fullPath)
+      if (files.length >= LOCAL_SCAN_MAX_FILES) {
+        return files
+      }
+    }
+  }
+
+  return files
+}
+
+function buildLocalScanProxySource() {
+  return `import { Component, useEffect, useMemo, useState } from "react"
+import type { ComponentType, ErrorInfo, ReactNode } from "react"
+
+interface LocalScannedComponentProxyProps {
+  moduleUrl: string
+  exportName?: string
+  displayName?: string
+  sourcePath?: string
+  repoName?: string
+}
+
+const NOOP = () => {}
+
+const DEFAULT_PREVIEW_PROPS: Record<string, unknown> = {
+  variants: [{ id: "preview", label: "Preview", name: "Preview" }],
+  active: "preview",
+  onChange: NOOP,
+  onPaletteChange: NOOP,
+  onFontPairChange: NOOP,
+  activePalette: "default",
+  activeFontPair: "default",
+  theme: "dark",
+  minimal: true,
+  showPickBadge: false,
+}
+
+interface LocalRenderBoundaryProps {
+  onError: (message: string) => void
+  children: ReactNode
+}
+
+interface LocalRenderBoundaryState {
+  hasError: boolean
+}
+
+class LocalRenderBoundary extends Component<LocalRenderBoundaryProps, LocalRenderBoundaryState> {
+  state: LocalRenderBoundaryState = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: unknown, _errorInfo: ErrorInfo) {
+    const message =
+      error instanceof Error ? error.message : "Component threw during render."
+    this.props.onError(message)
+  }
+
+  render() {
+    if (this.state.hasError) return null
+    return this.props.children
+  }
+}
+
+export default function LocalScannedComponentProxy({
+  moduleUrl,
+  exportName,
+  displayName,
+  sourcePath,
+  repoName,
+  ...passThroughProps
+}: LocalScannedComponentProxyProps & Record<string, unknown>) {
+  const [LoadedComponent, setLoadedComponent] = useState<ComponentType<any> | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [renderError, setRenderError] = useState<string | null>(null)
+
+  const previewProps = useMemo(
+    () => ({
+      ...DEFAULT_PREVIEW_PROPS,
+      ...passThroughProps,
+    }),
+    [passThroughProps]
+  )
+
+  useEffect(() => {
+    let active = true
+    setLoadedComponent(null)
+    setLoadError(null)
+    setRenderError(null)
+
+    void (async () => {
+      try {
+        const mod: Record<string, unknown> = await import(/* @vite-ignore */ moduleUrl)
+        const preferred =
+          exportName && typeof mod[exportName] !== "undefined"
+            ? mod[exportName]
+            : mod.default
+        if (!preferred || (typeof preferred !== "function" && typeof preferred !== "object")) {
+          throw new Error("Export is not a renderable React component.")
+        }
+        if (active) {
+          setLoadedComponent(() => preferred as ComponentType<any>)
+        }
+      } catch (loadError) {
+        if (!active) return
+        const message =
+          loadError instanceof Error ? loadError.message : "Failed to load local module."
+        setLoadError(message)
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [moduleUrl, exportName])
+
+  if (LoadedComponent) {
+    const Component = LoadedComponent
+    return (
+      <div className="h-full w-full overflow-auto rounded-lg border border-default bg-white p-3">
+        <LocalRenderBoundary onError={setRenderError} key={\`\${moduleUrl}::\${exportName || "default"}\`}>
+          <Component {...previewProps} />
+        </LocalRenderBoundary>
+        {renderError && (
+          <div className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
+            {\`Render error: \${renderError}\`}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full w-full rounded-lg border border-default bg-surface-50 p-3 text-foreground">
+      <div className="text-sm font-semibold">{displayName || "Scanned component"}</div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        {repoName ? \`Repo: \${repoName}\` : "Local repository scan"}
+      </div>
+      {sourcePath && (
+        <div className="mt-2 rounded border border-default bg-white px-2 py-1 font-mono text-[11px] text-muted-foreground">
+          {sourcePath}
+        </div>
+      )}
+      <div className="mt-3 text-xs text-muted-foreground">
+        {loadError ? \`Load error: \${loadError}\` : "Loading component module..."}
+      </div>
+      <div className="mt-2 text-[11px] text-muted-foreground">
+        This preview uses dynamic /@fs import and may fail if repo aliases/dependencies are unavailable.
+      </div>
+    </div>
+  )
+}
+`
+}
+
+function formatLocalScanGalleryEntrySource({
+  entryId,
+  entryName,
+  description,
+  importPath,
+  exportConstName,
+  props,
+}) {
+  return `import type { GalleryEntry } from "@/core"
+
+export const ${exportConstName}: GalleryEntry<Record<string, unknown>> = {
+  id: ${JSON.stringify(entryId)},
+  name: ${JSON.stringify(entryName)},
+  category: "Local Scan",
+  description: ${JSON.stringify(description)},
+  importPath: ${JSON.stringify(importPath)},
+  layoutSize: "large",
+  variants: [
+    {
+      name: "Default",
+      description: ${JSON.stringify(description)},
+      status: "wip",
+      category: "variant",
+      props: ${JSON.stringify(props, null, 2)},
+    },
+  ],
+}
+`
+}
+
+async function syncLocalScanProject({ repoPath, projectId, projectLabel }) {
+  const normalizedRepoPath = path.resolve(repoPath)
+  assertLocalScanPathAllowed(normalizedRepoPath)
+
+  let repoStat = null
+  try {
+    repoStat = await fs.stat(normalizedRepoPath)
+  } catch {
+    repoStat = null
+  }
+  if (!repoStat?.isDirectory()) {
+    throw new Error('repoPath must point to an existing directory.')
+  }
+
+  const repoLabel = path.basename(normalizedRepoPath)
+  const normalizedProjectId = slugify(projectId)
+  const normalizedProjectLabel = projectLabel?.trim() || normalizedProjectId
+  const projectDir = await ensureProjectScaffold(normalizedProjectId, normalizedProjectLabel)
+  const localComponentDir = path.join(projectDir, 'components', 'local')
+  const localConfigDir = path.join(projectDir, 'configs', 'local')
+  await fs.mkdir(localComponentDir, { recursive: true })
+  await fs.mkdir(localConfigDir, { recursive: true })
+
+  let changed = false
+  changed =
+    (await writeTextFileIfChanged(
+      path.join(localComponentDir, 'LocalScannedComponentProxy.tsx'),
+      buildLocalScanProxySource()
+    )) || changed
+
+  const files = await collectLocalComponentCandidates(normalizedRepoPath)
+  const candidates = []
+  for (const filePath of files) {
+    const source = await fs.readFile(filePath, 'utf8').catch(() => '')
+    if (!source || !source.includes('export')) continue
+    const exports = extractReactComponentExports(source, filePath)
+    if (exports.length === 0) continue
+    const relativePath = path.relative(normalizedRepoPath, filePath).replace(/\\/g, '/')
+    exports.forEach((item) => {
+      if (candidates.length >= LOCAL_SCAN_MAX_COMPONENTS) return
+      candidates.push({
+        componentName: item.componentName,
+        exportName: item.exportName,
+        filePath,
+        relativePath,
+      })
+    })
+    if (candidates.length >= LOCAL_SCAN_MAX_COMPONENTS) break
+  }
+
+  const preview = candidates.slice(0, 50).map((item) => ({
+    componentName: item.componentName,
+    exportName: item.exportName,
+    relativePath: item.relativePath,
+  }))
+
+  const existingConfigFiles = existsSync(localConfigDir)
+    ? (await fs.readdir(localConfigDir, { withFileTypes: true }))
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.gallery.ts'))
+        .map((entry) => path.join(localConfigDir, entry.name))
+    : []
+  const nextConfigFiles = new Set()
+
+  const proxyImportPath = `@project/${normalizedProjectId}/components/local/LocalScannedComponentProxy`
+  const repoSlug = slugify(repoLabel)
+  const createdEntryIds = []
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index]
+    const relativeSlug = slugify(candidate.relativePath)
+    const exportSlug = slugify(candidate.exportName || 'default')
+    const entryId = `local-scan/${repoSlug}-${relativeSlug}-${exportSlug}`
+    const entryName = `${candidate.componentName} (${repoLabel})`
+    const description = `Scanned from ${candidate.relativePath}`
+    const exportConstName = `${toPascalCase(
+      `${candidate.componentName}-${repoSlug}-${index + 1}`
+    )}Entry`
+    const configSlug = `scan-${repoSlug}-${relativeSlug}-${exportSlug}`
+    const configPath = path.join(localConfigDir, `${configSlug}.gallery.ts`)
+    const entrySource = formatLocalScanGalleryEntrySource({
+      entryId,
+      entryName,
+      description,
+      importPath: proxyImportPath,
+      exportConstName,
+      props: {
+        displayName: candidate.componentName,
+        repoName: repoLabel,
+        sourcePath: candidate.filePath,
+        moduleUrl: toFsModuleUrl(candidate.filePath),
+        exportName: candidate.exportName,
+      },
+    })
+
+    nextConfigFiles.add(configPath)
+    changed = (await writeTextFileIfChanged(configPath, entrySource)) || changed
+    createdEntryIds.push(entryId)
+  }
+
+  for (const existingFile of existingConfigFiles) {
+    if (nextConfigFiles.has(existingFile)) continue
+    await fs.rm(existingFile, { force: true })
+    changed = true
+  }
+
+  changed = (await syncProjectLocalScanRegistry(projectDir, createdEntryIds)) || changed
+
+  const meta = await readProjectMeta(projectDir, normalizedProjectId)
+  const nextLocalScan = {
+    ...(meta?.localScan && typeof meta.localScan === 'object' ? meta.localScan : {}),
+    enabled: true,
+    repoPath: normalizedRepoPath,
+    repoLabel,
+    scannedAt: new Date().toISOString(),
+    scannedFiles: files.length,
+    detectedCount: candidates.length,
+    createdEntries: createdEntryIds.length,
+  }
+  changed =
+    (await writeProjectMeta(projectDir, {
+      ...meta,
+      label:
+        typeof meta?.label === 'string' && meta.label.trim()
+          ? meta.label.trim()
+          : normalizedProjectLabel,
+      localScan: nextLocalScan,
+    })) || changed
+
+  return {
+    ok: true,
+    projectId: normalizedProjectId,
+    projectLabel:
+      typeof meta?.label === 'string' && meta.label.trim()
+        ? meta.label.trim()
+        : normalizedProjectLabel,
+    repoPath: normalizedRepoPath,
+    scannedFiles: files.length,
+    detectedCount: candidates.length,
+    createdEntries: createdEntryIds.length,
+    entries: preview,
+    message:
+      candidates.length === 0
+        ? 'No React component exports were detected (.tsx/.jsx).'
+        : undefined,
+    localScan: normalizeLocalScanState(nextLocalScan),
+    changed,
+  }
 }
 
 function normalizeOrigin(value) {
@@ -2031,7 +2816,100 @@ async function discoverLocalApps(appOrigin, force) {
 function paperImportPlugin() {
   return {
     name: 'paper-import',
-    configureServer(server) {
+    async configureServer(server) {
+      const watchedLocalScanProjects = new Map()
+      const localScanTimers = new Map()
+      const localScanActive = new Set()
+      const localScanPending = new Set()
+
+      const registerLocalScanProject = (project) => {
+        if (!project?.projectId || !project?.repoPath) return
+        const normalizedRepoPath = path.resolve(project.repoPath)
+        const existing = watchedLocalScanProjects.get(project.projectId)
+        watchedLocalScanProjects.set(project.projectId, {
+          ...project,
+          repoPath: normalizedRepoPath,
+        })
+        if (!existing || existing.repoPath !== normalizedRepoPath) {
+          server.watcher.add(normalizedRepoPath)
+        }
+      }
+
+      const runLocalScan = async (projectId, reason) => {
+        const project = watchedLocalScanProjects.get(projectId)
+        if (!project) return
+        localScanActive.add(projectId)
+
+        try {
+          const result = await syncLocalScanProject({
+            repoPath: project.repoPath,
+            projectId: project.projectId,
+            projectLabel: project.label,
+          })
+
+          registerLocalScanProject({
+            ...project,
+            label: result.projectLabel,
+            repoPath: result.repoPath,
+          })
+
+          if (result.changed) {
+            console.info(`[local scan] synced ${projectId} (${reason})`)
+            server.ws.send({ type: 'full-reload', path: '*' })
+          }
+        } catch (error) {
+          console.warn(`[local scan] Failed to sync ${projectId}:`, error)
+        } finally {
+          localScanActive.delete(projectId)
+          if (localScanPending.has(projectId)) {
+            localScanPending.delete(projectId)
+            scheduleLocalScan(projectId, 'follow-up')
+          }
+        }
+      }
+
+      const scheduleLocalScan = (projectId, reason = 'watch') => {
+        if (!LOCAL_SCAN_AUTO_SYNC || !watchedLocalScanProjects.has(projectId)) return
+        const existingTimer = localScanTimers.get(projectId)
+        if (existingTimer) clearTimeout(existingTimer)
+
+        const timer = setTimeout(() => {
+          localScanTimers.delete(projectId)
+          if (localScanActive.has(projectId)) {
+            localScanPending.add(projectId)
+            return
+          }
+          void runLocalScan(projectId, reason)
+        }, LOCAL_SCAN_WATCH_DEBOUNCE_MS)
+
+        localScanTimers.set(projectId, timer)
+      }
+
+      const handleLocalScanEvent = (filePath) => {
+        if (!LOCAL_SCAN_AUTO_SYNC) return
+        const normalizedPath = path.resolve(filePath)
+        if (!shouldHandleLocalScanPath(normalizedPath)) return
+
+        for (const project of watchedLocalScanProjects.values()) {
+          if (!isSubPath(project.repoPath, normalizedPath)) continue
+          scheduleLocalScan(project.projectId, 'watch')
+        }
+      }
+
+      server.watcher.on('add', handleLocalScanEvent)
+      server.watcher.on('change', handleLocalScanEvent)
+      server.watcher.on('unlink', handleLocalScanEvent)
+
+      if (LOCAL_SCAN_AUTO_SYNC) {
+        const autoScanProjects = await listLocalScanProjects()
+        for (const project of autoScanProjects) {
+          registerLocalScanProject(project)
+        }
+        for (const project of autoScanProjects) {
+          await runLocalScan(project.projectId, 'startup')
+        }
+      }
+
       server.middlewares.use(async (req, res, next) => {
         if (!req.url) return next()
         const pathname = req.url.split('?')[0]
@@ -2421,6 +3299,76 @@ function paperImportPlugin() {
           }
         }
 
+        if (req.method === 'POST' && pathname === '/api/projects/scan-local') {
+          try {
+            const body = await readJson(req)
+            const repoPathRaw = typeof body.repoPath === 'string' ? body.repoPath.trim() : ''
+            if (!repoPathRaw) {
+              return sendJson(res, 400, { error: 'repoPath is required.' })
+            }
+            const projectId = slugify(
+              typeof body.projectId === 'string' && body.projectId.trim()
+                ? body.projectId.trim()
+                : path.basename(repoPathRaw)
+            )
+            const projectLabel =
+              typeof body.label === 'string' && body.label.trim()
+                ? body.label.trim()
+                : path.basename(repoPathRaw)
+            const dryRun = body.dryRun === true
+
+            if (dryRun) {
+              const repoPath = path.resolve(repoPathRaw)
+              assertLocalScanPathAllowed(repoPath)
+              const files = await collectLocalComponentCandidates(repoPath)
+              const candidates = []
+              for (const filePath of files) {
+                const source = await fs.readFile(filePath, 'utf8').catch(() => '')
+                if (!source || !source.includes('export')) continue
+                const exports = extractReactComponentExports(source, filePath)
+                if (exports.length === 0) continue
+                const relativePath = path.relative(repoPath, filePath).replace(/\\/g, '/')
+                exports.forEach((item) => {
+                  if (candidates.length >= LOCAL_SCAN_MAX_COMPONENTS) return
+                  candidates.push({
+                    componentName: item.componentName,
+                    exportName: item.exportName,
+                    relativePath,
+                  })
+                })
+                if (candidates.length >= LOCAL_SCAN_MAX_COMPONENTS) break
+              }
+
+              return sendJson(res, 200, {
+                ok: true,
+                dryRun: true,
+                repoPath,
+                projectId,
+                scannedFiles: files.length,
+                detectedCount: candidates.length,
+                candidates: candidates.slice(0, 50),
+              })
+            }
+            const result = await syncLocalScanProject({
+              repoPath: repoPathRaw,
+              projectId,
+              projectLabel,
+            })
+            registerLocalScanProject({
+              projectId: result.projectId,
+              label: result.projectLabel,
+              repoPath: result.repoPath,
+            })
+
+            return sendJson(res, 200, {
+              ...result,
+              reload: result.changed,
+            })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to scan local repository.' })
+          }
+        }
+
         if (req.method === 'POST' && pathname === '/api/paper/import') {
           try {
             const body = await readJson(req)
@@ -2502,7 +3450,7 @@ function paperImportPlugin() {
             const componentSource = `${headerLines.join('\n')}${formatPaperComponentSource(jsx, componentName)}`
             const entrySource = formatPaperGalleryEntrySource(entry, {
               exportName: `${componentName}Entry`,
-              coreImportPath: '../../../core',
+              coreImportPath: '@/core',
             })
 
             await fs.writeFile(path.join(componentDir, `${componentName}.tsx`), componentSource)
@@ -2720,7 +3668,7 @@ export default defineConfig({
   },
   server: {
     fs: {
-      allow: [__dirname],
+      allow: Array.from(new Set(LOCAL_SCAN_ALLOWED_ROOTS)),
     },
   },
   root: 'demo',

@@ -736,7 +736,54 @@ function getPaperMcpClient(): PaperMcpClient | null {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ProjectId = string
-type ProjectOption = { id: string; label: string }
+type LocalScanProjectState = {
+  enabled: boolean
+  watching: boolean
+  repoPath: string
+  repoLabel: string
+  scannedAt?: string | null
+  detectedCount?: number | null
+  createdEntries?: number | null
+  scannedFiles?: number | null
+}
+type ProjectOption = { id: string; label: string; localScan?: LocalScanProjectState | null }
+type ScanLocalResponse = {
+  error?: string
+  projectId?: string
+  projectLabel?: string
+  detectedCount?: number
+  createdEntries?: number
+  message?: string
+  reload?: boolean
+  localScan?: LocalScanProjectState | null
+}
+
+function normalizeLocalScanProjectState(value: unknown): LocalScanProjectState | null {
+  if (!value || typeof value !== "object") return null
+
+  const candidate = value as Record<string, unknown>
+  if (typeof candidate.repoPath !== "string" || !candidate.repoPath.trim()) return null
+
+  return {
+    enabled: candidate.enabled !== false,
+    watching: candidate.watching !== false,
+    repoPath: candidate.repoPath,
+    repoLabel:
+      typeof candidate.repoLabel === "string" && candidate.repoLabel.trim()
+        ? candidate.repoLabel
+        : candidate.repoPath.split(/[\\/]/).filter(Boolean).pop() || "local-project",
+    scannedAt:
+      typeof candidate.scannedAt === "string" && candidate.scannedAt.trim()
+        ? candidate.scannedAt
+        : null,
+    detectedCount:
+      typeof candidate.detectedCount === "number" ? candidate.detectedCount : null,
+    createdEntries:
+      typeof candidate.createdEntries === "number" ? candidate.createdEntries : null,
+    scannedFiles:
+      typeof candidate.scannedFiles === "number" ? candidate.scannedFiles : null,
+  }
+}
 
 function App() {
   const [view, setView] = useState<"gallery" | "canvas" | "color-canvas" | "picker-lab">("canvas")
@@ -773,7 +820,9 @@ function App() {
 
       const normalized = projects
         .filter(
-          (project: unknown): project is { id: string; label: string } =>
+          (
+            project: unknown
+          ): project is { id: string; label: string; localScan?: unknown } =>
             Boolean(
               project &&
               typeof project === "object" &&
@@ -781,6 +830,11 @@ function App() {
               typeof (project as { label?: unknown }).label === "string"
             )
         )
+        .map((project) => ({
+          id: project.id,
+          label: project.label,
+          localScan: normalizeLocalScanProjectState(project.localScan),
+        }))
         .filter((project) => project.id !== "demo" && project.id !== "thicket")
         .sort((a, b) => a.label.localeCompare(b.label))
 
@@ -817,24 +871,27 @@ function App() {
   )
 
   const projectOptions = useMemo(() => {
-    const merged = new Map<string, string>()
+    const merged = new Map<string, ProjectOption>()
 
     for (const pack of projectPackList) {
-      merged.set(pack.id, pack.label)
+      merged.set(pack.id, { id: pack.id, label: pack.label, localScan: null })
     }
     for (const project of dynamicProjects) {
-      if (!merged.has(project.id)) {
-        merged.set(project.id, project.label)
-      }
+      const existing = merged.get(project.id)
+      merged.set(project.id, {
+        id: project.id,
+        label: existing?.label || project.label,
+        localScan: project.localScan ?? existing?.localScan ?? null,
+      })
     }
 
-    const dynamicOptions = Array.from(merged.entries())
-      .map(([id, label]) => ({ id, label }))
+    const dynamicOptions = Array.from(merged.values())
+      .filter((project) => project.id !== "demo" && project.id !== "thicket")
       .sort((a, b) => a.label.localeCompare(b.label))
 
     return [
-      { id: "demo", label: "Demo" },
-      { id: "thicket", label: "Thicket" },
+      { id: "demo", label: "Demo", localScan: null },
+      { id: "thicket", label: "Thicket", localScan: null },
       ...dynamicOptions,
     ]
   }, [dynamicProjects, projectPackList])
@@ -877,8 +934,89 @@ function App() {
     })
   }, [activePack])
 
+  const runLocalProjectScan = useCallback(
+    async ({
+      repoPath,
+      targetProjectId,
+      targetLabel,
+    }: {
+      repoPath: string
+      targetProjectId: string
+      targetLabel?: string
+    }) => {
+      const toastId = toast.loading("Scanning local repository...")
+
+      let response: Response
+      try {
+        response = await fetch("/api/projects/scan-local", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repoPath,
+            projectId: targetProjectId,
+            label: targetLabel || targetProjectId,
+          }),
+        })
+      } catch (error) {
+        console.error("Local scan failed:", error)
+        toast.error("Local scan failed. Ensure dev server is running from repo root.", { id: toastId })
+        return null
+      }
+
+      const data = await response.json().catch(() => ({} as ScanLocalResponse))
+      if (!response.ok) {
+        const message = data.error || `Failed to scan local repository (${response.status}).`
+        toast.error(message, { id: toastId })
+        return null
+      }
+
+      const resolvedProjectId =
+        typeof data.projectId === "string" ? data.projectId : targetProjectId
+      const resolvedProjectLabel =
+        typeof data.projectLabel === "string" ? data.projectLabel : targetLabel || resolvedProjectId
+
+      setDynamicProjects((prev) => {
+        const next = prev.filter((project) => project.id !== resolvedProjectId)
+        next.push({
+          id: resolvedProjectId,
+          label: resolvedProjectLabel,
+          localScan: normalizeLocalScanProjectState(data.localScan),
+        })
+        return next.sort((a, b) => a.label.localeCompare(b.label))
+      })
+
+      setProjectId(resolvedProjectId)
+      await loadProjects()
+
+      const detectedCount = Number(data.detectedCount || 0)
+      const createdEntries = Number(data.createdEntries || 0)
+
+      if (createdEntries === 0) {
+        const message = data.message || "Scan completed. No components were added."
+        toast.message(message, { id: toastId })
+      } else {
+        toast.success(
+          `Scanned ${detectedCount} export${detectedCount === 1 ? "" : "s"} and added ${createdEntries} entr${createdEntries === 1 ? "y" : "ies"}.`,
+          { id: toastId }
+        )
+      }
+
+      if (data.reload === true) {
+        window.setTimeout(() => window.location.reload(), 450)
+      }
+
+      return {
+        projectId: resolvedProjectId,
+        createdEntries,
+      }
+    },
+    [loadProjects]
+  )
+
   const handleCreateProject = useCallback(async () => {
-    const label = window.prompt("Project name")
+    const labelInput = window.prompt("Project name")
+    if (!labelInput) return
+    const label = labelInput.trim()
     if (!label) return
 
     let response: Response
@@ -907,6 +1045,7 @@ function App() {
     const createdProject = {
       id: createdProjectId,
       label,
+      localScan: null,
     }
     setDynamicProjects((prev) => {
       if (prev.some((project) => project.id === createdProjectId)) return prev
@@ -914,8 +1053,57 @@ function App() {
     })
     setProjectId(createdProjectId)
     toast.success("Project created.")
-    void loadProjects()
-  }, [loadProjects])
+    await loadProjects()
+
+    const repoPathInput = window.prompt(
+      "Optional: scan a local folder now (absolute path). Leave empty to skip.",
+      "/Users/strongeron/Evil Martians/appsignal"
+    )
+    if (repoPathInput === null) return
+    const repoPath = repoPathInput.trim()
+    if (!repoPath) return
+
+    await runLocalProjectScan({
+      repoPath,
+      targetProjectId: createdProjectId,
+      targetLabel: label,
+    })
+  }, [loadProjects, runLocalProjectScan])
+
+  const handleScanLocalProject = useCallback(async () => {
+    const repoPathInput = window.prompt(
+      "Local repository path to scan",
+      "/Users/strongeron/Evil Martians/appsignal"
+    )
+    if (repoPathInput === null) return
+    const repoPath = repoPathInput.trim()
+    if (!repoPath) return
+
+    const inferredProject = repoPath
+      .split(/[\\/]/)
+      .filter(Boolean)
+      .pop() || "local-project"
+
+    let targetProjectId = projectId
+    let targetLabel = projectOptions.find((project) => project.id === projectId)?.label || projectId
+
+    if (projectId === "demo" || projectId === "thicket") {
+      const projectIdInput = window.prompt(
+        "Target project id for scanned components",
+        inferredProject
+      )
+      if (projectIdInput === null) return
+      const selectedProjectId = projectIdInput.trim() || inferredProject
+      targetProjectId = selectedProjectId
+      targetLabel = selectedProjectId
+    }
+
+    await runLocalProjectScan({
+      repoPath,
+      targetProjectId,
+      targetLabel,
+    })
+  }, [projectId, projectOptions, runLocalProjectScan])
 
   const handleImportFromPaper = useCallback(
     async ({
@@ -1143,6 +1331,7 @@ function App() {
               activeProjectId={projectId}
               onSelectProject={(id) => setProjectId(id as ProjectId)}
               onCreateProject={handleCreateProject}
+              onScanLocalProject={handleScanLocalProject}
               onImportFromPaper={handleImportFromPaper}
               onOpenColorCanvas={() => setView("color-canvas")}
             />

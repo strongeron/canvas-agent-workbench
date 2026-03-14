@@ -235,7 +235,7 @@ export function formatPaperGalleryEntrySource(
   options?: { exportName?: string; coreImportPath?: string }
 ) {
   const exportName = options?.exportName ?? `${slugify(entry.name).replace(/-([a-z])/g, (_, c) => c.toUpperCase())}Entry`
-  const coreImportPath = options?.coreImportPath ?? "../../../core"
+  const coreImportPath = options?.coreImportPath ?? "@/core"
   const body = JSON.stringify(entry, null, 2)
   return `import type { GalleryEntry } from "${coreImportPath}"\n\nexport const ${exportName}: GalleryEntry = ${body}\n`
 }
