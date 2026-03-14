@@ -370,6 +370,23 @@ export function CanvasAgentPanel({
                     and apply canvas operations directly.
                   </div>
                 </div>
+                <div className="mt-3 rounded-md border border-default bg-gray-50 px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                    MCP Server
+                  </div>
+                  <div className="mt-2 font-mono text-[11px] text-gray-900">
+                    {activeSession.mcpServerCommand ?? "Not configured"}
+                  </div>
+                  {activeSession.mcpConfigPath && (
+                    <div className="mt-2 text-[11px] text-gray-500">
+                      Config: {activeSession.mcpConfigPath}
+                    </div>
+                  )}
+                  <div className="mt-2 text-[11px] text-gray-500">
+                    The embedded agent session is launched with the canvas MCP server attached, so
+                    it can read primitives and mutate the board directly.
+                  </div>
+                </div>
                 <div className="mt-3 flex items-center gap-2">
                   <button
                     type="button"

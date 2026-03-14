@@ -631,6 +631,7 @@ export function CanvasTab({
   const [liveAuditPairs, setLiveAuditPairs] = useState<LiveAuditPair[]>([])
   const agentBridge = useCanvasAgentBridge({
     projectId: activeProjectId,
+    entries,
     snapshot: {
       items,
       groups,

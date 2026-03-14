@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
+import type { GalleryEntry } from "../core/types"
 import type {
   CanvasAgentDefinition,
+  CanvasAgentPrimitive,
   CanvasAgentSessionDebug,
   CanvasAgentSession,
   CanvasAgentTranscriptEntry,
@@ -11,6 +13,7 @@ import type {
 
 interface UseCanvasAgentBridgeOptions {
   projectId?: string
+  entries: GalleryEntry[]
   snapshot: CanvasStateSnapshot
   replaceState: (state: CanvasStateSnapshot) => void
   applyRemoteOperation: (operation: CanvasRemoteOperation) => void
@@ -58,8 +61,83 @@ function trimTranscriptEntries(entries: CanvasAgentTranscriptEntry[]) {
   return entries.length <= 120 ? entries : entries.slice(entries.length - 120)
 }
 
+function mergePrimitiveSchemas(entries: GalleryEntry[]) {
+  const merged: NonNullable<CanvasAgentPrimitive["propSchema"]> = {}
+  entries.forEach((entry) => {
+    for (const variant of entry.variants) {
+      if (!variant.interactiveSchema) continue
+      Object.entries(variant.interactiveSchema).forEach(([key, schema]) => {
+        if (!merged[key]) {
+          merged[key] = {
+            type: schema.type,
+            label: schema.label,
+            defaultValue: schema.defaultValue,
+            options: schema.options,
+            min: schema.min,
+            max: schema.max,
+            step: schema.step,
+            placeholder: schema.placeholder,
+            optional: schema.optional,
+            description: schema.description,
+          }
+        }
+      })
+    }
+  })
+  return merged
+}
+
+function buildPrimitiveSnapshot(entries: GalleryEntry[]): CanvasAgentPrimitive[] {
+  return entries
+    .filter((entry): entry is GalleryEntry & { primitive: NonNullable<GalleryEntry["primitive"]> } => Boolean(entry.primitive))
+    .map((entry) => ({
+      primitiveId: entry.primitive.primitiveId ?? entry.id,
+      entryId: entry.id,
+      name: entry.name,
+      description: entry.description,
+      category: entry.category,
+      importPath: entry.importPath,
+      sourceId: entry.meta?.sourceId ?? `${entry.importPath}#${entry.name}`,
+      family: entry.primitive.family,
+      level: entry.primitive.level,
+      htmlTag: entry.primitive.htmlTag ?? null,
+      exportable: entry.primitive.exportable !== false,
+      tokenUsage: Array.isArray(entry.primitive.tokenUsage) ? entry.primitive.tokenUsage : [],
+      defaultSize: entry.canvas?.defaultSize ?? null,
+      propSchema: mergePrimitiveSchemas([entry]),
+      variants: entry.variants.map((variant) => ({
+        name: variant.name,
+        description: variant.description,
+        props:
+          variant.props && typeof variant.props === "object"
+            ? (variant.props as Record<string, unknown>)
+            : {},
+        interactiveSchema: variant.interactiveSchema
+          ? Object.fromEntries(
+              Object.entries(variant.interactiveSchema).map(([key, schema]) => [
+                key,
+                {
+                  type: schema.type,
+                  label: schema.label,
+                  defaultValue: schema.defaultValue,
+                  options: schema.options,
+                  min: schema.min,
+                  max: schema.max,
+                  step: schema.step,
+                  placeholder: schema.placeholder,
+                  optional: schema.optional,
+                  description: schema.description,
+                },
+              ])
+            )
+          : undefined,
+      })),
+    }))
+}
+
 export function useCanvasAgentBridge({
   projectId,
+  entries,
   snapshot,
   replaceState,
   applyRemoteOperation,
@@ -77,6 +155,7 @@ export function useCanvasAgentBridge({
   const [bridgeReady, setBridgeReady] = useState(false)
   const [outputBySession, setOutputBySession] = useState<Record<string, string>>({})
   const [debugBySession, setDebugBySession] = useState<Record<string, CanvasAgentSessionDebug>>({})
+  const primitiveSnapshot = useMemo(() => buildPrimitiveSnapshot(entries), [entries])
 
   const upsertSession = useCallback((session: CanvasAgentSession) => {
     setSessions((previous) => {
@@ -445,6 +524,7 @@ export function useCanvasAgentBridge({
               projectId,
               clientId: clientIdRef.current,
               state: snapshot,
+              primitives: primitiveSnapshot,
             }),
           })
 
@@ -464,7 +544,7 @@ export function useCanvasAgentBridge({
     }, 350)
 
     return () => window.clearTimeout(timeoutId)
-  }, [bridgeReady, projectId, snapshot])
+  }, [bridgeReady, primitiveSnapshot, projectId, snapshot])
 
   const status = useMemo<CanvasAgentBridgeStatus>(
     () => ({

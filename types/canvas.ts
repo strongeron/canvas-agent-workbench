@@ -246,8 +246,12 @@ export interface CanvasAgentSession {
   agentLabel: string
   title: string
   cwd: string
+  agentCommand: string
   launchCommand: string
   toolCommand: string
+  mcpServerName?: string | null
+  mcpServerCommand?: string | null
+  mcpConfigPath?: string | null
   transport: "manual-cli" | "pty"
   status: "configured" | "starting" | "running" | "stopped" | "exited" | "error"
   createdAt: string
@@ -290,11 +294,55 @@ export interface CanvasAgentStateHistoryEntry {
   toolName?: string | null
 }
 
+export interface CanvasAgentPrimitivePropOption {
+  value: unknown
+  label: string
+}
+
+export interface CanvasAgentPrimitivePropSchema {
+  type: string
+  label?: string
+  defaultValue?: unknown
+  options?: CanvasAgentPrimitivePropOption[]
+  min?: number
+  max?: number
+  step?: number
+  placeholder?: string
+  optional?: boolean
+  description?: string
+}
+
+export interface CanvasAgentPrimitiveVariant {
+  name: string
+  description: string
+  props: Record<string, unknown>
+  interactiveSchema?: Record<string, CanvasAgentPrimitivePropSchema>
+}
+
+export interface CanvasAgentPrimitive {
+  primitiveId: string
+  entryId: string
+  name: string
+  description?: string
+  category: string
+  importPath: string
+  sourceId?: string | null
+  family: string
+  level: "primitive" | "composite"
+  htmlTag?: string | null
+  exportable?: boolean
+  tokenUsage: string[]
+  defaultSize?: { width: number; height: number } | null
+  propSchema?: Record<string, CanvasAgentPrimitivePropSchema>
+  variants: CanvasAgentPrimitiveVariant[]
+}
+
 export interface CanvasAgentSessionDebug {
   session: CanvasAgentSession
   output: string
   transcript: CanvasAgentTranscriptEntry[]
   projectState: CanvasStateSnapshot | null
+  primitives?: CanvasAgentPrimitive[]
   stateHistory: CanvasAgentStateHistoryEntry[]
   toolCommand: string
   toolExamples: string[]

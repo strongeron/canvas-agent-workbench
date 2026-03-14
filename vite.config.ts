@@ -160,6 +160,8 @@ const CANVAS_AGENT_DEFAULT_TERMINAL = {
 
 const CANVAS_AGENT_TOOL_COMMAND =
   process.platform === 'win32' ? 'node .\\\\bin\\\\canvas-agent' : 'bin/canvas-agent'
+const CANVAS_MCP_SERVER_NAME = 'canvas'
+const CANVAS_MCP_SERVER_ENTRY = path.join(__dirname, 'bin', 'canvas-mcp-server')
 const CANVAS_AGENT_OUTPUT_LIMIT = 200_000
 const CANVAS_AGENT_TRANSCRIPT_LIMIT = 240
 const CANVAS_AGENT_STATE_HISTORY_LIMIT = 80
@@ -182,6 +184,117 @@ function normalizeCanvasStateSnapshot(input) {
     selectedIds,
     nextZIndex,
   }
+}
+
+function normalizeCanvasAgentPrimitivePropSchema(input) {
+  if (!input || typeof input !== 'object' || typeof input.type !== 'string') return null
+  return {
+    type: input.type,
+    label: typeof input.label === 'string' ? input.label : undefined,
+    defaultValue: input.defaultValue,
+    options: Array.isArray(input.options)
+      ? input.options
+          .filter((option) => option && typeof option === 'object')
+          .map((option) => ({
+            value: option.value,
+            label: typeof option.label === 'string' ? option.label : String(option.value ?? ''),
+          }))
+      : undefined,
+    min: Number.isFinite(input.min) ? Number(input.min) : undefined,
+    max: Number.isFinite(input.max) ? Number(input.max) : undefined,
+    step: Number.isFinite(input.step) ? Number(input.step) : undefined,
+    placeholder: typeof input.placeholder === 'string' ? input.placeholder : undefined,
+    optional: typeof input.optional === 'boolean' ? input.optional : undefined,
+    description: typeof input.description === 'string' ? input.description : undefined,
+  }
+}
+
+function normalizeCanvasAgentPrimitiveRecord(input) {
+  if (!input || typeof input !== 'object') return null
+  const primitiveId =
+    typeof input.primitiveId === 'string' && input.primitiveId.trim() ? input.primitiveId.trim() : ''
+  const entryId = typeof input.entryId === 'string' && input.entryId.trim() ? input.entryId.trim() : ''
+  const family = typeof input.family === 'string' && input.family.trim() ? input.family.trim() : ''
+  const level = input.level === 'composite' ? 'composite' : 'primitive'
+  const name = typeof input.name === 'string' && input.name.trim() ? input.name.trim() : entryId
+  if (!primitiveId || !entryId || !family || !name) return null
+
+  const propSchema =
+    input.propSchema && typeof input.propSchema === 'object'
+      ? Object.fromEntries(
+          Object.entries(input.propSchema)
+            .map(([key, value]) => [key, normalizeCanvasAgentPrimitivePropSchema(value)])
+            .filter(([, value]) => Boolean(value))
+        )
+      : {}
+
+  return {
+    primitiveId,
+    entryId,
+    name,
+    description:
+      typeof input.description === 'string' && input.description.trim()
+        ? input.description.trim()
+        : undefined,
+    category:
+      typeof input.category === 'string' && input.category.trim()
+        ? input.category.trim()
+        : 'Design System',
+    importPath:
+      typeof input.importPath === 'string' && input.importPath.trim() ? input.importPath.trim() : '',
+    sourceId:
+      typeof input.sourceId === 'string' && input.sourceId.trim() ? input.sourceId.trim() : null,
+    family,
+    level,
+    htmlTag: typeof input.htmlTag === 'string' && input.htmlTag.trim() ? input.htmlTag.trim() : null,
+    exportable: input.exportable !== false,
+    tokenUsage: Array.isArray(input.tokenUsage)
+      ? input.tokenUsage
+          .map((value) => (typeof value === 'string' ? value.trim() : ''))
+          .filter(Boolean)
+      : [],
+    defaultSize:
+      input.defaultSize &&
+      typeof input.defaultSize === 'object' &&
+      Number.isFinite(input.defaultSize.width) &&
+      Number.isFinite(input.defaultSize.height)
+        ? {
+            width: Number(input.defaultSize.width),
+            height: Number(input.defaultSize.height),
+          }
+        : null,
+    propSchema,
+    variants: Array.isArray(input.variants)
+      ? input.variants
+          .filter((variant) => variant && typeof variant === 'object')
+          .map((variant) => ({
+            name:
+              typeof variant.name === 'string' && variant.name.trim() ? variant.name.trim() : 'Default',
+            description:
+              typeof variant.description === 'string' && variant.description.trim()
+                ? variant.description.trim()
+                : '',
+            props: variant.props && typeof variant.props === 'object' ? variant.props : {},
+            interactiveSchema:
+              variant.interactiveSchema && typeof variant.interactiveSchema === 'object'
+                ? Object.fromEntries(
+                    Object.entries(variant.interactiveSchema)
+                      .map(([key, value]) => [key, normalizeCanvasAgentPrimitivePropSchema(value)])
+                      .filter(([, value]) => Boolean(value))
+                  )
+                : undefined,
+          }))
+      : [],
+  }
+}
+
+function normalizeCanvasAgentPrimitiveList(input) {
+  if (!Array.isArray(input)) return []
+  return input.map((entry) => normalizeCanvasAgentPrimitiveRecord(entry)).filter(Boolean)
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\"'\"'`)}'`
 }
 
 function collectCanvasCascadeDeleteIds(state, ids) {
@@ -326,13 +439,82 @@ function resolveCanvasAgentServerUrl(server) {
   return 'http://127.0.0.1:5173'
 }
 
+function formatTomlInlineTable(record) {
+  return `{${Object.entries(record)
+    .map(([key, value]) => `${key}=${JSON.stringify(String(value))}`)
+    .join(',')}}`
+}
+
+function buildCanvasAgentMcpServerEnv(session, sessionDir, toolCommand) {
+  return {
+    CANVAS_AGENT_PROJECT_ID: session.projectId,
+    CANVAS_AGENT_SESSION_ID: session.id,
+    CANVAS_AGENT_SESSION_DIR: sessionDir,
+    CANVAS_AGENT_TOOL_COMMAND: toolCommand || CANVAS_AGENT_TOOL_COMMAND,
+  }
+}
+
+function buildClaudeCanvasMcpConfig(session, sessionDir, toolCommand) {
+  return {
+    mcpServers: {
+      [CANVAS_MCP_SERVER_NAME]: {
+        type: 'stdio',
+        command: process.execPath,
+        args: [CANVAS_MCP_SERVER_ENTRY],
+        env: buildCanvasAgentMcpServerEnv(session, sessionDir, toolCommand),
+      },
+    },
+  }
+}
+
+function buildCanvasAgentLaunchMetadata(definition, session, sessionDir, toolCommand) {
+  const mcpEnv = buildCanvasAgentMcpServerEnv(session, sessionDir, toolCommand)
+  const mcpServerCommand = `${process.execPath} ${CANVAS_MCP_SERVER_ENTRY}`
+  const launchCommandBase = definition.launchCommand
+
+  if (definition.id === 'claude') {
+    const mcpConfigPath = path.join(sessionDir, 'canvas-mcp.json')
+    const agentCommand = `${launchCommandBase} --strict-mcp-config --mcp-config ${shellQuote(mcpConfigPath)}`
+    return {
+      agentCommand,
+      launchCommand: `cd ${JSON.stringify(session.cwd)} && ${agentCommand}`,
+      mcpServerName: CANVAS_MCP_SERVER_NAME,
+      mcpServerCommand,
+      mcpConfigPath,
+      mcpConfigContent: JSON.stringify(
+        buildClaudeCanvasMcpConfig(session, sessionDir, toolCommand),
+        null,
+        2
+      ),
+    }
+  }
+
+  const codexOverrides = [
+    `mcp_servers.${CANVAS_MCP_SERVER_NAME}.command=${JSON.stringify(process.execPath)}`,
+    `mcp_servers.${CANVAS_MCP_SERVER_NAME}.args=${JSON.stringify([CANVAS_MCP_SERVER_ENTRY])}`,
+    `mcp_servers.${CANVAS_MCP_SERVER_NAME}.env=${formatTomlInlineTable(mcpEnv)}`,
+    `mcp_servers.${CANVAS_MCP_SERVER_NAME}.cwd=${JSON.stringify(session.cwd)}`,
+  ]
+  const overrideArgs = codexOverrides.map((override) => `-c ${shellQuote(override)}`).join(' ')
+  const agentCommand = `${launchCommandBase} ${overrideArgs}`.trim()
+  return {
+    agentCommand,
+    launchCommand: `cd ${JSON.stringify(session.cwd)} && ${agentCommand}`,
+    mcpServerName: CANVAS_MCP_SERVER_NAME,
+    mcpServerCommand,
+    mcpConfigPath: null,
+    mcpConfigContent: null,
+  }
+}
+
 function resolveCanvasAgentSpawn(definition, session) {
   const cwd = session?.cwd || __dirname
+  const command = session?.agentCommand || definition.launchCommand
   if (process.platform === 'win32') {
     const shell = process.env.COMSPEC || 'cmd.exe'
     return {
       shell,
-      args: ['/d', '/s', '/c', definition.launchCommand],
+      args: ['/d', '/s', '/c', command],
       cwd,
     }
   }
@@ -340,7 +522,7 @@ function resolveCanvasAgentSpawn(definition, session) {
   const shell = resolveCanvasAgentShell()
   return {
     shell,
-    args: ['-lic', definition.launchCommand],
+    args: ['-lic', command],
     cwd,
   }
 }
@@ -3037,6 +3219,7 @@ function paperImportPlugin() {
       const canvasAgentOutputBySession = new Map()
       const canvasAgentTranscriptBySession = new Map()
       const canvasAgentStateHistoryByProject = new Map()
+      const canvasAgentPrimitivesByProject = new Map()
       const canvasAgentQueueActive = new Set()
       const canvasAgentServerRuntimeRoot = path.join(
         CANVAS_AGENT_RUNTIME_ROOT,
@@ -3093,6 +3276,33 @@ function paperImportPlugin() {
         return sessionDir
       }
 
+      const prepareCanvasAgentSessionLaunch = async (session) => {
+        const sessionDir = await ensureCanvasAgentSessionDir(session.id)
+        const launch = buildCanvasAgentLaunchMetadata(
+          CANVAS_AGENT_DEFINITIONS.find((item) => item.id === session.agentId) || {
+            id: session.agentId,
+            label: session.agentLabel,
+            description: '',
+            launchCommand: session.agentCommand || session.launchCommand,
+          },
+          session,
+          sessionDir,
+          session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
+        )
+
+        if (launch.mcpConfigPath && launch.mcpConfigContent) {
+          await fs.writeFile(launch.mcpConfigPath, launch.mcpConfigContent)
+        }
+
+        return {
+          agentCommand: launch.agentCommand,
+          launchCommand: launch.launchCommand,
+          mcpServerName: launch.mcpServerName,
+          mcpServerCommand: launch.mcpServerCommand,
+          mcpConfigPath: launch.mcpConfigPath,
+        }
+      }
+
       const broadcastCanvasAgentEvent = (projectId, eventName, payload, excludeClientId) => {
         const clients = getCanvasAgentClients(projectId)
         for (const client of clients) {
@@ -3130,6 +3340,7 @@ function paperImportPlugin() {
 
         await ensureCanvasAgentSessionDir(sessionId)
         const stateRecord = canvasAgentStateByProject.get(session.projectId) || null
+        const primitives = canvasAgentPrimitivesByProject.get(session.projectId) || []
         const transcript = getCanvasAgentTranscript(sessionId)
         const stateHistory = getCanvasAgentStateHistory(session.projectId)
         const toolCommand = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
@@ -3138,10 +3349,13 @@ function paperImportPlugin() {
           output: canvasAgentOutputBySession.get(sessionId) || '',
           transcript,
           projectState: stateRecord?.state || null,
+          primitives,
           stateHistory,
           toolCommand,
           toolExamples: [
             `${toolCommand} state`,
+            `${toolCommand} context`,
+            `${toolCommand} primitives`,
             `${toolCommand} create-item ./payload.json`,
             `${toolCommand} update-item item-id ./updates.json`,
             `${toolCommand} transcript`,
@@ -3156,6 +3370,7 @@ function paperImportPlugin() {
                 session,
                 toolCommand,
                 projectStateUpdatedAt: stateRecord?.updatedAt || null,
+                primitiveCount: primitives.length,
               },
               null,
               2
@@ -3171,6 +3386,10 @@ function paperImportPlugin() {
               null,
               2
             )
+          ),
+          fs.writeFile(
+            getCanvasAgentSessionFile(sessionId, 'primitives.json'),
+            JSON.stringify(primitives, null, 2)
           ),
           fs.writeFile(
             getCanvasAgentSessionFile(sessionId, 'transcript.json'),
@@ -3236,13 +3455,16 @@ function paperImportPlugin() {
 
       const upsertCanvasAgentState = (projectId, state, sourceClientId, meta = {}) => {
         const normalizedState = normalizeCanvasStateSnapshot(state)
+        const normalizedPrimitives = normalizeCanvasAgentPrimitiveList(meta.primitives)
         const record = {
           projectId,
           state: normalizedState,
+          primitives: normalizedPrimitives,
           updatedAt: new Date().toISOString(),
           sourceClientId: sourceClientId || null,
         }
         canvasAgentStateByProject.set(projectId, record)
+        canvasAgentPrimitivesByProject.set(projectId, normalizedPrimitives)
         pushCanvasAgentStateHistory(projectId, {
           id: `canvas-agent-state-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           at: record.updatedAt,
@@ -3263,7 +3485,7 @@ function paperImportPlugin() {
         return record
       }
 
-      const createCanvasAgentSession = ({ projectId, agentId, cwd, title }) => {
+      const createCanvasAgentSession = async ({ projectId, agentId, cwd, title }) => {
         const definition = CANVAS_AGENT_DEFINITIONS.find((item) => item.id === agentId)
         if (!definition) {
           throw new Error(`Unknown agent: ${agentId}`)
@@ -3280,8 +3502,12 @@ function paperImportPlugin() {
               ? title.trim()
               : `${definition.label} session`,
           cwd: safeCwd,
+          agentCommand: definition.launchCommand,
           launchCommand: `cd ${JSON.stringify(safeCwd)} && ${definition.launchCommand}`,
           toolCommand: CANVAS_AGENT_TOOL_COMMAND,
+          mcpServerName: CANVAS_MCP_SERVER_NAME,
+          mcpServerCommand: `${process.execPath} ${CANVAS_MCP_SERVER_ENTRY}`,
+          mcpConfigPath: null,
           transport: 'manual-cli',
           status: 'configured',
           createdAt: now,
@@ -3296,6 +3522,8 @@ function paperImportPlugin() {
         }
         const sessions = getCanvasAgentSessions(projectId)
         sessions.unshift(session)
+        const launchUpdates = await prepareCanvasAgentSessionLaunch(session)
+        Object.assign(session, launchUpdates)
         pushCanvasAgentTranscript(
           session.id,
           'session-created',
@@ -3348,7 +3576,7 @@ function paperImportPlugin() {
         pushCanvasAgentTranscript(session.id, 'output', chunk)
       }
 
-      const startCanvasAgentSession = (sessionId, dimensions) => {
+      const startCanvasAgentSession = async (sessionId, dimensions) => {
         const session = findCanvasAgentSession(sessionId)
         if (!session) {
           throw new Error('Canvas agent session not found.')
@@ -3364,13 +3592,18 @@ function paperImportPlugin() {
 
         const cols = Math.max(40, Number(dimensions?.cols || session.cols || CANVAS_AGENT_DEFAULT_TERMINAL.cols))
         const rows = Math.max(10, Number(dimensions?.rows || session.rows || CANVAS_AGENT_DEFAULT_TERMINAL.rows))
-        const spawnConfig = resolveCanvasAgentSpawn(definition, session)
+        const launchUpdates = await prepareCanvasAgentSessionLaunch(session)
+        const preparedSession = updateCanvasAgentSession(sessionId, launchUpdates) || {
+          ...session,
+          ...launchUpdates,
+        }
+        const spawnConfig = resolveCanvasAgentSpawn(definition, preparedSession)
         const sessionEnv = buildCanvasAgentEnv(spawnConfig.cwd, spawnConfig.shell)
-        sessionEnv.CANVAS_AGENT_PROJECT_ID = session.projectId
+        sessionEnv.CANVAS_AGENT_PROJECT_ID = preparedSession.projectId
         sessionEnv.CANVAS_AGENT_SERVER_URL = resolveCanvasAgentServerUrl(server)
-        sessionEnv.CANVAS_AGENT_SESSION_ID = session.id
-        sessionEnv.CANVAS_AGENT_SESSION_DIR = getCanvasAgentSessionDir(session.id)
-        sessionEnv.CANVAS_AGENT_TOOL_COMMAND = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
+        sessionEnv.CANVAS_AGENT_SESSION_ID = preparedSession.id
+        sessionEnv.CANVAS_AGENT_SESSION_DIR = getCanvasAgentSessionDir(preparedSession.id)
+        sessionEnv.CANVAS_AGENT_TOOL_COMMAND = preparedSession.toolCommand || CANVAS_AGENT_TOOL_COMMAND
 
         const ptyProcess = nodePty.spawn(spawnConfig.shell, spawnConfig.args, {
           name: 'xterm-256color',
@@ -3704,7 +3937,7 @@ function paperImportPlugin() {
               return sendJson(res, 400, { error: 'projectId and agentId are required.' })
             }
 
-            const session = createCanvasAgentSession({
+            const session = await createCanvasAgentSession({
               projectId,
               agentId,
               cwd: body.cwd,
@@ -3744,6 +3977,7 @@ function paperImportPlugin() {
           }
 
           const stateRecord = canvasAgentStateByProject.get(session.projectId) || null
+          const primitives = canvasAgentPrimitivesByProject.get(session.projectId) || []
           const toolCommand = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
           return sendJson(res, 200, {
             ok: true,
@@ -3752,10 +3986,13 @@ function paperImportPlugin() {
               output: canvasAgentOutputBySession.get(sessionId) || '',
               transcript: getCanvasAgentTranscript(sessionId),
               projectState: stateRecord?.state || null,
+              primitives,
               stateHistory: getCanvasAgentStateHistory(session.projectId),
               toolCommand,
               toolExamples: [
                 `${toolCommand} state`,
+                `${toolCommand} context`,
+                `${toolCommand} primitives`,
                 `${toolCommand} create-item ./payload.json`,
                 `${toolCommand} update-item item-id ./updates.json`,
                 `${toolCommand} transcript`,
@@ -3780,7 +4017,7 @@ function paperImportPlugin() {
 
             if (action === 'start') {
               try {
-                const startedSession = startCanvasAgentSession(sessionId, body)
+                const startedSession = await startCanvasAgentSession(sessionId, body)
                 return sendJson(res, 200, {
                   ok: true,
                   session: startedSession,
@@ -3854,6 +4091,7 @@ function paperImportPlugin() {
           return sendJson(res, 200, {
             ok: true,
             state: stateRecord?.state || null,
+            primitives: stateRecord?.primitives || [],
             updatedAt: stateRecord?.updatedAt || null,
             sourceClientId: stateRecord?.sourceClientId || null,
           })
@@ -3872,6 +4110,7 @@ function paperImportPlugin() {
                 typeof body.source === 'string' && body.source.trim()
                   ? body.source.trim()
                   : 'canvas-ui',
+              primitives: body.primitives,
               sessionId:
                 typeof body.sessionId === 'string' && body.sessionId.trim()
                   ? body.sessionId.trim()
@@ -3883,6 +4122,7 @@ function paperImportPlugin() {
             })
             return sendJson(res, 200, {
               ok: true,
+              primitives: stateRecord.primitives,
               updatedAt: stateRecord.updatedAt,
             })
           } catch (error) {
