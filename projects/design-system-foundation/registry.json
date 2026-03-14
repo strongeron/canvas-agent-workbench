@@ -1,4 +1,11 @@
 {
-  "ui": [],
+  "ui": [
+    "primitive/box",
+    "primitive/stack",
+    "primitive/text",
+    "primitive/heading",
+    "primitive/surface",
+    "primitive/button"
+  ],
   "page": []
 }
