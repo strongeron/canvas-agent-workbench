@@ -247,10 +247,17 @@ export interface CanvasAgentSession {
   title: string
   cwd: string
   launchCommand: string
-  transport: "manual-cli"
-  status: "configured" | "manual-cli"
+  transport: "manual-cli" | "pty"
+  status: "configured" | "starting" | "running" | "stopped" | "exited" | "error"
   createdAt: string
   updatedAt: string
+  cols?: number
+  rows?: number
+  pid?: number
+  lastStartedAt?: string | null
+  endedAt?: string | null
+  exitCode?: number | null
+  errorMessage?: string | null
 }
 
 export interface CanvasTransform {

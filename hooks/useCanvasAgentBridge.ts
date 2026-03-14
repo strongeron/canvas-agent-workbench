@@ -27,8 +27,14 @@ export interface UseCanvasAgentBridgeResult {
   agents: CanvasAgentDefinition[]
   sessions: CanvasAgentSession[]
   status: CanvasAgentBridgeStatus
+  outputBySession: Record<string, string>
   refreshSessions: () => Promise<void>
   createSession: (agentId: string) => Promise<CanvasAgentSession | null>
+  loadSessionOutput: (sessionId: string) => Promise<string>
+  startSession: (sessionId: string, size?: { cols: number; rows: number }) => Promise<CanvasAgentSession | null>
+  stopSession: (sessionId: string) => Promise<CanvasAgentSession | null>
+  writeSessionInput: (sessionId: string, input: string) => Promise<void>
+  resizeSession: (sessionId: string, size: { cols: number; rows: number }) => Promise<void>
 }
 
 function buildQuery(params: Record<string, string | undefined>) {
@@ -38,6 +44,10 @@ function buildQuery(params: Record<string, string | undefined>) {
   })
   const query = search.toString()
   return query ? `?${query}` : ""
+}
+
+function trimSessionOutput(value: string) {
+  return value.length <= 200_000 ? value : value.slice(value.length - 200_000)
 }
 
 export function useCanvasAgentBridge({
@@ -57,6 +67,17 @@ export function useCanvasAgentBridge({
   const [lastRemoteStateAt, setLastRemoteStateAt] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [bridgeReady, setBridgeReady] = useState(false)
+  const [outputBySession, setOutputBySession] = useState<Record<string, string>>({})
+
+  const upsertSession = useCallback((session: CanvasAgentSession) => {
+    setSessions((previous) => {
+      const existingIndex = previous.findIndex((item) => item.id === session.id)
+      if (existingIndex >= 0) {
+        return previous.map((item, index) => (index === existingIndex ? session : item))
+      }
+      return [session, ...previous]
+    })
+  }, [])
 
   const refreshSessions = useCallback(async () => {
     if (!projectId) {
@@ -107,17 +128,103 @@ export function useCanvasAgentBridge({
       const data = await response.json()
       const session = (data.session ?? null) as CanvasAgentSession | null
       if (session) {
-        setSessions((previous) => {
-          const existingIndex = previous.findIndex((item) => item.id === session.id)
-          if (existingIndex >= 0) {
-            return previous.map((item, index) => (index === existingIndex ? session : item))
-          }
-          return [session, ...previous]
-        })
+        upsertSession(session)
       }
       return session
     },
-    [projectId]
+    [projectId, upsertSession]
+  )
+
+  const loadSessionOutput = useCallback(async (sessionId: string) => {
+    const response = await fetch(`/api/canvas-agent/sessions/${encodeURIComponent(sessionId)}/output`)
+    if (!response.ok) {
+      throw new Error("Failed to load session output.")
+    }
+    const data = await response.json()
+    const output = typeof data.output === "string" ? data.output : ""
+    setOutputBySession((previous) => ({
+      ...previous,
+      [sessionId]: trimSessionOutput(output),
+    }))
+    if (data.session) {
+      upsertSession(data.session as CanvasAgentSession)
+    }
+    return output
+  }, [upsertSession])
+
+  const postSessionAction = useCallback(
+    async <T,>(sessionId: string, action: string, payload?: Record<string, unknown>) => {
+      const response = await fetch(
+        `/api/canvas-agent/sessions/${encodeURIComponent(sessionId)}/${action}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload ?? {}),
+        }
+      )
+      const data = await response.json().catch(() => ({} as T & { error?: string }))
+      if (!response.ok) {
+        throw new Error(
+          typeof (data as { error?: string }).error === "string"
+            ? (data as { error?: string }).error
+            : "Canvas agent session action failed."
+        )
+      }
+      return data as T
+    },
+    []
+  )
+
+  const startSession = useCallback(
+    async (sessionId: string, size?: { cols: number; rows: number }) => {
+      const data = await postSessionAction<{ session?: CanvasAgentSession }>(
+        sessionId,
+        "start",
+        size
+      )
+      const session = data.session ?? null
+      if (session) {
+        upsertSession(session)
+        await loadSessionOutput(sessionId)
+      }
+      return session
+    },
+    [loadSessionOutput, postSessionAction, upsertSession]
+  )
+
+  const stopSession = useCallback(
+    async (sessionId: string) => {
+      const data = await postSessionAction<{ session?: CanvasAgentSession }>(sessionId, "stop")
+      const session = data.session ?? null
+      if (session) {
+        upsertSession(session)
+      }
+      return session
+    },
+    [postSessionAction, upsertSession]
+  )
+
+  const writeSessionInput = useCallback(
+    async (sessionId: string, input: string) => {
+      await postSessionAction(sessionId, "input", { input })
+    },
+    [postSessionAction]
+  )
+
+  const resizeSession = useCallback(
+    async (sessionId: string, size: { cols: number; rows: number }) => {
+      const data = await postSessionAction<{ session?: CanvasAgentSession }>(
+        sessionId,
+        "resize",
+        size
+      )
+      if (data.session) {
+        upsertSession(data.session)
+      }
+    },
+    [postSessionAction, upsertSession]
   )
 
   useEffect(() => {
@@ -199,24 +306,26 @@ export function useCanvasAgentBridge({
     const handleSessionCreated = (event: MessageEvent) => {
       const payload = JSON.parse(event.data) as { session?: CanvasAgentSession }
       if (!payload.session) return
-      setSessions((previous) => {
-        const existingIndex = previous.findIndex((item) => item.id === payload.session?.id)
-        if (existingIndex >= 0) {
-          return previous.map((item, index) =>
-            index === existingIndex ? payload.session! : item
-          )
-        }
-        return [payload.session!, ...previous]
-      })
+      upsertSession(payload.session)
       setLastEventAt(new Date().toISOString())
     }
 
     const handleSessionUpdated = (event: MessageEvent) => {
       const payload = JSON.parse(event.data) as { session?: CanvasAgentSession }
       if (!payload.session) return
-      setSessions((previous) =>
-        previous.map((item) => (item.id === payload.session?.id ? payload.session! : item))
-      )
+      upsertSession(payload.session)
+      setLastEventAt(new Date().toISOString())
+    }
+
+    const handleSessionOutput = (event: MessageEvent) => {
+      const payload = JSON.parse(event.data) as { sessionId?: string; chunk?: string }
+      if (!payload.sessionId || typeof payload.chunk !== "string") return
+      setOutputBySession((previous) => ({
+        ...previous,
+        [payload.sessionId!]: trimSessionOutput(
+          `${previous[payload.sessionId!] || ""}${payload.chunk}`
+        ),
+      }))
       setLastEventAt(new Date().toISOString())
     }
 
@@ -241,15 +350,17 @@ export function useCanvasAgentBridge({
     })
     source.addEventListener("session-created", handleSessionCreated)
     source.addEventListener("session-updated", handleSessionUpdated)
+    source.addEventListener("session-output", handleSessionOutput)
     source.addEventListener("canvas-operation", handleCanvasOperation)
 
     return () => {
       source.removeEventListener("session-created", handleSessionCreated)
       source.removeEventListener("session-updated", handleSessionUpdated)
+      source.removeEventListener("session-output", handleSessionOutput)
       source.removeEventListener("canvas-operation", handleCanvasOperation)
       source.close()
     }
-  }, [applyRemoteOperation, projectId])
+  }, [applyRemoteOperation, projectId, upsertSession])
 
   useEffect(() => {
     if (!projectId || !bridgeReady) return
@@ -304,7 +415,13 @@ export function useCanvasAgentBridge({
     agents,
     sessions,
     status,
+    outputBySession,
     refreshSessions,
     createSession,
+    loadSessionOutput,
+    startSession,
+    stopSession,
+    writeSessionInput,
+    resizeSession,
   }
 }

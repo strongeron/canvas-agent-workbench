@@ -8,6 +8,7 @@ import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
 import { execFile } from 'node:child_process'
+import * as nodePty from 'node-pty'
 import {
   createPaperGalleryEntry,
   formatPaperComponentSource,
@@ -151,6 +152,13 @@ const CANVAS_AGENT_DEFINITIONS = [
   },
 ]
 
+const CANVAS_AGENT_DEFAULT_TERMINAL = {
+  cols: 96,
+  rows: 28,
+}
+
+const CANVAS_AGENT_OUTPUT_LIMIT = 200_000
+
 function deriveCanvasNextZIndex(items) {
   return items.reduce((max, item) => Math.max(max, Number(item?.zIndex || 0) + 1), 1)
 }
@@ -242,6 +250,59 @@ function applyCanvasRemoteOperationToState(state, operation) {
 function writeSseEvent(res, eventName, payload) {
   res.write(`event: ${eventName}\n`)
   res.write(`data: ${JSON.stringify(payload)}\n\n`)
+}
+
+function trimCanvasAgentOutput(value) {
+  if (typeof value !== 'string') return ''
+  if (value.length <= CANVAS_AGENT_OUTPUT_LIMIT) return value
+  return value.slice(value.length - CANVAS_AGENT_OUTPUT_LIMIT)
+}
+
+function resolveCanvasAgentShell() {
+  const preferredShell = process.env.SHELL?.trim()
+  if (preferredShell && existsSync(preferredShell)) {
+    return preferredShell
+  }
+
+  const shellFallbacks =
+    process.platform === 'darwin'
+      ? ['/bin/zsh', '/bin/bash', '/bin/sh']
+      : ['/bin/bash', '/bin/sh']
+
+  return shellFallbacks.find((candidate) => existsSync(candidate)) || '/bin/sh'
+}
+
+function buildCanvasAgentEnv(cwd, shell) {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([, value]) => typeof value === 'string')
+  )
+
+  return {
+    ...env,
+    COLORTERM: 'truecolor',
+    PWD: cwd,
+    SHELL: shell,
+    TERM: 'xterm-256color',
+  }
+}
+
+function resolveCanvasAgentSpawn(definition, session) {
+  const cwd = session?.cwd || __dirname
+  if (process.platform === 'win32') {
+    const shell = process.env.COMSPEC || 'cmd.exe'
+    return {
+      shell,
+      args: ['/d', '/s', '/c', definition.launchCommand],
+      cwd,
+    }
+  }
+
+  const shell = resolveCanvasAgentShell()
+  return {
+    shell,
+    args: ['-lic', definition.launchCommand],
+    cwd,
+  }
 }
 
 function uniqueName(baseName, componentDir, configDir) {
@@ -2932,6 +2993,8 @@ function paperImportPlugin() {
       const canvasAgentStateByProject = new Map()
       const canvasAgentSessionsByProject = new Map()
       const canvasAgentClientsByProject = new Map()
+      const canvasAgentPtysBySession = new Map()
+      const canvasAgentOutputBySession = new Map()
 
       const getCanvasAgentSessions = (projectId) => {
         if (!canvasAgentSessionsByProject.has(projectId)) {
@@ -2947,6 +3010,14 @@ function paperImportPlugin() {
         return canvasAgentClientsByProject.get(projectId)
       }
 
+      const findCanvasAgentSession = (sessionId) => {
+        for (const sessions of canvasAgentSessionsByProject.values()) {
+          const session = sessions.find((item) => item.id === sessionId)
+          if (session) return session
+        }
+        return null
+      }
+
       const broadcastCanvasAgentEvent = (projectId, eventName, payload, excludeClientId) => {
         const clients = getCanvasAgentClients(projectId)
         for (const client of clients) {
@@ -2957,6 +3028,24 @@ function paperImportPlugin() {
             clients.delete(client)
           }
         }
+      }
+
+      const updateCanvasAgentSession = (sessionId, updates) => {
+        for (const [projectId, sessions] of canvasAgentSessionsByProject.entries()) {
+          const index = sessions.findIndex((item) => item.id === sessionId)
+          if (index < 0) continue
+          const nextSession = {
+            ...sessions[index],
+            ...updates,
+            updatedAt: new Date().toISOString(),
+          }
+          sessions[index] = nextSession
+          broadcastCanvasAgentEvent(projectId, 'session-updated', {
+            session: nextSession,
+          })
+          return nextSession
+        }
+        return null
       }
 
       const upsertCanvasAgentState = (projectId, state, sourceClientId) => {
@@ -2990,13 +3079,111 @@ function paperImportPlugin() {
           cwd: safeCwd,
           launchCommand: `cd ${JSON.stringify(safeCwd)} && ${definition.launchCommand}`,
           transport: 'manual-cli',
-          status: 'manual-cli',
+          status: 'configured',
           createdAt: now,
           updatedAt: now,
+          cols: CANVAS_AGENT_DEFAULT_TERMINAL.cols,
+          rows: CANVAS_AGENT_DEFAULT_TERMINAL.rows,
+          pid: null,
+          lastStartedAt: null,
+          endedAt: null,
+          exitCode: null,
+          errorMessage: null,
         }
         const sessions = getCanvasAgentSessions(projectId)
         sessions.unshift(session)
         return session
+      }
+
+      const stopCanvasAgentSession = (sessionId, reason = 'stopped') => {
+        const ptyProcess = canvasAgentPtysBySession.get(sessionId)
+        if (ptyProcess) {
+          try {
+            ptyProcess.kill()
+          } catch (error) {
+            console.warn(`[canvas agent] Failed to kill session ${sessionId}:`, error)
+          }
+          canvasAgentPtysBySession.delete(sessionId)
+        }
+
+        return updateCanvasAgentSession(sessionId, {
+          transport: 'pty',
+          status: reason === 'error' ? 'error' : 'stopped',
+          endedAt: new Date().toISOString(),
+        })
+      }
+
+      const appendCanvasAgentOutput = (session, chunk) => {
+        if (!session || typeof chunk !== 'string' || chunk.length === 0) return
+        const nextOutput = trimCanvasAgentOutput(
+          `${canvasAgentOutputBySession.get(session.id) || ''}${chunk}`
+        )
+        canvasAgentOutputBySession.set(session.id, nextOutput)
+        broadcastCanvasAgentEvent(session.projectId, 'session-output', {
+          sessionId: session.id,
+          chunk,
+        })
+      }
+
+      const startCanvasAgentSession = (sessionId, dimensions) => {
+        const session = findCanvasAgentSession(sessionId)
+        if (!session) {
+          throw new Error('Canvas agent session not found.')
+        }
+        if (canvasAgentPtysBySession.has(sessionId)) {
+          return session
+        }
+
+        const definition = CANVAS_AGENT_DEFINITIONS.find((item) => item.id === session.agentId)
+        if (!definition) {
+          throw new Error(`Unknown agent: ${session.agentId}`)
+        }
+
+        const cols = Math.max(40, Number(dimensions?.cols || session.cols || CANVAS_AGENT_DEFAULT_TERMINAL.cols))
+        const rows = Math.max(10, Number(dimensions?.rows || session.rows || CANVAS_AGENT_DEFAULT_TERMINAL.rows))
+        const spawnConfig = resolveCanvasAgentSpawn(definition, session)
+
+        const ptyProcess = nodePty.spawn(spawnConfig.shell, spawnConfig.args, {
+          name: 'xterm-256color',
+          cols,
+          rows,
+          cwd: spawnConfig.cwd,
+          env: buildCanvasAgentEnv(spawnConfig.cwd, spawnConfig.shell),
+        })
+
+        canvasAgentPtysBySession.set(sessionId, ptyProcess)
+        canvasAgentOutputBySession.set(sessionId, '')
+
+        const runningSession = updateCanvasAgentSession(sessionId, {
+          transport: 'pty',
+          status: 'running',
+          pid: ptyProcess.pid,
+          cols,
+          rows,
+          lastStartedAt: new Date().toISOString(),
+          endedAt: null,
+          exitCode: null,
+          errorMessage: null,
+        })
+
+        ptyProcess.onData((data) => {
+          appendCanvasAgentOutput(runningSession || session, data)
+        })
+
+        ptyProcess.onExit(({ exitCode, signal }) => {
+          canvasAgentPtysBySession.delete(sessionId)
+          updateCanvasAgentSession(sessionId, {
+            status: 'exited',
+            endedAt: new Date().toISOString(),
+            exitCode: Number.isFinite(exitCode) ? exitCode : null,
+            pid: null,
+          })
+          const message = `\r\n[session exited${Number.isFinite(exitCode) ? `: ${exitCode}` : ''}${signal ? `, signal ${signal}` : ''}]\r\n`
+          appendCanvasAgentOutput(runningSession || session, message)
+        })
+
+        appendCanvasAgentOutput(runningSession || session, `[starting ${definition.label}]\r\n`)
+        return runningSession || session
       }
 
       const registerLocalScanProject = (project) => {
@@ -3077,6 +3264,12 @@ function paperImportPlugin() {
       server.watcher.on('change', handleLocalScanEvent)
       server.watcher.on('unlink', handleLocalScanEvent)
 
+      server.httpServer?.once('close', () => {
+        for (const sessionId of canvasAgentPtysBySession.keys()) {
+          stopCanvasAgentSession(sessionId)
+        }
+      })
+
       if (LOCAL_SCAN_AUTO_SYNC) {
         const autoScanProjects = await listLocalScanProjects()
         for (const project of autoScanProjects) {
@@ -3133,6 +3326,95 @@ function paperImportPlugin() {
           } catch (error) {
             return sendJson(res, 400, {
               error: error?.message || 'Failed to create canvas agent session.',
+            })
+          }
+        }
+
+        const canvasAgentSessionOutputMatch = pathname.match(/^\/api\/canvas-agent\/sessions\/([^/]+)\/output$/)
+        if (req.method === 'GET' && canvasAgentSessionOutputMatch) {
+          const sessionId = decodeURIComponent(canvasAgentSessionOutputMatch[1])
+          const session = findCanvasAgentSession(sessionId)
+          if (!session) {
+            return sendJson(res, 404, { error: 'Canvas agent session not found.' })
+          }
+
+          return sendJson(res, 200, {
+            ok: true,
+            session,
+            output: canvasAgentOutputBySession.get(sessionId) || '',
+          })
+        }
+
+        const canvasAgentSessionActionMatch = pathname.match(
+          /^\/api\/canvas-agent\/sessions\/([^/]+)\/(start|stop|input|resize)$/
+        )
+        if (req.method === 'POST' && canvasAgentSessionActionMatch) {
+          try {
+            const sessionId = decodeURIComponent(canvasAgentSessionActionMatch[1])
+            const action = canvasAgentSessionActionMatch[2]
+            const session = findCanvasAgentSession(sessionId)
+            if (!session) {
+              return sendJson(res, 404, { error: 'Canvas agent session not found.' })
+            }
+
+            const body = await readJson(req)
+
+            if (action === 'start') {
+              try {
+                const startedSession = startCanvasAgentSession(sessionId, body)
+                return sendJson(res, 200, {
+                  ok: true,
+                  session: startedSession,
+                })
+              } catch (error) {
+                const failedSession = updateCanvasAgentSession(sessionId, {
+                  transport: 'pty',
+                  status: 'error',
+                  errorMessage: error?.message || 'Failed to start agent session.',
+                  endedAt: new Date().toISOString(),
+                })
+                return sendJson(res, 500, {
+                  error: error?.message || 'Failed to start agent session.',
+                  session: failedSession,
+                })
+              }
+            }
+
+            if (action === 'stop') {
+              const stoppedSession = stopCanvasAgentSession(sessionId)
+              return sendJson(res, 200, {
+                ok: true,
+                session: stoppedSession,
+              })
+            }
+
+            const ptyProcess = canvasAgentPtysBySession.get(sessionId)
+            if (!ptyProcess) {
+              return sendJson(res, 409, { error: 'Canvas agent session is not running.' })
+            }
+
+            if (action === 'input') {
+              const input = typeof body.input === 'string' ? body.input : ''
+              if (!input) {
+                return sendJson(res, 400, { error: 'input is required.' })
+              }
+              ptyProcess.write(input)
+              return sendJson(res, 200, { ok: true })
+            }
+
+            if (action === 'resize') {
+              const cols = Math.max(40, Number(body.cols || session.cols || CANVAS_AGENT_DEFAULT_TERMINAL.cols))
+              const rows = Math.max(10, Number(body.rows || session.rows || CANVAS_AGENT_DEFAULT_TERMINAL.rows))
+              ptyProcess.resize(cols, rows)
+              const resizedSession = updateCanvasAgentSession(sessionId, { cols, rows })
+              return sendJson(res, 200, {
+                ok: true,
+                session: resizedSession,
+              })
+            }
+          } catch (error) {
+            return sendJson(res, 500, {
+              error: error?.message || 'Failed to update canvas agent session.',
             })
           }
         }

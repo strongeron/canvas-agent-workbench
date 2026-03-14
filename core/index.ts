@@ -34,6 +34,7 @@ export {
   inputSchema,
   textareaSchema,
   selectSchema,
+  childrenSchema,
   badgeSchema,
   cardSchema,
   modalSchema,
