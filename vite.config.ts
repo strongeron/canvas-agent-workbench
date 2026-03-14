@@ -136,6 +136,114 @@ async function readJson(req) {
   return JSON.parse(body)
 }
 
+const CANVAS_AGENT_DEFINITIONS = [
+  {
+    id: 'codex',
+    label: 'Codex CLI',
+    description: 'OpenAI Codex CLI session in the current workspace.',
+    launchCommand: 'codex',
+  },
+  {
+    id: 'claude',
+    label: 'Claude Code',
+    description: 'Anthropic Claude Code session in the current workspace.',
+    launchCommand: 'claude',
+  },
+]
+
+function deriveCanvasNextZIndex(items) {
+  return items.reduce((max, item) => Math.max(max, Number(item?.zIndex || 0) + 1), 1)
+}
+
+function normalizeCanvasStateSnapshot(input) {
+  const items = Array.isArray(input?.items) ? input.items : []
+  const groups = Array.isArray(input?.groups) ? input.groups : []
+  const selectedIds = Array.isArray(input?.selectedIds) ? input.selectedIds : []
+  const nextZIndex = Number.isFinite(input?.nextZIndex)
+    ? Math.max(input.nextZIndex, deriveCanvasNextZIndex(items))
+    : deriveCanvasNextZIndex(items)
+
+  return {
+    items,
+    groups,
+    selectedIds,
+    nextZIndex,
+  }
+}
+
+function collectCanvasCascadeDeleteIds(state, ids) {
+  const idsToRemove = new Set(Array.isArray(ids) ? ids : [])
+  state.items.forEach((item) => {
+    if (item?.parentId && idsToRemove.has(item.parentId)) {
+      idsToRemove.add(item.id)
+    }
+  })
+  return idsToRemove
+}
+
+function applyCanvasRemoteOperationToState(state, operation) {
+  const current = normalizeCanvasStateSnapshot(state)
+
+  if (!operation || typeof operation !== 'object' || typeof operation.type !== 'string') {
+    return current
+  }
+
+  switch (operation.type) {
+    case 'create_item': {
+      if (!operation.item || typeof operation.item !== 'object' || !operation.item.id) {
+        return current
+      }
+      const existingIndex = current.items.findIndex((item) => item.id === operation.item.id)
+      const nextItems =
+        existingIndex >= 0
+          ? current.items.map((item, index) => (index === existingIndex ? operation.item : item))
+          : [...current.items, operation.item]
+
+      return {
+        ...current,
+        items: nextItems,
+        nextZIndex: Math.max(current.nextZIndex, deriveCanvasNextZIndex(nextItems)),
+        selectedIds: operation.select ? [operation.item.id] : current.selectedIds,
+      }
+    }
+    case 'update_item':
+      if (!operation.id) return current
+      return {
+        ...current,
+        items: current.items.map((item) =>
+          item.id === operation.id ? { ...item, ...operation.updates } : item
+        ),
+      }
+    case 'delete_items': {
+      const idsToRemove = collectCanvasCascadeDeleteIds(current, operation.ids)
+      return {
+        ...current,
+        items: current.items.filter((item) => !idsToRemove.has(item.id)),
+        selectedIds: current.selectedIds.filter((id) => !idsToRemove.has(id)),
+      }
+    }
+    case 'select_items':
+      return {
+        ...current,
+        selectedIds: Array.isArray(operation.ids) ? operation.ids : [],
+      }
+    case 'clear_canvas':
+      return {
+        items: [],
+        groups: [],
+        nextZIndex: 1,
+        selectedIds: [],
+      }
+    default:
+      return current
+  }
+}
+
+function writeSseEvent(res, eventName, payload) {
+  res.write(`event: ${eventName}\n`)
+  res.write(`data: ${JSON.stringify(payload)}\n\n`)
+}
+
 function uniqueName(baseName, componentDir, configDir) {
   const baseSlug = slugify(baseName)
   const baseComponent = toPascalCase(baseName)
@@ -2821,6 +2929,75 @@ function paperImportPlugin() {
       const localScanTimers = new Map()
       const localScanActive = new Set()
       const localScanPending = new Set()
+      const canvasAgentStateByProject = new Map()
+      const canvasAgentSessionsByProject = new Map()
+      const canvasAgentClientsByProject = new Map()
+
+      const getCanvasAgentSessions = (projectId) => {
+        if (!canvasAgentSessionsByProject.has(projectId)) {
+          canvasAgentSessionsByProject.set(projectId, [])
+        }
+        return canvasAgentSessionsByProject.get(projectId)
+      }
+
+      const getCanvasAgentClients = (projectId) => {
+        if (!canvasAgentClientsByProject.has(projectId)) {
+          canvasAgentClientsByProject.set(projectId, new Set())
+        }
+        return canvasAgentClientsByProject.get(projectId)
+      }
+
+      const broadcastCanvasAgentEvent = (projectId, eventName, payload, excludeClientId) => {
+        const clients = getCanvasAgentClients(projectId)
+        for (const client of clients) {
+          if (excludeClientId && client.id === excludeClientId) continue
+          try {
+            writeSseEvent(client.res, eventName, payload)
+          } catch (error) {
+            clients.delete(client)
+          }
+        }
+      }
+
+      const upsertCanvasAgentState = (projectId, state, sourceClientId) => {
+        const normalizedState = normalizeCanvasStateSnapshot(state)
+        const record = {
+          projectId,
+          state: normalizedState,
+          updatedAt: new Date().toISOString(),
+          sourceClientId: sourceClientId || null,
+        }
+        canvasAgentStateByProject.set(projectId, record)
+        return record
+      }
+
+      const createCanvasAgentSession = ({ projectId, agentId, cwd, title }) => {
+        const definition = CANVAS_AGENT_DEFINITIONS.find((item) => item.id === agentId)
+        if (!definition) {
+          throw new Error(`Unknown agent: ${agentId}`)
+        }
+        const now = new Date().toISOString()
+        const safeCwd = typeof cwd === 'string' && cwd.trim() ? path.resolve(cwd.trim()) : __dirname
+        const session = {
+          id: `canvas-agent-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          projectId,
+          agentId: definition.id,
+          agentLabel: definition.label,
+          title:
+            typeof title === 'string' && title.trim()
+              ? title.trim()
+              : `${definition.label} session`,
+          cwd: safeCwd,
+          launchCommand: `cd ${JSON.stringify(safeCwd)} && ${definition.launchCommand}`,
+          transport: 'manual-cli',
+          status: 'manual-cli',
+          createdAt: now,
+          updatedAt: now,
+        }
+        const sessions = getCanvasAgentSessions(projectId)
+        sessions.unshift(session)
+        return session
+      }
 
       const registerLocalScanProject = (project) => {
         if (!project?.projectId || !project?.repoPath) return
@@ -2913,6 +3090,174 @@ function paperImportPlugin() {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url) return next()
         const pathname = req.url.split('?')[0]
+
+        if (req.method === 'GET' && pathname === '/api/canvas-agent/agents') {
+          return sendJson(res, 200, {
+            ok: true,
+            agents: CANVAS_AGENT_DEFINITIONS,
+          })
+        }
+
+        if (req.method === 'GET' && pathname === '/api/canvas-agent/sessions') {
+          const requestUrl = new URL(req.url, 'http://localhost')
+          const projectId = requestUrl.searchParams.get('projectId')?.trim()
+          if (!projectId) {
+            return sendJson(res, 400, { error: 'projectId query param is required.' })
+          }
+
+          return sendJson(res, 200, {
+            ok: true,
+            sessions: getCanvasAgentSessions(projectId),
+          })
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas-agent/sessions') {
+          try {
+            const body = await readJson(req)
+            const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : ''
+            const agentId = typeof body.agentId === 'string' ? body.agentId.trim() : ''
+
+            if (!projectId || !agentId) {
+              return sendJson(res, 400, { error: 'projectId and agentId are required.' })
+            }
+
+            const session = createCanvasAgentSession({
+              projectId,
+              agentId,
+              cwd: body.cwd,
+              title: body.title,
+            })
+
+            broadcastCanvasAgentEvent(projectId, 'session-created', { session })
+            return sendJson(res, 200, { ok: true, session })
+          } catch (error) {
+            return sendJson(res, 400, {
+              error: error?.message || 'Failed to create canvas agent session.',
+            })
+          }
+        }
+
+        if (req.method === 'GET' && pathname === '/api/canvas-agent/state') {
+          const requestUrl = new URL(req.url, 'http://localhost')
+          const projectId = requestUrl.searchParams.get('projectId')?.trim()
+          if (!projectId) {
+            return sendJson(res, 400, { error: 'projectId query param is required.' })
+          }
+
+          const stateRecord = canvasAgentStateByProject.get(projectId) || null
+          return sendJson(res, 200, {
+            ok: true,
+            state: stateRecord?.state || null,
+            updatedAt: stateRecord?.updatedAt || null,
+            sourceClientId: stateRecord?.sourceClientId || null,
+          })
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas-agent/state') {
+          try {
+            const body = await readJson(req)
+            const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : ''
+            if (!projectId) {
+              return sendJson(res, 400, { error: 'projectId is required.' })
+            }
+
+            const stateRecord = upsertCanvasAgentState(projectId, body.state, body.clientId)
+            return sendJson(res, 200, {
+              ok: true,
+              updatedAt: stateRecord.updatedAt,
+            })
+          } catch (error) {
+            return sendJson(res, 400, {
+              error: error?.message || 'Failed to sync canvas state.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas-agent/operations') {
+          try {
+            const body = await readJson(req)
+            const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : ''
+            if (!projectId) {
+              return sendJson(res, 400, { error: 'projectId is required.' })
+            }
+
+            const currentRecord =
+              canvasAgentStateByProject.get(projectId) ||
+              upsertCanvasAgentState(projectId, { items: [], groups: [], nextZIndex: 1, selectedIds: [] }, null)
+            const nextState = applyCanvasRemoteOperationToState(currentRecord.state, body.operation)
+            const updatedRecord = upsertCanvasAgentState(projectId, nextState, body.clientId)
+
+            broadcastCanvasAgentEvent(
+              projectId,
+              'canvas-operation',
+              {
+                operation: body.operation,
+                sourceClientId: body.clientId || null,
+                updatedAt: updatedRecord.updatedAt,
+              },
+              body.clientId || undefined
+            )
+
+            return sendJson(res, 200, {
+              ok: true,
+              updatedAt: updatedRecord.updatedAt,
+              state: updatedRecord.state,
+            })
+          } catch (error) {
+            return sendJson(res, 400, {
+              error: error?.message || 'Failed to apply canvas operation.',
+            })
+          }
+        }
+
+        if (req.method === 'GET' && pathname === '/api/canvas-agent/events') {
+          const requestUrl = new URL(req.url, 'http://localhost')
+          const projectId = requestUrl.searchParams.get('projectId')?.trim()
+          const clientId =
+            requestUrl.searchParams.get('clientId')?.trim() ||
+            `canvas-agent-client-${Math.random().toString(36).slice(2, 8)}`
+
+          if (!projectId) {
+            return sendJson(res, 400, { error: 'projectId query param is required.' })
+          }
+
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'text/event-stream')
+          res.setHeader('Cache-Control', 'no-cache, no-transform')
+          res.setHeader('Connection', 'keep-alive')
+          res.setHeader('X-Accel-Buffering', 'no')
+          res.flushHeaders?.()
+
+          const client = {
+            id: clientId,
+            res,
+          }
+          const clients = getCanvasAgentClients(projectId)
+          clients.add(client)
+
+          writeSseEvent(res, 'hello', {
+            clientId,
+            projectId,
+            connectedAt: new Date().toISOString(),
+          })
+
+          const pingTimer = setInterval(() => {
+            writeSseEvent(res, 'ping', { at: new Date().toISOString() })
+          }, 15000)
+          let cleanedUp = false
+
+          const cleanup = () => {
+            if (cleanedUp) return
+            cleanedUp = true
+            clearInterval(pingTimer)
+            clients.delete(client)
+            res.end()
+          }
+
+          req.on('close', cleanup)
+          req.on('end', cleanup)
+          return
+        }
 
         if (req.method === 'GET' && pathname === '/api/projects/list') {
           try {

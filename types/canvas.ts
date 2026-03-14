@@ -207,6 +207,52 @@ export interface CanvasState {
   selectedIds: string[]
 }
 
+export type CanvasStateSnapshot = CanvasState
+
+export type CanvasRemoteOperation =
+  | {
+      type: "create_item"
+      item: CanvasItem
+      select?: boolean
+    }
+  | {
+      type: "update_item"
+      id: string
+      updates: CanvasItemUpdate
+    }
+  | {
+      type: "delete_items"
+      ids: string[]
+    }
+  | {
+      type: "select_items"
+      ids: string[]
+    }
+  | {
+      type: "clear_canvas"
+    }
+
+export interface CanvasAgentDefinition {
+  id: string
+  label: string
+  description: string
+  launchCommand: string
+}
+
+export interface CanvasAgentSession {
+  id: string
+  projectId: string
+  agentId: string
+  agentLabel: string
+  title: string
+  cwd: string
+  launchCommand: string
+  transport: "manual-cli"
+  status: "configured" | "manual-cli"
+  createdAt: string
+  updatedAt: string
+}
+
 export interface CanvasTransform {
   scale: number
   offset: { x: number; y: number }

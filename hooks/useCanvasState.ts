@@ -2,7 +2,15 @@ import { useCallback } from "react"
 
 import { useLocalStorage } from "./useLocalStorage"
 
-import type { CanvasItem, CanvasItemInput, CanvasItemUpdate, CanvasState, CanvasGroup } from "../types/canvas"
+import type {
+  CanvasItem,
+  CanvasItemInput,
+  CanvasItemUpdate,
+  CanvasState,
+  CanvasGroup,
+  CanvasRemoteOperation,
+  CanvasStateSnapshot,
+} from "../types/canvas"
 import { GROUP_COLORS } from "../types/canvas"
 
 const DEFAULT_STATE: CanvasState = {
@@ -42,6 +50,20 @@ function normalizeState(state: Partial<CanvasState> | null | undefined): CanvasS
     nextZIndex: state?.nextZIndex ?? 1,
     selectedIds: state?.selectedIds ?? [],
   }
+}
+
+function deriveNextZIndex(items: CanvasItem[]) {
+  return items.reduce((max, item) => Math.max(max, (item.zIndex ?? 0) + 1), 1)
+}
+
+function collectCascadeDeleteIds(prev: CanvasState, ids: string[]) {
+  const idsToRemove = new Set(ids)
+  prev.items.forEach((item) => {
+    if (item.parentId && idsToRemove.has(item.parentId)) {
+      idsToRemove.add(item.id)
+    }
+  })
+  return idsToRemove
 }
 
 export function useCanvasState(storageKey = "gallery-canvas-state") {
@@ -98,16 +120,7 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   const removeItem = useCallback(
     (id: string) => {
       setState((prev) => {
-        const target = prev.items.find((item) => item.id === id)
-        const idsToRemove = new Set([id])
-
-        if (target?.type === "artboard") {
-          prev.items.forEach((item) => {
-            if (item.parentId === id) {
-              idsToRemove.add(item.id)
-            }
-          })
-        }
+        const idsToRemove = collectCascadeDeleteIds(prev, [id])
 
         return {
           ...prev,
@@ -296,12 +309,7 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
 
   const removeSelected = useCallback(() => {
     setState((prev) => {
-      const idsToRemove = new Set(prev.selectedIds)
-      prev.items.forEach((item) => {
-        if (item.parentId && idsToRemove.has(item.parentId)) {
-          idsToRemove.add(item.id)
-        }
-      })
+      const idsToRemove = collectCascadeDeleteIds(prev, prev.selectedIds)
 
       return {
         ...prev,
@@ -394,6 +402,65 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
     setState(() => DEFAULT_STATE)
   }, [setState])
 
+  const replaceState = useCallback(
+    (nextState: CanvasStateSnapshot) => {
+      const normalized = normalizeState(nextState)
+      setState(() => ({
+        ...normalized,
+        nextZIndex: Math.max(normalized.nextZIndex, deriveNextZIndex(normalized.items)),
+      }))
+    },
+    [setState]
+  )
+
+  const applyRemoteOperation = useCallback(
+    (operation: CanvasRemoteOperation) => {
+      setState((prev) => {
+        switch (operation.type) {
+          case "create_item": {
+            const nextItem = normalizeItem(operation.item)
+            const existingIndex = prev.items.findIndex((item) => item.id === nextItem.id)
+            const nextItems =
+              existingIndex >= 0
+                ? prev.items.map((item, index) => (index === existingIndex ? nextItem : item))
+                : [...prev.items, nextItem]
+
+            return {
+              ...prev,
+              items: nextItems,
+              nextZIndex: Math.max(prev.nextZIndex, deriveNextZIndex(nextItems)),
+              selectedIds: operation.select ? [nextItem.id] : prev.selectedIds,
+            }
+          }
+          case "update_item":
+            return {
+              ...prev,
+              items: prev.items.map((item) =>
+                item.id === operation.id
+                  ? ({ ...item, ...operation.updates } as CanvasItem)
+                  : item
+              ),
+            }
+          case "delete_items": {
+            const idsToRemove = collectCascadeDeleteIds(prev, operation.ids)
+            return {
+              ...prev,
+              items: prev.items.filter((item) => !idsToRemove.has(item.id)),
+              selectedIds: prev.selectedIds.filter((selectedId) => !idsToRemove.has(selectedId)),
+            }
+          }
+          case "select_items":
+            return { ...prev, selectedIds: [...operation.ids] }
+          case "clear_canvas":
+            return DEFAULT_STATE
+          default:
+            return prev
+        }
+      })
+    },
+    [setState]
+  )
+
   // Get group for an item
   const getItemGroup = useCallback(
     (itemId: string) => {
@@ -437,12 +504,14 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   const items = state?.items ?? []
   const groups = state?.groups ?? []
   const selectedIds = state?.selectedIds ?? []
+  const nextZIndex = state?.nextZIndex ?? DEFAULT_STATE.nextZIndex
 
   return {
     // State
     items,
     groups,
     selectedIds,
+    nextZIndex,
 
     // Item operations
     addItem,
@@ -475,5 +544,7 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
 
     // Canvas operations
     clearCanvas,
+    replaceState,
+    applyRemoteOperation,
   }
 }
