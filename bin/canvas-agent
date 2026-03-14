@@ -1,14 +1,31 @@
 #!/usr/bin/env node
 
-import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+
+import {
+  buildCanvasContextSummary,
+  enqueueCanvasAgentOperation,
+  fail,
+  getCanvasAgentContextFromEnv,
+  parseCanvasAgentIds,
+  readCanvasAgentDebug,
+  readCanvasAgentPrimitives,
+  readCanvasAgentSelection,
+  readCanvasAgentState,
+  readCanvasAgentTranscript,
+  readJsonPayload,
+  writeJson,
+} from './canvas-agent-runtime.mjs'
 
 const HELP = `canvas-agent
 
 Usage:
   bin/canvas-agent help
   bin/canvas-agent state
+  bin/canvas-agent context
   bin/canvas-agent selection
+  bin/canvas-agent primitives
+  bin/canvas-agent primitive <primitive-id>
   bin/canvas-agent create-item <json|@file|->
   bin/canvas-agent update-item <item-id> <json|@file|->
   bin/canvas-agent delete-items <id[,id...]>
@@ -36,176 +53,126 @@ async function main() {
     return
   }
 
-  const context = getContext()
+  const context = getCanvasAgentContextFromEnv()
 
   switch (command) {
     case 'state': {
-      const state = await readJsonFile(path.join(context.sessionDir, 'state.json'))
-      writeJson(state)
+      writeJson(await readCanvasAgentState(context))
+      return
+    }
+    case 'context': {
+      const [state, primitives] = await Promise.all([
+        readCanvasAgentState(context),
+        readCanvasAgentPrimitives(context),
+      ])
+      writeJson(buildCanvasContextSummary(state, primitives))
       return
     }
     case 'selection': {
-      const state = await readJsonFile(path.join(context.sessionDir, 'state.json'))
-      writeJson(Array.isArray(state.state?.selectedIds) ? state.state.selectedIds : [])
+      writeJson(await readCanvasAgentSelection(context))
+      return
+    }
+    case 'primitives': {
+      writeJson(await readCanvasAgentPrimitives(context))
+      return
+    }
+    case 'primitive': {
+      const primitiveId = args[0]?.trim()
+      if (!primitiveId) fail('primitive requires a primitive id.')
+      const primitives = await readCanvasAgentPrimitives(context)
+      const primitive = primitives.find((entry) => entry.primitiveId === primitiveId || entry.entryId === primitiveId)
+      if (!primitive) fail(`Unknown primitive: ${primitiveId}`)
+      writeJson(primitive)
       return
     }
     case 'create-item': {
       const item = await readJsonPayload(args[0])
-      await enqueueOperation(context, 'create-item', {
-        type: 'create_item',
-        item,
-        select: true,
-      })
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'create-item',
+          {
+            type: 'create_item',
+            item,
+            select: true,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
       return
     }
     case 'update-item': {
       const [itemId, payloadRef] = args
       if (!itemId) fail('update-item requires an item id.')
       const updates = await readJsonPayload(payloadRef)
-      await enqueueOperation(context, 'update-item', {
-        type: 'update_item',
-        id: itemId,
-        updates,
-      })
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'update-item',
+          {
+            type: 'update_item',
+            id: itemId,
+            updates,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
       return
     }
     case 'delete-items': {
-      const ids = parseIds(args[0])
-      await enqueueOperation(context, 'delete-items', {
-        type: 'delete_items',
-        ids,
-      })
+      const ids = parseCanvasAgentIds(args[0])
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'delete-items',
+          {
+            type: 'delete_items',
+            ids,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
       return
     }
     case 'select-items': {
-      const ids = parseIds(args[0])
-      await enqueueOperation(context, 'select-items', {
-        type: 'select_items',
-        ids,
-      })
+      const ids = parseCanvasAgentIds(args[0])
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'select-items',
+          {
+            type: 'select_items',
+            ids,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
       return
     }
     case 'clear-canvas': {
-      await enqueueOperation(context, 'clear-canvas', {
-        type: 'clear_canvas',
-      })
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'clear-canvas',
+          {
+            type: 'clear_canvas',
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
       return
     }
     case 'transcript': {
-      const transcript = await readJsonFile(path.join(context.sessionDir, 'transcript.json'))
-      writeJson(transcript)
+      writeJson(await readCanvasAgentTranscript(context))
       return
     }
     case 'debug': {
-      const debug = await readJsonFile(path.join(context.sessionDir, 'debug.json'))
-      writeJson(debug)
+      writeJson(await readCanvasAgentDebug(context))
       return
     }
     default:
       fail(`Unknown command: ${command}`)
   }
-}
-
-function getContext() {
-  const sessionDir = process.env.CANVAS_AGENT_SESSION_DIR?.trim()
-  const projectId = process.env.CANVAS_AGENT_PROJECT_ID?.trim()
-  const sessionId = process.env.CANVAS_AGENT_SESSION_ID?.trim()
-
-  if (!sessionDir) fail('CANVAS_AGENT_SESSION_DIR is not set.')
-  if (!projectId) fail('CANVAS_AGENT_PROJECT_ID is not set.')
-  if (!sessionId) fail('CANVAS_AGENT_SESSION_ID is not set.')
-
-  return { sessionDir, projectId, sessionId }
-}
-
-async function enqueueOperation(context, toolName, operation) {
-  const requestId = `canvas-agent-request-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  const queuePath = path.join(context.sessionDir, 'queue', `${requestId}.json`)
-  const resultPath = path.join(context.sessionDir, 'results', `${requestId}.json`)
-
-  await writeFile(
-    queuePath,
-    JSON.stringify(
-      {
-        id: requestId,
-        sessionId: context.sessionId,
-        projectId: context.projectId,
-        source: 'canvas-agent-cli',
-        toolName,
-        operation,
-      },
-      null,
-      2
-    )
-  )
-
-  const result = await waitForJsonFile(resultPath)
-  writeJson(result)
-  if (!result.ok) {
-    process.exitCode = 1
-  }
-}
-
-async function readJsonPayload(ref) {
-  if (!ref) fail('Missing JSON payload.')
-  if (ref === '-') {
-    return JSON.parse(await readStdin())
-  }
-  if (ref.startsWith('@')) {
-    return JSON.parse(await readFile(ref.slice(1), 'utf8'))
-  }
-  return JSON.parse(ref)
-}
-
-async function readJsonFile(filePath) {
-  return JSON.parse(await readFile(filePath, 'utf8'))
-}
-
-async function waitForJsonFile(filePath, timeoutMs = 15000) {
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      return await readJsonFile(filePath)
-    } catch (error) {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-        await sleep(100)
-        continue
-      }
-      throw error
-    }
-  }
-  fail(`Timed out waiting for canvas result at ${filePath}`)
-}
-
-function parseIds(value) {
-  if (!value) fail('At least one id is required.')
-  const ids = value
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (ids.length === 0) fail('At least one id is required.')
-  return ids
-}
-
-async function readStdin() {
-  const chunks = []
-  for await (const chunk of process.stdin) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-  }
-  return Buffer.concat(chunks).toString('utf8')
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function writeJson(value) {
-  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
-}
-
-function fail(message) {
-  process.stderr.write(`${message}\n`)
-  process.exit(1)
 }
 
 main().catch((error) => {

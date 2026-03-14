@@ -1,0 +1,447 @@
+#!/usr/bin/env node
+
+import {
+  buildCanvasContextSummary,
+  enqueueCanvasAgentOperation,
+  getCanvasAgentContextFromEnv,
+  readCanvasAgentPrimitives,
+  readCanvasAgentSelection,
+  readCanvasAgentState,
+} from './canvas-agent-runtime.mjs'
+
+const SERVER_INFO = {
+  name: 'canvas-agent-mcp',
+  version: '0.1.0',
+}
+
+const FALLBACK_PROTOCOL_VERSION = '2025-03-26'
+
+const TOOL_DEFINITIONS = [
+  {
+    name: 'get_canvas_context',
+    description:
+      'Return an LLM-friendly summary of the current canvas, grouped by artboards and loose items.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_canvas_state',
+    description: 'Return the raw current canvas state snapshot.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_canvas_selection',
+    description: 'Return the current selection and summaries for selected items.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_primitives',
+    description:
+      'List registered HTML/CSS-native primitives available to the current canvas project.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        family: { type: 'string', description: 'Optional primitive family filter.' },
+        level: {
+          type: 'string',
+          enum: ['primitive', 'composite'],
+          description: 'Optional primitive level filter.',
+        },
+        exportable: {
+          type: 'boolean',
+          description: 'Optional filter for exportable primitives.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_primitive',
+    description: 'Return deep metadata for a primitive by primitiveId or entryId.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        primitiveId: { type: 'string' },
+      },
+      required: ['primitiveId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_item',
+    description: 'Create a canvas item and optionally select it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        item: { type: 'object' },
+        select: { type: 'boolean' },
+      },
+      required: ['item'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_item',
+    description: 'Update an existing canvas item by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        updates: { type: 'object' },
+      },
+      required: ['id', 'updates'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_items',
+    description: 'Delete one or more canvas items by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+        },
+      },
+      required: ['ids'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'select_items',
+    description: 'Replace the current selection with the provided item ids.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+        },
+      },
+      required: ['ids'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'clear_canvas',
+    description: 'Remove all items and groups from the current canvas.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+]
+
+let protocolVersion = FALLBACK_PROTOCOL_VERSION
+
+const context = getCanvasAgentContextFromEnv()
+const parser = createMessageParser(handleMessage)
+process.stdin.on('data', (chunk) => parser.push(chunk))
+process.stdin.on('end', () => process.exit(0))
+
+function createMessageParser(onMessage) {
+  let buffer = Buffer.alloc(0)
+  let expectedLength = null
+
+  return {
+    push(chunk) {
+      buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)])
+
+      while (true) {
+        if (expectedLength == null) {
+          const headerEnd = buffer.indexOf('\r\n\r\n')
+          if (headerEnd < 0) return
+
+          const headerBlock = buffer.slice(0, headerEnd).toString('utf8')
+          buffer = buffer.slice(headerEnd + 4)
+          const headers = parseHeaders(headerBlock)
+          const contentLength = Number.parseInt(headers['content-length'] || '', 10)
+          if (!Number.isFinite(contentLength) || contentLength < 0) {
+            process.stderr.write('[canvas-mcp] Missing or invalid Content-Length header.\n')
+            expectedLength = null
+            continue
+          }
+          expectedLength = contentLength
+        }
+
+        if (buffer.length < expectedLength) return
+
+        const body = buffer.slice(0, expectedLength).toString('utf8')
+        buffer = buffer.slice(expectedLength)
+        expectedLength = null
+
+        try {
+          onMessage(JSON.parse(body))
+        } catch (error) {
+          process.stderr.write(`[canvas-mcp] Failed to parse JSON message: ${error instanceof Error ? error.message : String(error)}\n`)
+        }
+      }
+    },
+  }
+}
+
+function parseHeaders(block) {
+  return block.split('\r\n').reduce((acc, line) => {
+    const index = line.indexOf(':')
+    if (index < 0) return acc
+    const key = line.slice(0, index).trim().toLowerCase()
+    const value = line.slice(index + 1).trim()
+    if (key) acc[key] = value
+    return acc
+  }, {})
+}
+
+async function handleMessage(message) {
+  if (!message || typeof message !== 'object') return
+  const { id, method, params } = message
+  if (!method || typeof method !== 'string') return
+
+  try {
+    if (method === 'initialize') {
+      protocolVersion =
+        typeof params?.protocolVersion === 'string' && params.protocolVersion.trim()
+          ? params.protocolVersion.trim()
+          : FALLBACK_PROTOCOL_VERSION
+      return sendResponse(id, {
+        protocolVersion,
+        capabilities: {
+          tools: {
+            listChanged: false,
+          },
+        },
+        serverInfo: SERVER_INFO,
+      })
+    }
+
+    if (method === 'notifications/initialized') {
+      return
+    }
+
+    if (method === 'ping') {
+      return sendResponse(id, {})
+    }
+
+    if (method === 'tools/list') {
+      return sendResponse(id, { tools: TOOL_DEFINITIONS })
+    }
+
+    if (method === 'resources/list') {
+      return sendResponse(id, { resources: [] })
+    }
+
+    if (method === 'prompts/list') {
+      return sendResponse(id, { prompts: [] })
+    }
+
+    if (method === 'tools/call') {
+      const name = typeof params?.name === 'string' ? params.name : ''
+      const args = params?.arguments && typeof params.arguments === 'object' ? params.arguments : {}
+      const result = await callTool(name, args)
+      return sendResponse(id, result)
+    }
+
+    return sendError(id, -32601, `Method not found: ${method}`)
+  } catch (error) {
+    return sendError(id, -32000, error instanceof Error ? error.message : 'Canvas MCP server failed.')
+  }
+}
+
+async function callTool(name, args) {
+  switch (name) {
+    case 'get_canvas_context': {
+      const [state, primitives] = await Promise.all([
+        readCanvasAgentState(context),
+        readCanvasAgentPrimitives(context),
+      ])
+      return asToolResult(buildCanvasContextSummary(state, primitives))
+    }
+    case 'get_canvas_state': {
+      return asToolResult(await readCanvasAgentState(context))
+    }
+    case 'get_canvas_selection': {
+      const [state, primitives, selectedIds] = await Promise.all([
+        readCanvasAgentState(context),
+        readCanvasAgentPrimitives(context),
+        readCanvasAgentSelection(context),
+      ])
+      const summary = buildCanvasContextSummary(state, primitives)
+      const itemMap = flattenCanvasSummaryItems(summary)
+      return asToolResult({
+        selectedIds,
+        items: selectedIds.map((id) => itemMap.get(id)).filter(Boolean),
+      })
+    }
+    case 'list_primitives': {
+      const primitives = await readCanvasAgentPrimitives(context)
+      const family = typeof args.family === 'string' && args.family.trim() ? args.family.trim() : null
+      const level = typeof args.level === 'string' && args.level.trim() ? args.level.trim() : null
+      const exportable = typeof args.exportable === 'boolean' ? args.exportable : null
+      const filtered = primitives.filter((primitive) => {
+        if (family && primitive.family !== family) return false
+        if (level && primitive.level !== level) return false
+        if (exportable != null && Boolean(primitive.exportable !== false) !== exportable) return false
+        return true
+      })
+      return asToolResult(filtered)
+    }
+    case 'get_primitive': {
+      const primitiveId = typeof args.primitiveId === 'string' ? args.primitiveId.trim() : ''
+      if (!primitiveId) return asToolError('primitiveId is required.')
+      const primitives = await readCanvasAgentPrimitives(context)
+      const primitive = primitives.find((entry) => entry.primitiveId === primitiveId || entry.entryId === primitiveId)
+      if (!primitive) return asToolError(`Primitive not found: ${primitiveId}`)
+      return asToolResult(primitive)
+    }
+    case 'create_item': {
+      if (!args.item || typeof args.item !== 'object') {
+        return asToolError('item is required.')
+      }
+      const result = await enqueueCanvasAgentOperation(
+        context,
+        name,
+        {
+          type: 'create_item',
+          item: args.item,
+          select: args.select !== false,
+        },
+        { source: 'canvas-agent-mcp' }
+      )
+      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to create item.')
+    }
+    case 'update_item': {
+      const id = typeof args.id === 'string' ? args.id.trim() : ''
+      if (!id) return asToolError('id is required.')
+      if (!args.updates || typeof args.updates !== 'object') {
+        return asToolError('updates is required.')
+      }
+      const result = await enqueueCanvasAgentOperation(
+        context,
+        name,
+        {
+          type: 'update_item',
+          id,
+          updates: args.updates,
+        },
+        { source: 'canvas-agent-mcp' }
+      )
+      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to update item.')
+    }
+    case 'delete_items': {
+      const ids = Array.isArray(args.ids) ? args.ids.map((value) => String(value).trim()).filter(Boolean) : []
+      if (ids.length === 0) return asToolError('ids is required.')
+      const result = await enqueueCanvasAgentOperation(
+        context,
+        name,
+        {
+          type: 'delete_items',
+          ids,
+        },
+        { source: 'canvas-agent-mcp' }
+      )
+      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to delete items.')
+    }
+    case 'select_items': {
+      const ids = Array.isArray(args.ids) ? args.ids.map((value) => String(value).trim()).filter(Boolean) : []
+      const result = await enqueueCanvasAgentOperation(
+        context,
+        name,
+        {
+          type: 'select_items',
+          ids,
+        },
+        { source: 'canvas-agent-mcp' }
+      )
+      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to update selection.')
+    }
+    case 'clear_canvas': {
+      const result = await enqueueCanvasAgentOperation(
+        context,
+        name,
+        {
+          type: 'clear_canvas',
+        },
+        { source: 'canvas-agent-mcp' }
+      )
+      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to clear canvas.')
+    }
+    default:
+      return asToolError(`Unknown tool: ${name}`)
+  }
+}
+
+function flattenCanvasSummaryItems(summary) {
+  const map = new Map()
+  for (const artboard of Array.isArray(summary?.artboards) ? summary.artboards : []) {
+    map.set(artboard.id, artboard)
+    for (const item of Array.isArray(artboard.children) ? artboard.children : []) {
+      map.set(item.id, item)
+    }
+  }
+  for (const item of Array.isArray(summary?.looseItems) ? summary.looseItems : []) {
+    map.set(item.id, item)
+  }
+  return map
+}
+
+function asToolResult(payload) {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(payload, null, 2),
+      },
+    ],
+    structuredContent: payload,
+  }
+}
+
+function asToolError(message) {
+  return {
+    isError: true,
+    content: [
+      {
+        type: 'text',
+        text: String(message || 'Canvas MCP tool failed.'),
+      },
+    ],
+  }
+}
+
+function sendResponse(id, result) {
+  sendMessage({
+    jsonrpc: '2.0',
+    id,
+    result,
+  })
+}
+
+function sendError(id, code, message, data = undefined) {
+  sendMessage({
+    jsonrpc: '2.0',
+    id,
+    error: {
+      code,
+      message,
+      data,
+    },
+  })
+}
+
+function sendMessage(payload) {
+  const body = JSON.stringify(payload)
+  process.stdout.write(`Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n${body}`)
+}
