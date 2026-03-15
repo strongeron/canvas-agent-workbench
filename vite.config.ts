@@ -165,6 +165,9 @@ const CANVAS_MCP_SERVER_ENTRY = path.join(__dirname, 'bin', 'canvas-mcp-server')
 const CANVAS_AGENT_OUTPUT_LIMIT = 200_000
 const CANVAS_AGENT_TRANSCRIPT_LIMIT = 240
 const CANVAS_AGENT_STATE_HISTORY_LIMIT = 80
+const CANVAS_AGENT_MCP_GUIDANCE =
+  'This session is attached to a live canvas MCP server named "canvas". When the task touches the live canvas, primitives, artboards, or board export, prefer MCP tools before Bash or file edits. Start with get_canvas_context or get_canvas_state, inspect primitives with list_primitives or get_primitive, create boards with create_artboard and create_primitive_item, then use update_item/select_items as needed. Use export_board only for primitive-only artboards. Use shell and file edits only for repo code changes, tests, or debugging outside the scene graph.'
+const CANVAS_AGENT_CODEX_BOOTSTRAP_PROMPT = `${CANVAS_AGENT_MCP_GUIDANCE} Acknowledge briefly that the canvas MCP tools are available, then wait for the next user task.`
 
 function deriveCanvasNextZIndex(items) {
   return items.reduce((max, item) => Math.max(max, Number(item?.zIndex || 0) + 1), 1)
@@ -474,7 +477,7 @@ function buildCanvasAgentLaunchMetadata(definition, session, sessionDir, toolCom
 
   if (definition.id === 'claude') {
     const mcpConfigPath = path.join(sessionDir, 'canvas-mcp.json')
-    const agentCommand = `${launchCommandBase} --strict-mcp-config --mcp-config ${shellQuote(mcpConfigPath)}`
+    const agentCommand = `${launchCommandBase} --append-system-prompt ${shellQuote(CANVAS_AGENT_MCP_GUIDANCE)} --strict-mcp-config --mcp-config ${shellQuote(mcpConfigPath)}`
     return {
       agentCommand,
       launchCommand: `cd ${JSON.stringify(session.cwd)} && ${agentCommand}`,
@@ -486,6 +489,7 @@ function buildCanvasAgentLaunchMetadata(definition, session, sessionDir, toolCom
         null,
         2
       ),
+      startupGuidance: CANVAS_AGENT_MCP_GUIDANCE,
     }
   }
 
@@ -496,7 +500,7 @@ function buildCanvasAgentLaunchMetadata(definition, session, sessionDir, toolCom
     `mcp_servers.${CANVAS_MCP_SERVER_NAME}.cwd=${JSON.stringify(session.cwd)}`,
   ]
   const overrideArgs = codexOverrides.map((override) => `-c ${shellQuote(override)}`).join(' ')
-  const agentCommand = `${launchCommandBase} ${overrideArgs}`.trim()
+  const agentCommand = `${launchCommandBase} ${overrideArgs} ${shellQuote(CANVAS_AGENT_CODEX_BOOTSTRAP_PROMPT)}`.trim()
   return {
     agentCommand,
     launchCommand: `cd ${JSON.stringify(session.cwd)} && ${agentCommand}`,
@@ -504,6 +508,7 @@ function buildCanvasAgentLaunchMetadata(definition, session, sessionDir, toolCom
     mcpServerCommand,
     mcpConfigPath: null,
     mcpConfigContent: null,
+    startupGuidance: CANVAS_AGENT_MCP_GUIDANCE,
   }
 }
 
@@ -3508,6 +3513,7 @@ function paperImportPlugin() {
           mcpServerName: CANVAS_MCP_SERVER_NAME,
           mcpServerCommand: `${process.execPath} ${CANVAS_MCP_SERVER_ENTRY}`,
           mcpConfigPath: null,
+          startupGuidance: CANVAS_AGENT_MCP_GUIDANCE,
           transport: 'manual-cli',
           status: 'configured',
           createdAt: now,

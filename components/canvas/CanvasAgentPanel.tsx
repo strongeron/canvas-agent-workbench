@@ -387,6 +387,16 @@ export function CanvasAgentPanel({
                     it can read primitives and mutate the board directly.
                   </div>
                 </div>
+                {activeSession.startupGuidance && (
+                  <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                      MCP-first guidance
+                    </div>
+                    <div className="mt-2 text-[11px] leading-5 text-emerald-900">
+                      {activeSession.startupGuidance}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-3 flex items-center gap-2">
                   <button
                     type="button"

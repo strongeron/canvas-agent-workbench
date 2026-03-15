@@ -252,6 +252,7 @@ export interface CanvasAgentSession {
   mcpServerName?: string | null
   mcpServerCommand?: string | null
   mcpConfigPath?: string | null
+  startupGuidance?: string | null
   transport: "manual-cli" | "pty"
   status: "configured" | "starting" | "running" | "stopped" | "exited" | "error"
   createdAt: string

@@ -11,10 +11,22 @@ import {
 
 const SERVER_INFO = {
   name: 'canvas-agent-mcp',
-  version: '0.1.0',
+  version: '0.2.0',
 }
 
 const FALLBACK_PROTOCOL_VERSION = '2025-03-26'
+const DEFAULT_ARTBOARD_LAYOUT = {
+  display: 'flex',
+  direction: 'column',
+  align: 'stretch',
+  justify: 'start',
+  gap: 24,
+  padding: 32,
+}
+const DEFAULT_ARTBOARD_SIZE = { width: 1440, height: 900 }
+const DEFAULT_ARTBOARD_POSITION = { x: 120, y: 120 }
+const DEFAULT_EXPORT_FORMAT = 'react-tailwind'
+const EXPORT_FORMATS = new Set(['react-tailwind', 'react-css-vars'])
 
 const TOOL_DEFINITIONS = [
   {
@@ -73,6 +85,55 @@ const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         primitiveId: { type: 'string' },
+      },
+      required: ['primitiveId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_artboard',
+    description: 'Create an artboard with sensible defaults and optional layout overrides.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        position: positionSchema(),
+        size: sizeSchema(),
+        background: { type: 'string' },
+        themeId: { type: 'string' },
+        layout: {
+          type: 'object',
+          properties: {
+            display: { type: 'string', enum: ['flex', 'grid'] },
+            direction: { type: 'string', enum: ['row', 'column'] },
+            align: { type: 'string', enum: ['start', 'center', 'end', 'stretch'] },
+            justify: { type: 'string', enum: ['start', 'center', 'end', 'between'] },
+            gap: { type: 'number' },
+            columns: { type: 'number' },
+            padding: { type: 'number' },
+          },
+          additionalProperties: false,
+        },
+        select: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_primitive_item',
+    description:
+      'Create a component item from a registered primitive using primitiveId and variant metadata.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        primitiveId: { type: 'string' },
+        variantName: { type: 'string' },
+        variantIndex: { type: 'number' },
+        position: positionSchema(),
+        size: sizeSchema(),
+        parentId: { type: 'string' },
+        props: { type: 'object' },
+        select: { type: 'boolean' },
       },
       required: ['primitiveId'],
       additionalProperties: false,
@@ -144,6 +205,21 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'export_board',
+    description:
+      'Export a primitive-only artboard as React code. Current export preserves canvas positioning rather than reconstructing semantic layout.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        artboardId: { type: 'string' },
+        format: { type: 'string', enum: ['react-tailwind', 'react-css-vars'] },
+        componentName: { type: 'string' },
+      },
+      required: ['artboardId'],
+      additionalProperties: false,
+    },
+  },
 ]
 
 let protocolVersion = FALLBACK_PROTOCOL_VERSION
@@ -152,6 +228,30 @@ const context = getCanvasAgentContextFromEnv()
 const parser = createMessageParser(handleMessage)
 process.stdin.on('data', (chunk) => parser.push(chunk))
 process.stdin.on('end', () => process.exit(0))
+
+function positionSchema() {
+  return {
+    type: 'object',
+    properties: {
+      x: { type: 'number' },
+      y: { type: 'number' },
+    },
+    required: ['x', 'y'],
+    additionalProperties: false,
+  }
+}
+
+function sizeSchema() {
+  return {
+    type: 'object',
+    properties: {
+      width: { type: 'number' },
+      height: { type: 'number' },
+    },
+    required: ['width', 'height'],
+    additionalProperties: false,
+  }
+}
 
 function createMessageParser(onMessage) {
   let buffer = Buffer.alloc(0)
@@ -185,7 +285,7 @@ function createMessageParser(onMessage) {
         expectedLength = null
 
         try {
-          onMessage(JSON.parse(body))
+          void onMessage(JSON.parse(body))
         } catch (error) {
           process.stderr.write(`[canvas-mcp] Failed to parse JSON message: ${error instanceof Error ? error.message : String(error)}\n`)
         }
@@ -227,31 +327,16 @@ async function handleMessage(message) {
       })
     }
 
-    if (method === 'notifications/initialized') {
-      return
-    }
-
-    if (method === 'ping') {
-      return sendResponse(id, {})
-    }
-
-    if (method === 'tools/list') {
-      return sendResponse(id, { tools: TOOL_DEFINITIONS })
-    }
-
-    if (method === 'resources/list') {
-      return sendResponse(id, { resources: [] })
-    }
-
-    if (method === 'prompts/list') {
-      return sendResponse(id, { prompts: [] })
-    }
+    if (method === 'notifications/initialized') return
+    if (method === 'ping') return sendResponse(id, {})
+    if (method === 'tools/list') return sendResponse(id, { tools: TOOL_DEFINITIONS })
+    if (method === 'resources/list') return sendResponse(id, { resources: [] })
+    if (method === 'prompts/list') return sendResponse(id, { prompts: [] })
 
     if (method === 'tools/call') {
       const name = typeof params?.name === 'string' ? params.name : ''
       const args = params?.arguments && typeof params.arguments === 'object' ? params.arguments : {}
-      const result = await callTool(name, args)
-      return sendResponse(id, result)
+      return sendResponse(id, await callTool(name, args))
     }
 
     return sendError(id, -32601, `Method not found: ${method}`)
@@ -269,9 +354,8 @@ async function callTool(name, args) {
       ])
       return asToolResult(buildCanvasContextSummary(state, primitives))
     }
-    case 'get_canvas_state': {
+    case 'get_canvas_state':
       return asToolResult(await readCanvasAgentState(context))
-    }
     case 'get_canvas_selection': {
       const [state, primitives, selectedIds] = await Promise.all([
         readCanvasAgentState(context),
@@ -287,100 +371,244 @@ async function callTool(name, args) {
     }
     case 'list_primitives': {
       const primitives = await readCanvasAgentPrimitives(context)
-      const family = typeof args.family === 'string' && args.family.trim() ? args.family.trim() : null
-      const level = typeof args.level === 'string' && args.level.trim() ? args.level.trim() : null
+      const family = normalizeString(args.family)
+      const level = normalizeString(args.level)
       const exportable = typeof args.exportable === 'boolean' ? args.exportable : null
-      const filtered = primitives.filter((primitive) => {
-        if (family && primitive.family !== family) return false
-        if (level && primitive.level !== level) return false
-        if (exportable != null && Boolean(primitive.exportable !== false) !== exportable) return false
-        return true
-      })
-      return asToolResult(filtered)
+      return asToolResult(
+        primitives.filter((primitive) => {
+          if (family && primitive.family !== family) return false
+          if (level && primitive.level !== level) return false
+          if (exportable != null && Boolean(primitive.exportable !== false) !== exportable) return false
+          return true
+        })
+      )
     }
     case 'get_primitive': {
-      const primitiveId = typeof args.primitiveId === 'string' ? args.primitiveId.trim() : ''
-      if (!primitiveId) return asToolError('primitiveId is required.')
-      const primitives = await readCanvasAgentPrimitives(context)
-      const primitive = primitives.find((entry) => entry.primitiveId === primitiveId || entry.entryId === primitiveId)
-      if (!primitive) return asToolError(`Primitive not found: ${primitiveId}`)
+      const primitive = await getPrimitiveById(normalizeString(args.primitiveId))
+      if (!primitive) return asToolError(`Primitive not found: ${args.primitiveId || ''}`)
       return asToolResult(primitive)
     }
-    case 'create_item': {
-      if (!args.item || typeof args.item !== 'object') {
-        return asToolError('item is required.')
-      }
-      const result = await enqueueCanvasAgentOperation(
-        context,
-        name,
-        {
-          type: 'create_item',
-          item: args.item,
-          select: args.select !== false,
-        },
-        { source: 'canvas-agent-mcp' }
-      )
-      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to create item.')
-    }
-    case 'update_item': {
-      const id = typeof args.id === 'string' ? args.id.trim() : ''
-      if (!id) return asToolError('id is required.')
-      if (!args.updates || typeof args.updates !== 'object') {
-        return asToolError('updates is required.')
-      }
-      const result = await enqueueCanvasAgentOperation(
-        context,
-        name,
-        {
-          type: 'update_item',
-          id,
-          updates: args.updates,
-        },
-        { source: 'canvas-agent-mcp' }
-      )
-      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to update item.')
-    }
-    case 'delete_items': {
-      const ids = Array.isArray(args.ids) ? args.ids.map((value) => String(value).trim()).filter(Boolean) : []
-      if (ids.length === 0) return asToolError('ids is required.')
-      const result = await enqueueCanvasAgentOperation(
-        context,
-        name,
-        {
-          type: 'delete_items',
-          ids,
-        },
-        { source: 'canvas-agent-mcp' }
-      )
-      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to delete items.')
-    }
-    case 'select_items': {
-      const ids = Array.isArray(args.ids) ? args.ids.map((value) => String(value).trim()).filter(Boolean) : []
-      const result = await enqueueCanvasAgentOperation(
-        context,
-        name,
-        {
-          type: 'select_items',
-          ids,
-        },
-        { source: 'canvas-agent-mcp' }
-      )
-      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to update selection.')
-    }
-    case 'clear_canvas': {
-      const result = await enqueueCanvasAgentOperation(
-        context,
-        name,
-        {
-          type: 'clear_canvas',
-        },
-        { source: 'canvas-agent-mcp' }
-      )
-      return result.ok ? asToolResult(result) : asToolError(result.error || 'Failed to clear canvas.')
-    }
+    case 'create_artboard':
+      return runCreateArtboard(args)
+    case 'create_primitive_item':
+      return runCreatePrimitiveItem(args)
+    case 'create_item':
+      return runCreateItem(args)
+    case 'update_item':
+      return runUpdateItem(args)
+    case 'delete_items':
+      return runDeleteItems(args)
+    case 'select_items':
+      return runSelectItems(args)
+    case 'clear_canvas':
+      return runClearCanvas()
+    case 'export_board':
+      return runExportBoard(args)
     default:
       return asToolError(`Unknown tool: ${name}`)
   }
+}
+
+async function runCreateArtboard(args) {
+  const state = await readCanvasAgentState(context)
+  const item = {
+    id: createCanvasItemId('artboard'),
+    type: 'artboard',
+    name: normalizeString(args.name) || 'Artboard',
+    position: normalizePosition(args.position, DEFAULT_ARTBOARD_POSITION),
+    size: normalizeSize(args.size, DEFAULT_ARTBOARD_SIZE),
+    rotation: 0,
+    zIndex: getNextZIndex(state),
+    background: normalizeString(args.background) || undefined,
+    themeId: normalizeString(args.themeId) || undefined,
+    layout: normalizeArtboardLayout(args.layout),
+  }
+  return applyOperation('create_artboard', {
+    type: 'create_item',
+    item,
+    select: args.select !== false,
+  })
+}
+
+async function runCreatePrimitiveItem(args) {
+  const primitive = await getPrimitiveById(normalizeString(args.primitiveId))
+  if (!primitive) return asToolError(`Primitive not found: ${args.primitiveId || ''}`)
+
+  const variantIndex = resolvePrimitiveVariantIndex(primitive, args)
+  if (variantIndex < 0) return asToolError(`Primitive variant not found for ${primitive.primitiveId}.`)
+
+  const variant = primitive.variants[variantIndex]
+  const state = await readCanvasAgentState(context)
+  const mergedProps =
+    args.props && typeof args.props === 'object'
+      ? { ...(variant.props || {}), ...args.props }
+      : null
+  const item = {
+    id: createCanvasItemId(primitive.name),
+    type: 'component',
+    componentId: primitive.entryId,
+    variantIndex,
+    position: normalizePosition(args.position, DEFAULT_ARTBOARD_POSITION),
+    size: normalizeSize(args.size, primitive.defaultSize || { width: 320, height: 140 }),
+    rotation: 0,
+    zIndex: getNextZIndex(state),
+    parentId: normalizeString(args.parentId) || undefined,
+    customProps: mergedProps && Object.keys(mergedProps).length > 0 ? mergedProps : undefined,
+  }
+  return applyOperation('create_primitive_item', {
+    type: 'create_item',
+    item,
+    select: args.select !== false,
+  }, {
+    primitiveId: primitive.primitiveId,
+    entryId: primitive.entryId,
+    variantName: variant.name,
+  })
+}
+
+async function runCreateItem(args) {
+  if (!args.item || typeof args.item !== 'object') {
+    return asToolError('item is required.')
+  }
+  return applyOperation('create_item', {
+    type: 'create_item',
+    item: args.item,
+    select: args.select !== false,
+  })
+}
+
+async function runUpdateItem(args) {
+  const id = normalizeString(args.id)
+  if (!id) return asToolError('id is required.')
+  if (!args.updates || typeof args.updates !== 'object') {
+    return asToolError('updates is required.')
+  }
+  return applyOperation('update_item', {
+    type: 'update_item',
+    id,
+    updates: args.updates,
+  })
+}
+
+async function runDeleteItems(args) {
+  const ids = normalizeIdList(args.ids)
+  if (ids.length === 0) return asToolError('ids is required.')
+  return applyOperation('delete_items', {
+    type: 'delete_items',
+    ids,
+  })
+}
+
+async function runSelectItems(args) {
+  const ids = normalizeIdList(args.ids)
+  return applyOperation('select_items', {
+    type: 'select_items',
+    ids,
+  })
+}
+
+async function runClearCanvas() {
+  return applyOperation('clear_canvas', { type: 'clear_canvas' })
+}
+
+async function runExportBoard(args) {
+  const artboardId = normalizeString(args.artboardId)
+  if (!artboardId) return asToolError('artboardId is required.')
+  const format = normalizeString(args.format) || DEFAULT_EXPORT_FORMAT
+  if (!EXPORT_FORMATS.has(format)) {
+    return asToolError(`Unsupported export format: ${format}`)
+  }
+
+  const [state, primitives] = await Promise.all([
+    readCanvasAgentState(context),
+    readCanvasAgentPrimitives(context),
+  ])
+  const items = Array.isArray(state?.items) ? state.items : []
+  const artboard = items.find((item) => item?.type === 'artboard' && item.id === artboardId)
+  if (!artboard) return asToolError(`Artboard not found: ${artboardId}`)
+
+  const children = items
+    .filter((item) => item?.parentId === artboardId)
+    .sort((left, right) => Number(left?.zIndex || 0) - Number(right?.zIndex || 0))
+
+  const primitiveMap = new Map(primitives.map((primitive) => [primitive.entryId, primitive]))
+  const unsupported = []
+  const primitiveChildren = []
+
+  children.forEach((child) => {
+    if (child?.type !== 'component') {
+      unsupported.push({ id: child?.id || 'unknown', reason: `Unsupported item type: ${child?.type || 'unknown'}` })
+      return
+    }
+    const primitive = primitiveMap.get(child.componentId)
+    if (!primitive) {
+      unsupported.push({ id: child.id, reason: `Component ${child.componentId} is not a registered primitive.` })
+      return
+    }
+    if (primitive.exportable === false) {
+      unsupported.push({ id: child.id, reason: `Primitive ${primitive.primitiveId} is not exportable.` })
+      return
+    }
+    primitiveChildren.push({ item: child, primitive })
+  })
+
+  if (unsupported.length > 0) {
+    return asToolError(
+      `Artboard ${artboardId} is not exportable. Unsupported items: ${unsupported.map((entry) => `${entry.id} (${entry.reason})`).join('; ')}`
+    )
+  }
+
+  const componentName = normalizeComponentName(args.componentName || artboard.name || 'CanvasBoard')
+  const imports = new Map()
+  primitiveChildren.forEach(({ primitive }) => {
+    const { importPath, exportName } = resolvePrimitiveImport(primitive)
+    if (!imports.has(importPath)) {
+      imports.set(importPath, new Set())
+    }
+    imports.get(importPath).add(exportName)
+  })
+
+  const importLines = Array.from(imports.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([importPath, exportNames]) => {
+      const names = Array.from(exportNames).sort().join(', ')
+      return `import { ${names} } from ${JSON.stringify(importPath)}`
+    })
+
+  const warnings = []
+  if (children.length === 0) {
+    warnings.push('Artboard has no child items.')
+  }
+  warnings.push('Export preserves canvas positioning. It does not infer semantic layout from spatial arrangement.')
+
+  const boardCode = format === 'react-tailwind'
+    ? buildTailwindBoardCode(componentName, artboard, primitiveChildren, importLines, warnings)
+    : buildCssVarsBoardCode(componentName, artboard, primitiveChildren, importLines, warnings)
+
+  return asToolResult({
+    artboardId,
+    componentName,
+    format,
+    warnings,
+    code: boardCode,
+  })
+}
+
+async function applyOperation(toolName, operation, meta = {}) {
+  const result = await enqueueCanvasAgentOperation(context, toolName, operation, {
+    source: 'canvas-agent-mcp',
+  })
+  if (!result.ok) return asToolError(result.error || `Failed to apply ${toolName}.`)
+  return asToolResult({
+    ...result,
+    ...meta,
+  })
+}
+
+async function getPrimitiveById(primitiveId) {
+  if (!primitiveId) return null
+  const primitives = await readCanvasAgentPrimitives(context)
+  return primitives.find((entry) => entry.primitiveId === primitiveId || entry.entryId === primitiveId) || null
 }
 
 function flattenCanvasSummaryItems(summary) {
@@ -395,6 +623,180 @@ function flattenCanvasSummaryItems(summary) {
     map.set(item.id, item)
   }
   return map
+}
+
+function normalizeString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+function normalizeIdList(value) {
+  return Array.isArray(value) ? value.map((entry) => normalizeString(entry)).filter(Boolean) : []
+}
+
+function normalizePosition(value, fallback) {
+  return {
+    x: Number.isFinite(value?.x) ? Number(value.x) : fallback.x,
+    y: Number.isFinite(value?.y) ? Number(value.y) : fallback.y,
+  }
+}
+
+function normalizeSize(value, fallback) {
+  return {
+    width: Number.isFinite(value?.width) ? Math.max(80, Number(value.width)) : fallback.width,
+    height: Number.isFinite(value?.height) ? Math.max(40, Number(value.height)) : fallback.height,
+  }
+}
+
+function normalizeArtboardLayout(value) {
+  const input = value && typeof value === 'object' ? value : {}
+  return {
+    display: input.display === 'grid' ? 'grid' : DEFAULT_ARTBOARD_LAYOUT.display,
+    direction: input.direction === 'row' ? 'row' : DEFAULT_ARTBOARD_LAYOUT.direction,
+    align: ['start', 'center', 'end', 'stretch'].includes(input.align) ? input.align : DEFAULT_ARTBOARD_LAYOUT.align,
+    justify: ['start', 'center', 'end', 'between'].includes(input.justify) ? input.justify : DEFAULT_ARTBOARD_LAYOUT.justify,
+    gap: Number.isFinite(input.gap) ? Number(input.gap) : DEFAULT_ARTBOARD_LAYOUT.gap,
+    columns: Number.isFinite(input.columns) ? Number(input.columns) : undefined,
+    padding: Number.isFinite(input.padding) ? Number(input.padding) : DEFAULT_ARTBOARD_LAYOUT.padding,
+  }
+}
+
+function getNextZIndex(state) {
+  const items = Array.isArray(state?.items) ? state.items : []
+  return items.reduce((max, item) => Math.max(max, Number(item?.zIndex || 0)), 0) + 1
+}
+
+function createCanvasItemId(prefix) {
+  const slug = String(prefix || 'item')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'item'
+  return `${slug}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function resolvePrimitiveVariantIndex(primitive, args) {
+  if (Number.isFinite(args.variantIndex)) {
+    const variantIndex = Number(args.variantIndex)
+    if (variantIndex >= 0 && variantIndex < primitive.variants.length) return variantIndex
+  }
+  const variantName = normalizeString(args.variantName)
+  if (variantName) {
+    const byName = primitive.variants.findIndex((variant) => variant.name === variantName)
+    if (byName >= 0) return byName
+  }
+  return primitive.variants.length > 0 ? 0 : -1
+}
+
+function resolvePrimitiveImport(primitive) {
+  const importPath = primitive.importPath
+  const exportName = primitive.sourceId?.split('#')[1] || normalizeComponentName(primitive.name)
+  return { importPath, exportName }
+}
+
+function normalizeComponentName(value) {
+  const cleaned = String(value || 'CanvasBoard').replace(/[^a-zA-Z0-9]+/g, ' ').trim()
+  const parts = (cleaned || 'Canvas Board').split(/\s+/)
+  return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('') || 'CanvasBoard'
+}
+
+function buildTailwindBoardCode(componentName, artboard, primitiveChildren, importLines, warnings) {
+  return [
+    ...importLines,
+    '',
+    `export function ${componentName}() {`,
+    '  return (',
+    `    <div`,
+    `      className="relative overflow-hidden rounded-[24px] border border-[var(--color-border-default)] bg-[var(--color-surface-canvas,var(--color-surface-50,#ffffff))]"`,
+    `      style={{ width: ${Number(artboard.size?.width || DEFAULT_ARTBOARD_SIZE.width)}, height: ${Number(artboard.size?.height || DEFAULT_ARTBOARD_SIZE.height)}${artboard.background ? `, background: ${JSON.stringify(artboard.background)}` : ''} }}`,
+    '    >',
+    ...primitiveChildren.flatMap(({ item, primitive }) => formatPrimitiveNodeLines(item, primitive, 'tailwind')),
+    '    </div>',
+    '  )',
+    '}',
+    warnings.length > 0 ? '' : '',
+    ...warnings.map((warning) => `// Warning: ${warning}`),
+    '',
+  ].join('\n')
+}
+
+function buildCssVarsBoardCode(componentName, artboard, primitiveChildren, importLines, warnings) {
+  return [
+    ...importLines,
+    '',
+    `export function ${componentName}() {`,
+    '  return (',
+    `    <div`,
+    `      style={{ position: 'relative', overflow: 'hidden', width: ${Number(artboard.size?.width || DEFAULT_ARTBOARD_SIZE.width)}, height: ${Number(artboard.size?.height || DEFAULT_ARTBOARD_SIZE.height)}, borderRadius: 24, border: '1px solid var(--color-border-default)', background: ${artboard.background ? JSON.stringify(artboard.background) : `'var(--color-surface-canvas, var(--color-surface-50, #ffffff))'`} }}`,
+    '    >',
+    ...primitiveChildren.flatMap(({ item, primitive }) => formatPrimitiveNodeLines(item, primitive, 'css-vars')),
+    '    </div>',
+    '  )',
+    '}',
+    warnings.length > 0 ? '' : '',
+    ...warnings.map((warning) => `// Warning: ${warning}`),
+    '',
+  ].join('\n')
+}
+
+function formatPrimitiveNodeLines(item, primitive, format) {
+  const { exportName } = resolvePrimitiveImport(primitive)
+  const props = item.customProps && typeof item.customProps === 'object'
+    ? item.customProps
+    : primitive.variants[item.variantIndex]?.props || {}
+  const styleValue = formatStyleObject({
+    position: 'absolute',
+    left: Number(item.position?.x || 0),
+    top: Number(item.position?.y || 0),
+    width: Number(item.size?.width || primitive.defaultSize?.width || 320),
+    height: Number(item.size?.height || primitive.defaultSize?.height || 120),
+    transform: Number(item.rotation || 0) ? `rotate(${Number(item.rotation)}deg)` : undefined,
+  })
+
+  return [
+    `      <div${format === 'tailwind' ? ' className="absolute"' : ''} style=${styleValue}>`,
+    `        ${serializePrimitiveComponent(exportName, props)}`,
+    '      </div>',
+  ]
+}
+
+function serializePrimitiveComponent(componentName, props) {
+  const safeProps = props && typeof props === 'object' ? props : {}
+  const attributes = []
+  let children = null
+
+  Object.entries(safeProps).forEach(([key, value]) => {
+    if (value == null) return
+    if (key === 'children' && (typeof value === 'string' || typeof value === 'number')) {
+      children = String(value)
+      return
+    }
+    if (typeof value === 'string') {
+      attributes.push(`${key}=${JSON.stringify(value)}`)
+      return
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      attributes.push(`${key}={${JSON.stringify(value)}}`)
+      return
+    }
+    attributes.push(`${key}={${JSON.stringify(value)}}`)
+  })
+
+  const openTag = `<${componentName}${attributes.length > 0 ? ` ${attributes.join(' ')}` : ''}>`
+  if (children != null) {
+    return `${openTag}${escapeJsxText(children)}</${componentName}>`
+  }
+  return `${openTag}</${componentName}>`
+}
+
+function formatStyleObject(styleObject) {
+  const entries = Object.entries(styleObject).filter(([, value]) => value != null)
+  if (entries.length === 0) return '{{}}'
+  return `{{ ${entries
+    .map(([key, value]) => `${key}: ${typeof value === 'string' ? JSON.stringify(value) : value}`)
+    .join(', ')} }}`
+}
+
+function escapeJsxText(value) {
+  return String(value).replace(/[{}]/g, (match) => (match === '{' ? '&#123;' : '&#125;'))
 }
 
 function asToolResult(payload) {
