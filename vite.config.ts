@@ -10,6 +10,10 @@ import { Readable } from 'node:stream'
 import { execFile } from 'node:child_process'
 import * as nodePty from 'node-pty'
 import {
+  createCopilotSingleRouteNodeHandler,
+  createCopilotViteMiddleware,
+} from './utils/copilotkitViteAdapter'
+import {
   createPaperGalleryEntry,
   formatPaperComponentSource,
   formatPaperGalleryEntrySource,
@@ -4803,14 +4807,25 @@ function copilotKitPlugin() {
 
         try {
           const runtimeModule = await import('@copilotkit/runtime')
+          const nextRuntimeModule = await import('@copilotkitnext/runtime')
           const {
             CopilotRuntime,
             AnthropicAdapter,
             OpenAIAdapter,
-            copilotRuntimeNodeHttpEndpoint,
           } =
             runtimeModule
+          const { createCopilotEndpointSingleRoute } = nextRuntimeModule
           const provider = COPILOTKIT_PROVIDER
+
+          const createRuntimeHandler = (runtime, serviceAdapter) => {
+            runtime.handleServiceAdapter(serviceAdapter)
+            const app = createCopilotEndpointSingleRoute({
+              runtime: runtime.instance,
+              basePath: '/api/copilotkit',
+            })
+
+            return createCopilotSingleRouteNodeHandler(app)
+          }
 
           if (provider === 'openrouter') {
             const openRouterApiKey =
@@ -4853,11 +4868,7 @@ function copilotKitPlugin() {
             })
 
             const runtime = new CopilotRuntime()
-            runtimeHandler = copilotRuntimeNodeHttpEndpoint({
-              endpoint: '/api/copilotkit',
-              runtime,
-              serviceAdapter,
-            }) as (req: unknown, res: unknown) => Promise<void>
+            runtimeHandler = createRuntimeHandler(runtime, serviceAdapter)
             return
           }
 
@@ -4886,11 +4897,7 @@ function copilotKitPlugin() {
           })
 
           const runtime = new CopilotRuntime()
-          runtimeHandler = copilotRuntimeNodeHttpEndpoint({
-            endpoint: '/api/copilotkit',
-            runtime,
-            serviceAdapter,
-          }) as (req: unknown, res: unknown) => Promise<void>
+          runtimeHandler = createRuntimeHandler(runtime, serviceAdapter)
         } catch (error) {
           runtimeError =
             error?.message ||
@@ -4898,25 +4905,14 @@ function copilotKitPlugin() {
         }
       }
 
-      server.middlewares.use(async (req, res, next) => {
-        const requestUrl = typeof req.url === 'string' ? req.url : ''
-        if (!requestUrl.startsWith('/api/copilotkit')) {
-          return next()
-        }
-        try {
-          await ensureRuntime()
-          if (!runtimeHandler) {
-            return sendJson(res, 501, {
-              error:
-                runtimeError ||
-                'CopilotKit runtime is not initialized.',
-            })
-          }
-          await runtimeHandler(req, res)
-        } catch (error) {
-          next(error)
-        }
-      })
+      server.middlewares.use(
+        createCopilotViteMiddleware({
+          ensureRuntime,
+          getRuntimeHandler: () => runtimeHandler,
+          getRuntimeError: () => runtimeError,
+          sendJson,
+        })
+      )
     },
   }
 }

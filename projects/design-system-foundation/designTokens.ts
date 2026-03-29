@@ -1,4 +1,10 @@
 import type { DesignToken } from "../../demo-thicket/designTokens"
+import {
+  DEFAULT_DESIGN_SYSTEM_SCALE_CONFIG,
+  createDesignSystemTokenBundle,
+} from "./designSystemApi"
+
+const generatedSystem = createDesignSystemTokenBundle(DEFAULT_DESIGN_SYSTEM_SCALE_CONFIG)
 
 const colorTokens: DesignToken[] = [
   {
@@ -76,85 +82,24 @@ const colorTokens: DesignToken[] = [
   },
 ]
 
-const typographyTokens: DesignToken[] = [
-  {
-    name: "Font Sans",
-    value: "\"Inter\", system-ui, -apple-system, sans-serif",
-    cssVar: "--font-family-sans",
-    category: "typography",
-    subcategory: "font-family",
-  },
-  {
-    name: "Font Display",
-    value: "\"Poppins\", system-ui, -apple-system, sans-serif",
-    cssVar: "--font-family-display",
-    category: "typography",
-    subcategory: "font-family",
-  },
-  {
-    name: "Text SM",
-    value: "0.875rem",
-    cssVar: "--font-size-sm",
-    category: "typography",
-    subcategory: "font-size",
-  },
-  {
-    name: "Text Base",
-    value: "1rem",
-    cssVar: "--font-size-base",
-    category: "typography",
-    subcategory: "font-size",
-  },
-  {
-    name: "Text XL",
-    value: "1.25rem",
-    cssVar: "--font-size-xl",
-    category: "typography",
-    subcategory: "font-size",
-  },
-  {
-    name: "Text 3XL",
-    value: "1.875rem",
-    cssVar: "--font-size-3xl",
-    category: "typography",
-    subcategory: "font-size",
-  },
-]
+export const typographyTokens = generatedSystem.tokens.filter(
+  (token) => token.category === "typography"
+)
 
-const radiusTokens: DesignToken[] = [
-  {
-    name: "Radius",
-    value: "0.375rem",
-    cssVar: "--radius",
-    category: "radius",
-    description: "Default control radius",
-  },
-  {
-    name: "Radius LG",
-    value: "0.75rem",
-    cssVar: "--radius-lg",
-    category: "radius",
-  },
-]
+export const spacingTokens = generatedSystem.tokens.filter(
+  (token) => token.category === "spacing"
+)
 
-const shadowTokens: DesignToken[] = [
-  {
-    name: "Shadow",
-    value: "0 1px 3px rgba(22, 22, 20, 0.08), 0 1px 2px rgba(22, 22, 20, 0.06)",
-    cssVar: "--shadow",
-    category: "shadow",
-  },
-  {
-    name: "Shadow Card",
-    value: "0 2px 8px -1px rgba(22, 22, 20, 0.08), 0 1px 3px -1px rgba(22, 22, 20, 0.06)",
-    cssVar: "--shadow-card",
-    category: "shadow",
-  },
-]
+export const radiusTokens = generatedSystem.radii
+
+export const shadowTokens = generatedSystem.shadows
 
 export const allTokens: DesignToken[] = [
   ...colorTokens,
   ...typographyTokens,
+  ...spacingTokens,
   ...radiusTokens,
   ...shadowTokens,
 ]
+
+export { DEFAULT_DESIGN_SYSTEM_SCALE_CONFIG, createDesignSystemTokenBundle, generatedSystem }

@@ -26,10 +26,10 @@ const toneStyles: Record<TextTone, string> = {
 }
 
 const weightStyles: Record<TextWeight, string> = {
-  regular: "font-normal",
-  medium: "font-medium",
-  semibold: "font-semibold",
-  bold: "font-bold",
+  regular: "var(--font-weight-sans)",
+  medium: "var(--font-weight-sans-medium)",
+  semibold: "var(--font-weight-sans-semibold)",
+  bold: "var(--font-weight-sans-bold)",
 }
 
 const alignStyles: Record<TextAlign, string> = {
@@ -59,11 +59,12 @@ export function Text({
   return (
     <Component
       data-slot="primitive-text"
-      className={cn(toneStyles[tone], weightStyles[weight], alignStyles[align], className)}
+      className={cn(toneStyles[tone], alignStyles[align], className)}
       style={{
         fontFamily: "var(--font-family-sans)",
         fontSize: sizeStyles[size].fontSize,
         lineHeight: sizeStyles[size].lineHeight,
+        fontWeight: weightStyles[weight],
       }}
     >
       {children}

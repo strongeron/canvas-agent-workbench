@@ -19,11 +19,11 @@ export interface BoxProps {
 }
 
 const paddingStyles: Record<BoxPadding, string> = {
-  none: "",
-  sm: "p-3",
-  md: "p-4",
-  lg: "p-6",
-  xl: "p-8",
+  none: "0px",
+  sm: "var(--space-300)",
+  md: "var(--space-400)",
+  lg: "var(--space-500)",
+  xl: "var(--space-600)",
 }
 
 const surfaceStyles: Record<BoxSurface, string> = {
@@ -35,18 +35,18 @@ const surfaceStyles: Record<BoxSurface, string> = {
 }
 
 const radiusStyles: Record<BoxRadius, string> = {
-  none: "rounded-none",
-  sm: "rounded",
-  md: "rounded-[var(--radius)]",
-  lg: "rounded-[var(--radius-lg)]",
-  xl: "rounded-2xl",
+  none: "0px",
+  sm: "var(--radius-sm)",
+  md: "var(--radius)",
+  lg: "var(--radius-lg)",
+  xl: "var(--radius-xl)",
 }
 
 const shadowStyles: Record<BoxShadow, string> = {
-  none: "",
-  sm: "shadow-sm",
-  md: "shadow",
-  card: "shadow-card",
+  none: "none",
+  sm: "var(--shadow-sm)",
+  md: "var(--shadow)",
+  card: "var(--shadow-card)",
 }
 
 export function Box({
@@ -64,13 +64,15 @@ export function Box({
       data-slot="primitive-box"
       className={cn(
         "w-full",
-        paddingStyles[padding],
         surfaceStyles[surface],
-        radiusStyles[radius],
-        shadowStyles[shadow],
         border ? "border border-default" : "border border-transparent",
         className
       )}
+      style={{
+        padding: paddingStyles[padding],
+        borderRadius: radiusStyles[radius],
+        boxShadow: shadowStyles[shadow],
+      }}
     >
       {children}
     </Component>

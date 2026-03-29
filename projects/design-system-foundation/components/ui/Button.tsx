@@ -19,10 +19,33 @@ const variantStyles: Record<PrimitiveButtonVariant, string> = {
   danger: "bg-error text-inverse hover:opacity-90",
 }
 
-const sizeStyles: Record<PrimitiveButtonSize, string> = {
-  sm: "min-h-9 px-3 text-sm",
-  md: "min-h-10 px-4 text-sm",
-  lg: "min-h-12 px-5 text-base",
+const sizeStyles: Record<
+  PrimitiveButtonSize,
+  {
+    minHeight: string
+    paddingInline: string
+    fontSize: string
+    lineHeight: string
+  }
+> = {
+  sm: {
+    minHeight: "var(--size-control-sm)",
+    paddingInline: "var(--space-300)",
+    fontSize: "var(--font-size-sm)",
+    lineHeight: "var(--line-height-sm)",
+  },
+  md: {
+    minHeight: "var(--size-control-md)",
+    paddingInline: "var(--space-300)",
+    fontSize: "var(--font-size-base)",
+    lineHeight: "var(--line-height-base)",
+  },
+  lg: {
+    minHeight: "var(--size-control-lg)",
+    paddingInline: "var(--space-400)",
+    fontSize: "var(--font-size-lg)",
+    lineHeight: "var(--line-height-lg)",
+  },
 }
 
 export function Button({
@@ -39,12 +62,19 @@ export function Button({
       type="button"
       data-slot="primitive-button"
       className={cn(
-        "inline-flex items-center justify-center rounded-[var(--radius)] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
         variantStyles[variant],
-        sizeStyles[size],
         fullWidth && "w-full",
         className
       )}
+      style={{
+        minHeight: sizeStyles[size].minHeight,
+        paddingInline: sizeStyles[size].paddingInline,
+        fontSize: sizeStyles[size].fontSize,
+        lineHeight: sizeStyles[size].lineHeight,
+        borderRadius: "var(--radius)",
+        fontWeight: "var(--font-weight-sans-medium)",
+      }}
       disabled={disabled}
       {...props}
     >

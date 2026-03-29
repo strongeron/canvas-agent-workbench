@@ -19,12 +19,12 @@ export interface StackProps {
 }
 
 const gapStyles: Record<StackGap, string> = {
-  none: "gap-0",
-  xs: "gap-1",
-  sm: "gap-2",
-  md: "gap-3",
-  lg: "gap-4",
-  xl: "gap-6",
+  none: "0px",
+  xs: "var(--space-100)",
+  sm: "var(--space-200)",
+  md: "var(--space-300)",
+  lg: "var(--space-400)",
+  xl: "var(--space-500)",
 }
 
 const alignStyles: Record<StackAlign, string> = {
@@ -77,11 +77,11 @@ export function Stack({
       className={cn(
         "flex w-full",
         direction === "horizontal" ? "flex-row flex-wrap" : "flex-col",
-        gapStyles[gap],
         alignStyles[align],
         justifyStyles[justify],
         className
       )}
+      style={{ gap: gapStyles[gap] }}
     >
       {children || <FallbackItems items={fallbackItems} direction={direction} />}
     </Component>

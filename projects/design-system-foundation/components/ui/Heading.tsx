@@ -44,11 +44,12 @@ export function Heading({
   return (
     <Component
       data-slot="primitive-heading"
-      className={cn("font-semibold tracking-tight", toneStyles[tone], alignStyles[align], className)}
+      className={cn("tracking-tight", toneStyles[tone], alignStyles[align], className)}
       style={{
         fontFamily: "var(--font-family-display)",
         fontSize: sizeStyles[Component].fontSize,
         lineHeight: sizeStyles[Component].lineHeight,
+        fontWeight: "var(--font-weight-display)",
       }}
     >
       {children}
