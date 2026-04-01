@@ -2,8 +2,10 @@ import { RotateCw } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { CanvasMediaItem as CanvasMediaItemType } from "../../types/canvas"
+import { CanvasContextMenu } from "./CanvasContextMenu"
 import { getMediaEmbedInfo } from "./mediaStorageService"
 import { resolveCanvasMediaSrc } from "./mediaUrl"
+import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"
 
@@ -89,9 +91,9 @@ export function CanvasMediaItem({
   groupColor,
   onSelect,
   onUpdate,
-  onRemove: _onRemove,
-  onDuplicate: _onDuplicate,
-  onBringToFront: _onBringToFront,
+  onRemove,
+  onDuplicate,
+  onBringToFront,
   scale,
   interactMode,
 }: CanvasMediaItemProps) {
@@ -105,6 +107,11 @@ export function CanvasMediaItem({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null)
   const [initialState, setInitialState] = useState({ x: 0, y: 0, width: 0, height: 0, rotation: 0 })
+  const { contextMenu, handleContextMenu, closeContextMenu } = useCanvasItemContextMenu({
+    isSelected,
+    interactMode,
+    onSelect,
+  })
   const [loadError, setLoadError] = useState(false)
   const clipRange = useMemo(
     () => normalizeClipRange(item.clipStartSec, item.clipEndSec),
@@ -376,6 +383,7 @@ export function CanvasMediaItem({
         transformOrigin: "center center",
       }}
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
       onClick={(e) => {
         if (interactMode) return
         e.stopPropagation()
@@ -479,6 +487,16 @@ export function CanvasMediaItem({
             />
           ))}
         </>
+      )}
+
+      {contextMenu && (
+        <CanvasContextMenu
+          position={contextMenu}
+          onClose={closeContextMenu}
+          onBringToFront={onBringToFront}
+          onDuplicate={onDuplicate}
+          onDelete={onRemove}
+        />
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import { ExternalLink, X } from "lucide-react"
+import { ExternalLink, Trash2, X } from "lucide-react"
 
 import type { CanvasMediaItem } from "../../types/canvas"
 import { getMediaEmbedInfo } from "./mediaStorageService"
@@ -20,6 +20,7 @@ interface CanvasMediaPropsPanelProps {
   sourceProvider?: string
   sourceCapturedAt?: string
   onChange: (updates: Partial<Omit<CanvasMediaItem, "id" | "type" | "position" | "size" | "rotation" | "zIndex">>) => void
+  onDelete: () => void
   onClose: () => void
 }
 
@@ -40,6 +41,7 @@ export function CanvasMediaPropsPanel({
   sourceProvider,
   sourceCapturedAt,
   onChange,
+  onDelete,
   onClose,
 }: CanvasMediaPropsPanelProps) {
   const capturedAtLabel = sourceCapturedAt ? new Date(sourceCapturedAt).toLocaleString() : null
@@ -71,13 +73,24 @@ export function CanvasMediaPropsPanel({
           <h3 className="truncate text-sm font-semibold text-foreground">Media</h3>
           <p className="truncate text-xs text-muted-foreground">Image / GIF / Video node</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="ml-2 rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="ml-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            aria-label="Delete media"
+            title="Delete media"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">

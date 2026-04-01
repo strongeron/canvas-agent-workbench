@@ -1,4 +1,4 @@
-import { ExternalLink, X } from "lucide-react"
+import { ExternalLink, Trash2, X } from "lucide-react"
 import { useMemo, useState } from "react"
 import { getEmbedFrameStatusLabel, type EmbedFrameStatus } from "./embedFramePolicy"
 import {
@@ -53,6 +53,7 @@ interface CanvasEmbedPropsPanelProps {
     sandbox?: string
     embedPreviewMode?: EmbedPreviewMode
   }) => void
+  onDelete: () => void
   onClose: () => void
 }
 
@@ -89,6 +90,7 @@ export function CanvasEmbedPropsPanel({
   onCaptureSnapshots,
   onRequestState,
   onChange,
+  onDelete,
   onClose,
 }: CanvasEmbedPropsPanelProps) {
   const checkedAtLabel = embedFrameCheckedAt
@@ -120,13 +122,24 @@ export function CanvasEmbedPropsPanel({
           <h3 className="truncate text-sm font-semibold text-foreground">Embed</h3>
           <p className="truncate text-xs text-muted-foreground">Interactive iframe</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="ml-2 rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="ml-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            aria-label="Delete embed"
+            title="Delete embed"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">

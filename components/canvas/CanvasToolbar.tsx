@@ -43,6 +43,7 @@ interface CanvasToolbarProps {
   onZoomOut: () => void
   onResetZoom: () => void
   onFitToView: () => void
+  onDeleteSelected: () => void
   onClearCanvas: () => void
   onToggleSidebar: () => void
   onToggleHelp: () => void
@@ -81,6 +82,7 @@ export function CanvasToolbar({
   onZoomOut,
   onResetZoom,
   onFitToView,
+  onDeleteSelected,
   onClearCanvas,
   onToggleSidebar,
   onToggleHelp,
@@ -279,6 +281,18 @@ export function CanvasToolbar({
               aria-label="Duplicate selected"
             >
               <Copy className="h-5 w-5" />
+            </Button>
+          </Tooltip>
+
+          <Tooltip content="Delete selected [ Delete ]">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDeleteSelected}
+              className={`${iconButtonClass} text-gray-700 hover:text-red-600`}
+              aria-label="Delete selected"
+            >
+              <Trash2 className="h-5 w-5" />
             </Button>
           </Tooltip>
 

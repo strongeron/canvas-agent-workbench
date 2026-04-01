@@ -9,7 +9,7 @@
  * - Reset to defaults
  */
 
-import { ChevronDown, Code2, Copy, Layers, RotateCcw, X } from "lucide-react"
+import { ChevronDown, Code2, Copy, Layers, RotateCcw, Trash2, X } from "lucide-react"
 import { useState, useCallback, useMemo } from "react"
 
 import type { InteractivePropsSchema, ComponentVariant } from "../../core/types"
@@ -32,6 +32,7 @@ interface CanvasPropsPanelProps {
   onChange: (propName: string, value: unknown) => void
   onChangeMany?: (updates: Record<string, unknown>) => void
   onReset: () => void
+  onDelete: () => void
   onClose: () => void
   onVariantChange: (variantIndex: number) => void
 }
@@ -46,6 +47,7 @@ export function CanvasPropsPanel({
   onChange,
   onChangeMany,
   onReset,
+  onDelete,
   onClose,
   onVariantChange,
 }: CanvasPropsPanelProps) {
@@ -180,13 +182,24 @@ export function CanvasPropsPanel({
           <h3 className="truncate text-sm font-semibold text-foreground">{componentName}</h3>
           <p className="truncate text-xs text-muted-foreground">{variantName}</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="ml-2 rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="ml-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            aria-label={`Delete ${componentName}`}
+            title={`Delete ${componentName}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Variant Selector */}

@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { Search, Share2 } from "lucide-react"
+import { Eye, Search, Share2 } from "lucide-react"
 import { Toaster, toast } from "sonner"
 
 import {
@@ -785,8 +785,27 @@ function normalizeLocalScanProjectState(value: unknown): LocalScanProjectState |
   }
 }
 
+type AppView = "gallery" | "canvas" | "color-canvas" | "node-catalog" | "picker-lab"
+
+const APP_VIEW_TO_PATH: Record<AppView, string> = {
+  gallery: "/gallery",
+  canvas: "/canvas",
+  "color-canvas": "/color-canvas",
+  "node-catalog": "/node-catalog",
+  "picker-lab": "/picker-lab",
+}
+
+function getAppViewFromLocation(): AppView {
+  if (typeof window === "undefined") return "canvas"
+  const path = window.location.pathname.replace(/\/+$/, "") || "/"
+  const match = (Object.entries(APP_VIEW_TO_PATH) as Array<[AppView, string]>).find(
+    ([, viewPath]) => viewPath === path
+  )
+  return match?.[0] ?? "canvas"
+}
+
 function App() {
-  const [view, setView] = useState<"gallery" | "canvas" | "color-canvas" | "picker-lab">("canvas")
+  const [view, setView] = useState<AppView>(() => getAppViewFromLocation())
   const [searchQuery, setSearchQuery] = useState("")
   const [projectId, setProjectId] = useState<ProjectId>("demo")
   const [dynamicProjects, setDynamicProjects] = useState<ProjectOption[]>([])
@@ -800,6 +819,21 @@ function App() {
     ui: { Button: React.ComponentType<any>; Tooltip: React.ComponentType<any> }
   }>(null)
   const [isThicketLoading, setIsThicketLoading] = useState(false)
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setView(getAppViewFromLocation())
+    }
+
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
+
+  useEffect(() => {
+    const nextPath = APP_VIEW_TO_PATH[view]
+    if (window.location.pathname === nextPath) return
+    window.history.pushState({ view }, "", nextPath)
+  }, [view])
 
   useEffect(() => {
     if (projectId !== "thicket" || thicketPack || isThicketLoading) return
@@ -1288,6 +1322,18 @@ function App() {
               </button>
               <button
                 type="button"
+                onClick={() => setView("node-catalog")}
+                className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold ${
+                  view === "node-catalog"
+                    ? "bg-gray-900 text-white"
+                    : "border border-gray-200 text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <Eye className="h-4 w-4" />
+                Node Catalog
+              </button>
+              <button
+                type="button"
                 onClick={() => setView("picker-lab")}
                 className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
                   view === "picker-lab"
@@ -1339,6 +1385,12 @@ function App() {
             <ColorCanvasPage
               tokens={themeTokens}
               themeStorageKeyPrefix={`gallery-${projectId}`}
+            />
+          ) : view === "node-catalog" ? (
+            <ColorCanvasPage
+              tokens={themeTokens}
+              themeStorageKeyPrefix={`gallery-${projectId}-node-catalog`}
+              catalogOnly
             />
           ) : (
             <OklchPickerLab />

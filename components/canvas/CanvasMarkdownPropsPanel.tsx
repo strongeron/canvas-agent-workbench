@@ -1,4 +1,4 @@
-import { X } from "lucide-react"
+import { Trash2, X } from "lucide-react"
 
 import type { CanvasMarkdownItem } from "../../types/canvas"
 
@@ -7,6 +7,7 @@ interface CanvasMarkdownPropsPanelProps {
   title?: string
   background?: string
   onChange: (updates: Partial<Omit<CanvasMarkdownItem, "id">>) => void
+  onDelete: () => void
   onClose: () => void
 }
 
@@ -34,6 +35,7 @@ export function CanvasMarkdownPropsPanel({
   title,
   background,
   onChange,
+  onDelete,
   onClose,
 }: CanvasMarkdownPropsPanelProps) {
   return (
@@ -43,14 +45,25 @@ export function CanvasMarkdownPropsPanel({
           <h3 className="text-sm font-semibold text-foreground">Markdown</h3>
           <p className="text-xs text-muted-foreground">Edit markdown source and style</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
-          aria-label="Close Markdown panel"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            aria-label="Delete markdown"
+            title="Delete markdown"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+            aria-label="Close Markdown panel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3 overflow-y-auto p-4">

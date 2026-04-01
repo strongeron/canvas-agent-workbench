@@ -1880,6 +1880,7 @@ export function CanvasTab({
           onZoomOut={zoomOut}
           onResetZoom={resetZoom}
           onFitToView={handleFitToView}
+          onDeleteSelected={handleDeleteSelected}
           onClearCanvas={clearCanvas}
           onToggleSidebar={toggleSidebar}
           onToggleHelp={toggleHelp}
@@ -1964,6 +1965,7 @@ export function CanvasTab({
             onClearSelection={clearSelection}
             onUpdateItem={updateItem}
             onRemoveItem={removeItem}
+            onRemoveSelected={handleDeleteSelected}
             onDuplicateItem={duplicateItem}
             onBringToFront={bringToFront}
             onPan={pan}
@@ -1985,6 +1987,7 @@ export function CanvasTab({
               onChange={handlePropChange}
               onChangeMany={handlePropChanges}
               onReset={handleResetProps}
+              onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
               onVariantChange={handleVariantChange}
             />
@@ -2121,6 +2124,7 @@ export function CanvasTab({
 
                 updateItem(selectedEmbedItem.id, updates)
               }}
+              onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />
           )}
@@ -2143,6 +2147,7 @@ export function CanvasTab({
               sourceProvider={selectedMediaItem.sourceProvider}
               sourceCapturedAt={selectedMediaItem.sourceCapturedAt}
               onChange={(updates) => updateItem(selectedMediaItem.id, updates)}
+              onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />
           )}
@@ -2153,6 +2158,7 @@ export function CanvasTab({
               title={selectedMarkdownItem.title}
               background={selectedMarkdownItem.background}
               onChange={(updates) => updateItem(selectedMarkdownItem.id, updates)}
+              onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />
           )}
@@ -2167,6 +2173,7 @@ export function CanvasTab({
               onConvertToExcalidraw={() =>
                 void handleConvertMermaidToExcalidraw(selectedMermaidItem.id)
               }
+              onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />
           )}
@@ -2199,6 +2206,7 @@ export function CanvasTab({
                     }
                   : undefined
               }
+              onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />
           )}
@@ -2221,6 +2229,7 @@ export function CanvasTab({
               onImportKindChange={setImportKind}
               importingPaper={isImportingPaper}
               onChange={(updates) => updateItem(selectedArtboardItem.id, updates)}
+              onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />
           )}

@@ -194,8 +194,12 @@ export function useColorCanvasState(storageKey = "gallery-color-canvas") {
   )
 
   const addSemanticNode = useCallback(
-    (label: string, role: ColorCanvasNode["role"], position: { x: number; y: number }) =>
-      addNode({ type: "semantic", label, role, position }),
+    (
+      label: string,
+      role: ColorCanvasNode["role"],
+      position: { x: number; y: number },
+      semanticKind: ColorCanvasNode["semanticKind"] = "role"
+    ) => addNode({ type: "semantic", label, role, position, semanticKind }),
     [addNode]
   )
 

@@ -1,4 +1,4 @@
-import { X } from "lucide-react"
+import { Trash2, X } from "lucide-react"
 
 import type { CanvasMermaidItem } from "../../types/canvas"
 
@@ -9,6 +9,7 @@ interface CanvasMermaidPropsPanelProps {
   background?: string
   onChange: (updates: Partial<Omit<CanvasMermaidItem, "id">>) => void
   onConvertToExcalidraw?: () => void
+  onDelete: () => void
   onClose: () => void
 }
 
@@ -26,6 +27,7 @@ export function CanvasMermaidPropsPanel({
   background,
   onChange,
   onConvertToExcalidraw,
+  onDelete,
   onClose,
 }: CanvasMermaidPropsPanelProps) {
   return (
@@ -35,14 +37,25 @@ export function CanvasMermaidPropsPanel({
           <h3 className="text-sm font-semibold text-foreground">Mermaid</h3>
           <p className="text-xs text-muted-foreground">Edit source and preview style</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
-          aria-label="Close Mermaid panel"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            aria-label="Delete mermaid"
+            title="Delete mermaid"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+            aria-label="Close Mermaid panel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3 overflow-y-auto p-4">

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { CanvasComponentItem } from "../../types/canvas"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import { CanvasContextMenu } from "./CanvasContextMenu"
+import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
 
 /** Props for injected Renderer component */
 interface RendererComponentProps {
@@ -77,7 +78,11 @@ export function CanvasItem({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null)
   const [initialState, setInitialState] = useState({ x: 0, y: 0, width: 0, height: 0, rotation: 0 })
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const { contextMenu, handleContextMenu, closeContextMenu } = useCanvasItemContextMenu({
+    isSelected,
+    interactMode,
+    onSelect,
+  })
 
   const component = getComponentById(item.componentId)
   const variant = component?.variants[item.variantIndex]
@@ -108,7 +113,7 @@ export function CanvasItem({
         rotation: item.rotation,
       })
     },
-    [item, onSelect]
+    [interactMode, item, onSelect]
   )
 
   // Handle resize
@@ -130,7 +135,7 @@ export function CanvasItem({
         rotation: item.rotation,
       })
     },
-    [item, onSelect]
+    [interactMode, item, onSelect]
   )
 
   // Handle rotation
@@ -150,18 +155,7 @@ export function CanvasItem({
         rotation: item.rotation,
       })
     },
-    [item, onSelect]
-  )
-
-  // Handle right-click context menu
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      onSelect() // Select item on right-click
-      setContextMenu({ x: e.clientX, y: e.clientY })
-    },
-    [onSelect]
+    [interactMode, item, onSelect]
   )
 
   // Fit to content handler for context menu
@@ -424,7 +418,7 @@ export function CanvasItem({
       {contextMenu && (
         <CanvasContextMenu
           position={contextMenu}
-          onClose={() => setContextMenu(null)}
+          onClose={closeContextMenu}
           onFitToContent={handleFitToContent}
           onBringToFront={onBringToFront}
           onDuplicate={onDuplicate}

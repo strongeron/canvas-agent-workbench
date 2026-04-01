@@ -59,6 +59,11 @@ npm run dev
 
 The demo shows how to integrate the gallery with example components (Button, Badge, Input, etc).
 
+## Canvas Guides
+
+- [Color Canvas README](./docs/COLOR_CANVAS_README.md) — current `Color Audit` and `System Canvas` modes, generated nodes, connectors, and testing scenarios
+- [Relative Color Canvas](./docs/RELATIVE_COLOR_CANVAS.md) — focused guide for manual OKLCH relative-color authoring in `Color Audit`
+
 ## Use in Your Project
 
 ```tsx

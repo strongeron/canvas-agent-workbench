@@ -2,7 +2,9 @@ import { RotateCw } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { CanvasMermaidItem as CanvasMermaidItemType } from "../../types/canvas"
+import { CanvasContextMenu } from "./CanvasContextMenu"
 import { CanvasMermaidPreview } from "./CanvasMermaidPreview"
+import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"
 
@@ -41,9 +43,9 @@ export function CanvasMermaidItem({
   groupColor,
   onSelect,
   onUpdate,
-  onRemove: _onRemove,
-  onDuplicate: _onDuplicate,
-  onBringToFront: _onBringToFront,
+  onRemove,
+  onDuplicate,
+  onBringToFront,
   scale,
   interactMode,
 }: CanvasMermaidItemProps) {
@@ -54,6 +56,11 @@ export function CanvasMermaidItem({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null)
   const [initialState, setInitialState] = useState({ x: 0, y: 0, width: 0, height: 0, rotation: 0 })
+  const { contextMenu, handleContextMenu, closeContextMenu } = useCanvasItemContextMenu({
+    isSelected,
+    interactMode,
+    onSelect,
+  })
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -211,6 +218,7 @@ export function CanvasMermaidItem({
         transformOrigin: "center center",
       }}
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
       onClick={(e) => {
         if (interactMode) return
         e.stopPropagation()
@@ -255,6 +263,16 @@ export function CanvasMermaidItem({
             />
           ))}
         </>
+      )}
+
+      {contextMenu && (
+        <CanvasContextMenu
+          position={contextMenu}
+          onClose={closeContextMenu}
+          onBringToFront={onBringToFront}
+          onDuplicate={onDuplicate}
+          onDelete={onRemove}
+        />
       )}
     </div>
   )

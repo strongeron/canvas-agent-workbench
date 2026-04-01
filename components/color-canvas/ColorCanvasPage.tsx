@@ -1,4 +1,4 @@
-import { Copy, Link2, Minus, Move, Palette, Plus, RotateCcw, Trash2, Type } from "lucide-react"
+import { Copy, Eye, Link2, Minus, Move, Palette, Plus, RotateCcw, Trash2, Type, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { DesignSystemNodePreview } from "./DesignSystemNodePreview"
@@ -26,6 +26,7 @@ import {
 import type { ThemeToken } from "../../types/theme"
 import type {
   ColorCanvasEdge,
+  ColorCanvasFrameworkId,
   ColorCanvasNode,
   ColorCanvasNodePreview,
   ColorCanvasPreviewKind,
@@ -59,11 +60,16 @@ export interface OklchColor {
 interface ColorCanvasPageProps {
   tokens: ThemeToken[]
   themeStorageKeyPrefix?: string
+  catalogOnly?: boolean
 }
 
 type ConnectMode = "map" | "contrast" | null
 type EdgeFilter = "all" | "map" | "contrast"
 type CanvasMode = "color-audit" | "system-canvas"
+type ColorAuditFocusMode = "review" | "build" | "contrast"
+type ColorAuditLayoutMode = "freeform" | "flow" | "center" | "roles"
+type ColorAuditExportFormat = "css-vars" | "dtcg" | "tailwind" | "shadcn" | "radix"
+type ColorAuditExportColorMode = "resolved" | "oklch"
 type CanvasViewMode =
   | "color"
   | "system"
@@ -84,8 +90,8 @@ type ContrastRule = {
 
 type DisplayEdge = ColorCanvasEdge & { auto?: boolean; ruleId?: string }
 type SystemSectionId = "colors" | "type" | "layout" | "primitives" | "standards"
-type SystemSectionFrame = {
-  id: SystemSectionId
+type CanvasSectionFrame = {
+  id: string
   label: string
   description: string
   nodeIds: string[]
@@ -96,19 +102,139 @@ type SystemSectionFrame = {
 }
 
 type SystemViewportAction = "fit-width" | "bird-view" | null
+type ColorAuditViewportAction = "bird-view" | null
+type TemplateKitId = "starter" | "shadcn" | "radix"
+type FunctionalTokenSourceId =
+  | "surface"
+  | "surface-muted"
+  | "text"
+  | "text-muted"
+  | "border"
+  | "accent"
+  | "accent-contrast"
+type FunctionalTokenPreset = {
+  label: string
+  cssVar: string
+  role: NonNullable<ColorCanvasNode["role"]>
+  source: FunctionalTokenSourceId
+  framework: ColorCanvasFrameworkId
+  description: string
+}
+
+const COLOR_AUDIT_EXPORT_FORMAT_OPTIONS: Array<{
+  id: ColorAuditExportFormat
+  label: string
+}> = [
+  { id: "css-vars", label: "CSS vars" },
+  { id: "dtcg", label: "DTCG JSON" },
+  { id: "tailwind", label: "Tailwind" },
+  { id: "shadcn", label: "shadcn/ui" },
+  { id: "radix", label: "Radix" },
+]
+
+const COLOR_AUDIT_EXPORT_COLOR_MODE_OPTIONS: Array<{
+  id: ColorAuditExportColorMode
+  label: string
+}> = [
+  { id: "oklch", label: "OKLCH colors" },
+  { id: "resolved", label: "Resolved colors" },
+]
+
+async function copyTextToClipboard(text: string) {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall through to the legacy selection-based copy path.
+    }
+  }
+
+  if (typeof document === "undefined") return false
+
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "true")
+  textarea.style.position = "fixed"
+  textarea.style.left = "-9999px"
+  textarea.style.top = "0"
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, text.length)
+
+  try {
+    return typeof document.execCommand === "function" ? document.execCommand("copy") : false
+  } catch {
+    return false
+  } finally {
+    textarea.remove()
+  }
+}
+type TemplateSeedKind = "brand" | "accent"
+type TemplateSeedOklch = { l: number; c: number; h: number }
+type ColorNodePortKind = "map" | "contrast" | "dependency"
+type ColorNodePortId =
+  | "map-in"
+  | "map-out"
+  | "contrast-in"
+  | "contrast-out"
+  | "dependency-in"
+  | "dependency-out"
+
+type ColorExportEntry = {
+  id: string
+  label: string
+  cssVar: string
+  exportKey: string
+  family: "palette" | "relative" | "functional" | "semantic"
+  role?: ColorCanvasNode["role"]
+  framework?: ColorCanvasFrameworkId
+  semanticKind?: ColorCanvasNode["semanticKind"]
+  resolvedExpression: string
+  oklchExpression?: string
+}
+
+type NodeCatalogSection = {
+  id: string
+  mode: CanvasMode
+  label: string
+  description: string
+  nodes: ColorCanvasNode[]
+}
+
+type WorkspaceCatalogSection = {
+  id: string
+  label: string
+  description: string
+  items: Array<{
+    id: string
+    label: string
+    kind: string
+    description: string
+    previewKind:
+      | "artboard"
+      | "component"
+      | "embed"
+      | "media"
+      | "mermaid"
+      | "excalidraw"
+      | "markdown"
+  }>
+}
 
 const DEFAULT_NODE_SIZES: Record<ColorCanvasNode["type"], { width: number; height: number }> = {
-  token: { width: 180, height: 70 },
-  semantic: { width: 200, height: 78 },
-  component: { width: 200, height: 70 },
-  relative: { width: 200, height: 78 },
+  token: { width: 188, height: 86 },
+  semantic: { width: 216, height: 102 },
+  component: { width: 200, height: 74 },
+  relative: { width: 220, height: 122 },
 }
 
 const MIN_NODE_SIZES: Record<ColorCanvasNode["type"], { width: number; height: number }> = {
-  token: { width: 160, height: 68 },
-  semantic: { width: 180, height: 76 },
+  token: { width: 170, height: 80 },
+  semantic: { width: 196, height: 96 },
   component: { width: 220, height: 140 },
-  relative: { width: 200, height: 96 },
+  relative: { width: 216, height: 116 },
 }
 
 const SEMANTIC_PRESETS: Array<{ label: string; role: ColorCanvasNode["role"] }> = [
@@ -120,6 +246,272 @@ const SEMANTIC_PRESETS: Array<{ label: string; role: ColorCanvasNode["role"] }> 
   { label: "Icon / Default", role: "icon" },
   { label: "Accent / Primary", role: "accent" },
 ]
+
+const FUNCTIONAL_TOKEN_PRESETS: Record<ColorCanvasFrameworkId, FunctionalTokenPreset[]> = {
+  shadcn: [
+    {
+      label: "Background",
+      cssVar: "--background",
+      role: "surface",
+      source: "surface",
+      framework: "shadcn",
+      description: "Base app surface used behind most content.",
+    },
+    {
+      label: "Foreground",
+      cssVar: "--foreground",
+      role: "text",
+      source: "text",
+      framework: "shadcn",
+      description: "Primary text and icon color on the default background.",
+    },
+    {
+      label: "Card",
+      cssVar: "--card",
+      role: "surface",
+      source: "surface",
+      framework: "shadcn",
+      description: "Elevated surface for containers and cards.",
+    },
+    {
+      label: "Card Foreground",
+      cssVar: "--card-foreground",
+      role: "text",
+      source: "text",
+      framework: "shadcn",
+      description: "Readable content color placed on cards.",
+    },
+    {
+      label: "Muted",
+      cssVar: "--muted",
+      role: "surface",
+      source: "surface-muted",
+      framework: "shadcn",
+      description: "Subtle background for secondary containers and placeholders.",
+    },
+    {
+      label: "Muted Foreground",
+      cssVar: "--muted-foreground",
+      role: "text",
+      source: "text-muted",
+      framework: "shadcn",
+      description: "Secondary text used on muted and tertiary UI copy.",
+    },
+    {
+      label: "Primary",
+      cssVar: "--primary",
+      role: "accent",
+      source: "accent",
+      framework: "shadcn",
+      description: "Main action or emphasis background.",
+    },
+    {
+      label: "Primary Foreground",
+      cssVar: "--primary-foreground",
+      role: "text",
+      source: "accent-contrast",
+      framework: "shadcn",
+      description: "Readable content placed on the primary action color.",
+    },
+    {
+      label: "Accent",
+      cssVar: "--accent",
+      role: "accent",
+      source: "accent",
+      framework: "shadcn",
+      description: "Interactive hover or selected-state accent surface.",
+    },
+    {
+      label: "Accent Foreground",
+      cssVar: "--accent-foreground",
+      role: "text",
+      source: "accent-contrast",
+      framework: "shadcn",
+      description: "Readable content placed on accent backgrounds.",
+    },
+    {
+      label: "Border",
+      cssVar: "--border",
+      role: "border",
+      source: "border",
+      framework: "shadcn",
+      description: "Default border and divider color.",
+    },
+    {
+      label: "Input",
+      cssVar: "--input",
+      role: "border",
+      source: "border",
+      framework: "shadcn",
+      description: "Input outline or field border color.",
+    },
+    {
+      label: "Ring",
+      cssVar: "--ring",
+      role: "accent",
+      source: "accent",
+      framework: "shadcn",
+      description: "Focus ring color for interactive controls.",
+    },
+  ],
+  radix: [
+    {
+      label: "Canvas Background",
+      cssVar: "--color-background",
+      role: "surface",
+      source: "surface",
+      framework: "radix",
+      description: "App background behind panels and pages.",
+    },
+    {
+      label: "Panel",
+      cssVar: "--color-panel",
+      role: "surface",
+      source: "surface-muted",
+      framework: "radix",
+      description: "Raised panel surface for cards and settings panes.",
+    },
+    {
+      label: "Text",
+      cssVar: "--color-text",
+      role: "text",
+      source: "text",
+      framework: "radix",
+      description: "Default Radix text color.",
+    },
+    {
+      label: "Text Muted",
+      cssVar: "--color-text-muted",
+      role: "text",
+      source: "text-muted",
+      framework: "radix",
+      description: "Muted text for helper copy and metadata.",
+    },
+    {
+      label: "Border",
+      cssVar: "--color-border",
+      role: "border",
+      source: "border",
+      framework: "radix",
+      description: "Border and separator color for panels and fields.",
+    },
+    {
+      label: "Accent",
+      cssVar: "--color-accent",
+      role: "accent",
+      source: "accent",
+      framework: "radix",
+      description: "Main accent swatch consumed by Radix Themes.",
+    },
+    {
+      label: "Accent Contrast",
+      cssVar: "--color-accent-contrast",
+      role: "text",
+      source: "accent-contrast",
+      framework: "radix",
+      description: "Readable text/icon color placed on the accent swatch.",
+    },
+    {
+      label: "Focus",
+      cssVar: "--color-focus",
+      role: "accent",
+      source: "accent",
+      framework: "radix",
+      description: "Keyboard focus highlight and strong outline state.",
+    },
+    {
+      label: "Icon",
+      cssVar: "--color-icon",
+      role: "icon",
+      source: "text",
+      framework: "radix",
+      description: "Default icon and glyph tint.",
+    },
+  ],
+}
+
+const COLOR_TEMPLATE_KITS: Array<{
+  id: TemplateKitId
+  label: string
+  description: string
+  framework?: ColorCanvasFrameworkId
+}> = [
+  {
+    id: "starter",
+    label: "Starter Ramp",
+    description: "Brand seed, accent seed, surface/text rules, and semantic roles.",
+  },
+  {
+    id: "shadcn",
+    label: "shadcn/ui",
+    description: "Starter ramp plus functional aliases like background, foreground, primary, border, and ring.",
+    framework: "shadcn",
+  },
+  {
+    id: "radix",
+    label: "Radix Themes",
+    description: "Starter ramp plus functional Radix-style background, panel, accent, text, and border aliases.",
+    framework: "radix",
+  },
+]
+
+const DEFAULT_TEMPLATE_SEEDS: Record<TemplateSeedKind, TemplateSeedOklch> = {
+  brand: { l: 0.62, c: 0.19, h: 255 },
+  accent: { l: 0.68, c: 0.18, h: 315 },
+}
+
+const TEMPLATE_PREVIEW_BASE_COUNTS = {
+  baseColors: 13,
+  accentColors: 3,
+  semanticRoles: 5,
+}
+
+const COLOR_NODE_PORT_META: Record<
+  ColorNodePortId,
+  {
+    kind: ColorNodePortKind
+    direction: "in" | "out"
+    label: string
+    color: string
+  }
+> = {
+  "dependency-in": {
+    kind: "dependency",
+    direction: "in",
+    label: "Dependency input",
+    color: "#94a3b8",
+  },
+  "dependency-out": {
+    kind: "dependency",
+    direction: "out",
+    label: "Dependency output",
+    color: "#94a3b8",
+  },
+  "map-in": {
+    kind: "map",
+    direction: "in",
+    label: "Map input",
+    color: "#818cf8",
+  },
+  "map-out": {
+    kind: "map",
+    direction: "out",
+    label: "Map output",
+    color: "#818cf8",
+  },
+  "contrast-in": {
+    kind: "contrast",
+    direction: "in",
+    label: "Contrast input",
+    color: "#f97316",
+  },
+  "contrast-out": {
+    kind: "contrast",
+    direction: "out",
+    label: "Contrast output",
+    color: "#f97316",
+  },
+}
 
 const DEFAULT_CONTRAST_RULES: ContrastRule[] = [
   {
@@ -214,6 +606,131 @@ const CANVAS_MODE_OPTIONS: Array<{ id: CanvasMode; label: string; description: s
     description: "Scale engine, generated layouts, and primitive previews",
   },
 ]
+
+const COLOR_AUDIT_FOCUS_OPTIONS: Array<{
+  id: ColorAuditFocusMode
+  label: string
+  description: string
+}> = [
+  {
+    id: "review",
+    label: "Review",
+    description: "Browse tokens, roles, and edges with sensible defaults for audit.",
+  },
+  {
+    id: "build",
+    label: "Build graph",
+    description: "Token → role mapping focus with connection tools ready.",
+  },
+  {
+    id: "contrast",
+    label: "Contrast audit",
+    description: "Contrast-only focus for APCA review.",
+  },
+]
+
+const COLOR_AUDIT_LAYOUT_OPTIONS: Array<{
+  id: ColorAuditLayoutMode
+  label: string
+  description: string
+}> = [
+  {
+    id: "freeform",
+    label: "Freeform",
+    description: "Keep the current manual placement.",
+  },
+  {
+    id: "flow",
+    label: "Flow lanes",
+    description: "Arrange inputs, functional aliases, semantic roles, and components left to right.",
+  },
+  {
+    id: "center",
+    label: "Center cluster",
+    description: "Keep seed colors in the middle and place framework aliases, roles, and consumers around them.",
+  },
+  {
+    id: "roles",
+    label: "Role lanes",
+    description: "Group nodes by surface/text/border/accent/icon families.",
+  },
+]
+
+const COLOR_AUDIT_LANE_META: Record<
+  Exclude<ColorAuditLayoutMode, "freeform">,
+  Record<string, { label: string; description: string }>
+> = {
+  flow: {
+    inputs: {
+      label: "Inputs",
+      description: "Theme tokens and relative sources that feed the graph.",
+    },
+    functional: {
+      label: "Functional Tokens",
+      description: "Framework-style tokens such as background, foreground, border, and primary.",
+    },
+    roles: {
+      label: "Roles",
+      description: "Semantic color roles that drive UI meaning and contrast rules.",
+    },
+    components: {
+      label: "Components",
+      description: "UI examples that consume semantic roles.",
+    },
+  },
+  center: {
+    inputs: {
+      label: "Seed hub",
+      description: "Brand, accent, and derived palette sources stay in the middle of the system.",
+    },
+    functional: {
+      label: "Framework tokens",
+      description: "Framework aliases orbit the hub so adapter tokens are easier to isolate.",
+    },
+    roles: {
+      label: "Semantic roles",
+      description: "Semantic UI roles stay opposite the framework aliases for mapping review.",
+    },
+    components: {
+      label: "Consumers",
+      description: "UI examples remain downstream from the semantic layer.",
+    },
+  },
+  roles: {
+    brand: {
+      label: "Brand",
+      description: "Brand and seed colors that anchor the palette.",
+    },
+    surface: {
+      label: "Surface",
+      description: "Background and surface tokens used behind content.",
+    },
+    text: {
+      label: "Text",
+      description: "Foreground and readable text roles.",
+    },
+    border: {
+      label: "Border",
+      description: "Divider and outline tokens.",
+    },
+    accent: {
+      label: "Accent",
+      description: "Interactive or emphasis colors.",
+    },
+    icon: {
+      label: "Icon",
+      description: "Icon and glyph-related tokens or roles.",
+    },
+    other: {
+      label: "Other",
+      description: "Ungrouped colors and utility nodes.",
+    },
+    components: {
+      label: "Components",
+      description: "UI examples that reference the color system.",
+    },
+  },
+}
 
 const DESIGN_SYSTEM_PRESETS: Array<{
   id: string
@@ -396,6 +913,885 @@ function isRelationshipCanvasMode(mode: CanvasViewMode) {
 
 function getCanvasModeLabel(mode: CanvasMode) {
   return mode === "color-audit" ? "Color Audit" : "System Canvas"
+}
+
+function getFrameworkLabel(framework?: ColorCanvasFrameworkId) {
+  if (framework === "shadcn") return "shadcn/ui"
+  if (framework === "radix") return "Radix"
+  return null
+}
+
+function stripFrameworkPrefix(label: string, framework?: ColorCanvasFrameworkId) {
+  const frameworkLabel = getFrameworkLabel(framework)
+  if (!frameworkLabel) return label
+  const prefix = `${frameworkLabel} / `
+  return label.startsWith(prefix) ? label.slice(prefix.length) : label
+}
+
+function getDisplayNodeLabelFromNode(
+  node?: Pick<ColorCanvasNode, "label" | "framework"> | null
+) {
+  if (!node) return "Unknown"
+  return stripFrameworkPrefix(node.label, node.framework)
+}
+
+function formatFunctionalTokenLabel(preset: FunctionalTokenPreset) {
+  return stripFrameworkPrefix(preset.label, preset.framework)
+}
+
+function isFunctionalTokenNode(node: ColorCanvasNode) {
+  return node.type === "semantic" && (node.semanticKind === "functional" || Boolean(node.framework))
+}
+
+function getNodeFamilyLabel(node: ColorCanvasNode, variant: "badge" | "full" = "full") {
+  if (node.preview) return node.preview.badge || "Preview"
+  if (node.group === "system-support") return "System support"
+  if (node.type === "relative") return variant === "badge" ? "Relative rule" : "Relative rule"
+  if (isFunctionalTokenNode(node)) {
+    const frameworkLabel = getFrameworkLabel(node.framework)
+    if (frameworkLabel) {
+      return variant === "badge" ? `Functional · ${frameworkLabel}` : `Functional alias · ${frameworkLabel}`
+    }
+    return variant === "badge" ? "Functional" : "Functional alias"
+  }
+  if (node.type === "semantic") return "Semantic role"
+  if (node.type === "component") return "Component example"
+  return "Palette input"
+}
+
+function getNodeFamilyBadgeClass(node: ColorCanvasNode) {
+  if (node.type === "relative") return "bg-amber-100 text-amber-700"
+  if (isFunctionalTokenNode(node)) return "bg-violet-100 text-violet-700"
+  if (node.type === "semantic") return "bg-indigo-100 text-indigo-700"
+  if (node.group === "system-support") return "bg-white/80 text-muted-foreground"
+  return "bg-slate-100 text-slate-700"
+}
+
+function slugifyTokenLabel(label: string) {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
+function toCamelCaseTokenKey(value: string) {
+  return value
+    .replace(/^-+/, "")
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((part, index) =>
+      index === 0 ? part.toLowerCase() : `${part.slice(0, 1).toUpperCase()}${part.slice(1).toLowerCase()}`
+    )
+    .join("")
+}
+
+function assignNestedToken(
+  target: Record<string, unknown>,
+  path: string[],
+  value: unknown
+) {
+  let cursor: Record<string, unknown> = target
+  path.forEach((segment, index) => {
+    if (index === path.length - 1) {
+      cursor[segment] = value
+      return
+    }
+    const next = cursor[segment]
+    if (!next || typeof next !== "object" || Array.isArray(next)) {
+      cursor[segment] = {}
+    }
+    cursor = cursor[segment] as Record<string, unknown>
+  })
+}
+
+function formatOklchCssValue(color: { l: number; c: number; h: number; a?: number }) {
+  const lightness = Number((color.l * 100).toFixed(1))
+  const chroma = Number(color.c.toFixed(3))
+  const hue = Number(color.h.toFixed(1))
+  const alpha = color.a ?? 1
+  if (alpha >= 1) return `oklch(${lightness}% ${chroma} ${hue})`
+  return `oklch(${lightness}% ${chroma} ${hue} / ${Number(alpha.toFixed(3))})`
+}
+
+function inferContrastIntent(node: ColorCanvasNode): "foreground" | "background" | "both" {
+  if (node.role === "text" || node.role === "icon" || node.role === "border") return "foreground"
+  if (node.role === "surface") return "background"
+  if (node.role === "accent") return "both"
+
+  const haystack = `${node.label} ${node.cssVar ?? ""}`.toLowerCase()
+  if (
+    haystack.includes("text") ||
+    haystack.includes("foreground") ||
+    haystack.includes("border") ||
+    haystack.includes("icon")
+  ) {
+    return "foreground"
+  }
+  if (
+    haystack.includes("surface") ||
+    haystack.includes("background") ||
+    haystack.includes("canvas") ||
+    haystack.includes("brand") ||
+    haystack.includes("accent")
+  ) {
+    return "background"
+  }
+  return "both"
+}
+
+function deriveTemplateSeedOklch(value: string, fallback: TemplateSeedOklch) {
+  const trimmed = value.trim()
+  if (!trimmed) return fallback
+
+  const parsedOklch = parseOklch(trimmed)
+  if (parsedOklch) {
+    return { l: parsedOklch.l, c: parsedOklch.c, h: parsedOklch.h }
+  }
+
+  const parsedP3 = trimmed.startsWith("color(display-p3") ? parseDisplayP3(trimmed) : null
+  const parsedColor = parsedP3 ? displayP3ToSrgb(parsedP3) : parseColor(trimmed)
+  if (!parsedColor) return fallback
+  return srgbToOklch(parsedColor) ?? fallback
+}
+
+function formatTemplateSeedOklch(seed: TemplateSeedOklch) {
+  const lightness = Number((clampValue(seed.l, 0, 1) * 100).toFixed(1))
+  const chroma = Number(Math.max(0, seed.c).toFixed(3))
+  const hue = Number(wrapDegrees(seed.h).toFixed(1))
+  return `oklch(${lightness}% ${chroma} ${hue})`
+}
+
+function inferColorAuditRoleLane(node: ColorCanvasNode) {
+  if (node.type === "component") return "components"
+  if (isFunctionalTokenNode(node)) return node.role ?? "other"
+  if (node.role) return node.role
+  const haystack = `${node.label} ${node.cssVar ?? ""}`.toLowerCase()
+  if (haystack.includes("brand")) return "brand"
+  if (haystack.includes("surface")) return "surface"
+  if (haystack.includes("text") || haystack.includes("foreground")) return "text"
+  if (haystack.includes("border")) return "border"
+  if (haystack.includes("accent")) return "accent"
+  if (haystack.includes("icon")) return "icon"
+  return "other"
+}
+
+function getColorAuditStructuredLaneId(
+  node: ColorCanvasNode,
+  mode: Extract<ColorAuditLayoutMode, "flow" | "center">
+) {
+  if (mode !== "flow" && mode !== "center") return "inputs"
+  if (node.type === "component") return "components"
+  if (isFunctionalTokenNode(node)) return "functional"
+  if (node.type === "semantic") return "roles"
+  return "inputs"
+}
+
+function getTemplateKitPreview(kit: (typeof COLOR_TEMPLATE_KITS)[number], includeAccent: boolean) {
+  const colorNodes =
+    TEMPLATE_PREVIEW_BASE_COUNTS.baseColors +
+    (includeAccent ? TEMPLATE_PREVIEW_BASE_COUNTS.accentColors : 0)
+  const functionalTokens = kit.framework ? FUNCTIONAL_TOKEN_PRESETS[kit.framework].length : 0
+  const semanticRoles = TEMPLATE_PREVIEW_BASE_COUNTS.semanticRoles
+
+  return {
+    colorNodes,
+    functionalTokens,
+    semanticRoles,
+    totalNodes: colorNodes + functionalTokens + semanticRoles,
+  }
+}
+
+function buildTemplateCatalogSection(
+  kit: (typeof COLOR_TEMPLATE_KITS)[number]
+): NodeCatalogSection {
+  const sectionId = `template-${kit.id}`
+  const brandSeed = { ...DEFAULT_TEMPLATE_SEEDS.brand, a: 1 }
+  const accentSeed = { ...DEFAULT_TEMPLATE_SEEDS.accent, a: 1 }
+  const brandSeedValue = formatTemplateSeedOklch(DEFAULT_TEMPLATE_SEEDS.brand)
+  const accentSeedValue = formatTemplateSeedOklch(DEFAULT_TEMPLATE_SEEDS.accent)
+
+  const makeRelativeNode = (config: {
+    slug: string
+    label: string
+    cssVar: string
+    role?: ColorCanvasNode["role"]
+    baseId: string
+    baseColor: OklchColor
+    relative: RelativeColorSpec
+  }): ColorCanvasNode => ({
+    id: `${sectionId}-${config.slug}`,
+    type: "relative",
+    label: config.label,
+    cssVar: config.cssVar,
+    role: config.role,
+    value: formatOklchCssValue(resolveRelativeOklch(config.baseColor, config.relative)),
+    relative: {
+      ...config.relative,
+      baseId: config.baseId,
+    },
+    position: { x: 0, y: 0 },
+  })
+
+  const brandSeedNode: ColorCanvasNode = {
+    id: `${sectionId}-brand-seed`,
+    type: "token",
+    label: "Brand Seed",
+    cssVar: "--color-brand-500",
+    value: brandSeedValue,
+    position: { x: 0, y: 0 },
+  }
+
+  const accentSeedNode: ColorCanvasNode = {
+    id: `${sectionId}-accent-seed`,
+    type: "token",
+    label: "Accent Seed",
+    cssVar: "--color-accent-500",
+    value: accentSeedValue,
+    position: { x: 0, y: 0 },
+  }
+
+  const relativeNodes = [
+    makeRelativeNode({
+      slug: "brand-300",
+      label: "Brand / 300",
+      cssVar: "--color-brand-300",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "delta",
+        lValue: 16,
+        cMode: "delta",
+        cValue: -4,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "brand-400",
+      label: "Brand / 400",
+      cssVar: "--color-brand-400",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "delta",
+        lValue: 8,
+        cMode: "delta",
+        cValue: -2,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "brand-600",
+      label: "Brand / 600",
+      cssVar: "--color-brand-600",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "delta",
+        lValue: -6,
+        cMode: "delta",
+        cValue: -3,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "brand-700",
+      label: "Brand / 700",
+      cssVar: "--color-brand-700",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "delta",
+        lValue: -12,
+        cMode: "delta",
+        cValue: -5,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "surface-base",
+      label: "Surface / Base",
+      cssVar: "--color-surface-50",
+      role: "surface",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "absolute",
+        lValue: 98,
+        cMode: "absolute",
+        cValue: 2,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "surface-elevated",
+      label: "Surface / Elevated",
+      cssVar: "--color-surface-100",
+      role: "surface",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "absolute",
+        lValue: 96,
+        cMode: "absolute",
+        cValue: 3,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "surface-muted",
+      label: "Surface / Muted",
+      cssVar: "--color-surface-200",
+      role: "surface",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "absolute",
+        lValue: 92,
+        cMode: "absolute",
+        cValue: 4,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "text-primary",
+      label: "Text / Primary",
+      cssVar: "--color-foreground",
+      role: "text",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "absolute",
+        lValue: 20,
+        cMode: "absolute",
+        cValue: 0,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "text-secondary",
+      label: "Text / Secondary",
+      cssVar: "--color-muted-foreground",
+      role: "text",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "absolute",
+        lValue: 40,
+        cMode: "absolute",
+        cValue: 0,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "text-inverse",
+      label: "Text / Inverse",
+      cssVar: "--color-foreground-inverse",
+      role: "text",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "absolute",
+        lValue: 99,
+        cMode: "absolute",
+        cValue: 1,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+    makeRelativeNode({
+      slug: "border-default",
+      label: "Border / Default",
+      cssVar: "--color-border-default",
+      role: "border",
+      baseId: brandSeedNode.id,
+      baseColor: brandSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "absolute",
+        lValue: 82,
+        cMode: "absolute",
+        cValue: 1,
+        hMode: "inherit",
+        alphaMode: "absolute",
+        alphaValue: 60,
+      },
+    }),
+    makeRelativeNode({
+      slug: "accent-primary",
+      label: "Accent / Primary",
+      cssVar: "--color-accent-primary",
+      role: "accent",
+      baseId: accentSeedNode.id,
+      baseColor: accentSeed,
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        lMode: "inherit",
+        cMode: "inherit",
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
+    }),
+  ]
+
+  const findValue = (cssVar: string) =>
+    relativeNodes.find((node) => node.cssVar === cssVar)?.value || null
+
+  const sourceValues: Record<FunctionalTokenSourceId, string> = {
+    surface: findValue("--color-surface-50") || brandSeedValue,
+    "surface-muted": findValue("--color-surface-200") || brandSeedValue,
+    text: findValue("--color-foreground") || brandSeedValue,
+    "text-muted": findValue("--color-muted-foreground") || brandSeedValue,
+    border: findValue("--color-border-default") || brandSeedValue,
+    accent: findValue("--color-accent-primary") || accentSeedValue,
+    "accent-contrast": findValue("--color-foreground-inverse") || accentSeedValue,
+  }
+
+  const frameworkNodes = kit.framework
+    ? FUNCTIONAL_TOKEN_PRESETS[kit.framework].map((preset) => ({
+        id: `${sectionId}-${slugifyTokenLabel(`${kit.framework}-${preset.label}`)}`,
+        type: "semantic" as const,
+        label: formatFunctionalTokenLabel(preset),
+        cssVar: preset.cssVar,
+        role: preset.role,
+        framework: preset.framework,
+        semanticKind: "functional" as const,
+        value: sourceValues[preset.source],
+        position: { x: 0, y: 0 },
+      }))
+    : []
+
+  const roleValue = (fallbackCssVar: string, frameworkCssVar?: string) =>
+    frameworkCssVar
+      ? frameworkNodes.find((node) => node.cssVar === frameworkCssVar)?.value || findValue(fallbackCssVar)
+      : findValue(fallbackCssVar)
+
+  const semanticNodes: ColorCanvasNode[] = [
+    {
+      id: `${sectionId}-semantic-text`,
+      type: "semantic",
+      label: "Text / Foreground",
+      role: "text",
+      semanticKind: "role",
+      value: roleValue("--color-foreground", kit.framework === "shadcn" ? "--foreground" : kit.framework === "radix" ? "--color-text" : undefined) || brandSeedValue,
+      position: { x: 0, y: 0 },
+    },
+    {
+      id: `${sectionId}-semantic-surface`,
+      type: "semantic",
+      label: "Surface / Base",
+      role: "surface",
+      semanticKind: "role",
+      value: roleValue("--color-surface-50", kit.framework === "shadcn" ? "--background" : kit.framework === "radix" ? "--color-background" : undefined) || brandSeedValue,
+      position: { x: 0, y: 0 },
+    },
+    {
+      id: `${sectionId}-semantic-border`,
+      type: "semantic",
+      label: "Border / Default",
+      role: "border",
+      semanticKind: "role",
+      value: roleValue("--color-border-default", kit.framework === "shadcn" ? "--border" : kit.framework === "radix" ? "--color-border" : undefined) || brandSeedValue,
+      position: { x: 0, y: 0 },
+    },
+    {
+      id: `${sectionId}-semantic-accent`,
+      type: "semantic",
+      label: "Accent / Primary",
+      role: "accent",
+      semanticKind: "role",
+      value: roleValue("--color-accent-primary", kit.framework === "shadcn" ? "--primary" : kit.framework === "radix" ? "--color-accent" : undefined) || accentSeedValue,
+      position: { x: 0, y: 0 },
+    },
+    {
+      id: `${sectionId}-semantic-icon`,
+      type: "semantic",
+      label: "Icon / Default",
+      role: "icon",
+      semanticKind: "role",
+      value: roleValue("--color-foreground", kit.framework === "radix" ? "--color-icon" : undefined) || brandSeedValue,
+      position: { x: 0, y: 0 },
+    },
+  ]
+
+  return {
+    id: sectionId,
+    mode: "color-audit",
+    label: `Template / ${kit.label}`,
+    description: kit.description,
+    nodes: [brandSeedNode, accentSeedNode, ...relativeNodes, ...frameworkNodes, ...semanticNodes],
+  }
+}
+
+function buildColorAuditManualCatalogSection(): NodeCatalogSection {
+  const brandSeed = { ...DEFAULT_TEMPLATE_SEEDS.brand, a: 1 }
+  const brandSeedId = "catalog-manual-brand-seed"
+  return {
+    id: "color-audit-manual",
+    mode: "color-audit",
+    label: "Color Audit / Manual nodes",
+    description: "Nodes you can add by hand before mapping into functional aliases and semantic roles.",
+    nodes: [
+      {
+        id: brandSeedId,
+        type: "token",
+        label: "Brand Seed",
+        cssVar: "--color-brand-500",
+        value: formatTemplateSeedOklch(DEFAULT_TEMPLATE_SEEDS.brand),
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "catalog-manual-accent-seed",
+        type: "token",
+        label: "Accent Seed",
+        cssVar: "--color-accent-500",
+        value: formatTemplateSeedOklch(DEFAULT_TEMPLATE_SEEDS.accent),
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "catalog-manual-custom-token",
+        type: "token",
+        label: "Custom Token",
+        cssVar: "--color-custom-token",
+        value: "#5b7fff",
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "catalog-manual-relative",
+        type: "relative",
+        label: "Relative Token",
+        cssVar: "--color-relative-token",
+        value: formatOklchCssValue(
+          resolveRelativeOklch(brandSeed, {
+            model: DEFAULT_COLOR_MODEL,
+            baseId: brandSeedId,
+            lMode: "delta",
+            lValue: 8,
+            cMode: "delta",
+            cValue: -2,
+            hMode: "inherit",
+            alphaMode: "inherit",
+          })
+        ),
+        relative: {
+          model: DEFAULT_COLOR_MODEL,
+          baseId: brandSeedId,
+          lMode: "delta",
+          lValue: 8,
+          cMode: "delta",
+          cValue: -2,
+          hMode: "inherit",
+          alphaMode: "inherit",
+        },
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "catalog-manual-functional-alias",
+        type: "semantic",
+        label: "Functional Alias",
+        cssVar: "--color-functional-alias",
+        semanticKind: "functional",
+        value: formatTemplateSeedOklch(DEFAULT_TEMPLATE_SEEDS.brand),
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "catalog-manual-semantic-role",
+        type: "semantic",
+        label: "Text / Foreground",
+        role: "text",
+        semanticKind: "role",
+        value: "oklch(20% 0 255)",
+        position: { x: 0, y: 0 },
+      },
+    ],
+  }
+}
+
+function getCatalogPortIds(node: ColorCanvasNode): ColorNodePortId[] {
+  if (node.preview) return []
+  if (node.group === "system-support") {
+    if (node.type === "token") return ["dependency-out", "map-out"]
+    if (node.type === "relative") return ["dependency-in", "map-out"]
+    if (node.type === "semantic") return ["map-in", "map-out"]
+  }
+  if (node.type === "token") return ["map-out"]
+  if (node.type === "relative") return ["dependency-in", "map-out", "contrast-in", "contrast-out"]
+  if (node.type === "semantic") return ["map-in", "map-out", "contrast-in", "contrast-out"]
+  if (node.type === "component") return ["map-in"]
+  return []
+}
+
+function getCatalogFrameMetrics(size: { width: number; height: number }) {
+  const inset = 12
+  return {
+    inset,
+    width: size.width + inset * 2,
+    height: size.height + inset * 2,
+  }
+}
+
+function clampPortInset(size: { width: number; height: number }, desired: number, axis: "x" | "y") {
+  const length = axis === "x" ? size.width : size.height
+  return Math.max(26, Math.min(length - 26, desired))
+}
+
+function getColorNodePortOffset(size: { width: number; height: number }, portId: ColorNodePortId) {
+  const mapY = clampPortInset(size, Math.max(42, size.height * 0.5), "y")
+  const dependencyInX = clampPortInset(size, 34, "x")
+  const dependencyOutX = clampPortInset(size, size.width - 34, "x")
+  const contrastInX = clampPortInset(size, 34, "x")
+  const contrastOutX = clampPortInset(size, size.width - 34, "x")
+  switch (portId) {
+    case "map-in":
+      return { x: 0, y: mapY }
+    case "map-out":
+      return { x: size.width, y: mapY }
+    case "dependency-in":
+      return { x: dependencyInX, y: 0 }
+    case "dependency-out":
+      return { x: dependencyOutX, y: 0 }
+    case "contrast-in":
+      return { x: contrastInX, y: size.height }
+    case "contrast-out":
+      return { x: contrastOutX, y: size.height }
+    default:
+      return { x: size.width / 2, y: size.height / 2 }
+  }
+}
+
+function buildPolylinePath(points: Array<{ x: number; y: number }>) {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ")
+}
+
+function getColorNodePortPosition(
+  node: ColorCanvasNode,
+  size: { width: number; height: number },
+  portId: ColorNodePortId
+) {
+  const offset = getColorNodePortOffset(size, portId)
+  return {
+    x: node.position.x + offset.x,
+    y: node.position.y + offset.y,
+  }
+}
+
+function getEdgePortIds(kind: ColorNodePortKind) {
+  switch (kind) {
+    case "dependency":
+      return {
+        source: "dependency-out" as const,
+        target: "dependency-in" as const,
+      }
+    case "contrast":
+      return {
+        source: "contrast-out" as const,
+        target: "contrast-in" as const,
+      }
+    case "map":
+    default:
+      return {
+        source: "map-out" as const,
+        target: "map-in" as const,
+      }
+  }
+}
+
+function buildColorConnectionPath(
+  source: { x: number; y: number },
+  target: { x: number; y: number },
+  kind: ColorNodePortKind
+) {
+  if (kind === "dependency") {
+    const stub = 16
+    const lift = Math.max(28, Math.abs(target.y - source.y) * 0.24 + 28)
+    const viaY = Math.min(source.y, target.y) - lift
+    const points = [
+      source,
+      { x: source.x, y: source.y - stub },
+      { x: source.x, y: viaY },
+      { x: target.x, y: viaY },
+      { x: target.x, y: target.y - stub },
+      target,
+    ]
+    return {
+      path: buildPolylinePath(points),
+      badgeX: (source.x + target.x) / 2,
+      badgeY: viaY - 10,
+      midPoint: {
+        x: (source.x + target.x) / 2,
+        y: viaY,
+      },
+      controlPoints: points.slice(1, -1),
+    }
+  }
+
+  if (kind === "contrast") {
+    const stub = 16
+    const drop = Math.max(28, Math.abs(target.y - source.y) * 0.24 + 28)
+    const viaY = Math.max(source.y, target.y) + drop
+    const points = [
+      source,
+      { x: source.x, y: source.y + stub },
+      { x: source.x, y: viaY },
+      { x: target.x, y: viaY },
+      { x: target.x, y: target.y + stub },
+      target,
+    ]
+    return {
+      path: buildPolylinePath(points),
+      badgeX: (source.x + target.x) / 2,
+      badgeY: viaY + 10,
+      midPoint: {
+        x: (source.x + target.x) / 2,
+        y: viaY,
+      },
+      controlPoints: points.slice(1, -1),
+    }
+  }
+
+  const direction = target.x >= source.x ? 1 : -1
+  const stub = 18 * direction
+  const midX = source.x + (target.x - source.x) / 2
+  const points = [
+    source,
+    { x: source.x + stub, y: source.y },
+    { x: midX, y: source.y },
+    { x: midX, y: target.y },
+    { x: target.x - stub, y: target.y },
+    target,
+  ]
+  return {
+    path: buildPolylinePath(points),
+    badgeX: midX,
+    badgeY: (source.y + target.y) / 2,
+    midPoint: {
+      x: midX,
+      y: (source.y + target.y) / 2,
+    },
+    controlPoints: points.slice(1, -1),
+  }
+}
+
+function getPortIdsForConnectMode(node: ColorCanvasNode, mode: ConnectMode): ColorNodePortId[] {
+  if (mode === "map") {
+    if (node.type === "component") return ["map-in"]
+    if (node.type === "semantic") return ["map-in", "map-out"]
+    return ["map-out"]
+  }
+
+  if (mode === "contrast") {
+    if (node.type === "component") return []
+    return ["contrast-in", "contrast-out"]
+  }
+
+  return []
+}
+
+function buildColorAuditLayout(
+  nodes: ColorCanvasNode[],
+  getNodeSize: (node: ColorCanvasNode) => { width: number; height: number },
+  mode: Exclude<ColorAuditLayoutMode, "freeform">,
+  viewportWidth: number
+) {
+  const positions: Record<string, { x: number; y: number }> = {}
+  const itemGapY = 18
+  const itemGapX = 26
+  const startX = 48
+  const startY = 52
+  const lanes =
+    mode === "flow" || mode === "center"
+      ? ["inputs", "functional", "roles", "components"]
+      : ["brand", "surface", "text", "border", "accent", "icon", "other", "components"]
+  const columns =
+    mode === "flow"
+      ? 4
+      : mode === "center"
+        ? 1
+      : Math.max(2, Math.min(3, Math.floor(Math.max(viewportWidth, 960) / 360)))
+
+  const grouped = lanes.reduce<Record<string, ColorCanvasNode[]>>((acc, lane) => {
+    acc[lane] = []
+    return acc
+  }, {})
+
+  nodes.forEach((node) => {
+    const lane =
+      mode === "flow" || mode === "center"
+        ? getColorAuditStructuredLaneId(node, mode)
+        : inferColorAuditRoleLane(node)
+    const safeLane = grouped[lane] ? lane : "other"
+    grouped[safeLane].push(node)
+  })
+
+  if (mode === "center") {
+    const canvasWidth = Math.max(viewportWidth, 1280)
+    const centerX = canvasWidth / 2
+    const clusterAnchors: Record<string, { x: number; y: number; columns: number }> = {
+      inputs: { x: centerX - 180, y: 140, columns: 2 },
+      functional: { x: centerX - 580, y: 320, columns: 2 },
+      roles: { x: centerX + 180, y: 320, columns: 2 },
+      components: { x: centerX - 180, y: 620, columns: 3 },
+    }
+
+    lanes.forEach((lane) => {
+      const laneNodes = grouped[lane]
+        .slice()
+        .sort((left, right) => left.label.localeCompare(right.label))
+      const anchor = clusterAnchors[lane] ?? { x: startX, y: startY, columns: 2 }
+      const columnCount = Math.max(1, anchor.columns)
+
+      laneNodes.forEach((node, index) => {
+        const size = getNodeSize(node)
+        const column = index % columnCount
+        const row = Math.floor(index / columnCount)
+        positions[node.id] = {
+          x: anchor.x + column * (260 + itemGapX),
+          y: anchor.y + row * (size.height + itemGapY),
+        }
+      })
+    })
+
+    return positions
+  }
+
+  lanes.forEach((lane, index) => {
+    const laneNodes = grouped[lane]
+      .slice()
+      .sort((left, right) => left.label.localeCompare(right.label))
+    const column = index % columns
+    const row = Math.floor(index / columns)
+    let cursorY = startY + row * 360
+    const cursorX = startX + column * 320
+
+    laneNodes.forEach((node) => {
+      const size = getNodeSize(node)
+      positions[node.id] = {
+        x: cursorX,
+        y: cursorY,
+      }
+      cursorY += size.height + itemGapY
+    })
+  })
+
+  return positions
 }
 
 function getPreviewCategory(
@@ -657,7 +2053,7 @@ function buildSystemFlowLayout(
   viewportWidth = 1440
 ) {
   const positions: Record<string, { x: number; y: number }> = {}
-  const sections: SystemSectionFrame[] = []
+  const sections: CanvasSectionFrame[] = []
   const activeSectionIds = SYSTEM_SECTION_ORDER.filter((sectionId) =>
     nodes.some((node) => getSystemSectionId(node) === sectionId)
   )
@@ -730,7 +2126,11 @@ function buildSystemFlowLayout(
   }
 }
 
-export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPageProps) {
+export function ColorCanvasPage({
+  tokens,
+  themeStorageKeyPrefix,
+  catalogOnly = false,
+}: ColorCanvasPageProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const workspaceCanvasRef = useRef<HTMLDivElement>(null)
@@ -747,8 +2147,32 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   const [showFullLabels, setShowFullLabels] = useState(false)
   const [templateBrand, setTemplateBrand] = useState("")
   const [templateAccent, setTemplateAccent] = useState("")
+  const [templateKitId, setTemplateKitId] = useLocalStorage<TemplateKitId>(
+    themeStorageKeyPrefix
+      ? `${themeStorageKeyPrefix}-color-canvas-template-kit`
+      : "gallery-color-canvas-template-kit",
+    "shadcn"
+  )
+  const [selectedColorAuditExportFormat, setSelectedColorAuditExportFormat] =
+    useLocalStorage<ColorAuditExportFormat>(
+      themeStorageKeyPrefix
+        ? `${themeStorageKeyPrefix}-color-canvas-export-format`
+        : "gallery-color-canvas-export-format",
+      "css-vars"
+    )
+  const [selectedColorAuditExportColorMode, setSelectedColorAuditExportColorMode] =
+    useLocalStorage<ColorAuditExportColorMode>(
+      themeStorageKeyPrefix
+        ? `${themeStorageKeyPrefix}-color-canvas-export-color-mode`
+        : "gallery-color-canvas-export-color-mode",
+      "oklch"
+    )
   const [selectedAutoEdgeId, setSelectedAutoEdgeId] = useState<string | null>(null)
   const [newThemeName, setNewThemeName] = useState("")
+  const [copiedColorAuditExportFormat, setCopiedColorAuditExportFormat] =
+    useState<ColorAuditExportFormat | null>(null)
+  const [showColorAuditExportPreview, setShowColorAuditExportPreview] = useState(false)
+  const [showNodeCatalog, setShowNodeCatalog] = useState(false)
 
   const sessionsKey = themeStorageKeyPrefix
     ? `${themeStorageKeyPrefix}-color-canvas-sessions`
@@ -792,6 +2216,18 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       : "gallery-color-canvas-view",
     "color"
   )
+  const [showAdvancedAuditControls, setShowAdvancedAuditControls] = useLocalStorage<boolean>(
+    themeStorageKeyPrefix
+      ? `${themeStorageKeyPrefix}-color-canvas-audit-advanced`
+      : "gallery-color-canvas-audit-advanced",
+    false
+  )
+  const [colorAuditLayoutMode, setColorAuditLayoutMode] = useLocalStorage<ColorAuditLayoutMode>(
+    themeStorageKeyPrefix
+      ? `${themeStorageKeyPrefix}-color-canvas-audit-layout`
+      : "gallery-color-canvas-audit-layout",
+    "freeform"
+  )
   const [viewNodePositions, setViewNodePositions] = useLocalStorage<
     Record<string, { x: number; y: number }>
   >(
@@ -800,6 +2236,16 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       : "gallery-color-canvas-view-positions",
     {}
   )
+  const {
+    transform: colorAuditTransform,
+    zoomTo: zoomColorAuditTo,
+    resetZoom: resetColorAuditZoom,
+    handleWheel: handleColorAuditCanvasWheelInput,
+    fitToView: fitColorAuditToView,
+    centerOn: centerColorAuditOn,
+    panTo: panColorAuditTo,
+    setWorkspaceDimensions: setColorAuditWorkspaceDimensions,
+  } = useCanvasTransform()
   const {
     transform: systemCanvasTransform,
     zoomTo: zoomSystemCanvasTo,
@@ -814,6 +2260,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     width: 0,
     height: 0,
   })
+  const [pendingColorAuditViewportAction, setPendingColorAuditViewportAction] =
+    useState<ColorAuditViewportAction>(null)
+  const [pendingColorAuditLayoutMode, setPendingColorAuditLayoutMode] = useState<
+    Exclude<ColorAuditLayoutMode, "freeform"> | null
+  >(null)
   const [pendingSystemViewportAction, setPendingSystemViewportAction] =
     useState<SystemViewportAction>(null)
   const lastSystemAutoFitKeyRef = useRef<string | null>(null)
@@ -915,6 +2366,52 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       return haystack.includes(lower)
     })
   }, [colorTokens, tokenQuery])
+  const groupedFilteredTokens = useMemo(() => {
+    const groups = new Map<string, ThemeToken[]>()
+    filteredTokens.forEach((token) => {
+      const key = token.subcategory || "other"
+      if (!groups.has(key)) {
+        groups.set(key, [])
+      }
+      groups.get(key)?.push(token)
+    })
+    return Array.from(groups.entries()).map(([id, groupTokens]) => ({
+      id,
+      label: id.replace(/[-_]/g, " "),
+      tokens: groupTokens,
+    }))
+  }, [filteredTokens])
+  const selectedTemplateKit = useMemo(
+    () => COLOR_TEMPLATE_KITS.find((kit) => kit.id === templateKitId) ?? COLOR_TEMPLATE_KITS[0],
+    [templateKitId]
+  )
+  const selectedTemplatePreview = useMemo(
+    () => getTemplateKitPreview(selectedTemplateKit, Boolean(templateAccent.trim())),
+    [selectedTemplateKit, templateAccent]
+  )
+  const templateBrandSeed = useMemo(
+    () => deriveTemplateSeedOklch(templateBrand, DEFAULT_TEMPLATE_SEEDS.brand),
+    [templateBrand]
+  )
+  const templateAccentSeed = useMemo(
+    () => deriveTemplateSeedOklch(templateAccent, DEFAULT_TEMPLATE_SEEDS.accent),
+    [templateAccent]
+  )
+
+  useEffect(() => {
+    const nodesToNormalize = nodes.filter((node) => {
+      if (!isFunctionalTokenNode(node)) return false
+      return stripFrameworkPrefix(node.label, node.framework) !== node.label
+    })
+
+    if (nodesToNormalize.length === 0) return
+
+    nodesToNormalize.forEach((node) => {
+      updateNode(node.id, {
+        label: stripFrameworkPrefix(node.label, node.framework),
+      })
+    })
+  }, [nodes, updateNode])
 
   const tokensByCssVar = useMemo(() => {
     return tokens.reduce<Record<string, ThemeToken>>((acc, token) => {
@@ -940,6 +2437,34 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       )?.id ?? null,
     [designSystemConfig]
   )
+  const activeAuditFocusMode = useMemo<ColorAuditFocusMode | null>(() => {
+    if (
+      connectMode === null &&
+      edgeFilter === "all" &&
+      showDependencies &&
+      autoContrastEnabled &&
+      !showFullLabels
+    ) {
+      return "review"
+    }
+    if (
+      connectMode === "map" &&
+      edgeFilter === "map" &&
+      showDependencies &&
+      !showFullLabels
+    ) {
+      return "build"
+    }
+    if (
+      connectMode === "contrast" &&
+      edgeFilter === "contrast" &&
+      autoContrastEnabled &&
+      !showFullLabels
+    ) {
+      return "contrast"
+    }
+    return null
+  }, [autoContrastEnabled, connectMode, edgeFilter, showDependencies, showFullLabels])
   const effectiveCanvasViewMode = useMemo<CanvasViewMode>(() => {
     if (canvasMode === "color-audit") return "color"
     if (canvasViewMode === "color") return "system"
@@ -950,12 +2475,24 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     []
   )
   const isRelationshipMode = isRelationshipCanvasMode(effectiveCanvasViewMode)
-  const systemCanvasTransformEnabled =
-    canvasMode === "system-canvas" && !isRelationshipMode
+  const colorAuditTransformEnabled = canvasMode === "color-audit"
+  const systemCanvasTransformEnabled = canvasMode === "system-canvas" && !isRelationshipMode
+  const workspaceTransformEnabled = colorAuditTransformEnabled || systemCanvasTransformEnabled
+  const activeCanvasTransform = colorAuditTransformEnabled
+    ? colorAuditTransform
+    : systemCanvasTransformEnabled
+      ? systemCanvasTransform
+      : null
   const viewportToCanvasPosition = useCallback((clientX: number, clientY: number) => {
     const workspace = workspaceRef.current
     if (!workspace) return { x: clientX, y: clientY }
     const rect = workspace.getBoundingClientRect()
+    if (colorAuditTransformEnabled) {
+      return {
+        x: (clientX - rect.left - colorAuditTransform.offset.x) / colorAuditTransform.scale,
+        y: (clientY - rect.top - colorAuditTransform.offset.y) / colorAuditTransform.scale,
+      }
+    }
     if (systemCanvasTransformEnabled) {
       return {
         x: (clientX - rect.left - systemCanvasTransform.offset.x) / systemCanvasTransform.scale,
@@ -967,6 +2504,10 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       y: clientY - rect.top + workspace.scrollTop,
     }
   }, [
+    colorAuditTransform.offset.x,
+    colorAuditTransform.offset.y,
+    colorAuditTransform.scale,
+    colorAuditTransformEnabled,
     systemCanvasTransform.offset.x,
     systemCanvasTransform.offset.y,
     systemCanvasTransform.scale,
@@ -981,6 +2522,13 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   const scrollWorkspaceTo = useCallback((left: number, top: number) => {
     const workspace = workspaceRef.current
     if (!workspace) return
+    if (colorAuditTransformEnabled) {
+      panColorAuditTo(
+        32 - Math.max(0, left) * colorAuditTransform.scale,
+        36 - Math.max(0, top) * colorAuditTransform.scale
+      )
+      return
+    }
     if (systemCanvasTransformEnabled) {
       panSystemCanvasTo(
         32 - Math.max(0, left) * systemCanvasTransform.scale,
@@ -992,7 +2540,14 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       left: Math.max(0, Math.round(left)),
       top: Math.max(0, Math.round(top)),
     })
-  }, [panSystemCanvasTo, systemCanvasTransform.scale, systemCanvasTransformEnabled])
+  }, [
+    colorAuditTransform.scale,
+    colorAuditTransformEnabled,
+    panColorAuditTo,
+    panSystemCanvasTo,
+    systemCanvasTransform.scale,
+    systemCanvasTransformEnabled,
+  ])
 
   const scrollWorkspaceToNode = useCallback(
     (node: ColorCanvasNode | null) => {
@@ -1000,13 +2555,24 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       const workspace = workspaceRef.current
       if (!workspace) return
       const size = getNodeSize(node)
+      if (colorAuditTransformEnabled) {
+        centerColorAuditOn(node.position.x + size.width / 2, node.position.y + size.height / 2)
+        return
+      }
       if (systemCanvasTransformEnabled) {
         centerSystemCanvasOn(node.position.x + size.width / 2, node.position.y + size.height / 2)
         return
       }
       scrollWorkspaceTo(node.position.x - 32, Math.max(0, node.position.y - (workspace.clientHeight - size.height) / 2))
     },
-    [centerSystemCanvasOn, getNodeSize, scrollWorkspaceTo, systemCanvasTransformEnabled]
+    [
+      centerColorAuditOn,
+      centerSystemCanvasOn,
+      colorAuditTransformEnabled,
+      getNodeSize,
+      scrollWorkspaceTo,
+      systemCanvasTransformEnabled,
+    ]
   )
 
   useEffect(() => {
@@ -1016,6 +2582,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     const updateDimensions = () => {
       const { width, height } = workspace.getBoundingClientRect()
       setSystemCanvasViewportSize({ width, height })
+      setColorAuditWorkspaceDimensions(width, height)
       setSystemCanvasWorkspaceDimensions(width, height)
     }
 
@@ -1030,7 +2597,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       resizeObserver?.disconnect()
       window.removeEventListener("resize", updateDimensions)
     }
-  }, [setSystemCanvasWorkspaceDimensions])
+  }, [setColorAuditWorkspaceDimensions, setSystemCanvasWorkspaceDimensions])
 
   const updateDesignSystemConfig = useCallback(
     (key: keyof DesignSystemScaleConfig, rawValue: string | number) => {
@@ -1132,6 +2699,8 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       label: string
       value?: string
       role?: ColorCanvasNode["role"]
+      framework?: ColorCanvasNode["framework"]
+      semanticKind?: ColorCanvasNode["semanticKind"]
       relative?: ColorCanvasNode["relative"]
       size?: ColorCanvasNode["size"]
       group?: ColorCanvasNode["group"]
@@ -1147,6 +2716,8 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
           value: config.value ?? existing.value,
           cssVar: config.cssVar ?? existing.cssVar,
           role: config.role ?? existing.role,
+          framework: config.framework ?? existing.framework,
+          semanticKind: config.semanticKind ?? existing.semanticKind,
           relative: config.relative ?? existing.relative,
           size: config.size ?? existing.size,
           group: config.group ?? existing.group,
@@ -1160,6 +2731,8 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
         cssVar: config.cssVar,
         value: config.value,
         role: config.role,
+        framework: config.framework,
+        semanticKind: config.semanticKind,
         relative: config.relative,
         size: config.size,
         group: config.group,
@@ -1249,11 +2822,10 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
       if (node.type === "semantic") {
         if (node.value) return node.value
-        const mappingEdge = edges.find(
-          (edge) => edge.type === "map" && edge.targetId === node.id
-        )
-        if (mappingEdge) {
-          return getNodeColorExpression(mappingEdge.sourceId, visited)
+        const mappingEdges = edges.filter((edge) => edge.type === "map" && edge.targetId === node.id)
+        for (const mappingEdge of mappingEdges) {
+          const resolved = getNodeColorExpression(mappingEdge.sourceId, new Set(visited))
+          if (resolved) return resolved
         }
         return node.value ?? null
       }
@@ -1322,6 +2894,8 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
       if (node.type === "token") {
         if (node.value) return parseToOklch(node.value)
+        const themeValue = node.cssVar ? tokenValues[node.cssVar] : undefined
+        if (themeValue) return parseToOklch(themeValue)
         if (node.cssVar) {
           const resolved = resolveCssColor(`var(${node.cssVar})`)
           if (!resolved) return null
@@ -1336,11 +2910,10 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
       if (node.type === "semantic") {
         if (node.value) return parseToOklch(node.value)
-        const mappingEdge = edges.find(
-          (edge) => edge.type === "map" && edge.targetId === node.id
-        )
-        if (mappingEdge) {
-          return resolveNodeOklch(mappingEdge.sourceId, visited)
+        const mappingEdges = edges.filter((edge) => edge.type === "map" && edge.targetId === node.id)
+        for (const mappingEdge of mappingEdges) {
+          const resolved = resolveNodeOklch(mappingEdge.sourceId, new Set(visited))
+          if (resolved) return resolved
         }
         return null
       }
@@ -1360,7 +2933,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
       return null
     },
-    [edges, nodesById, resolveCssColor, resolveExpressionColor]
+    [edges, nodesById, resolveCssColor, resolveExpressionColor, tokenValues]
   )
 
   const resolveNodeRgba = useCallback(
@@ -1373,17 +2946,18 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
       if (node.type === "token") {
         if (node.value) return resolveExpressionColor(node.value)
+        const themeValue = node.cssVar ? tokenValues[node.cssVar] : undefined
+        if (themeValue) return resolveExpressionColor(themeValue)
         if (node.cssVar) return resolveExpressionColor(`var(${node.cssVar})`)
         return null
       }
 
       if (node.type === "semantic") {
         if (node.value) return resolveExpressionColor(node.value)
-        const mappingEdge = edges.find(
-          (edge) => edge.type === "map" && edge.targetId === node.id
-        )
-        if (mappingEdge) {
-          return resolveNodeRgba(mappingEdge.sourceId, visited)
+        const mappingEdges = edges.filter((edge) => edge.type === "map" && edge.targetId === node.id)
+        for (const mappingEdge of mappingEdges) {
+          const resolved = resolveNodeRgba(mappingEdge.sourceId, new Set(visited))
+          if (resolved) return resolved
         }
         return null
       }
@@ -1402,7 +2976,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
       return null
     },
-    [edges, nodesById, resolveExpressionColor, resolveNodeOklch]
+    [edges, nodesById, resolveExpressionColor, resolveNodeOklch, tokenValues]
   )
 
   const getNodeColor = useCallback(
@@ -1444,7 +3018,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   )
 
   const getNodeLabel = useCallback(
-    (nodeId: string) => nodesById[nodeId]?.label || nodeId,
+    (nodeId: string) => getDisplayNodeLabelFromNode(nodesById[nodeId]) || nodeId,
     [nodesById]
   )
 
@@ -1501,6 +3075,26 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     addTokenNode(token.label, token.cssVar, position)
   }
 
+  const handleAddSeedNode = useCallback(
+    (kind: "brand" | "accent") => {
+      const position = getNextPosition(nodes)
+      const fallbackValue =
+        kind === "brand"
+          ? formatTemplateSeedOklch(templateBrandSeed)
+          : formatTemplateSeedOklch(templateAccentSeed)
+      const nodeId = addNode({
+        type: "token",
+        label: kind === "brand" ? "Brand Seed" : "Accent Seed",
+        cssVar: kind === "brand" ? "--color-brand-500" : "--color-accent-500",
+        value:
+          (kind === "brand" ? templateBrand.trim() : templateAccent.trim()) || fallbackValue,
+        position,
+      })
+      selectNode(nodeId)
+    },
+    [addNode, nodes, selectNode, templateAccent, templateAccentSeed, templateBrand, templateBrandSeed]
+  )
+
   const handleAddCustomToken = () => {
     const position = getNextPosition(nodes)
     addNode({
@@ -1529,28 +3123,121 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     })
   }
 
+  const handleAddCustomFunctionalAlias = () => {
+    const position = getNextPosition(nodes)
+    const nodeId = addNode({
+      type: "semantic",
+      label: "Functional Alias",
+      cssVar: getNextCustomCssVar("alias"),
+      semanticKind: "functional",
+      position,
+    })
+    selectNode(nodeId)
+  }
+
+  const handleAddFunctionalToken = useCallback(
+    (preset: FunctionalTokenPreset) => {
+      const position = getNextPosition(nodes)
+      const nodeId = addNode({
+        type: "semantic",
+        label: formatFunctionalTokenLabel(preset),
+        cssVar: preset.cssVar,
+        role: preset.role,
+        framework: preset.framework,
+        semanticKind: "functional",
+        position,
+      })
+      selectNode(nodeId)
+    },
+    [addNode, nodes, selectNode]
+  )
+
+  const handleAddFunctionalFrameworkSet = useCallback(
+    (framework: ColorCanvasFrameworkId) => {
+      const startPosition = getNextPosition(nodes)
+      FUNCTIONAL_TOKEN_PRESETS[framework].forEach((preset, index) => {
+        const position = {
+          x: startPosition.x + (index % 2) * 228,
+          y: startPosition.y + Math.floor(index / 2) * 92,
+        }
+        addNode({
+          type: "semantic",
+          label: formatFunctionalTokenLabel(preset),
+          cssVar: preset.cssVar,
+          role: preset.role,
+          framework: preset.framework,
+          semanticKind: "functional",
+          position,
+        })
+      })
+    },
+    [addNode, nodes]
+  )
+
+  const handleTemplateSeedSliderChange = useCallback(
+    (
+      kind: TemplateSeedKind,
+      channel: keyof TemplateSeedOklch,
+      rawValue: number
+    ) => {
+      const current =
+        kind === "brand"
+          ? deriveTemplateSeedOklch(templateBrand, DEFAULT_TEMPLATE_SEEDS.brand)
+          : deriveTemplateSeedOklch(templateAccent, DEFAULT_TEMPLATE_SEEDS.accent)
+      const nextSeed = {
+        ...current,
+        [channel]: channel === "h" ? wrapDegrees(rawValue) : rawValue,
+      }
+      const formatted = formatTemplateSeedOklch(nextSeed)
+      if (kind === "brand") {
+        setTemplateBrand(formatted)
+        return
+      }
+      setTemplateAccent(formatted)
+    },
+    [templateAccent, templateBrand]
+  )
+
   const handleGenerateTemplate = () => {
-    const brandValue = templateBrand.trim()
-    if (!brandValue) return
+    const brandValue = templateBrand.trim() || formatTemplateSeedOklch(templateBrandSeed)
+    const selectedTemplateKit =
+      COLOR_TEMPLATE_KITS.find((kit) => kit.id === templateKitId) ?? COLOR_TEMPLATE_KITS[0]
+    const generatedNodeCache = new Map<string, string>()
     let offset = 0
     const positionFor = () => {
       const baseX = 120
       const baseY = 80
-      const spacingX = 220
+      const spacingX = 260
       const spacingY = 120
       const index = nodes.length + offset
       offset += 1
-      const col = index % 3
-      const row = Math.floor(index / 3)
+      const col = index % 4
+      const row = Math.floor(index / 4)
       return {
         x: baseX + col * spacingX,
         y: baseY + row * spacingY,
       }
     }
+    const getGeneratedNodeKey = (config: {
+      type: ColorCanvasNode["type"]
+      cssVar?: string
+      label: string
+      role?: ColorCanvasNode["role"]
+      framework?: ColorCanvasNode["framework"]
+    }) =>
+      `${config.type}:${config.cssVar ?? `${config.label}:${config.framework ?? ""}:${config.role ?? ""}`}`
+    const upsertTemplateNode = (config: Parameters<typeof upsertNode>[0]) => {
+      const key = getGeneratedNodeKey(config)
+      const cachedId = generatedNodeCache.get(key)
+      if (cachedId) return cachedId
+      const nodeId = upsertNode(config)
+      generatedNodeCache.set(key, nodeId)
+      return nodeId
+    }
 
-    const brandBaseId = upsertNode({
+    const brandBaseId = upsertTemplateNode({
       type: "token",
-      label: "Brand 500",
+      label: "Brand Seed",
       cssVar: "--color-brand-500",
       value: brandValue,
       position: positionFor(),
@@ -1564,9 +3251,9 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     ]
 
     brandScale.forEach((entry) => {
-      upsertNode({
+      upsertTemplateNode({
         type: "relative",
-        label: entry.label,
+        label: `Brand / ${entry.label.replace("Brand ", "")}`,
         cssVar: entry.cssVar,
         position: positionFor(),
         relative: {
@@ -1583,13 +3270,13 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     })
 
     const surfaceScale = [
-      { cssVar: "--color-surface-50", label: "Surface 50", l: 98, c: 2 },
-      { cssVar: "--color-surface-100", label: "Surface 100", l: 96, c: 3 },
-      { cssVar: "--color-surface-200", label: "Surface 200", l: 92, c: 4 },
+      { cssVar: "--color-surface-50", label: "Surface / Base", l: 98, c: 2 },
+      { cssVar: "--color-surface-100", label: "Surface / Elevated", l: 96, c: 3 },
+      { cssVar: "--color-surface-200", label: "Surface / Muted", l: 92, c: 4 },
     ]
 
-    surfaceScale.forEach((entry) => {
-      upsertNode({
+    const surfaceIds = surfaceScale.reduce<Record<string, string>>((acc, entry) => {
+      const id = upsertTemplateNode({
         type: "relative",
         label: entry.label,
         cssVar: entry.cssVar,
@@ -1605,15 +3292,18 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
           alphaMode: "inherit",
         },
       })
-    })
+      acc[entry.cssVar] = id
+      return acc
+    }, {})
 
     const textScale = [
-      { cssVar: "--color-foreground", label: "Text Primary", l: 20 },
-      { cssVar: "--color-muted-foreground", label: "Text Secondary", l: 40 },
+      { cssVar: "--color-foreground", label: "Text / Primary", l: 20, c: 0 },
+      { cssVar: "--color-muted-foreground", label: "Text / Secondary", l: 40, c: 0 },
+      { cssVar: "--color-foreground-inverse", label: "Text / Inverse", l: 99, c: 1 },
     ]
 
-    textScale.forEach((entry) => {
-      upsertNode({
+    const textIds = textScale.reduce<Record<string, string>>((acc, entry) => {
+      const id = upsertTemplateNode({
         type: "relative",
         label: entry.label,
         cssVar: entry.cssVar,
@@ -1624,29 +3314,51 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
           lMode: "absolute",
           lValue: entry.l,
           cMode: "absolute",
-          cValue: 0,
+          cValue: entry.c,
           hMode: "inherit",
           alphaMode: "inherit",
         },
       })
+      acc[entry.cssVar] = id
+      return acc
+    }, {})
+
+    const borderId = upsertTemplateNode({
+      type: "relative",
+      label: "Border / Default",
+      cssVar: "--color-border-default",
+      position: positionFor(),
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        baseId: brandBaseId,
+        lMode: "absolute",
+        lValue: 82,
+        cMode: "absolute",
+        cValue: 1,
+        hMode: "inherit",
+        alphaMode: "absolute",
+        alphaValue: 60,
+      },
     })
 
     const accentValue = templateAccent.trim()
+    let accentSourceId = brandBaseId
     if (accentValue) {
-      const accentBaseId = upsertNode({
+      const accentBaseId = upsertTemplateNode({
         type: "token",
-        label: "Accent 500",
+        label: "Accent Seed",
         cssVar: "--color-accent-500",
         value: accentValue,
         position: positionFor(),
       })
+      accentSourceId = accentBaseId
 
       const accentScale = [
         { cssVar: "--color-accent-400", label: "Accent 400", l: 8, c: -2 },
         { cssVar: "--color-accent-600", label: "Accent 600", l: -6, c: -3 },
       ]
       accentScale.forEach((entry) => {
-        upsertNode({
+        upsertTemplateNode({
           type: "relative",
           label: entry.label,
           cssVar: entry.cssVar,
@@ -1665,13 +3377,146 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       })
     }
 
-    const accentSemanticId = upsertNode({
-      type: "semantic",
+    const accentPrimaryId = upsertTemplateNode({
+      type: "relative",
       label: "Accent / Primary",
-      role: "accent",
+      cssVar: "--color-accent-primary",
       position: positionFor(),
+      relative: {
+        model: DEFAULT_COLOR_MODEL,
+        baseId: accentSourceId,
+        lMode: accentValue ? "inherit" : "delta",
+        lValue: accentValue ? undefined : -6,
+        cMode: accentValue ? "inherit" : "delta",
+        cValue: accentValue ? undefined : -3,
+        hMode: "inherit",
+        alphaMode: "inherit",
+      },
     })
-    ensureEdge(brandBaseId, accentSemanticId, "map")
+
+    const frameworkTokenId = (
+      framework: ColorCanvasFrameworkId,
+      presetIndex: number
+    ) =>
+      upsertTemplateNode({
+        type: "semantic",
+        label: formatFunctionalTokenLabel(FUNCTIONAL_TOKEN_PRESETS[framework][presetIndex]),
+        cssVar: FUNCTIONAL_TOKEN_PRESETS[framework][presetIndex].cssVar,
+        role: FUNCTIONAL_TOKEN_PRESETS[framework][presetIndex].role,
+        framework,
+        semanticKind: "functional",
+        position: positionFor(),
+      })
+
+    const functionalSourceIds: Record<FunctionalTokenSourceId, string> = {
+      surface: surfaceIds["--color-surface-50"],
+      "surface-muted": surfaceIds["--color-surface-200"],
+      text: textIds["--color-foreground"],
+      "text-muted": textIds["--color-muted-foreground"],
+      border: borderId,
+      accent: accentPrimaryId,
+      "accent-contrast": textIds["--color-foreground-inverse"],
+    }
+
+    const semanticRoleMappings: Array<{
+      label: string
+      role: NonNullable<ColorCanvasNode["role"]>
+      sourceId: string
+    }> = [
+      {
+        label: "Text / Foreground",
+        role: "text",
+        sourceId:
+          selectedTemplateKit.framework === "shadcn"
+            ? frameworkTokenId("shadcn", 1)
+            : selectedTemplateKit.framework === "radix"
+              ? frameworkTokenId("radix", 2)
+              : textIds["--color-foreground"],
+      },
+      {
+        label: "Surface / Base",
+        role: "surface",
+        sourceId:
+          selectedTemplateKit.framework === "shadcn"
+            ? frameworkTokenId("shadcn", 0)
+            : selectedTemplateKit.framework === "radix"
+              ? frameworkTokenId("radix", 0)
+              : surfaceIds["--color-surface-50"],
+      },
+      {
+        label: "Border / Default",
+        role: "border",
+        sourceId:
+          selectedTemplateKit.framework === "shadcn"
+            ? frameworkTokenId("shadcn", 10)
+            : selectedTemplateKit.framework === "radix"
+              ? frameworkTokenId("radix", 4)
+              : borderId,
+      },
+      {
+        label: "Accent / Primary",
+        role: "accent",
+        sourceId:
+          selectedTemplateKit.framework === "shadcn"
+            ? frameworkTokenId("shadcn", 6)
+            : selectedTemplateKit.framework === "radix"
+              ? frameworkTokenId("radix", 5)
+              : accentPrimaryId,
+      },
+      {
+        label: "Icon / Default",
+        role: "icon",
+        sourceId:
+          selectedTemplateKit.framework === "radix"
+            ? frameworkTokenId("radix", 8)
+            : textIds["--color-foreground"],
+      },
+    ]
+
+    if (selectedTemplateKit.framework) {
+      FUNCTIONAL_TOKEN_PRESETS[selectedTemplateKit.framework].forEach((preset) => {
+        const functionalId = upsertTemplateNode({
+          type: "semantic",
+          label: formatFunctionalTokenLabel(preset),
+          cssVar: preset.cssVar,
+          role: preset.role,
+          framework: preset.framework,
+          semanticKind: "functional",
+          position: positionFor(),
+        })
+        ensureEdge(functionalSourceIds[preset.source], functionalId, "map", {
+          note: `${getFrameworkLabel(preset.framework)} token`,
+        })
+      })
+    }
+
+    semanticRoleMappings.forEach((entry) => {
+      const semanticId = upsertTemplateNode({
+        type: "semantic",
+        label: entry.label,
+        role: entry.role,
+        semanticKind: "role",
+        position: positionFor(),
+      })
+      ensureEdge(entry.sourceId, semanticId, "map", { note: "Semantic role" })
+    })
+
+    setShowAdvancedAuditControls(false)
+    setConnectMode(null)
+    setConnectSourceId(null)
+    setConnectDrag({ active: false, x: 0, y: 0 })
+    setSelectedAutoEdgeId(null)
+    setPanelMode("inspector")
+    setShowDependencies(true)
+    setAutoContrastEnabled(false)
+    setShowFullLabels(false)
+    setEdgeFilter("map")
+    setColorAuditLayoutMode("flow")
+    setPendingColorAuditLayoutMode("flow")
+    setPendingColorAuditViewportAction("bird-view")
+    if (!templateBrand.trim()) {
+      setTemplateBrand(brandValue)
+    }
   }
 
   const applyDesignSystemThemeVars = useCallback(() => {
@@ -1725,6 +3570,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
         type: "semantic",
         label: blueprint.semanticLabel,
         role: blueprint.role,
+        semanticKind: "role",
         group: "system-support",
         position: positionFor(),
       })
@@ -2868,6 +4714,42 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     }
   }
 
+  const applyAuditFocusMode = useCallback(
+    (mode: ColorAuditFocusMode) => {
+      setShowAdvancedAuditControls(false)
+      setConnectSourceId(null)
+      setConnectDrag({ active: false, x: 0, y: 0 })
+
+      if (mode === "review") {
+        setConnectMode(null)
+        setEdgeFilter("all")
+        setShowDependencies(true)
+        setAutoContrastEnabled(true)
+        setShowFullLabels(false)
+        setPanelMode("inspector")
+        return
+      }
+
+      if (mode === "build") {
+        setConnectMode("map")
+        setEdgeFilter("map")
+        setShowDependencies(true)
+        setAutoContrastEnabled(false)
+        setShowFullLabels(false)
+        setPanelMode("inspector")
+        return
+      }
+
+      setConnectMode("contrast")
+      setEdgeFilter("contrast")
+      setShowDependencies(false)
+      setAutoContrastEnabled(true)
+      setShowFullLabels(false)
+      setPanelMode("audit")
+    },
+    [setAutoContrastEnabled, setShowAdvancedAuditControls]
+  )
+
   const handleCanvasViewModeChange = useCallback(
     (nextMode: CanvasViewMode) => {
       setCanvasViewMode(nextMode)
@@ -2893,6 +4775,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       setSelectedAutoEdgeId(null)
       if (nextMode === "color-audit") {
         setCanvasViewMode("color")
+        setPendingColorAuditViewportAction("bird-view")
         return
       }
       if (canvasViewMode === "color") {
@@ -2916,6 +4799,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
         removeEdge(selectedEdgeId)
         return
       }
+      if ((event.key === "Backspace" || event.key === "Delete") && selectedNodeId) {
+        event.preventDefault()
+        removeNode(selectedNodeId)
+        return
+      }
       const isUndo = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z"
       if (isUndo && canUndoEdgeRemoval) {
         event.preventDefault()
@@ -2925,7 +4813,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [selectedEdgeId, removeEdge, undoRemoveEdge, canUndoEdgeRemoval])
+  }, [selectedEdgeId, selectedNodeId, removeEdge, removeNode, undoRemoveEdge, canUndoEdgeRemoval])
 
   const selectedNode = selectedNodeId ? nodesById[selectedNodeId] : null
   const manualEdges = useMemo<DisplayEdge[]>(
@@ -2967,7 +4855,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     if (isRelationshipMode) {
       return {
         positions: {} as Record<string, { x: number; y: number }>,
-        sections: [] as SystemSectionFrame[],
+        sections: [] as CanvasSectionFrame[],
         width: 1280,
         height: 880,
       }
@@ -2994,10 +4882,731 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       return acc
     }, {})
   }, [renderedNodes])
-  const systemSectionFrames = useMemo(() => {
-    if (isRelationshipMode) return [] as SystemSectionFrame[]
+  const nodeCatalogGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { id: string; label: string; weight: number; nodes: ColorCanvasNode[] }
+    >()
 
-    return SYSTEM_SECTION_ORDER.reduce<SystemSectionFrame[]>((acc, sectionId) => {
+    renderedNodes.forEach((node) => {
+      const meta = (() => {
+        if (node.preview) {
+          return { id: "preview", label: "Preview", weight: 70 }
+        }
+        if (node.group === "system-support") {
+          return { id: "system-support", label: "System support", weight: 60 }
+        }
+        if (node.type === "token") {
+          return { id: "palette", label: "Palette input", weight: 10 }
+        }
+        if (node.type === "relative") {
+          return { id: "relative", label: "Relative rule", weight: 20 }
+        }
+        if (isFunctionalTokenNode(node)) {
+          const frameworkLabel = getFrameworkLabel(node.framework)
+          return {
+            id: `functional-${node.framework ?? "custom"}`,
+            label: frameworkLabel ? `Functional alias · ${frameworkLabel}` : "Functional alias",
+            weight: 30,
+          }
+        }
+        if (node.type === "semantic") {
+          return { id: "semantic", label: "Semantic role", weight: 40 }
+        }
+        if (node.type === "component") {
+          return { id: "component", label: "Component example", weight: 50 }
+        }
+        return { id: "other", label: "Other", weight: 80 }
+      })()
+
+      if (!groups.has(meta.id)) {
+        groups.set(meta.id, { ...meta, nodes: [] })
+      }
+      groups.get(meta.id)?.nodes.push(node)
+    })
+
+    return Array.from(groups.values())
+      .sort((left, right) => left.weight - right.weight || left.label.localeCompare(right.label))
+      .map((group) => ({
+        ...group,
+        nodes: [...group.nodes].sort((left, right) =>
+          getDisplayNodeLabelFromNode(left).localeCompare(getDisplayNodeLabelFromNode(right))
+        ),
+      }))
+  }, [renderedNodes])
+  const nodeCatalogSampleNode = useMemo(() => {
+    if (selectedNode && renderedNodesById[selectedNode.id]) {
+      return renderedNodesById[selectedNode.id]
+    }
+    return renderedNodes[0] ?? null
+  }, [renderedNodes, renderedNodesById, selectedNode])
+  const allNodeCatalogSections = useMemo(() => {
+    if (!catalogOnly) return [] as NodeCatalogSection[]
+
+    const baseType = designSystem.typography.find((step) => step.id === "base")
+    const displayType = designSystem.typography.find((step) => step.id === "3xl")
+    const iconMd = designSystem.icons.find((icon) => icon.id === "md") ?? designSystem.icons[0]
+    const iconXl = designSystem.icons.find((icon) => icon.id === "xl") ?? designSystem.icons.at(-1)
+    const activeIconLibraryLabel = getDesignSystemIconLibraryLabel(activeIconLibraryId)
+    const recommendedStrokeRange =
+      activeFontWeightSans >= 600 ? "1.75-2px" : activeFontWeightSans <= 350 ? "1-1.25px" : "1.5px"
+    const sampleViewports = [
+      designSystem.config.minViewportPx,
+      Math.round((designSystem.config.minViewportPx + designSystem.config.maxViewportPx) / 2),
+      designSystem.config.maxViewportPx,
+    ]
+
+    const buildTypeViewportSamples = (step?: TypographyScaleToken) =>
+      step
+        ? sampleViewports.map((viewportPx, index) => ({
+            label: index === 0 ? "Min" : index === 1 ? "Mid" : "Max",
+            viewportPx,
+            fontPx: resolveFluidValuePx(
+              step.minPx,
+              step.maxPx,
+              designSystem.config.minViewportPx,
+              designSystem.config.maxViewportPx,
+              viewportPx
+            ),
+            lineHeightPx: resolveFluidValuePx(
+              step.lineHeightMinPx,
+              step.lineHeightMaxPx,
+              designSystem.config.minViewportPx,
+              designSystem.config.maxViewportPx,
+              viewportPx
+            ),
+          }))
+        : []
+
+    const buildIconViewportSamples = (icon?: IconScaleToken) =>
+      icon
+        ? sampleViewports.map((viewportPx, index) => ({
+            label: index === 0 ? "Min" : index === 1 ? "Mid" : "Max",
+            viewportPx,
+            iconPx: resolveFluidValuePx(
+              icon.minPx,
+              icon.maxPx,
+              designSystem.config.minViewportPx,
+              designSystem.config.maxViewportPx,
+              viewportPx
+            ),
+          }))
+        : []
+
+    const buildLayoutViewportSamples = (
+      recipe: LayoutRecipe | undefined,
+      step?: TypographyScaleToken,
+      icon?: IconScaleToken
+    ) =>
+      !recipe
+        ? []
+        : sampleViewports.map((viewportPx, index) => ({
+            label: index === 0 ? "Min" : index === 1 ? "Mid" : "Max",
+            viewportPx,
+            fontPx: step
+              ? resolveFluidValuePx(
+                  step.minPx,
+                  step.maxPx,
+                  designSystem.config.minViewportPx,
+                  designSystem.config.maxViewportPx,
+                  viewportPx
+                )
+              : undefined,
+            iconPx: icon
+              ? resolveFluidValuePx(
+                  icon.minPx,
+                  icon.maxPx,
+                  designSystem.config.minViewportPx,
+                  designSystem.config.maxViewportPx,
+                  viewportPx
+                )
+              : undefined,
+            gapPx: resolveFluidValuePx(
+              designSystem.spacing.find((space) => space.cssVar === recipe.gapVar)?.minPx ?? 0,
+              designSystem.spacing.find((space) => space.cssVar === recipe.gapVar)?.maxPx ?? 0,
+              designSystem.config.minViewportPx,
+              designSystem.config.maxViewportPx,
+              viewportPx
+            ),
+            paddingPx: resolveFluidValuePx(
+              designSystem.spacing.find((space) => space.cssVar === recipe.paddingVar)?.minPx ?? 0,
+              designSystem.spacing.find((space) => space.cssVar === recipe.paddingVar)?.maxPx ?? 0,
+              designSystem.config.minViewportPx,
+              designSystem.config.maxViewportPx,
+              viewportPx
+            ),
+            columns:
+              recipe.direction === "grid"
+                ? resolveLayoutColumns(recipe.columns, viewportPx)
+                : recipe.id === "hero-split"
+                  ? viewportPx <= 720
+                    ? 1
+                    : 2
+                  : 1,
+          }))
+
+    const buildPreviewNode = (
+      id: string,
+      label: string,
+      preview: ColorCanvasNodePreview,
+      role?: NonNullable<ColorCanvasNode["role"]>
+    ): ColorCanvasNode => ({
+      id,
+      type: "component",
+      label,
+      role,
+      group: "system-preview",
+      preview,
+      size: getPreviewNodeSize(preview.kind, "fit-width"),
+      position: { x: 0, y: 0 },
+    })
+
+    const resolveSystemColorValue = (cssVar: string, fallback: string) =>
+      tokenValues[cssVar] || fallback
+
+    const colorSupportSection: NodeCatalogSection = {
+      id: "system-support",
+      mode: "system-canvas",
+      label: "System Canvas / Support nodes",
+      description: "Color seeds, relative rules, and semantic support roles that feed the preview graph.",
+      nodes: [
+        {
+          id: "catalog-system-brand-seed",
+          type: "token",
+          label: "Color / Brand Seed",
+          value: resolveSystemColorValue("--color-brand-500", formatTemplateSeedOklch(DEFAULT_TEMPLATE_SEEDS.brand)),
+          group: "system-support",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "catalog-system-brand-darker",
+          type: "relative",
+          label: "Color Rule / Brand Darker",
+          value: resolveSystemColorValue("--color-brand-600", "oklch(56% 0.16 255)"),
+          group: "system-support",
+          relative: {
+            model: DEFAULT_COLOR_MODEL,
+            baseId: "catalog-system-brand-seed",
+            lMode: "delta",
+            lValue: -6,
+            cMode: "delta",
+            cValue: -3,
+            hMode: "inherit",
+            alphaMode: "inherit",
+          },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "catalog-system-surface-rule",
+          type: "relative",
+          label: "Color Rule / Surface",
+          role: "surface",
+          value: resolveSystemColorValue("--color-surface", "oklch(98% 0.01 255)"),
+          group: "system-support",
+          relative: {
+            model: DEFAULT_COLOR_MODEL,
+            baseId: "catalog-system-brand-seed",
+            lMode: "absolute",
+            lValue: 98,
+            cMode: "absolute",
+            cValue: 1,
+            hMode: "inherit",
+            alphaMode: "inherit",
+          },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "catalog-system-text-rule",
+          type: "relative",
+          label: "Color Rule / Text",
+          role: "text",
+          value: resolveSystemColorValue("--color-foreground", "oklch(20% 0 255)"),
+          group: "system-support",
+          relative: {
+            model: DEFAULT_COLOR_MODEL,
+            baseId: "catalog-system-brand-seed",
+            lMode: "absolute",
+            lValue: 20,
+            cMode: "absolute",
+            cValue: 0,
+            hMode: "inherit",
+            alphaMode: "inherit",
+          },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "catalog-system-border-rule",
+          type: "relative",
+          label: "Color Rule / Border",
+          role: "border",
+          value: resolveSystemColorValue("--color-border-default", "oklch(82% 0.01 255 / 60%)"),
+          group: "system-support",
+          relative: {
+            model: DEFAULT_COLOR_MODEL,
+            baseId: "catalog-system-brand-seed",
+            lMode: "absolute",
+            lValue: 82,
+            cMode: "absolute",
+            cValue: 1,
+            hMode: "inherit",
+            alphaMode: "absolute",
+            alphaValue: 60,
+          },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "catalog-system-inverse",
+          type: "relative",
+          label: "Color / Inverse",
+          role: "text",
+          value: resolveSystemColorValue("--color-inverse", "oklch(99% 0.01 255)"),
+          group: "system-support",
+          relative: {
+            model: DEFAULT_COLOR_MODEL,
+            baseId: "catalog-system-brand-seed",
+            lMode: "absolute",
+            lValue: 99,
+            cMode: "absolute",
+            cValue: 1,
+            hMode: "inherit",
+            alphaMode: "inherit",
+          },
+          position: { x: 0, y: 0 },
+        },
+        ...FOUNDATION_ROLE_BLUEPRINTS.map((blueprint) => ({
+          id: `catalog-system-role-${slugifyTokenLabel(blueprint.semanticLabel)}`,
+          type: "semantic" as const,
+          label: blueprint.semanticLabel,
+          role: blueprint.role,
+          semanticKind: "role" as const,
+          value: resolveSystemColorValue(blueprint.cssVar, blueprint.role === "surface" ? "oklch(98% 0.01 255)" : blueprint.role === "border" ? "oklch(82% 0.01 255 / 60%)" : blueprint.role === "accent" ? "oklch(56% 0.16 255)" : "oklch(20% 0 255)"),
+          group: "system-support" as const,
+          position: { x: 0, y: 0 },
+        })),
+      ],
+    }
+
+    const typeScaleItems = designSystem.typography.slice(0, 5).map((item) => ({
+      label: item.label,
+      cssVar: item.cssVar,
+      secondaryVar: item.lineHeightVar,
+      fontFamilyVar: item.fontFamilyKey === "display" ? "--font-family-display" : "--font-family-sans",
+      sampleText: item.sampleText,
+      minPx: item.minPx,
+      maxPx: item.maxPx,
+    }))
+
+    const iconScaleItems = designSystem.icons.slice(0, 4).map((item) => ({
+      label: item.label,
+      cssVar: item.cssVar,
+      iconKey: item.id === "sm" ? "search" : item.id === "md" ? "grid" : item.id === "lg" ? "accent" : "action",
+      pairedLabel: item.pairedTypographyId,
+      minPx: item.minPx,
+      maxPx: item.maxPx,
+    }))
+
+    const explainersSection: NodeCatalogSection = {
+      id: "system-explainers",
+      mode: "system-canvas",
+      label: "System Canvas / Explainers",
+      description: "Connector-detail nodes that explain how Utopia, Capsize, color roles, layout response, and export bridges work.",
+      nodes: [
+        buildPreviewNode("catalog-preview-explain-colors", "Explain / Color Roles", {
+          kind: "connector-detail",
+          sectionId: "colors",
+          badge: "Role logic",
+          note: "Brand seed becomes semantic UI roles through relative OKLCH rules and mapping.",
+          tokens: ["--color-brand-500", "--color-surface", "--color-foreground", "--color-border-default"],
+        }),
+        buildPreviewNode("catalog-preview-explain-capsize", "Explain / Capsize", {
+          kind: "connector-detail",
+          sectionId: "type",
+          badge: "Capsize",
+          note: "Font metrics drive cap trim, baseline trim, and line-height rhythm.",
+          tokens: ["--font-family-sans", "--line-height-base", "--line-height-3xl"],
+        }),
+        buildPreviewNode("catalog-preview-explain-utopia", "Explain / Utopia", {
+          kind: "connector-detail",
+          sectionId: "type",
+          badge: "Utopia",
+          note: "A fluid type ratio expands into responsive type, spacing, and icon scales.",
+          tokens: ["--font-size-base", "--font-size-3xl", "--space-400", "--icon-size-md"],
+        }),
+        buildPreviewNode("catalog-preview-explain-icons", "Explain / Icon Pairing", {
+          kind: "connector-detail",
+          sectionId: "type",
+          badge: "Icon rule",
+          note: "Icon container and stroke stay optically matched to the chosen font weights.",
+          tokens: ["--icon-size-md", "--icon-stroke", "--font-size-base"],
+        }),
+        buildPreviewNode("catalog-preview-explain-layout", "Explain / Layout Response", {
+          kind: "connector-detail",
+          sectionId: "layout",
+          badge: "Responsive recipe",
+          note: "Layouts consume fluid spacing and type tokens instead of fixed breakpoint-only values.",
+          tokens: ["--space-300", "--space-500", "--font-size-base"],
+        }),
+        buildPreviewNode("catalog-preview-explain-primitives", "Explain / Primitive Contract", {
+          kind: "connector-detail",
+          sectionId: "primitives",
+          badge: "Primitive contract",
+          note: "Primitives read the same generated token contract that the preview graph exposes.",
+          tokens: ["--size-control-md", "--radius", "--color-surface"],
+        }),
+        buildPreviewNode("catalog-preview-explain-standards", "Explain / Export Bridge", {
+          kind: "connector-detail",
+          sectionId: "standards",
+          badge: "Adapter logic",
+          note: "Generated tokens bridge into DTCG documents and framework-specific variable layers.",
+          tokens: ["--ds-font-size-base", "--default-font-family", "--space-4"],
+        }),
+      ],
+    }
+
+    const typeSection: NodeCatalogSection = {
+      id: "system-type",
+      mode: "system-canvas",
+      label: "System Canvas / Type + Icons",
+      description: "Font metrics, fluid type scales, icon stroke pairing, library selection, and icon tiers.",
+      nodes: [
+        buildPreviewNode("catalog-preview-font-sans", "Font / Sans Metrics", {
+          kind: "font-family",
+          badge: "Capsize metrics",
+          cssVar: "--font-size-base",
+          secondaryVar: "--line-height-base",
+          fontFamilyVar: "--font-family-sans",
+          sampleText: baseType?.sampleText,
+          scaleItems: typeScaleItems,
+          viewportSamples: buildTypeViewportSamples(baseType),
+          mappings: [
+            { label: "Body weight", value: String(activeFontWeightSans) },
+            { label: "Fluid size", value: baseType?.clamp || "—" },
+          ],
+        }),
+        buildPreviewNode("catalog-preview-font-display", "Font / Display Metrics", {
+          kind: "font-family",
+          badge: "Capsize metrics",
+          cssVar: "--font-size-3xl",
+          secondaryVar: "--line-height-3xl",
+          fontFamilyVar: "--font-family-display",
+          sampleText: displayType?.sampleText,
+          scaleItems: typeScaleItems,
+          viewportSamples: buildTypeViewportSamples(displayType),
+          mappings: [
+            { label: "Display weight", value: String(activeFontWeightDisplay) },
+            { label: "Fluid size", value: displayType?.clamp || "—" },
+          ],
+        }),
+        buildPreviewNode("catalog-preview-type-base", "Type / Base Scale", {
+          kind: "type-scale",
+          badge: "Utopia + Capsize",
+          cssVar: "--font-size-base",
+          secondaryVar: "--line-height-base",
+          fontFamilyVar: "--font-family-sans",
+          sampleText: baseType?.sampleText,
+          note: baseType ? `${baseType.minPx}-${baseType.maxPx}px fluid size` : undefined,
+          scaleItems: typeScaleItems,
+          viewportSamples: buildTypeViewportSamples(baseType),
+        }, "text"),
+        buildPreviewNode("catalog-preview-type-display", "Type / Display Scale", {
+          kind: "type-scale",
+          badge: "Utopia + Capsize",
+          cssVar: "--font-size-3xl",
+          secondaryVar: "--line-height-3xl",
+          fontFamilyVar: "--font-family-display",
+          sampleText: displayType?.sampleText,
+          note: displayType ? `${displayType.minPx}-${displayType.maxPx}px fluid size` : undefined,
+          scaleItems: typeScaleItems,
+          viewportSamples: buildTypeViewportSamples(displayType),
+        }, "text"),
+        buildPreviewNode("catalog-preview-stroke-pair", "Icon / Stroke Pair", {
+          kind: "stroke-pair",
+          badge: "Font + icon pair",
+          cssVar: "--icon-size-md",
+          secondaryVar: "--font-size-base",
+          fontFamilyVar: "--font-family-sans",
+          paddingVar: "--line-height-base",
+          iconLibraryId: activeIconLibraryId,
+          sampleText: "Stroke weight tracks the body rhythm.",
+          scaleItems: iconScaleItems,
+          viewportSamples: buildIconViewportSamples(iconMd),
+          mappings: [
+            { label: "Stroke", value: designSystem.cssVars["--icon-stroke"] || "—" },
+            { label: "Suggested stroke", value: recommendedStrokeRange },
+          ],
+        }, "icon"),
+        buildPreviewNode("catalog-preview-icon-library", "Icon / Library", {
+          kind: "icon-library",
+          badge: "Icon library",
+          cssVar: "--icon-size-md",
+          iconLibraryId: activeIconLibraryId,
+          iconKeys: ["type", "grid", "split", "accent", "action", "search"],
+          note: `${activeIconLibraryLabel} icons are active for the preview graph.`,
+          scaleItems: iconScaleItems,
+          viewportSamples: buildIconViewportSamples(iconMd),
+        }, "icon"),
+        buildPreviewNode("catalog-preview-icon-scale", "Icon / Action Scale", {
+          kind: "icon-scale",
+          badge: "Icon tier",
+          cssVar: "--icon-size-md",
+          iconLibraryId: activeIconLibraryId,
+          note: iconMd ? `${iconMd.minPx}-${iconMd.maxPx}px aligned to body line height` : undefined,
+          scaleItems: iconScaleItems,
+          viewportSamples: buildIconViewportSamples(iconMd),
+          mappings: [
+            { label: "Paired tier", value: iconMd?.pairedTypographyId || "—" },
+            { label: "Large tier", value: iconXl?.pairedTypographyId || "—" },
+          ],
+        }, "icon"),
+      ],
+    }
+
+    const stackLayout = designSystem.layouts.find((layout) => layout.id === "stack-flow")
+    const gridLayout = designSystem.layouts.find((layout) => layout.id === "feature-grid")
+    const splitLayout = designSystem.layouts.find((layout) => layout.id === "hero-split")
+
+    const layoutSection: NodeCatalogSection = {
+      id: "system-layout",
+      mode: "system-canvas",
+      label: "System Canvas / Layouts",
+      description: "Responsive layout recipes built from the same fluid type, space, and icon system.",
+      nodes: [
+        buildPreviewNode("catalog-preview-layout-stack", "Layout / Stack Flow", {
+          kind: "layout-stack",
+          badge: "Layout recipe",
+          gapVar: "--space-300",
+          paddingVar: "--space-400",
+          iconLibraryId: activeIconLibraryId,
+          viewportSamples: buildLayoutViewportSamples(stackLayout, baseType, iconMd),
+        }),
+        buildPreviewNode("catalog-preview-layout-grid", "Layout / Feature Grid", {
+          kind: "layout-grid",
+          badge: "Layout recipe",
+          gapVar: "--space-400",
+          paddingVar: "--space-500",
+          columns: 3,
+          iconLibraryId: activeIconLibraryId,
+          viewportSamples: buildLayoutViewportSamples(gridLayout, baseType, iconMd),
+        }),
+        buildPreviewNode("catalog-preview-layout-split", "Layout / Hero Split", {
+          kind: "layout-split",
+          badge: "Layout recipe",
+          gapVar: "--space-600",
+          paddingVar: "--space-600",
+          iconLibraryId: activeIconLibraryId,
+          viewportSamples: buildLayoutViewportSamples(splitLayout, displayType, iconXl),
+        }),
+      ],
+    }
+
+    const primitivesSection: NodeCatalogSection = {
+      id: "system-primitives",
+      mode: "system-canvas",
+      label: "System Canvas / Primitives",
+      description: "Web-native primitives that consume the generated token contract directly.",
+      nodes: [
+        buildPreviewNode("catalog-preview-primitive-text", "Primitive / Text", {
+          kind: "primitive-text",
+          badge: "Primitive",
+          sampleText: "The same token contract now renders directly on the canvas.",
+        }, "text"),
+        buildPreviewNode("catalog-preview-primitive-heading", "Primitive / Heading", {
+          kind: "primitive-heading",
+          badge: "Primitive",
+          sampleText: "Generated display primitives",
+        }, "text"),
+        buildPreviewNode("catalog-preview-primitive-button", "Primitive / Button", {
+          kind: "primitive-button",
+          badge: "Primitive",
+          sampleText: "Preview CTA",
+          size: "md",
+          variant: "primary",
+        }, "accent"),
+        buildPreviewNode("catalog-preview-primitive-surface", "Primitive / Surface", {
+          kind: "primitive-surface",
+          badge: "Primitive",
+          sampleText: "Preview generated from the design-system API",
+          note: "Surface, border, radius, shadow, and type all resolve from generated vars.",
+        }, "surface"),
+      ],
+    }
+
+    const standardsSection: NodeCatalogSection = {
+      id: "system-standards",
+      mode: "system-canvas",
+      label: "System Canvas / Standards",
+      description: "Export and adapter nodes for DTCG-style tokens and Radix Themes bridges.",
+      nodes: [
+        buildPreviewNode("catalog-preview-dtcg", "Token Standard / DTCG", {
+          kind: "token-standard",
+          badge: "DTCG export",
+          note: "Design tokens exported as a standard document with cssVar + alias metadata.",
+          mappings: [
+            { label: "Token count", value: String(designSystem.tokens.length) },
+            { label: "Alias vars", value: String(Object.keys(designSystem.aliasVars).length) },
+          ],
+          codeLanguage: "json",
+          code: designSystem.dtcgJson,
+        }),
+        buildPreviewNode("catalog-preview-radix", "Radix / Theme Bridge", {
+          kind: "radix-theme",
+          badge: "Radix adapter",
+          note: "Maps ds-scale aliases into Radix Themes variables and accent tokens.",
+          mappings: designSystem.radix.mappings.slice(0, 8).map((mapping) => ({
+            label: mapping.radixVar,
+            value: mapping.sourceVar,
+          })),
+          codeLanguage: "css",
+          code: `${designSystem.radix.layersCssText}\n\n${designSystem.radix.cssText}`,
+        }),
+      ],
+    }
+
+    return [
+      buildColorAuditManualCatalogSection(),
+      ...COLOR_TEMPLATE_KITS.map((kit) => buildTemplateCatalogSection(kit)),
+      colorSupportSection,
+      explainersSection,
+      typeSection,
+      layoutSection,
+      primitivesSection,
+      standardsSection,
+    ]
+  }, [
+    activeFontWeightDisplay,
+    activeFontWeightSans,
+    activeIconLibraryId,
+    catalogOnly,
+    designSystem.aliasVars,
+    designSystem.config.maxViewportPx,
+    designSystem.config.minViewportPx,
+    designSystem.cssVars,
+    designSystem.dtcgJson,
+    designSystem.icons,
+    designSystem.layouts,
+    designSystem.radix.cssText,
+    designSystem.radix.layersCssText,
+    designSystem.radix.mappings,
+    designSystem.spacing,
+    designSystem.tokens.length,
+    designSystem.typography,
+    tokenValues,
+  ])
+  const allNodeCatalogNodes = useMemo(
+    () => allNodeCatalogSections.flatMap((section) => section.nodes),
+    [allNodeCatalogSections]
+  )
+  const workspaceCatalogSections = useMemo<WorkspaceCatalogSection[]>(
+    () => [
+      {
+        id: "canvas-workspace-basics",
+        label: "Canvas / Workspace basics",
+        description: "Top-level freeform and grouped items in the general Canvas mode.",
+        items: [
+          {
+            id: "workspace-artboard",
+            label: "Artboard",
+            kind: "Layout container",
+            description: "Groups sections, layout children, and theme/audit context on one board.",
+            previewKind: "artboard",
+          },
+          {
+            id: "workspace-component",
+            label: "Component Variant",
+            kind: "Interactive component",
+            description: "A rendered gallery component variant with props, states, and layout placement.",
+            previewKind: "component",
+          },
+          {
+            id: "workspace-embed",
+            label: "Embed Preview",
+            kind: "External content",
+            description: "Website or app preview via iframe, live mode, or captured snapshot.",
+            previewKind: "embed",
+          },
+        ],
+      },
+      {
+        id: "canvas-workspace-rich-content",
+        label: "Canvas / Rich content",
+        description: "Media, notes, and diagram surfaces available in the main Canvas workspace.",
+        items: [
+          {
+            id: "workspace-media",
+            label: "Media Asset",
+            kind: "Image / video / GIF",
+            description: "Dropped or imported visual assets with fit, poster, and playback controls.",
+            previewKind: "media",
+          },
+          {
+            id: "workspace-mermaid",
+            label: "Mermaid Diagram",
+            kind: "Diagram node",
+            description: "Structured Mermaid source rendered directly on the board and editable in props.",
+            previewKind: "mermaid",
+          },
+          {
+            id: "workspace-excalidraw",
+            label: "Excalidraw Sketch",
+            kind: "Wireframe / whiteboard",
+            description: "Loose wireframes, rough flows, and diagram sketches stored as Excalidraw scenes.",
+            previewKind: "excalidraw",
+          },
+          {
+            id: "workspace-markdown",
+            label: "Markdown Note",
+            kind: "Documentation node",
+            description: "Notes, specs, and imported markdown files that live beside components and diagrams.",
+            previewKind: "markdown",
+          },
+        ],
+      },
+    ],
+    []
+  )
+  const scrollToCatalogSection = useCallback((id: string) => {
+    if (typeof document === "undefined") return
+    document.getElementById(`node-catalog-section-${id}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    })
+  }, [])
+  const allNodeCatalogNodesById = useMemo(
+    () =>
+      allNodeCatalogNodes.reduce<Record<string, ColorCanvasNode>>((acc, node) => {
+        acc[node.id] = node
+        return acc
+      }, {}),
+    [allNodeCatalogNodes]
+  )
+  const nodeCatalogPreviewNode = useMemo(
+    () => allNodeCatalogNodes.find((node) => node.preview) ?? allNodeCatalogNodes[0] ?? null,
+    [allNodeCatalogNodes]
+  )
+  const getCatalogNodeColor = useCallback(
+    (nodeId: string) => allNodeCatalogNodesById[nodeId]?.value || null,
+    [allNodeCatalogNodesById]
+  )
+  const getCatalogNodeExpression = useCallback((nodeId: string) => {
+    const node = allNodeCatalogNodesById[nodeId]
+    if (!node) return null
+    return node.value || (node.cssVar ? `var(${node.cssVar})` : null)
+  }, [allNodeCatalogNodesById])
+  const getCatalogNodeIsP3 = useCallback((nodeId: string) => {
+    const node = allNodeCatalogNodesById[nodeId]
+    if (!node?.value) return false
+    if (node.value.startsWith("color(display-p3")) return true
+    const parsed = parseOklch(node.value)
+    return parsed ? isOutOfGamut(oklchToLinearSrgb(parsed)) : false
+  }, [allNodeCatalogNodesById])
+  const getCatalogNodeLabel = useCallback(
+    (nodeId: string) => getDisplayNodeLabelFromNode(allNodeCatalogNodesById[nodeId]) || nodeId,
+    [allNodeCatalogNodesById]
+  )
+  const systemSectionFrames = useMemo(() => {
+    if (isRelationshipMode) return [] as CanvasSectionFrame[]
+
+    return SYSTEM_SECTION_ORDER.reduce<CanvasSectionFrame[]>((acc, sectionId) => {
       const sectionNodes = renderedNodes.filter((node) => getSystemSectionId(node) === sectionId)
       if (sectionNodes.length === 0) return acc
 
@@ -3033,6 +5642,60 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       return acc
     }, [])
   }, [getNodeSize, isRelationshipMode, renderedNodes])
+  const colorAuditSectionFrames = useMemo(() => {
+    if (
+      canvasMode !== "color-audit" ||
+      isRelationshipMode ||
+      colorAuditLayoutMode === "freeform"
+    ) {
+      return [] as CanvasSectionFrame[]
+    }
+
+    const laneMeta = COLOR_AUDIT_LANE_META[colorAuditLayoutMode]
+    const laneOrder = Object.keys(laneMeta)
+
+    return laneOrder.reduce<CanvasSectionFrame[]>((acc, laneId) => {
+      const laneNodes = renderedNodes.filter((node) => {
+        if (colorAuditLayoutMode === "flow" || colorAuditLayoutMode === "center") {
+          return getColorAuditStructuredLaneId(node, colorAuditLayoutMode) === laneId
+        }
+        return inferColorAuditRoleLane(node) === laneId
+      })
+      if (laneNodes.length === 0) return acc
+
+      const bounds = laneNodes.reduce(
+        (result, node) => {
+          const size = getNodeSize(node)
+          return {
+            minX: Math.min(result.minX, node.position.x),
+            minY: Math.min(result.minY, node.position.y),
+            maxX: Math.max(result.maxX, node.position.x + size.width),
+            maxY: Math.max(result.maxY, node.position.y + size.height),
+          }
+        },
+        {
+          minX: Number.POSITIVE_INFINITY,
+          minY: Number.POSITIVE_INFINITY,
+          maxX: 0,
+          maxY: 0,
+        }
+      )
+
+      const meta = laneMeta[laneId]
+      acc.push({
+        id: laneId,
+        label: meta.label,
+        description: meta.description,
+        nodeIds: laneNodes.map((node) => node.id),
+        x: Math.max(16, bounds.minX - 16),
+        y: Math.max(16, bounds.minY - 52),
+        width: bounds.maxX - bounds.minX + 32,
+        height: bounds.maxY - bounds.minY + 76,
+      })
+      return acc
+    }, [])
+  }, [canvasMode, colorAuditLayoutMode, getNodeSize, isRelationshipMode, renderedNodes])
+  const visibleSectionFrames = canvasMode === "color-audit" ? colorAuditSectionFrames : systemSectionFrames
   const canvasContentSize = useMemo(() => {
     const maxX = renderedNodes.reduce(
       (currentMax, node) => Math.max(currentMax, node.position.x + getNodeSize(node).width),
@@ -3042,11 +5705,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       (currentMax, node) => Math.max(currentMax, node.position.y + getNodeSize(node).height),
       0
     )
-    const sectionMaxX = systemSectionFrames.reduce(
+    const sectionMaxX = visibleSectionFrames.reduce(
       (currentMax, section) => Math.max(currentMax, section.x + section.width),
       0
     )
-    const sectionMaxY = systemSectionFrames.reduce(
+    const sectionMaxY = visibleSectionFrames.reduce(
       (currentMax, section) => Math.max(currentMax, section.y + section.height),
       0
     )
@@ -3074,7 +5737,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     renderedNodes,
     systemCanvasViewportSize.height,
     systemCanvasViewportSize.width,
-    systemSectionFrames,
+    visibleSectionFrames,
   ])
   const systemCanvasViewportItems = useMemo(
     () => [
@@ -3082,14 +5745,36 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
         position: node.position,
         size: getNodeSize(node),
       })),
-      ...systemSectionFrames.map((section) => ({
+      ...visibleSectionFrames.map((section) => ({
         position: { x: section.x, y: section.y },
         size: { width: section.width, height: section.height },
       })),
     ],
-    [getNodeSize, renderedNodes, systemSectionFrames]
+    [getNodeSize, renderedNodes, visibleSectionFrames]
   )
   const visibleNodeIds = useMemo(() => new Set(renderedNodes.map((node) => node.id)), [renderedNodes])
+  const handleArrangeColorAudit = useCallback(
+    (mode: ColorAuditLayoutMode) => {
+      setColorAuditLayoutMode(mode)
+      if (mode === "freeform") return
+      const viewportWidth = systemCanvasViewportSize.width || workspaceRef.current?.clientWidth || 1280
+      const positions = buildColorAuditLayout(visibleNodes, getNodeSize, mode, viewportWidth)
+      visibleNodes.forEach((node) => {
+        const position = positions[node.id]
+        if (!position) return
+        moveNode(node.id, position)
+      })
+      setPendingColorAuditViewportAction("bird-view")
+    },
+    [
+      getNodeSize,
+      moveNode,
+      setColorAuditLayoutMode,
+      setPendingColorAuditViewportAction,
+      systemCanvasViewportSize.width,
+      visibleNodes,
+    ]
+  )
   const systemNodeRequirements = useMemo(
     () => [
       {
@@ -3163,8 +5848,33 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   const selectedEdge = selectedEdgeId
     ? manualEdges.find((edge) => edge.id === selectedEdgeId) ?? null
     : null
+  const selectedPreviewRgba = selectedNode ? resolveNodeRgba(selectedNode.id) : null
   const selectedPreviewColor = selectedNode ? getNodeColor(selectedNode.id) : null
   const selectedPreviewIsP3 = selectedNode ? getNodeIsP3(selectedNode.id) : false
+  const previewSurfaceReferenceColor =
+    tokenValues["--color-surface-50"] ||
+    tokenValues["--color-surface"] ||
+    tokenValues["--background"] ||
+    "#ffffff"
+  const previewForegroundReferenceColor =
+    tokenValues["--color-foreground"] ||
+    tokenValues["--foreground"] ||
+    tokenValues["--color-text"] ||
+    "#111827"
+  const previewInverseReferenceColor =
+    tokenValues["--color-foreground-inverse"] ||
+    tokenValues["--primary-foreground"] ||
+    "#ffffff"
+  const selectedQuickEditRgba = useMemo(() => {
+    if (selectedPreviewRgba) return selectedPreviewRgba
+    if (!selectedNode) return null
+
+    const fallbackExpression =
+      selectedNode.value || (selectedNode.cssVar ? tokenValues[selectedNode.cssVar] : "") || ""
+
+    return fallbackExpression ? resolveExpressionColor(fallbackExpression) : null
+  }, [resolveExpressionColor, selectedNode, selectedPreviewRgba, tokenValues])
+  const selectedQuickEditHex = selectedQuickEditRgba ? rgbaToHex(selectedQuickEditRgba) : "#000000"
   const relativeSpec =
     selectedNode?.type === "relative"
       ? { ...DEFAULT_RELATIVE_SPEC, ...(selectedNode.relative ?? {}) }
@@ -3181,14 +5891,21 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     const nextEdges: DisplayEdge[] = []
     activeRules.forEach((rule) => {
       const foregroundNodes = nodes.filter(
-        (node) => node.type !== "component" && nodeMatchesRole(node, rule.foregroundRole)
+        (node) =>
+          node.type !== "component" &&
+          nodeMatchesRole(node, rule.foregroundRole) &&
+          Boolean(getNodeColor(node.id))
       )
       const backgroundNodes = nodes.filter(
-        (node) => node.type !== "component" && nodeMatchesRole(node, rule.backgroundRole)
+        (node) =>
+          node.type !== "component" &&
+          nodeMatchesRole(node, rule.backgroundRole) &&
+          Boolean(getNodeColor(node.id))
       )
       foregroundNodes.forEach((foreground) => {
         backgroundNodes.forEach((background) => {
           if (foreground.id === background.id) return
+          if (getEdgeContrastRaw(foreground.id, background.id) === null) return
           const pairKey = [foreground.id, background.id].sort().join("|")
           if (manualPairKeys.has(pairKey)) return
           const edgeId = `auto-${rule.id}-${foreground.id}-${background.id}`
@@ -3207,7 +5924,15 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       })
     })
     return nextEdges
-  }, [autoContrastEnabled, contrastRules, isRelationshipMode, manualEdges, nodes])
+  }, [
+    autoContrastEnabled,
+    contrastRules,
+    getEdgeContrastRaw,
+    getNodeColor,
+    isRelationshipMode,
+    manualEdges,
+    nodes,
+  ])
 
   const resolvedSelectedAutoEdge = useMemo(() => {
     if (!selectedAutoEdgeId) return null
@@ -3215,6 +5940,11 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   }, [autoContrastEdges, selectedAutoEdgeId])
 
   const selectedEdgeData = resolvedSelectedAutoEdge ?? selectedEdge
+  const hasActiveEdgeSelection = selectedEdgeData !== null
+  const highlightedConnectionNodeIds = useMemo(() => {
+    if (!selectedEdgeData) return new Set<string>()
+    return new Set([selectedEdgeData.sourceId, selectedEdgeData.targetId])
+  }, [selectedEdgeData])
 
   const visibleEdges: DisplayEdge[] = useMemo(() => {
     const supportsContrastEdges = isRelationshipMode
@@ -3258,6 +5988,278 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       (edge) => edge.sourceId === selectedNode.id || edge.targetId === selectedNode.id
     )
   }, [contrastEdges, selectedNode])
+  const selectedNodeIncomingMapEdges = useMemo(() => {
+    if (!selectedNode) return []
+    return edges.filter(
+      (edge) =>
+        edge.type === "map" &&
+        edge.targetId === selectedNode.id &&
+        Boolean(nodesById[edge.sourceId])
+    )
+  }, [edges, nodesById, selectedNode])
+  const selectedNodeOutgoingMapEdges = useMemo(() => {
+    if (!selectedNode) return []
+    return edges.filter(
+      (edge) =>
+        edge.type === "map" &&
+        edge.sourceId === selectedNode.id &&
+        Boolean(nodesById[edge.targetId])
+    )
+  }, [edges, nodesById, selectedNode])
+  const getContrastRuleForRoles = useCallback(
+    (
+      foregroundRole?: NonNullable<ColorCanvasNode["role"]>,
+      backgroundRole?: NonNullable<ColorCanvasNode["role"]>
+    ) => {
+      if (!foregroundRole || !backgroundRole) return null
+      return (
+        contrastRules.find(
+          (rule) =>
+            rule.enabled &&
+            rule.foregroundRole === foregroundRole &&
+            rule.backgroundRole === backgroundRole
+        ) ?? null
+      )
+    },
+    [contrastRules]
+  )
+  const selectedForegroundComparisons = useMemo(() => {
+    if (!selectedNode || selectedNode.type === "component" || selectedNode.preview) return []
+    const selectedColor = getNodeColor(selectedNode.id)
+    if (!selectedColor) return []
+    const selectedIntent = inferContrastIntent(selectedNode)
+    if (selectedIntent === "background") return []
+
+    return nodes
+      .filter(
+        (node) =>
+          node.id !== selectedNode.id &&
+          node.type !== "component" &&
+          !node.preview &&
+          Boolean(getNodeColor(node.id)) &&
+          inferContrastIntent(node) !== "foreground"
+      )
+      .map((node) => ({
+        node,
+        comparisonColor: getNodeColor(node.id) as string,
+        lc: getEdgeContrastRaw(selectedNode.id, node.id),
+        rule: getContrastRuleForRoles(selectedNode.role, node.role),
+      }))
+      .sort((left, right) => {
+        const leftRuleScore = Number(Boolean(left.rule))
+        const rightRuleScore = Number(Boolean(right.rule))
+        if (leftRuleScore !== rightRuleScore) return rightRuleScore - leftRuleScore
+        if ((left.node.role || "") !== (right.node.role || "")) {
+          return (left.node.role || "").localeCompare(right.node.role || "")
+        }
+        return left.node.label.localeCompare(right.node.label)
+      })
+  }, [getContrastRuleForRoles, getEdgeContrastRaw, getNodeColor, nodes, selectedNode])
+  const selectedBackgroundComparisons = useMemo(() => {
+    if (!selectedNode || selectedNode.type === "component" || selectedNode.preview) return []
+    const selectedColor = getNodeColor(selectedNode.id)
+    if (!selectedColor) return []
+    const selectedIntent = inferContrastIntent(selectedNode)
+    if (selectedIntent === "foreground") return []
+
+    return nodes
+      .filter(
+        (node) =>
+          node.id !== selectedNode.id &&
+          node.type !== "component" &&
+          !node.preview &&
+          Boolean(getNodeColor(node.id)) &&
+          inferContrastIntent(node) !== "background"
+      )
+      .map((node) => ({
+        node,
+        comparisonColor: getNodeColor(node.id) as string,
+        lc: getEdgeContrastRaw(node.id, selectedNode.id),
+        rule: getContrastRuleForRoles(node.role, selectedNode.role),
+      }))
+      .sort((left, right) => {
+        const leftRuleScore = Number(Boolean(left.rule))
+        const rightRuleScore = Number(Boolean(right.rule))
+        if (leftRuleScore !== rightRuleScore) return rightRuleScore - leftRuleScore
+        if ((left.node.role || "") !== (right.node.role || "")) {
+          return (left.node.role || "").localeCompare(right.node.role || "")
+        }
+        return left.node.label.localeCompare(right.node.label)
+      })
+  }, [getContrastRuleForRoles, getEdgeContrastRaw, getNodeColor, nodes, selectedNode])
+  const colorAuditExportEntries = useMemo<ColorExportEntry[]>(() => {
+    const usedCssVars = new Set<string>()
+
+    return nodes
+      .filter((node) => node.type !== "component" && !node.preview)
+      .flatMap((node) => {
+        const resolvedExpression = getNodeColorExpression(node.id) || getNodeColor(node.id)
+        if (!resolvedExpression) return []
+
+        const family: ColorExportEntry["family"] =
+          node.type === "token"
+            ? "palette"
+            : node.type === "relative"
+              ? "relative"
+              : isFunctionalTokenNode(node)
+                ? "functional"
+                : "semantic"
+
+        const fallbackCssVar =
+          node.cssVar ||
+          (family === "semantic"
+            ? `--semantic-${slugifyTokenLabel(node.label)}`
+            : family === "functional"
+              ? `--alias-${slugifyTokenLabel(node.label)}`
+              : family === "relative"
+                ? `--rule-${slugifyTokenLabel(node.label)}`
+                : `--token-${slugifyTokenLabel(node.label)}`)
+
+        if (usedCssVars.has(fallbackCssVar)) return []
+        usedCssVars.add(fallbackCssVar)
+
+        return [
+          {
+            id: node.id,
+            label: node.label,
+            cssVar: fallbackCssVar,
+            exportKey: fallbackCssVar.replace(/^--/, ""),
+            family,
+            role: node.role,
+            framework: node.framework,
+            semanticKind: node.semanticKind,
+            resolvedExpression,
+            oklchExpression: (() => {
+              const oklch = resolveNodeOklch(node.id)
+              return oklch ? formatOklchCssValue(oklch) : undefined
+            })(),
+          },
+        ]
+      })
+  }, [getNodeColor, getNodeColorExpression, nodes, resolveNodeOklch])
+  const colorAuditProjectExportEntries = useMemo(() => {
+    return colorAuditExportEntries.filter((entry) => {
+      if (entry.family === "palette" || entry.family === "relative") return false
+      const hasMapping = edges.some((edge) => edge.type === "map" && edge.targetId === entry.id)
+      const hasOverride = Boolean(nodesById[entry.id]?.value)
+      return hasMapping || hasOverride
+    })
+  }, [colorAuditExportEntries, edges, nodesById])
+  const colorAuditWorkflow = useMemo(() => {
+    const inputs = nodes.filter((node) => node.type === "token" && !node.preview)
+    const relativeRules = nodes.filter((node) => node.type === "relative" && !node.preview)
+    const functionalAliases = nodes.filter((node) => isFunctionalTokenNode(node) && !node.preview)
+    const semanticRoles = nodes.filter(
+      (node) => node.type === "semantic" && node.semanticKind !== "functional" && !node.preview
+    )
+    const mappedSemanticRoles = semanticRoles.filter((node) =>
+      edges.some((edge) => edge.type === "map" && edge.targetId === node.id)
+    )
+    const textRoleReady = semanticRoles.some(
+      (node) => node.role === "text" && Boolean(getNodeColor(node.id))
+    )
+    const surfaceRoleReady = semanticRoles.some(
+      (node) => node.role === "surface" && Boolean(getNodeColor(node.id))
+    )
+    const frameworkAliasesReady = functionalAliases.filter((node) =>
+      edges.some((edge) => edge.type === "map" && edge.targetId === node.id)
+    ).length
+
+    return {
+      inputs: inputs.length,
+      relativeRules: relativeRules.length,
+      functionalAliases: functionalAliases.length,
+      semanticRoles: semanticRoles.length,
+      mappedSemanticRoles: mappedSemanticRoles.length,
+      exportableTokens: colorAuditProjectExportEntries.length,
+      textRoleReady,
+      surfaceRoleReady,
+      contrastPairs: contrastEdges.filter((edge) => getEdgeContrast(edge) !== null).length,
+      frameworkAliasesReady,
+      genericReady:
+        inputs.length > 0 &&
+        textRoleReady &&
+        surfaceRoleReady &&
+        colorAuditProjectExportEntries.length > 0,
+      frameworkReady:
+        functionalAliases.length > 0 &&
+        frameworkAliasesReady > 0 &&
+        textRoleReady &&
+        surfaceRoleReady,
+    }
+  }, [colorAuditProjectExportEntries.length, contrastEdges, edges, getEdgeContrast, getNodeColor, nodes])
+  const colorAuditExportFormats = useMemo(() => {
+    const formatEntryExpression = (entry: ColorExportEntry) =>
+      selectedColorAuditExportColorMode === "oklch"
+        ? entry.oklchExpression || entry.resolvedExpression
+        : entry.resolvedExpression
+    const projectEntries = colorAuditProjectExportEntries
+    const cssVarsText =
+      projectEntries.length === 0
+        ? "/* No mapped semantic roles or functional aliases are ready to export yet. */"
+        : `:root {\n${projectEntries
+            .map((entry) => `  ${entry.cssVar}: ${formatEntryExpression(entry)};`)
+            .join("\n")}\n}`
+
+    const dtcgRoot: Record<string, unknown> = {}
+    projectEntries.forEach((entry) => {
+      const path = [
+        entry.family,
+        entry.framework ? entry.framework : null,
+        entry.exportKey.replace(/^color-/, ""),
+      ].filter(Boolean) as string[]
+      assignNestedToken(dtcgRoot, path, {
+        $value: formatEntryExpression(entry),
+        $type: "color",
+        $extensions: {
+          cssVar: entry.cssVar,
+          role: entry.role ?? null,
+          framework: entry.framework ?? null,
+          semanticKind: entry.semanticKind ?? null,
+        },
+      })
+    })
+    const dtcgText =
+      projectEntries.length === 0
+        ? '{\n  "color": {}\n}'
+        : JSON.stringify({ color: dtcgRoot }, null, 2)
+
+    const tailwindLines = projectEntries
+      .filter((entry) => entry.family === "functional" || entry.family === "semantic")
+      .map((entry) => {
+        const baseKey =
+          entry.family === "functional"
+            ? entry.cssVar.replace(/^--/, "")
+            : slugifyTokenLabel(entry.label)
+        return `      ${toCamelCaseTokenKey(baseKey)}: "${formatEntryExpression(entry)}",`
+      })
+    const tailwindText =
+      tailwindLines.length === 0
+        ? "export default {\n  theme: {\n    extend: {\n      colors: {},\n    },\n  },\n}\n"
+        : `export default {\n  theme: {\n    extend: {\n      colors: {\n${tailwindLines.join("\n")}\n      },\n    },\n  },\n}\n`
+
+    const frameworkVars = (framework: ColorCanvasFrameworkId) => {
+      const entries = projectEntries.filter((entry) => entry.framework === framework)
+      if (entries.length === 0) {
+        return `/* No mapped ${getFrameworkLabel(framework)} aliases are ready to export yet. */`
+      }
+      return `:root {\n${entries
+        .map((entry) => `  ${entry.cssVar}: ${formatEntryExpression(entry)};`)
+        .join("\n")}\n}`
+    }
+
+    return {
+      "css-vars": cssVarsText,
+      dtcg: dtcgText,
+      tailwind: tailwindText,
+      shadcn: frameworkVars("shadcn"),
+      radix: frameworkVars("radix"),
+    } satisfies Record<ColorAuditExportFormat, string>
+  }, [colorAuditProjectExportEntries, selectedColorAuditExportColorMode])
+  const selectedColorAuditExportText = colorAuditExportFormats[selectedColorAuditExportFormat]
+  const selectedColorAuditExportFormatLabel =
+    COLOR_AUDIT_EXPORT_FORMAT_OPTIONS.find((option) => option.id === selectedColorAuditExportFormat)
+      ?.label ?? "Export"
   const dependencyEdges = useMemo(() => {
     return nodes
       .filter((node) => node.type === "relative" && node.relative?.baseId)
@@ -3273,6 +6275,42 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       (edge) => visibleNodeIds.has(edge.sourceId) && visibleNodeIds.has(edge.targetId)
     )
   }, [dependencyEdges, isRelationshipMode, visibleNodeIds])
+  const nodePortUsage = useMemo(() => {
+    const usage: Record<string, Set<ColorNodePortId>> = {}
+    const register = (nodeId: string, portId: ColorNodePortId) => {
+      if (!usage[nodeId]) {
+        usage[nodeId] = new Set<ColorNodePortId>()
+      }
+      usage[nodeId]?.add(portId)
+    }
+
+    if (showDependencies) {
+      visibleDependencyEdges.forEach((edge) => {
+        register(edge.sourceId, "dependency-out")
+        register(edge.targetId, "dependency-in")
+      })
+    }
+
+    visibleEdges.forEach((edge) => {
+      if (edge.type === "map") {
+        register(edge.sourceId, "map-out")
+        register(edge.targetId, "map-in")
+        return
+      }
+      register(edge.sourceId, "contrast-out")
+      register(edge.targetId, "contrast-in")
+    })
+
+    if (connectMode) {
+      renderedNodes.forEach((node) => {
+        getPortIdsForConnectMode(node, connectMode).forEach((portId) => register(node.id, portId))
+      })
+    }
+
+    return Object.fromEntries(
+      Object.entries(usage).map(([nodeId, ports]) => [nodeId, Array.from(ports)])
+    ) as Record<string, ColorNodePortId[]>
+  }, [connectMode, renderedNodes, showDependencies, visibleDependencyEdges, visibleEdges])
 
   useEffect(() => {
     if (!selectedNodeId || visibleNodeIds.has(selectedNodeId)) return
@@ -3292,10 +6330,43 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   }, [selectedAutoEdgeId, visibleEdges])
 
   useEffect(() => {
+    if (pendingColorAuditLayoutMode === null) return
+    if (canvasMode !== "color-audit" || visibleNodes.length === 0) return
+    const viewportWidth = systemCanvasViewportSize.width || workspaceRef.current?.clientWidth || 1280
+    const positions = buildColorAuditLayout(
+      visibleNodes,
+      getNodeSize,
+      pendingColorAuditLayoutMode,
+      viewportWidth
+    )
+    visibleNodes.forEach((node) => {
+      const position = positions[node.id]
+      if (!position) return
+      moveNode(node.id, position)
+    })
+    setPendingColorAuditLayoutMode(null)
+    setPendingColorAuditViewportAction("bird-view")
+  }, [
+    canvasMode,
+    getNodeSize,
+    moveNode,
+    pendingColorAuditLayoutMode,
+    systemCanvasViewportSize.width,
+    visibleNodes,
+  ])
+
+  useEffect(() => {
     if (canvasMode !== "system-canvas" || isRelationshipMode) return
     scrollWorkspaceTo(0, 0)
   }, [canvasMode, effectiveCanvasViewMode, isRelationshipMode, scrollWorkspaceTo])
 
+  const handleColorAuditWorkspaceWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (!colorAuditTransformEnabled) return
+      handleColorAuditCanvasWheelInput(event)
+    },
+    [colorAuditTransformEnabled, handleColorAuditCanvasWheelInput]
+  )
   const handleSystemWorkspaceWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
       if (!systemCanvasTransformEnabled) return
@@ -3330,6 +6401,57 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     },
     [handleSystemCanvasWheelInput, systemCanvasTransformEnabled]
   )
+  const handleWorkspaceWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (colorAuditTransformEnabled) {
+        handleColorAuditWorkspaceWheel(event)
+        return
+      }
+      if (systemCanvasTransformEnabled) {
+        handleSystemWorkspaceWheel(event)
+      }
+    },
+    [
+      colorAuditTransformEnabled,
+      handleColorAuditWorkspaceWheel,
+      handleSystemWorkspaceWheel,
+      systemCanvasTransformEnabled,
+    ]
+  )
+  const handleColorAuditZoomOut = useCallback(() => {
+    const centerX = systemCanvasViewportSize.width / 2 || undefined
+    const centerY = systemCanvasViewportSize.height / 2 || undefined
+    zoomColorAuditTo(colorAuditTransform.scale / 1.2, centerX, centerY)
+  }, [
+    colorAuditTransform.scale,
+    systemCanvasViewportSize.height,
+    systemCanvasViewportSize.width,
+    zoomColorAuditTo,
+  ])
+  const handleColorAuditZoomIn = useCallback(() => {
+    const centerX = systemCanvasViewportSize.width / 2 || undefined
+    const centerY = systemCanvasViewportSize.height / 2 || undefined
+    zoomColorAuditTo(colorAuditTransform.scale * 1.2, centerX, centerY)
+  }, [
+    colorAuditTransform.scale,
+    systemCanvasViewportSize.height,
+    systemCanvasViewportSize.width,
+    zoomColorAuditTo,
+  ])
+  const handleResetColorAuditZoom = useCallback(() => {
+    resetColorAuditZoom()
+    panColorAuditTo(32, 36)
+  }, [panColorAuditTo, resetColorAuditZoom])
+  const fitColorAuditViewportToVisibleNodes = useCallback(
+    (padding = 72) => {
+      if (!colorAuditTransformEnabled || systemCanvasViewportItems.length === 0) return
+      fitColorAuditToView(systemCanvasViewportItems, padding)
+    },
+    [colorAuditTransformEnabled, fitColorAuditToView, systemCanvasViewportItems]
+  )
+  const handleColorAuditBirdView = useCallback(() => {
+    fitColorAuditViewportToVisibleNodes(72)
+  }, [fitColorAuditViewportToVisibleNodes])
   const handleSystemZoomOut = useCallback(() => {
     const centerX = systemCanvasViewportSize.width / 2 || undefined
     const centerY = systemCanvasViewportSize.height / 2 || undefined
@@ -3500,6 +6622,26 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
   ])
 
   useEffect(() => {
+    if (pendingColorAuditViewportAction !== "bird-view") return
+    if (canvasMode !== "color-audit" || visibleNodes.length === 0) return
+    if (systemCanvasViewportSize.width === 0 || systemCanvasViewportSize.height === 0) return
+
+    const frameId = window.requestAnimationFrame(() => {
+      fitColorAuditViewportToVisibleNodes(64)
+      setPendingColorAuditViewportAction(null)
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [
+    canvasMode,
+    fitColorAuditViewportToVisibleNodes,
+    pendingColorAuditViewportAction,
+    systemCanvasViewportSize.height,
+    systemCanvasViewportSize.width,
+    visibleNodes.length,
+  ])
+
+  useEffect(() => {
     if (pendingSystemViewportAction !== "fit-width") return
     if (canvasMode !== "system-canvas" || isRelationshipMode || visibleNodes.length === 0) return
     if (systemCanvasViewportSize.width === 0 || systemCanvasViewportSize.height === 0) return
@@ -3539,7 +6681,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
     nodes.forEach((node) => {
       if (!node.cssVar) return
-      if (node.type === "relative") {
+      if (node.type === "relative" || node.type === "semantic") {
         const expression = getNodeColorExpression(node.id)
         if (expression) updates.push({ cssVar: node.cssVar, value: expression })
         return
@@ -3571,12 +6713,12 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     const nextVars: Record<string, string> = { ...baseVars }
     nodes.forEach((node) => {
       if (!node.cssVar) return
-      if (node.type === "relative") {
+      if (node.type === "relative" || node.type === "semantic") {
         const expression = getNodeColorExpression(node.id)
         if (expression) nextVars[node.cssVar] = expression
         return
       }
-      if ((node.type === "token" || node.type === "semantic") && node.value) {
+      if (node.type === "token" && node.value) {
         nextVars[node.cssVar] = node.value
       }
     })
@@ -3607,12 +6749,34 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     (edge: DisplayEdge) => {
       const source = nodesById[edge.sourceId]
       const target = nodesById[edge.targetId]
-      const fallback = `${source?.label ?? "Unknown"} → ${target?.label ?? "Unknown"}`
+      const fallback = `${getDisplayNodeLabelFromNode(source)} → ${getDisplayNodeLabelFromNode(target)}`
       if (!edge.auto) return fallback
       const rule = contrastRules.find((entry) => entry.id === edge.ruleId)
       return rule ? `${rule.label} · ${fallback}` : fallback
     },
     [contrastRules, nodesById]
+  )
+
+  const resolveEdgeBadgeLabel = useCallback(
+    (edge: DisplayEdge, contrast: number | null) => {
+      if (edge.type === "contrast") return formatLc(contrast)
+      if (edge.rule?.note) return edge.rule.note
+
+      const source = nodesById[edge.sourceId]
+      const target = nodesById[edge.targetId]
+      if (target && isFunctionalTokenNode(target)) {
+        const frameworkLabel = getFrameworkLabel(target.framework)
+        return frameworkLabel ? `${frameworkLabel} alias` : "Functional alias"
+      }
+      if (target?.type === "semantic") {
+        return "Semantic role"
+      }
+      if (source?.type === "component" || target?.type === "component") {
+        return "Component map"
+      }
+      return "Map"
+    },
+    [nodesById]
   )
 
   const handleDuplicateNode = useCallback(
@@ -3629,6 +6793,8 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
         cssVar: nextCssVar,
         value: node.value,
         role: node.role,
+        framework: node.framework,
+        semanticKind: node.semanticKind,
         relative: node.relative,
         size: node.size,
         group: node.group,
@@ -3638,6 +6804,48 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
     },
     [addNode, getNextCssVarFrom]
   )
+  const handleCopyColorAuditExport = useCallback(async () => {
+    const text = selectedColorAuditExportText
+    if (!text) return
+    try {
+      const copied = await copyTextToClipboard(text)
+      if (!copied) throw new Error("copy failed")
+      setCopiedColorAuditExportFormat(selectedColorAuditExportFormat)
+      window.setTimeout(() => {
+        setCopiedColorAuditExportFormat((current) =>
+          current === selectedColorAuditExportFormat ? null : current
+        )
+      }, 1200)
+    } catch {
+      setCopiedColorAuditExportFormat(null)
+    }
+  }, [selectedColorAuditExportFormat, selectedColorAuditExportText])
+
+  useEffect(() => {
+    if (!showColorAuditExportPreview) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowColorAuditExportPreview(false)
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [showColorAuditExportPreview])
+
+  useEffect(() => {
+    if (!showNodeCatalog) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowNodeCatalog(false)
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [showNodeCatalog])
 
   useEffect(() => {
     if (!connectDrag.active) return
@@ -3667,6 +6875,392 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
       window.removeEventListener("pointerup", handlePointerUp)
     }
   }, [connectDrag.active, handleConnectTarget, viewportToCanvasPosition])
+
+  if (catalogOnly) {
+    const colorAuditSections = allNodeCatalogSections.filter((section) => section.mode === "color-audit")
+    const systemSections = allNodeCatalogSections.filter((section) => section.mode === "system-canvas")
+    const colorAuditNodeCount = colorAuditSections.reduce((total, section) => total + section.nodes.length, 0)
+    const systemNodeCount = systemSections.reduce((total, section) => total + section.nodes.length, 0)
+    const workspaceItemCount = workspaceCatalogSections.reduce(
+      (total, section) => total + section.items.length,
+      0
+    )
+
+    return (
+      <div
+        ref={rootRef}
+        className="flex h-full min-h-0 w-full min-w-0 bg-surface-100"
+        data-theme={activeThemeId}
+        style={designSystem.cssVars as React.CSSProperties}
+      >
+        <aside className="flex w-80 min-h-0 flex-col border-r border-default bg-white">
+          <div className="border-b border-default px-4 py-4">
+            <div className="text-sm font-semibold text-foreground">Node catalog</div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Dedicated review page for every node family available across Color Audit, System Canvas, and the general Canvas workspace.
+            </p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div className="rounded-xl border border-default bg-surface-50 px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Coverage
+              </div>
+              <div className="mt-3 grid gap-2">
+                <div className="rounded-lg border border-default bg-white px-3 py-2">
+                  <div className="text-[11px] font-semibold text-foreground">Color Audit</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {colorAuditSections.length} sections · {colorAuditNodeCount} nodes
+                  </div>
+                </div>
+                <div className="rounded-lg border border-default bg-white px-3 py-2">
+                  <div className="text-[11px] font-semibold text-foreground">System Canvas</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {systemSections.length} sections · {systemNodeCount} nodes
+                  </div>
+                </div>
+                <div className="rounded-lg border border-default bg-white px-3 py-2">
+                  <div className="text-[11px] font-semibold text-foreground">Canvas Workspace</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {workspaceCatalogSections.length} sections · {workspaceItemCount} item types
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-default bg-surface-50 px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Color Audit templates
+              </div>
+              <div className="mt-2 space-y-2">
+                {COLOR_TEMPLATE_KITS.map((kit) => {
+                  const preview = getTemplateKitPreview(kit, true)
+                  return (
+                    <div key={kit.id} className="rounded-lg border border-default bg-white px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs font-semibold text-foreground">{kit.label}</div>
+                        <span className="rounded-full bg-surface-50 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                          {preview.totalNodes}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{kit.description}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                          {preview.colorNodes} colors
+                        </span>
+                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                          {preview.semanticRoles} roles
+                        </span>
+                        {preview.functionalTokens > 0 && (
+                          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                            {preview.functionalTokens} aliases
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-default bg-surface-50 px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Review state
+              </div>
+              <div className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                This page shows the real card treatments for titles, pills, previews, connector ports, and state styles without needing to generate a graph first.
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-default bg-surface-50 px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Jump to section
+              </div>
+              <div className="mt-3 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => scrollToCatalogSection("state-preview")}
+                  className="w-full rounded-lg border border-default bg-white px-3 py-2 text-left text-xs font-semibold text-foreground hover:bg-surface-50"
+                >
+                  State preview
+                </button>
+
+                <div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Canvas Workspace
+                  </div>
+                  <div className="space-y-1.5">
+                    {workspaceCatalogSections.map((section) => (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => scrollToCatalogSection(section.id)}
+                        className="flex w-full items-center justify-between rounded-lg border border-default bg-white px-3 py-2 text-left hover:bg-surface-50"
+                      >
+                        <span className="min-w-0 text-xs font-medium text-foreground">{section.label}</span>
+                        <span className="ml-2 rounded-full bg-surface-50 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                          {section.items.length}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Color Audit
+                  </div>
+                  <div className="space-y-1.5">
+                    {colorAuditSections.map((section) => (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => scrollToCatalogSection(section.id)}
+                        className="flex w-full items-center justify-between rounded-lg border border-default bg-white px-3 py-2 text-left hover:bg-surface-50"
+                      >
+                        <span className="min-w-0 text-xs font-medium text-foreground">{section.label}</span>
+                        <span className="ml-2 rounded-full bg-surface-50 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                          {section.nodes.length}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    System Canvas
+                  </div>
+                  <div className="space-y-1.5">
+                    {systemSections.map((section) => (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => scrollToCatalogSection(section.id)}
+                        className="flex w-full items-center justify-between rounded-lg border border-default bg-white px-3 py-2 text-left hover:bg-surface-50"
+                      >
+                        <span className="min-w-0 text-xs font-medium text-foreground">{section.label}</span>
+                        <span className="ml-2 rounded-full bg-surface-50 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                          {section.nodes.length}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <main className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+          <div className="mx-auto max-w-[1680px] space-y-8">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                Catalog
+              </div>
+              <h1 className="mt-2 text-2xl font-semibold text-foreground">Canvas node catalog</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                Review every node type we support today: manual color-audit inputs, template-generated Starter Ramp, shadcn/ui and Radix alias graphs, the full System Canvas support and preview nodes, plus the general Canvas workspace items such as artboards, Mermaid diagrams, wireframes, media, embeds, and markdown notes.
+              </p>
+            </div>
+
+            {nodeCatalogPreviewNode ? (
+              <section id="node-catalog-section-state-preview">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">State preview</div>
+                    <p className="text-xs text-muted-foreground">
+                      Default, selected, highlighted, and dimmed treatments for the current node card renderer.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {([
+                    { id: "default", label: "Default", selected: false, highlighted: false, dimmed: false },
+                    { id: "selected", label: "Selected", selected: true, highlighted: false, dimmed: false },
+                    { id: "highlighted", label: "Highlighted", selected: false, highlighted: true, dimmed: false },
+                    { id: "dimmed", label: "Dimmed", selected: false, highlighted: false, dimmed: true },
+                  ] as const).map((statePreview) => {
+                    const size = getNodeSize(nodeCatalogPreviewNode)
+                    const frame = getCatalogFrameMetrics(size)
+                    const sampleNode = {
+                      ...nodeCatalogPreviewNode,
+                      position: { x: frame.inset, y: frame.inset },
+                    }
+                    return (
+                      <div key={statePreview.id} className="rounded-xl border border-default bg-white px-3 py-3">
+                        <div className="mb-2 text-xs font-semibold text-foreground">{statePreview.label}</div>
+                        <div
+                          className="relative overflow-auto rounded-lg bg-surface-50 p-3"
+                          style={{ minHeight: frame.height, minWidth: Math.min(frame.width, 360) }}
+                        >
+                          <div style={{ position: "relative", width: frame.width, height: frame.height }}>
+                            <ColorNode
+                              node={sampleNode}
+                              size={size}
+                              minSize={getNodeMinSize(nodeCatalogPreviewNode)}
+                              portIds={getCatalogPortIds(nodeCatalogPreviewNode)}
+                              resolveColor={getCatalogNodeColor}
+                              resolveIsP3={getCatalogNodeIsP3}
+                              resolveExpression={getCatalogNodeExpression}
+                              resolveLabel={getCatalogNodeLabel}
+                              selected={statePreview.selected}
+                              highlighted={statePreview.highlighted}
+                              dimmed={statePreview.dimmed}
+                              connectActive={false}
+                              connectMode={null}
+                              connectDragging={false}
+                              connectSourceId={null}
+                              movable={false}
+                              onMove={() => {}}
+                              onResize={() => {}}
+                              onClick={() => {}}
+                              onConnectStart={() => {}}
+                              showFullLabels
+                              toCanvasPosition={(x, y) => ({ x, y })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            ) : null}
+
+            <section id="node-catalog-section-canvas-workspace">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">Canvas Workspace</div>
+                  <p className="text-xs text-muted-foreground">
+                    {workspaceCatalogSections.length} sections · {workspaceItemCount} item types
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                {workspaceCatalogSections.map((section) => (
+                  <section
+                    key={section.id}
+                    id={`node-catalog-section-${section.id}`}
+                    className="rounded-2xl border border-default bg-white px-4 py-4 shadow-sm"
+                  >
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">{section.label}</div>
+                        <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+                          {section.description}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-surface-50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                        {section.items.length}
+                      </span>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {section.items.map((item) => (
+                        <WorkspaceCatalogCard key={item.id} item={item} />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </section>
+
+            {[
+              { id: "color-audit", label: "Color Audit", sections: colorAuditSections },
+              { id: "system-canvas", label: "System Canvas", sections: systemSections },
+            ].map((group) => (
+              <section key={group.id}>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">{group.label}</div>
+                    <p className="text-xs text-muted-foreground">
+                      {group.sections.length} sections · {group.sections.reduce((total, section) => total + section.nodes.length, 0)} nodes
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  {group.sections.map((section) => (
+                    <section
+                      key={section.id}
+                      id={`node-catalog-section-${section.id}`}
+                      className="rounded-2xl border border-default bg-white px-4 py-4 shadow-sm"
+                    >
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-foreground">{section.label}</div>
+                          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+                            {section.description}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-surface-50 px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                          {section.nodes.length}
+                        </span>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {section.nodes.map((node) => {
+                          const size = getNodeSize(node)
+                          const frame = getCatalogFrameMetrics(size)
+                          const staticNode = {
+                            ...node,
+                            position: { x: frame.inset, y: frame.inset },
+                          }
+                          return (
+                            <div key={node.id} className="rounded-xl border border-default bg-surface-50 px-3 py-3">
+                              <div className="mb-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                                <span className="truncate">{getDisplayNodeLabelFromNode(node)}</span>
+                                <span className="rounded-full bg-white px-2 py-0.5 font-semibold">
+                                  {node.type}
+                                </span>
+                              </div>
+                              <div
+                                className="relative overflow-auto rounded-lg bg-white/70 p-3"
+                                style={{ minHeight: frame.height, minWidth: Math.min(frame.width, 360) }}
+                              >
+                                <div style={{ position: "relative", width: frame.width, height: frame.height }}>
+                                  <ColorNode
+                                    node={staticNode}
+                                    size={size}
+                                    minSize={getNodeMinSize(node)}
+                                    portIds={getCatalogPortIds(node)}
+                                    resolveColor={getCatalogNodeColor}
+                                    resolveIsP3={getCatalogNodeIsP3}
+                                    resolveExpression={getCatalogNodeExpression}
+                                    resolveLabel={getCatalogNodeLabel}
+                                    selected={false}
+                                    highlighted={false}
+                                    dimmed={false}
+                                    connectActive={false}
+                                    connectMode={null}
+                                    connectDragging={false}
+                                    connectSourceId={null}
+                                    movable={false}
+                                    onMove={() => {}}
+                                    onResize={() => {}}
+                                    onClick={() => {}}
+                                    onConnectStart={() => {}}
+                                    showFullLabels
+                                    toCanvasPosition={(x, y) => ({ x, y })}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -3820,39 +7414,305 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
 
         {canvasMode === "color-audit" && (
           <div className="border-b border-default px-4 py-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Theme Template
-            </h3>
-            <span className="text-[11px] text-muted-foreground">Brand seed</span>
-          </div>
-          <div className="space-y-2">
-            <div>
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Brand color</label>
-              <ColorPickerField
-                value={templateBrand}
-                onChange={setTemplateBrand}
-                placeholder="e.g. #1d4ed8 or oklch(60% 0.18 240)"
-                className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
-              />
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Theme Template
+              </h3>
+              <span className="text-[11px] text-muted-foreground">{selectedTemplateKit.label}</span>
             </div>
-            <div>
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Accent color (optional)</label>
-              <ColorPickerField
-                value={templateAccent}
-                onChange={setTemplateAccent}
-                placeholder="Optional secondary brand"
-                className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
-              />
+            <div className="space-y-2">
+              <div className="rounded-xl border border-default bg-surface-50 px-3 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Template kit
+                </div>
+                <div className="mt-2 space-y-2">
+                  {COLOR_TEMPLATE_KITS.map((kit) => {
+                    const active = templateKitId === kit.id
+                    const preview = getTemplateKitPreview(kit, Boolean(templateAccent.trim()))
+                    return (
+                      <button
+                        key={kit.id}
+                        type="button"
+                        onClick={() => setTemplateKitId(kit.id)}
+                        className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
+                          active
+                            ? "border-brand-500 bg-brand-50"
+                            : "border-default bg-white hover:bg-surface-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-xs font-semibold text-foreground">{kit.label}</div>
+                          {active && (
+                            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-brand-700">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                          {kit.description}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-semibold text-muted-foreground">
+                          <span className="rounded-full bg-surface-50 px-2 py-0.5">
+                            {preview.colorNodes} colors
+                          </span>
+                          <span className="rounded-full bg-surface-50 px-2 py-0.5">
+                            {preview.semanticRoles} roles
+                          </span>
+                          {preview.functionalTokens > 0 && (
+                            <span className="rounded-full bg-surface-50 px-2 py-0.5">
+                              {preview.functionalTokens} framework
+                            </span>
+                          )}
+                          <span className="rounded-full bg-surface-50 px-2 py-0.5">
+                            {preview.totalNodes} total nodes
+                          </span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="rounded-md border border-default bg-surface-50 px-3 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Template preview
+                  </div>
+                  <div className="text-[11px] font-semibold text-foreground">
+                    {selectedTemplatePreview.totalNodes} nodes
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="rounded-md border border-default bg-white px-2 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Colors
+                    </div>
+                    <div className="mt-1 font-semibold text-foreground">
+                      {selectedTemplatePreview.colorNodes}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-default bg-white px-2 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Roles
+                    </div>
+                    <div className="mt-1 font-semibold text-foreground">
+                      {selectedTemplatePreview.semanticRoles}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-default bg-white px-2 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Framework
+                    </div>
+                    <div className="mt-1 font-semibold text-foreground">
+                      {selectedTemplatePreview.functionalTokens}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-default bg-white px-2 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Accent bonus
+                    </div>
+                    <div className="mt-1 font-semibold text-foreground">
+                      {templateAccent.trim()
+                        ? `+${TEMPLATE_PREVIEW_BASE_COUNTS.accentColors}`
+                        : `0 / +${TEMPLATE_PREVIEW_BASE_COUNTS.accentColors}`}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                  Brand color
+                </label>
+                <ColorPickerField
+                  value={templateBrand}
+                  onChange={setTemplateBrand}
+                  placeholder="e.g. #1d4ed8 or oklch(60% 0.18 240)"
+                  className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
+                />
+                <div className="mt-2 rounded-md border border-default bg-surface-50 px-3 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-semibold text-foreground">Brand OKLCH</div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-5 w-5 rounded border border-default"
+                        style={{ background: formatTemplateSeedOklch(templateBrandSeed) }}
+                      />
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {formatTemplateSeedOklch(templateBrandSeed)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <label className="block text-[10px] text-muted-foreground">
+                      Lightness {Math.round(templateBrandSeed.l * 100)}%
+                      <input
+                        aria-label="Brand lightness"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={Math.round(templateBrandSeed.l * 100)}
+                        onChange={(e) =>
+                          handleTemplateSeedSliderChange(
+                            "brand",
+                            "l",
+                            Number(e.target.value) / 100
+                          )
+                        }
+                        className="mt-1 w-full"
+                      />
+                    </label>
+                    <label className="block text-[10px] text-muted-foreground">
+                      Chroma {templateBrandSeed.c.toFixed(3)}
+                      <input
+                        aria-label="Brand chroma"
+                        type="range"
+                        min="0"
+                        max="0.32"
+                        step="0.005"
+                        value={templateBrandSeed.c}
+                        onChange={(e) =>
+                          handleTemplateSeedSliderChange(
+                            "brand",
+                            "c",
+                            Number(e.target.value)
+                          )
+                        }
+                        className="mt-1 w-full"
+                      />
+                    </label>
+                    <label className="block text-[10px] text-muted-foreground">
+                      Hue {Math.round(templateBrandSeed.h)}°
+                      <input
+                        aria-label="Brand hue"
+                        type="range"
+                        min="0"
+                        max="360"
+                        step="1"
+                        value={templateBrandSeed.h}
+                        onChange={(e) =>
+                          handleTemplateSeedSliderChange(
+                            "brand",
+                            "h",
+                            Number(e.target.value)
+                          )
+                        }
+                        className="mt-1 w-full"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                  Accent color (optional)
+                </label>
+                <ColorPickerField
+                  value={templateAccent}
+                  onChange={setTemplateAccent}
+                  placeholder="Optional secondary brand"
+                  className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
+                />
+                <div className="mt-2 rounded-md border border-default bg-surface-50 px-3 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-semibold text-foreground">Accent OKLCH</div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-5 w-5 rounded border border-default"
+                        style={{ background: formatTemplateSeedOklch(templateAccentSeed) }}
+                      />
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {formatTemplateSeedOklch(templateAccentSeed)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <label className="block text-[10px] text-muted-foreground">
+                      Lightness {Math.round(templateAccentSeed.l * 100)}%
+                      <input
+                        aria-label="Accent lightness"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={Math.round(templateAccentSeed.l * 100)}
+                        onChange={(e) =>
+                          handleTemplateSeedSliderChange(
+                            "accent",
+                            "l",
+                            Number(e.target.value) / 100
+                          )
+                        }
+                        className="mt-1 w-full"
+                      />
+                    </label>
+                    <label className="block text-[10px] text-muted-foreground">
+                      Chroma {templateAccentSeed.c.toFixed(3)}
+                      <input
+                        aria-label="Accent chroma"
+                        type="range"
+                        min="0"
+                        max="0.32"
+                        step="0.005"
+                        value={templateAccentSeed.c}
+                        onChange={(e) =>
+                          handleTemplateSeedSliderChange(
+                            "accent",
+                            "c",
+                            Number(e.target.value)
+                          )
+                        }
+                        className="mt-1 w-full"
+                      />
+                    </label>
+                    <label className="block text-[10px] text-muted-foreground">
+                      Hue {Math.round(templateAccentSeed.h)}°
+                      <input
+                        aria-label="Accent hue"
+                        type="range"
+                        min="0"
+                        max="360"
+                        step="1"
+                        value={templateAccentSeed.h}
+                        onChange={(e) =>
+                          handleTemplateSeedSliderChange(
+                            "accent",
+                            "h",
+                            Number(e.target.value)
+                          )
+                        }
+                        className="mt-1 w-full"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleAddSeedNode("brand")}
+                  className="rounded-md border border-default bg-white px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-50"
+                >
+                  Add brand seed
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddSeedNode("accent")}
+                  className="rounded-md border border-default bg-white px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-50"
+                >
+                  Add accent seed
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleGenerateTemplate}
+                className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-50"
+              >
+                Generate template nodes
+              </button>
+              <div className="rounded-md border border-default bg-surface-50 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+                Generates inputs, relative rules, and {selectedTemplateKit.framework ? `${getFrameworkLabel(selectedTemplateKit.framework)} functional aliases` : "semantic starter roles"} that you can remap manually on the canvas.
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={handleGenerateTemplate}
-              className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-50"
-            >
-              Generate template nodes
-            </button>
-          </div>
           </div>
         )}
 
@@ -4139,49 +7999,108 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
         <div className="px-4 py-3">
           {canvasMode === "color-audit" ? (
             <>
-              <div className="space-y-2">
-                {filteredTokens.map((token) => (
+              <div className="rounded-xl border border-default bg-surface-50 px-3 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Add Nodes
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   <button
-                    key={token.cssVar}
                     type="button"
-                    onClick={() => handleAddToken(token)}
-                    className="flex w-full items-center gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
+                    onClick={() => handleAddSeedNode("brand")}
+                    className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
                   >
-                    <span
-                      className="h-4 w-4 rounded border border-default"
-                      style={{
-                        background: tokenValues[token.cssVar] || `var(${token.cssVar})`,
-                      }}
-                    />
-                    <span className="flex-1 truncate font-medium">{token.label}</span>
                     <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="flex-1 truncate font-medium">Brand Seed</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddSeedNode("accent")}
+                    className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="flex-1 truncate font-medium">Accent Seed</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddCustomToken}
+                    className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="flex-1 truncate font-medium">Custom Token</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddRelativeToken}
+                    className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="flex-1 truncate font-medium">Relative Rule</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddCustomFunctionalAlias}
+                    className="flex items-center gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="flex-1 truncate font-medium">Functional Alias</span>
+                  </button>
+                </div>
+                <div className="mt-2 text-[10px] leading-5 text-muted-foreground">
+                  Inputs feed the graph. Map them into functional aliases, then connect those into semantic roles and components.
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Framework Aliases
+                </h3>
+                {Object.entries(FUNCTIONAL_TOKEN_PRESETS).map(([frameworkId, presets]) => (
+                  <div
+                    key={frameworkId}
+                    className="rounded-xl border border-default bg-surface-50 px-3 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">
+                          {getFrameworkLabel(frameworkId as ColorCanvasFrameworkId)}
+                        </div>
+                        <div className="text-[10px] leading-5 text-muted-foreground">
+                          Preset functional aliases used by popular component libraries.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleAddFunctionalFrameworkSet(frameworkId as ColorCanvasFrameworkId)
+                        }
+                        className="rounded-full border border-default bg-white px-2.5 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-surface-50"
+                      >
+                        Add set
+                      </button>
+                    </div>
+                    <div className="mt-2 space-y-2">
+                      {presets.map((preset) => (
+                        <button
+                          key={preset.cssVar}
+                          type="button"
+                          onClick={() => handleAddFunctionalToken(preset)}
+                          className="flex w-full items-start gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
+                        >
+                          <Plus className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate font-medium">{preset.label}</div>
+                            <div className="truncate text-[10px] text-muted-foreground">
+                              {preset.cssVar} · {preset.description}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
 
-              <div className="mt-4 space-y-2">
-                <button
-                  type="button"
-                  onClick={handleAddCustomToken}
-                  className="flex w-full items-center gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
-                >
-                  <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="flex-1 truncate font-medium">Custom Token</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAddRelativeToken}
-                  className="flex w-full items-center gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
-                >
-                  <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="flex-1 truncate font-medium">Relative Token</span>
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                    OKLCH
-                  </span>
-                </button>
-              </div>
-
-              <div className="mt-6">
+              <div className="mt-4">
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Semantic Roles
                 </h3>
@@ -4201,7 +8120,42 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 </div>
               </div>
 
-              <div className="mt-6">
+              <div className="mt-4">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Token Library
+                </h3>
+                <div className="space-y-2">
+                  {groupedFilteredTokens.map((group) => (
+                    <div key={group.id} className="space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {group.label}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">{group.tokens.length}</div>
+                      </div>
+                      {group.tokens.map((token) => (
+                        <button
+                          key={token.cssVar}
+                          type="button"
+                          onClick={() => handleAddToken(token)}
+                          className="flex w-full items-center gap-2 rounded-md border border-default bg-white px-2 py-2 text-left text-xs text-foreground hover:bg-surface-50"
+                        >
+                          <span
+                            className="h-4 w-4 rounded border border-default"
+                            style={{
+                              background: tokenValues[token.cssVar] || `var(${token.cssVar})`,
+                            }}
+                          />
+                          <span className="flex-1 truncate font-medium">{token.label}</span>
+                          <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4">
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Components
                 </h3>
@@ -4214,6 +8168,161 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                   <span className="flex-1 truncate font-medium">Button / Primary</span>
                   <Plus className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-3">
+                  <div className="text-xs font-semibold text-foreground">Color Audit workflow</div>
+                  <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                    Build or generate palette inputs, map them into functional aliases or semantic
+                    roles, verify coverage and contrast, then export the resolved token set into the
+                    format your project needs.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-default bg-surface-50 px-3 py-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Coverage
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-foreground">
+                    <div className="rounded-md border border-default bg-white px-2 py-2">
+                      <div className="font-semibold">{colorAuditWorkflow.inputs}</div>
+                      <div className="text-muted-foreground">Inputs</div>
+                    </div>
+                    <div className="rounded-md border border-default bg-white px-2 py-2">
+                      <div className="font-semibold">{colorAuditWorkflow.relativeRules}</div>
+                      <div className="text-muted-foreground">Relative rules</div>
+                    </div>
+                    <div className="rounded-md border border-default bg-white px-2 py-2">
+                      <div className="font-semibold">{colorAuditWorkflow.functionalAliases}</div>
+                      <div className="text-muted-foreground">Functional aliases</div>
+                    </div>
+                    <div className="rounded-md border border-default bg-white px-2 py-2">
+                      <div className="font-semibold">{colorAuditWorkflow.semanticRoles}</div>
+                      <div className="text-muted-foreground">Semantic roles</div>
+                    </div>
+                    <div className="rounded-md border border-default bg-white px-2 py-2">
+                      <div className="font-semibold">{colorAuditWorkflow.mappedSemanticRoles}</div>
+                      <div className="text-muted-foreground">Mapped roles</div>
+                    </div>
+                    <div className="rounded-md border border-default bg-white px-2 py-2">
+                      <div className="font-semibold">{colorAuditWorkflow.exportableTokens}</div>
+                      <div className="text-muted-foreground">Exportable tokens</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center justify-between rounded-md border border-default bg-white px-2 py-2 text-[11px]">
+                      <div>
+                        <div className="font-medium text-foreground">Generic export</div>
+                        <div className="text-muted-foreground">
+                          Needs inputs plus text and surface roles with resolved colors.
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          colorAuditWorkflow.genericReady
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {colorAuditWorkflow.genericReady ? "Ready" : "Incomplete"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border border-default bg-white px-2 py-2 text-[11px]">
+                      <div>
+                        <div className="font-medium text-foreground">Framework export</div>
+                        <div className="text-muted-foreground">
+                          Needs mapped functional aliases before exporting shadcn or Radix vars.
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          colorAuditWorkflow.frameworkReady
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {colorAuditWorkflow.frameworkReady ? "Ready" : "Incomplete"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-default bg-surface-50 px-3 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Export formats
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowColorAuditExportPreview(true)}
+                        className="inline-flex items-center gap-1 rounded-full border border-default bg-white px-2.5 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-surface-50"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Preview export
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCopyColorAuditExport}
+                        className="inline-flex items-center gap-1 rounded-full border border-default bg-white px-2.5 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-surface-50"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        {copiedColorAuditExportFormat === selectedColorAuditExportFormat
+                          ? "Copied"
+                          : "Copy"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-default bg-white px-2 py-2 text-[11px]">
+                    <div>
+                      <div className="font-medium text-foreground">Export scope</div>
+                      <div className="text-muted-foreground">
+                        Only mapped semantic roles and functional aliases are included.
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-surface-50 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                      {colorAuditProjectExportEntries.length} tokens
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {COLOR_AUDIT_EXPORT_FORMAT_OPTIONS.map((format) => (
+                      <button
+                        key={format.id}
+                        type="button"
+                        onClick={() => setSelectedColorAuditExportFormat(format.id)}
+                        className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                          selectedColorAuditExportFormat === format.id
+                            ? "border-brand-500 bg-brand-50 text-brand-700"
+                            : "border-default bg-white text-muted-foreground hover:bg-surface-50"
+                        }`}
+                      >
+                        {format.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {COLOR_AUDIT_EXPORT_COLOR_MODE_OPTIONS.map((mode) => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => setSelectedColorAuditExportColorMode(mode.id)}
+                        className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                          selectedColorAuditExportColorMode === mode.id
+                            ? "border-brand-500 bg-brand-50 text-brand-700"
+                            : "border-default bg-white text-muted-foreground hover:bg-surface-50"
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2 rounded-md border border-default bg-white px-3 py-2">
+                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all text-[10px] leading-5 text-foreground">
+                      {selectedColorAuditExportText}
+                    </pre>
+                  </div>
+                </div>
               </div>
             </>
           ) : (
@@ -4349,68 +8458,108 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
           )}
           {isRelationshipMode ? (
             <>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-muted-foreground">Connect mode:</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setConnectMode(connectMode === "map" ? null : "map")
-                    setConnectSourceId(null)
-                    setConnectDrag({ active: false, x: 0, y: 0 })
-                  }}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                    connectMode === "map"
-                      ? "border-brand-500 bg-brand-50 text-brand-700"
-                      : "border-default text-muted-foreground hover:bg-surface-50"
-                  }`}
-                >
-                  Token → Role
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setConnectMode(connectMode === "contrast" ? null : "contrast")
-                    setConnectSourceId(null)
-                    setConnectDrag({ active: false, x: 0, y: 0 })
-                  }}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                    connectMode === "contrast"
-                      ? "border-brand-500 bg-brand-50 text-brand-700"
-                      : "border-default text-muted-foreground hover:bg-surface-50"
-                  }`}
-                >
-                  Contrast
-                </button>
-                {connectMode && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {connectSourceId ? "Select target (or drag)" : "Select source"}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-muted-foreground">Quick connect:</span>
-                <button
-                  type="button"
-                  onClick={() => handleQuickConnect("text", "surface")}
-                  className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
-                >
-                  Text ↔ Surface
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickConnect("icon", "surface")}
-                  className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
-                >
-                  Icon ↔ Surface
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickConnect("accent", "surface")}
-                  className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
-                >
-                  Accent ↔ Surface
-                </button>
-              </div>
+              {canvasMode === "color-audit" && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground">Focus:</span>
+                  {COLOR_AUDIT_FOCUS_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => applyAuditFocusMode(option.id)}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                        activeAuditFocusMode === option.id
+                          ? "border-brand-500 bg-brand-50 text-brand-700"
+                          : "border-default text-muted-foreground hover:bg-surface-50"
+                      }`}
+                      title={option.description}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedAuditControls((prev) => !prev)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                      showAdvancedAuditControls
+                        ? "border-brand-500 bg-brand-50 text-brand-700"
+                        : "border-default text-muted-foreground hover:bg-surface-50"
+                    }`}
+                  >
+                    {showAdvancedAuditControls ? "Hide advanced" : "Advanced"}
+                  </button>
+                </div>
+              )}
+              {(canvasMode !== "color-audit" || showAdvancedAuditControls) && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground">Connect mode:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConnectMode(connectMode === "map" ? null : "map")
+                      setConnectSourceId(null)
+                      setConnectDrag({ active: false, x: 0, y: 0 })
+                    }}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                      connectMode === "map"
+                        ? "border-brand-500 bg-brand-50 text-brand-700"
+                        : "border-default text-muted-foreground hover:bg-surface-50"
+                    }`}
+                  >
+                    Token → Role
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConnectMode(connectMode === "contrast" ? null : "contrast")
+                      setConnectSourceId(null)
+                      setConnectDrag({ active: false, x: 0, y: 0 })
+                    }}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                      connectMode === "contrast"
+                        ? "border-brand-500 bg-brand-50 text-brand-700"
+                        : "border-default text-muted-foreground hover:bg-surface-50"
+                    }`}
+                  >
+                    Contrast
+                  </button>
+                  {connectMode && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {connectSourceId ? "Select target (or drag)" : "Select source"}
+                    </span>
+                  )}
+                </div>
+              )}
+              {(canvasMode !== "color-audit" || (showAdvancedAuditControls && connectMode)) && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground">Quick connect:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickConnect("text", "surface")}
+                    className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
+                  >
+                    Text ↔ Surface
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickConnect("icon", "surface")}
+                    className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
+                  >
+                    Icon ↔ Surface
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickConnect("accent", "surface")}
+                    className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
+                  >
+                    Accent ↔ Surface
+                  </button>
+                </div>
+              )}
+              {canvasMode === "color-audit" && !showAdvancedAuditControls && (
+                <div className="text-xs text-muted-foreground">
+                  Use the focus presets for review. Advanced reveals direct connect tools and quick connect.
+                </div>
+              )}
             </>
           ) : (
             <div className="text-xs text-muted-foreground">
@@ -4431,7 +8580,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 <button
                   key={section.id}
                   type="button"
-                  onClick={() => handleJumpToSystemSection(section.id)}
+                  onClick={() => handleJumpToSystemSection(section.id as SystemSectionId)}
                   className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
                   title={section.description}
                 >
@@ -4484,6 +8633,42 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               </button>
             </div>
           )}
+          {canvasMode === "color-audit" && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground">Zoom:</span>
+              <button
+                type="button"
+                onClick={handleColorAuditZoomOut}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-default text-muted-foreground hover:bg-surface-50"
+                aria-label="Zoom out"
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleResetColorAuditZoom}
+                className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
+              >
+                {Math.round(colorAuditTransform.scale * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={handleColorAuditZoomIn}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-default text-muted-foreground hover:bg-surface-50"
+                aria-label="Zoom in"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleColorAuditBirdView}
+                disabled={visibleNodes.length === 0}
+                className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50 disabled:opacity-50"
+              >
+                Bird view
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground">Edges:</span>
             {(isRelationshipMode
@@ -4512,7 +8697,27 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               <RotateCcw className="h-3.5 w-3.5" />
               Undo
             </button>
-            {isRelationshipMode && (
+            {canvasMode === "color-audit" && (
+              <>
+                <span className="ml-1 text-xs font-semibold text-muted-foreground">Arrange:</span>
+                {COLOR_AUDIT_LAYOUT_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => handleArrangeColorAudit(option.id)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                      colorAuditLayoutMode === option.id
+                        ? "border-brand-500 bg-brand-50 text-brand-700"
+                        : "border-default text-muted-foreground hover:bg-surface-50"
+                    }`}
+                    title={option.description}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </>
+            )}
+            {isRelationshipMode && (canvasMode !== "color-audit" || showAdvancedAuditControls) && (
               <>
                 <button
                   type="button"
@@ -4538,17 +8743,19 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 </button>
               </>
             )}
-            <button
-              type="button"
-              onClick={() => setShowFullLabels((prev) => !prev)}
-              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-                showFullLabels
-                  ? "border-brand-500 bg-brand-50 text-brand-700"
-                  : "border-default text-muted-foreground hover:bg-surface-50"
-              }`}
-            >
-              Full labels
-            </button>
+            {(canvasMode !== "color-audit" || showAdvancedAuditControls) && (
+              <button
+                type="button"
+                onClick={() => setShowFullLabels((prev) => !prev)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                  showFullLabels
+                    ? "border-brand-500 bg-brand-50 text-brand-700"
+                    : "border-default text-muted-foreground hover:bg-surface-50"
+                }`}
+              >
+                Full labels
+              </button>
+            )}
             {canvasMode === "system-canvas" && (
               <>
                 <button
@@ -4569,38 +8776,46 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 </button>
               </>
             )}
+            <button
+              type="button"
+              onClick={() => setShowNodeCatalog(true)}
+              disabled={renderedNodes.length === 0}
+              className="rounded-full border border-default px-3 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-50 disabled:opacity-50"
+            >
+              Node catalog
+            </button>
           </div>
         </div>
 
         <div
           ref={workspaceRef}
           className={`relative min-h-0 min-w-0 flex-1 overscroll-contain ${
-            systemCanvasTransformEnabled ? "overflow-hidden" : "overflow-auto"
+            workspaceTransformEnabled ? "overflow-hidden" : "overflow-auto"
           } ${
             isRelationshipMode
               ? "bg-[radial-gradient(circle_at_top,#f8fbfa,transparent_55%)]"
               : "bg-[radial-gradient(circle_at_top,#f8fbff,transparent_55%)]"
           }`}
           onClick={handleWorkspaceClick}
-          onWheel={systemCanvasTransformEnabled ? handleSystemWorkspaceWheel : undefined}
+          onWheel={workspaceTransformEnabled ? handleWorkspaceWheel : undefined}
         >
           <div
             ref={workspaceCanvasRef}
             className={`relative min-h-full min-w-full ${
-              systemCanvasTransformEnabled ? "absolute left-0 top-0 origin-top-left" : ""
+              workspaceTransformEnabled ? "absolute left-0 top-0 origin-top-left" : ""
             }`}
             style={
-              systemCanvasTransformEnabled
+              workspaceTransformEnabled && activeCanvasTransform
                 ? {
                     width: canvasContentSize.width,
                     height: canvasContentSize.height,
-                    transform: `translate(${systemCanvasTransform.offset.x}px, ${systemCanvasTransform.offset.y}px) scale(${systemCanvasTransform.scale})`,
+                    transform: `translate(${activeCanvasTransform.offset.x}px, ${activeCanvasTransform.offset.y}px) scale(${activeCanvasTransform.scale})`,
                   }
                 : { width: canvasContentSize.width, height: canvasContentSize.height }
             }
           >
             {!isRelationshipMode &&
-              systemSectionFrames.map((section) => (
+              visibleSectionFrames.map((section) => (
                 <div
                   key={`section-${section.id}`}
                   className="pointer-events-none absolute"
@@ -4609,7 +8824,13 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                     top: Math.max(16, section.y),
                   }}
                 >
-                  <div className="inline-flex items-center gap-3 rounded-full border border-default bg-white/90 px-3 py-1 shadow-sm backdrop-blur">
+                  <div
+                    className={`inline-flex items-center gap-3 rounded-full px-3 py-1 shadow-sm backdrop-blur ${
+                      canvasMode === "color-audit"
+                        ? "border border-emerald-200/80 bg-white/92"
+                        : "border border-default bg-white/90"
+                    }`}
+                  >
                     <div className="text-[10px] font-semibold uppercase text-muted-foreground">
                       {section.label}
                     </div>
@@ -4634,21 +8855,39 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                   if (!source || !target) return null
                   const sourceSize = getNodeSize(source)
                   const targetSize = getNodeSize(target)
-                  const x1 = source.position.x + sourceSize.width / 2
-                  const y1 = source.position.y + sourceSize.height / 2
-                  const x2 = target.position.x + targetSize.width / 2
-                  const y2 = target.position.y + targetSize.height / 2
+                  const ports = getEdgePortIds("dependency")
+                  const sourcePort = getColorNodePortPosition(source, sourceSize, ports.source)
+                  const targetPort = getColorNodePortPosition(target, targetSize, ports.target)
+                  const routed = buildColorConnectionPath(sourcePort, targetPort, "dependency")
                   return (
-                    <line
-                      key={edge.id}
-                      x1={x1}
-                      y1={y1}
-                      x2={x2}
-                      y2={y2}
-                      stroke="#94a3b8"
-                      strokeWidth={1.5}
-                      strokeDasharray="3 4"
-                    />
+                    <g key={edge.id}>
+                      <path
+                        d={routed.path}
+                        fill="none"
+                        stroke="#94a3b8"
+                        strokeWidth={1.5}
+                        strokeDasharray="3 4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        opacity={hasActiveEdgeSelection ? 0.16 : 0.9}
+                      />
+                      <circle
+                        cx={sourcePort.x}
+                        cy={sourcePort.y}
+                        r={3.5}
+                        fill="#94a3b8"
+                        opacity={hasActiveEdgeSelection ? 0.16 : 0.9}
+                      />
+                      <circle
+                        cx={targetPort.x}
+                        cy={targetPort.y}
+                        r={3.5}
+                        fill="white"
+                        stroke="#94a3b8"
+                        strokeWidth={2}
+                        opacity={hasActiveEdgeSelection ? 0.16 : 0.9}
+                      />
+                    </g>
                   )
                 })}
               {visibleEdges.map((edge) => {
@@ -4657,40 +8896,117 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 if (!source || !target) return null
                 const sourceSize = getNodeSize(source)
                 const targetSize = getNodeSize(target)
-                const x1 = source.position.x + sourceSize.width / 2
-                const y1 = source.position.y + sourceSize.height / 2
-                const x2 = target.position.x + targetSize.width / 2
-                const y2 = target.position.y + targetSize.height / 2
-                const stroke = edge.type === "map" ? "#a5b4fc" : "#f97316"
+                const kind = edge.type === "contrast" ? "contrast" : "map"
+                const ports = getEdgePortIds(kind)
+                const sourcePort = getColorNodePortPosition(source, sourceSize, ports.source)
+                const targetPort = getColorNodePortPosition(target, targetSize, ports.target)
+                const routed = buildColorConnectionPath(sourcePort, targetPort, kind)
+                const stroke = kind === "map" ? "#818cf8" : "#f97316"
+                const isSelectedEdge =
+                  selectedEdgeId === edge.id || selectedAutoEdgeId === edge.id
                 return (
-                  <line
-                    key={edge.id}
-                    x1={x1}
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
-                    stroke={stroke}
-                    strokeWidth={2}
-                    strokeDasharray={edge.type === "contrast" ? "6 4" : ""}
-                  />
+                  <g key={edge.id}>
+                    <path
+                      d={routed.path}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={14}
+                      className="cursor-pointer"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleEdgeBadgeClick(edge)
+                      }}
+                    />
+                    <path
+                      d={routed.path}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={isSelectedEdge ? 3 : 2}
+                      strokeDasharray={edge.type === "contrast" ? "6 4" : ""}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity={hasActiveEdgeSelection && !isSelectedEdge ? 0.18 : 1}
+                    />
+                    <circle
+                      cx={sourcePort.x}
+                      cy={sourcePort.y}
+                      r={3.5}
+                      fill={stroke}
+                      className="cursor-pointer"
+                      opacity={hasActiveEdgeSelection && !isSelectedEdge ? 0.18 : 1}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleEdgeBadgeClick(edge)
+                      }}
+                    />
+                    <circle
+                      cx={targetPort.x}
+                      cy={targetPort.y}
+                      r={3.5}
+                      fill="white"
+                      stroke={stroke}
+                      strokeWidth={2}
+                      className="cursor-pointer"
+                      opacity={hasActiveEdgeSelection && !isSelectedEdge ? 0.18 : 1}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleEdgeBadgeClick(edge)
+                      }}
+                    />
+                    {isSelectedEdge ? (
+                      <>
+                        {routed.controlPoints?.map((point: { x: number; y: number }, index: number) => (
+                          <circle
+                            key={`${edge.id}-control-${index}`}
+                            cx={point.x}
+                            cy={point.y}
+                            r={3}
+                            fill="#ffffff"
+                            stroke={stroke}
+                            strokeWidth={1.5}
+                            className="cursor-pointer"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              handleEdgeBadgeClick(edge)
+                            }}
+                          />
+                        ))}
+                        <circle
+                          cx={routed.midPoint.x}
+                          cy={routed.midPoint.y}
+                          r={4}
+                          fill={stroke}
+                          className="cursor-pointer"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            handleEdgeBadgeClick(edge)
+                          }}
+                        />
+                      </>
+                    ) : null}
+                  </g>
                 )
               })}
               {connectMode && connectSourceId && connectDrag.active && (() => {
                 const source = renderedNodesById[connectSourceId]
                 if (!source) return null
                 const sourceSize = getNodeSize(source)
-                const x1 = source.position.x + sourceSize.width / 2
-                const y1 = source.position.y + sourceSize.height / 2
+                const kind = connectMode === "contrast" ? "contrast" : "map"
+                const ports = getEdgePortIds(kind)
+                const sourcePort = getColorNodePortPosition(source, sourceSize, ports.source)
+                const routed = buildColorConnectionPath(sourcePort, connectDrag, kind)
+                const stroke = kind === "map" ? "#818cf8" : "#f97316"
                 return (
-                  <line
-                    x1={x1}
-                    y1={y1}
-                    x2={connectDrag.x}
-                    y2={connectDrag.y}
-                    stroke="#94a3b8"
-                    strokeWidth={2}
-                    strokeDasharray="4 4"
-                  />
+                  <g>
+                    <path
+                      d={routed.path}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                    />
+                    <circle cx={sourcePort.x} cy={sourcePort.y} r={3.5} fill={stroke} />
+                  </g>
                 )
               })()}
             </svg>
@@ -4701,14 +9017,13 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
               if (!source || !target) return null
               const sourceSize = getNodeSize(source)
               const targetSize = getNodeSize(target)
-              const x1 = source.position.x + sourceSize.width / 2
-              const y1 = source.position.y + sourceSize.height / 2
-              const x2 = target.position.x + targetSize.width / 2
-              const y2 = target.position.y + targetSize.height / 2
-              const midX = (x1 + x2) / 2
-              const midY = (y1 + y2) / 2
+              const kind = edge.type === "contrast" ? "contrast" : "map"
+              const ports = getEdgePortIds(kind)
+              const sourcePort = getColorNodePortPosition(source, sourceSize, ports.source)
+              const targetPort = getColorNodePortPosition(target, targetSize, ports.target)
+              const routed = buildColorConnectionPath(sourcePort, targetPort, kind)
               const contrast = getEdgeContrast(edge)
-              const label = edge.type === "contrast" ? formatLc(contrast) : edge.rule?.note || "Map"
+              const label = resolveEdgeBadgeLabel(edge, contrast)
               const absValue = contrast ? Math.abs(contrast) : 0
               const badgeClass =
                 edge.type === "contrast"
@@ -4723,9 +9038,21 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 <button
                   key={`${edge.id}-badge`}
                   type="button"
-                  onClick={() => handleEdgeBadgeClick(edge)}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handleEdgeBadgeClick(edge)
+                  }}
                   className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-[10px] font-semibold shadow-sm ${badgeClass}`}
-                  style={{ left: midX, top: midY }}
+                  style={{
+                    left: routed.badgeX,
+                    top: routed.badgeY,
+                    opacity:
+                      hasActiveEdgeSelection &&
+                      selectedEdgeId !== edge.id &&
+                      selectedAutoEdgeId !== edge.id
+                        ? 0.28
+                        : 1,
+                  }}
                 >
                   {label}
                 </button>
@@ -4738,12 +9065,20 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                 node={node}
                 size={getNodeSize(node)}
                 minSize={getNodeMinSize(node)}
+                portIds={nodePortUsage[node.id] ?? []}
                 resolveColor={getNodeColor}
                 resolveIsP3={getNodeIsP3}
                 resolveExpression={getNodeColorExpression}
                 resolveLabel={getNodeLabel}
                 selected={selectedNodeId === node.id}
+                highlighted={highlightedConnectionNodeIds.has(node.id)}
+                dimmed={
+                  hasActiveEdgeSelection &&
+                  !highlightedConnectionNodeIds.has(node.id) &&
+                  selectedNodeId !== node.id
+                }
                 connectActive={isRelationshipMode && connectMode !== null}
+                connectMode={connectMode}
                 connectDragging={connectDrag.active}
                 connectSourceId={connectSourceId}
                 movable
@@ -4975,10 +9310,50 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                             Relative colors are not supported in this browser, so preview may be empty.
                           </div>
                         )}
+                        {!selectedNode.preview && (
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            Use Quick preview edit for local review. Apply to Theme persists node values back into the active theme.
+                          </div>
+                        )}
                         {selectedNode.preview && (
                           <DesignSystemNodePreview preview={selectedNode.preview} />
                         )}
                       </div>
+                      {!selectedNode.preview && selectedNode.type !== "component" && (
+                        <div className="rounded-md border border-default bg-surface-50 px-3 py-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <div className="text-[11px] font-semibold text-foreground">Quick preview edit</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                Writes a local override to this node.
+                              </div>
+                            </div>
+                            {selectedNode.value && (
+                              <button
+                                type="button"
+                                onClick={() => updateNodeValue(selectedNode.id, "")}
+                                className="rounded-md border border-default bg-white px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-surface-50"
+                              >
+                                Clear override
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-3 flex items-center gap-3">
+                            <input
+                              type="color"
+                              value={selectedQuickEditHex}
+                              onChange={(e) => updateNodeValue(selectedNode.id, e.target.value)}
+                              className="h-9 w-12 rounded border border-default bg-white"
+                              aria-label="Quick color override"
+                            />
+                            <div className="text-[10px] leading-5 text-muted-foreground">
+                              {selectedQuickEditRgba
+                                ? `Starts from ${selectedQuickEditHex}. Use the field below for OKLCH, P3, or full expressions.`
+                                : "No resolved color yet. Pick a starting color here to create a local override."}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div>
                         <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Label</label>
                         <input
@@ -4992,6 +9367,74 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                         <div className="text-[11px] text-muted-foreground">Type</div>
                         <div className="text-xs font-semibold text-foreground">{selectedNode.type}</div>
                       </div>
+                      {!selectedNode.preview && (
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Node family</div>
+                          <div className="text-xs font-semibold text-foreground">
+                            {getNodeFamilyLabel(selectedNode)}
+                          </div>
+                        </div>
+                      )}
+                      {!selectedNode.preview && selectedNode.type !== "component" && (
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Mapping</div>
+                          {selectedNodeIncomingMapEdges.length === 0 &&
+                          selectedNodeOutgoingMapEdges.length === 0 ? (
+                            <div className="mt-1 rounded-md border border-dashed border-default bg-white px-2 py-1 text-[11px] text-muted-foreground">
+                              No map edges for this node yet.
+                            </div>
+                          ) : (
+                            <div className="mt-1 space-y-2">
+                              {selectedNodeIncomingMapEdges.length > 0 && (
+                                <div>
+                                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Mapped from
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {selectedNodeIncomingMapEdges.map((edge) => {
+                                      const source = nodesById[edge.sourceId]
+                                      if (!source) return null
+                                      return (
+                                        <button
+                                          key={edge.id}
+                                          type="button"
+                                          onClick={() => selectNode(source.id)}
+                                          className="rounded-full border border-default bg-white px-2 py-1 text-[10px] font-semibold text-foreground hover:bg-surface-50"
+                                        >
+                                          {getDisplayNodeLabelFromNode(source)}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                              {selectedNodeOutgoingMapEdges.length > 0 && (
+                                <div>
+                                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Feeds
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {selectedNodeOutgoingMapEdges.map((edge) => {
+                                      const target = nodesById[edge.targetId]
+                                      if (!target) return null
+                                      return (
+                                        <button
+                                          key={edge.id}
+                                          type="button"
+                                          onClick={() => selectNode(target.id)}
+                                          className="rounded-full border border-default bg-white px-2 py-1 text-[10px] font-semibold text-foreground hover:bg-surface-50"
+                                        >
+                                          {getDisplayNodeLabelFromNode(target)}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {selectedNode.preview && (
                         <div className="rounded-md border border-default bg-surface-50 px-3 py-2">
                           <div className="text-[11px] font-semibold text-foreground">
@@ -5016,8 +9459,157 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                           )}
                         </div>
                       )}
+                      {!selectedNode.preview && selectedNode.type !== "component" && (
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">
+                            Foreground vs background review
+                          </div>
+                          {selectedForegroundComparisons.length === 0 &&
+                          selectedBackgroundComparisons.length === 0 ? (
+                            <div className="mt-1 rounded-md border border-dashed border-default bg-white px-2 py-1 text-[11px] text-muted-foreground">
+                              Assign a role or add more complementary colors to compare foreground tokens with background tokens.
+                            </div>
+                          ) : (
+                            <div className="mt-1 max-h-96 space-y-3 overflow-auto pr-1">
+                              {selectedForegroundComparisons.length > 0 && (
+                                <div className="space-y-2">
+                                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Selected as foreground
+                                  </div>
+                                  {selectedForegroundComparisons.map((comparison) => {
+                                    const target = comparison.rule?.targetLc ?? null
+                                    const status = getApcaStatus(
+                                      comparison.lc,
+                                      target ?? DEFAULT_CONTRAST_TARGET_LC
+                                    )
+                                    const badgeClass =
+                                      status === "pass"
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : status === "fail"
+                                          ? "bg-rose-100 text-rose-700"
+                                          : "bg-slate-100 text-slate-600"
+                                    return (
+                                      <div
+                                        key={`fg-${comparison.node.id}`}
+                                        className="rounded-md border border-default bg-white px-2 py-2"
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <div className="flex min-w-0 items-center gap-2">
+                                            <span
+                                              className="h-4 w-4 rounded border border-default"
+                                              style={{ background: selectedPreviewColor || "transparent" }}
+                                            />
+                                            <span
+                                              className="h-4 w-4 rounded border border-default"
+                                              style={{ background: comparison.comparisonColor }}
+                                            />
+                                            <span className="truncate text-xs font-semibold text-foreground">
+                                              On {getDisplayNodeLabelFromNode(comparison.node)}
+                                            </span>
+                                          </div>
+                                          <div className="text-[10px] text-muted-foreground">
+                                            {comparison.node.role
+                                              ? `${comparison.node.role[0].toUpperCase()}${comparison.node.role.slice(1)} bg`
+                                              : "Background candidate"}
+                                          </div>
+                                        </div>
+                                        <div
+                                          className="mt-2 rounded-md border border-default px-2 py-2 text-xs font-semibold"
+                                          style={{
+                                            background: comparison.comparisonColor,
+                                            color: selectedPreviewColor || previewForegroundReferenceColor,
+                                          }}
+                                        >
+                                          Selected foreground on{" "}
+                                          {getDisplayNodeLabelFromNode(comparison.node)}
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                          <span
+                                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeClass}`}
+                                          >
+                                            {formatLc(comparison.lc)}
+                                          </span>
+                                          <span className="text-[10px] text-muted-foreground">
+                                            {target ? `Target Lc ${target}` : "Reference only"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                              {selectedBackgroundComparisons.length > 0 && (
+                                <div className="space-y-2">
+                                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Foreground tokens on selected background
+                                  </div>
+                                  {selectedBackgroundComparisons.map((comparison) => {
+                                    const target = comparison.rule?.targetLc ?? null
+                                    const status = getApcaStatus(
+                                      comparison.lc,
+                                      target ?? DEFAULT_CONTRAST_TARGET_LC
+                                    )
+                                    const badgeClass =
+                                      status === "pass"
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : status === "fail"
+                                          ? "bg-rose-100 text-rose-700"
+                                          : "bg-slate-100 text-slate-600"
+                                    return (
+                                      <div
+                                        key={`bg-${comparison.node.id}`}
+                                        className="rounded-md border border-default bg-white px-2 py-2"
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <div className="flex min-w-0 items-center gap-2">
+                                            <span
+                                              className="h-4 w-4 rounded border border-default"
+                                              style={{ background: comparison.comparisonColor }}
+                                            />
+                                            <span
+                                              className="h-4 w-4 rounded border border-default"
+                                              style={{ background: selectedPreviewColor || "transparent" }}
+                                            />
+                                            <span className="truncate text-xs font-semibold text-foreground">
+                                              {getDisplayNodeLabelFromNode(comparison.node)} on selected
+                                            </span>
+                                          </div>
+                                          <div className="text-[10px] text-muted-foreground">
+                                            {comparison.node.role
+                                              ? `${comparison.node.role[0].toUpperCase()}${comparison.node.role.slice(1)} fg`
+                                              : "Foreground candidate"}
+                                          </div>
+                                        </div>
+                                        <div
+                                          className="mt-2 rounded-md border border-default px-2 py-2 text-xs font-semibold"
+                                          style={{
+                                            background: selectedPreviewColor || previewSurfaceReferenceColor,
+                                            color: comparison.comparisonColor,
+                                          }}
+                                        >
+                                          {getDisplayNodeLabelFromNode(comparison.node)} on selected background
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                          <span
+                                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeClass}`}
+                                          >
+                                            {formatLc(comparison.lc)}
+                                          </span>
+                                          <span className="text-[10px] text-muted-foreground">
+                                            {target ? `Target Lc ${target}` : "Reference only"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div>
-                        <div className="text-[11px] text-muted-foreground">Contrast checks</div>
+                        <div className="text-[11px] text-muted-foreground">Connected contrast checks</div>
                         {nodeContrastEdges.length === 0 ? (
                           <div className="mt-1 rounded-md border border-dashed border-default bg-white px-2 py-1 text-[11px] text-muted-foreground">
                             No contrast edges for this node yet.
@@ -5043,8 +9635,8 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                                     : "bg-slate-100 text-slate-600"
                               const source = nodesById[edge.sourceId]
                               const targetNode = nodesById[edge.targetId]
-                              const forwardLabel = `${source?.label ?? "Unknown"} → ${targetNode?.label ?? "Unknown"}`
-                              const reverseLabel = `${targetNode?.label ?? "Unknown"} → ${source?.label ?? "Unknown"}`
+                              const forwardLabel = `${getDisplayNodeLabelFromNode(source)} → ${getDisplayNodeLabelFromNode(targetNode)}`
+                              const reverseLabel = `${getDisplayNodeLabelFromNode(targetNode)} → ${getDisplayNodeLabelFromNode(source)}`
                               const isPrimary =
                                 edge.auto
                                   ? edge.sourceId === selectedNode.id
@@ -5112,23 +9704,102 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                       )}
                       {selectedNode.type !== "component" && (
                         <div>
-                          <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Role</label>
-                          <select
-                            value={selectedNode.role || ""}
-                            onChange={(e) =>
-                              updateNodeRole(selectedNode.id, e.target.value as ColorCanvasNode["role"])
-                            }
-                            className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
-                          >
-                            <option value="">Unspecified</option>
-                            <option value="text">Text</option>
-                            <option value="surface">Surface</option>
-                            <option value="border">Border</option>
-                            <option value="icon">Icon</option>
-                            <option value="accent">Accent</option>
-                          </select>
+                          <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                            Role
+                          </label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { value: "", label: "Unspecified" },
+                              { value: "text", label: "Text" },
+                              { value: "surface", label: "Surface" },
+                              { value: "border", label: "Border" },
+                              { value: "icon", label: "Icon" },
+                              { value: "accent", label: "Accent" },
+                            ].map((option) => {
+                              const active = (selectedNode.role || "") === option.value
+                              const previewStyle =
+                                option.value === "text"
+                                  ? {
+                                      background: previewSurfaceReferenceColor,
+                                      color: selectedPreviewColor || previewForegroundReferenceColor,
+                                      borderColor: "rgba(148, 163, 184, 0.35)",
+                                    }
+                                  : option.value === "surface"
+                                    ? {
+                                        background: selectedPreviewColor || previewSurfaceReferenceColor,
+                                        color: previewForegroundReferenceColor,
+                                        borderColor: "rgba(148, 163, 184, 0.35)",
+                                      }
+                                    : option.value === "border"
+                                      ? {
+                                          background: previewSurfaceReferenceColor,
+                                          color: previewForegroundReferenceColor,
+                                          border: `2px solid ${selectedPreviewColor || previewForegroundReferenceColor}`,
+                                        }
+                                      : option.value === "icon"
+                                        ? {
+                                            background: previewSurfaceReferenceColor,
+                                            color: selectedPreviewColor || previewForegroundReferenceColor,
+                                            borderColor: "rgba(148, 163, 184, 0.35)",
+                                          }
+                                        : option.value === "accent"
+                                          ? {
+                                              background: selectedPreviewColor || previewSurfaceReferenceColor,
+                                              color: previewInverseReferenceColor,
+                                              borderColor: "rgba(148, 163, 184, 0.35)",
+                                            }
+                                          : {
+                                              background: "white",
+                                              color: selectedPreviewColor || previewForegroundReferenceColor,
+                                              borderColor: "rgba(148, 163, 184, 0.35)",
+                                            }
+                              return (
+                                <button
+                                  key={option.label}
+                                  type="button"
+                                  onClick={() =>
+                                    updateNodeRole(
+                                      selectedNode.id,
+                                      (option.value || undefined) as ColorCanvasNode["role"]
+                                    )
+                                  }
+                                  className={`rounded-md border px-2 py-2 text-left transition-colors ${
+                                    active
+                                      ? "border-brand-500 bg-brand-50"
+                                      : "border-default bg-white hover:bg-surface-50"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[11px] font-semibold text-foreground">
+                                      {option.label}
+                                    </span>
+                                    <span
+                                      className="h-3.5 w-3.5 rounded-full border border-default"
+                                      style={{ background: selectedPreviewColor || "transparent" }}
+                                    />
+                                  </div>
+                                  <div
+                                    className="mt-2 flex h-9 items-center justify-center rounded-md border text-[10px] font-semibold"
+                                    style={previewStyle}
+                                  >
+                                    {option.value === "text"
+                                      ? "Aa"
+                                      : option.value === "surface"
+                                        ? "Surface"
+                                        : option.value === "border"
+                                          ? "Border"
+                                          : option.value === "icon"
+                                            ? "Icon"
+                                            : option.value === "accent"
+                                              ? "Accent"
+                                              : "No role"}
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </div>
                           <div className="mt-1 text-[10px] text-muted-foreground">
-                            Roles drive auto-contrast rules.
+                            Roles drive auto-contrast rules and decide whether this color is reviewed as foreground, background, or both.
                           </div>
                         </div>
                       )}
@@ -5148,15 +9819,20 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                         </div>
                       )}
 
-                      {selectedNode.type === "token" && (
+                      {(selectedNode.type === "token" || selectedNode.type === "semantic") && (
                         <div>
-                          <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Value Override</label>
+                          <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                            Advanced color expression
+                          </label>
                           <ColorPickerField
                             value={selectedNode.value || ""}
                             onChange={(value) => updateNodeValue(selectedNode.id, value)}
                             className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
                             placeholder="e.g. #1d4ed8 or rgb(0 0 0)"
                           />
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            Use this for OKLCH, Display-P3, or a manual CSS color string. Quick preview edit above is the faster review path.
+                          </div>
                         </div>
                       )}
 
@@ -5198,7 +9874,7 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                                 .filter((node) => node.id !== selectedNode.id)
                                 .map((node) => (
                                   <option key={node.id} value={node.id}>
-                                    {node.label} ({node.type})
+                                    {getDisplayNodeLabelFromNode(node)} ({node.type})
                                   </option>
                                 ))}
                             </select>
@@ -5259,17 +9935,6 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                         </div>
                       )}
 
-                      {selectedNode.type === "semantic" && (
-                        <div>
-                          <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Color Override</label>
-                          <ColorPickerField
-                            value={selectedNode.value || ""}
-                            onChange={(value) => updateNodeValue(selectedNode.id, value)}
-                            className="w-full rounded-md border border-default bg-white px-2 py-1 text-xs text-foreground"
-                            placeholder="e.g. rgb(0 0 0)"
-                          />
-                        </div>
-                      )}
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -5319,6 +9984,42 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
                                 )}
                               </div>
                             </div>
+                            {(() => {
+                              const source = nodesById[selectedEdgeData.sourceId]
+                              const target = nodesById[selectedEdgeData.targetId]
+                              const sourceColor = getNodeColor(selectedEdgeData.sourceId)
+                              const targetColor = getNodeColor(selectedEdgeData.targetId)
+                              return (
+                                <div className="mt-2 rounded-md border border-default bg-surface-50 px-2 py-2">
+                                  <div className="text-[11px] font-semibold text-foreground">
+                                    Resolved pair
+                                  </div>
+                                  <div className="mt-2 flex items-center gap-2 text-[11px] text-foreground">
+                                    <span
+                                      className="h-4 w-4 rounded border border-default"
+                                      style={{ background: sourceColor || "transparent" }}
+                                    />
+                                    <span className="truncate">
+                                      {getDisplayNodeLabelFromNode(source)}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 flex items-center gap-2 text-[11px] text-foreground">
+                                    <span
+                                      className="h-4 w-4 rounded border border-default"
+                                      style={{ background: targetColor || "transparent" }}
+                                    />
+                                    <span className="truncate">
+                                      {getDisplayNodeLabelFromNode(target)}
+                                    </span>
+                                  </div>
+                                  {!sourceColor || !targetColor ? (
+                                    <div className="mt-2 text-[10px] text-muted-foreground">
+                                      One side of this contrast pair does not currently resolve to a color.
+                                    </div>
+                                  ) : null}
+                                </div>
+                              )
+                            })()}
                           </div>
                           <div>
                             <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
@@ -5380,6 +10081,309 @@ export function ColorCanvasPage({ tokens, themeStorageKeyPrefix }: ColorCanvasPa
           </div>
         )}
       </aside>
+
+      {showNodeCatalog ? (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-6 py-8"
+          onClick={() => setShowNodeCatalog(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Node catalog"
+            className="flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-default bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-default px-5 py-4">
+              <div>
+                <div className="text-sm font-semibold text-foreground">Node catalog</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Review the current canvas view as a clean list of node cards, titles, pills, and state treatments.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close node catalog"
+                onClick={() => setShowNodeCatalog(false)}
+                className="rounded-full border border-default bg-white p-2 text-muted-foreground hover:bg-surface-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[280px,minmax(0,1fr)]">
+              <div className="border-b border-default bg-surface-50 px-5 py-4 lg:border-b-0 lg:border-r">
+                <div className="rounded-xl border border-default bg-white px-3 py-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Current view
+                  </div>
+                  <div className="mt-2 text-xs font-semibold text-foreground">
+                    {canvasMode === "color-audit" ? "Color Audit" : "System Canvas"}
+                  </div>
+                  <div className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                    {renderedNodes.length} nodes in the current view, grouped by family for design review.
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    State preview
+                  </div>
+                  {nodeCatalogSampleNode ? (
+                    <div className="mt-2 space-y-3">
+                      {([
+                        { id: "default", label: "Default", selected: false, highlighted: false, dimmed: false },
+                        { id: "selected", label: "Selected", selected: true, highlighted: false, dimmed: false },
+                        { id: "highlighted", label: "Highlighted", selected: false, highlighted: true, dimmed: false },
+                        { id: "dimmed", label: "Dimmed", selected: false, highlighted: false, dimmed: true },
+                      ] as const).map((statePreview) => {
+                        const sampleNode = { ...nodeCatalogSampleNode, position: { x: 0, y: 0 } }
+                        const size = getNodeSize(nodeCatalogSampleNode)
+                        return (
+                          <div key={statePreview.id} className="rounded-xl border border-default bg-white px-3 py-3">
+                            <div className="mb-2 text-[11px] font-semibold text-foreground">
+                              {statePreview.label}
+                            </div>
+                            <div
+                              className="relative overflow-auto rounded-lg bg-surface-50 p-2"
+                              style={{ width: "100%", minHeight: size.height + 16 }}
+                            >
+                              <div style={{ position: "relative", width: size.width, height: size.height }}>
+                                <ColorNode
+                                  node={sampleNode}
+                                  size={size}
+                                  minSize={getNodeMinSize(nodeCatalogSampleNode)}
+                                  portIds={nodePortUsage[nodeCatalogSampleNode.id] ?? []}
+                                  resolveColor={getNodeColor}
+                                  resolveIsP3={getNodeIsP3}
+                                  resolveExpression={getNodeColorExpression}
+                                  resolveLabel={getNodeLabel}
+                                  selected={statePreview.selected}
+                                  highlighted={statePreview.highlighted}
+                                  dimmed={statePreview.dimmed}
+                                  connectActive={false}
+                                  connectMode={null}
+                                  connectDragging={false}
+                                  connectSourceId={null}
+                                  movable={false}
+                                  onMove={() => {}}
+                                  onResize={() => {}}
+                                  onClick={() => {}}
+                                  onConnectStart={() => {}}
+                                  showFullLabels={showFullLabels}
+                                  toCanvasPosition={(x, y) => ({ x, y })}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="mt-2 rounded-md border border-dashed border-default bg-white px-3 py-2 text-[11px] text-muted-foreground">
+                      Add or generate nodes to review card states.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="min-h-0 overflow-y-auto px-5 py-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Current view nodes
+                </div>
+                {nodeCatalogGroups.length === 0 ? (
+                  <div className="mt-2 rounded-md border border-dashed border-default bg-white px-3 py-2 text-[11px] text-muted-foreground">
+                    No nodes in the current view yet.
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-5">
+                    {nodeCatalogGroups.map((group) => (
+                      <section key={group.id}>
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="text-xs font-semibold text-foreground">{group.label}</div>
+                          <span className="rounded-full bg-surface-50 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                            {group.nodes.length}
+                          </span>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {group.nodes.map((node) => {
+                            const size = getNodeSize(node)
+                            const staticNode = { ...node, position: { x: 0, y: 0 } }
+                            return (
+                              <div key={node.id} className="rounded-xl border border-default bg-surface-50 px-3 py-3">
+                                <div className="mb-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                                  <span className="truncate">{getDisplayNodeLabelFromNode(node)}</span>
+                                  <span className="rounded-full bg-white px-2 py-0.5 font-semibold">
+                                    {node.type}
+                                  </span>
+                                </div>
+                                <div
+                                  className="relative overflow-auto rounded-lg bg-white/70 p-2"
+                                  style={{ minHeight: size.height + 16 }}
+                                >
+                                  <div style={{ position: "relative", width: size.width, height: size.height }}>
+                                    <ColorNode
+                                      node={staticNode}
+                                      size={size}
+                                      minSize={getNodeMinSize(node)}
+                                      portIds={nodePortUsage[node.id] ?? []}
+                                      resolveColor={getNodeColor}
+                                      resolveIsP3={getNodeIsP3}
+                                      resolveExpression={getNodeColorExpression}
+                                      resolveLabel={getNodeLabel}
+                                      selected={selectedNodeId === node.id}
+                                      highlighted={highlightedConnectionNodeIds.has(node.id)}
+                                      dimmed={false}
+                                      connectActive={false}
+                                      connectMode={null}
+                                      connectDragging={false}
+                                      connectSourceId={null}
+                                      movable={false}
+                                      onMove={() => {}}
+                                      onResize={() => {}}
+                                      onClick={() => {}}
+                                      onConnectStart={() => {}}
+                                      showFullLabels={showFullLabels}
+                                      toCanvasPosition={(x, y) => ({ x, y })}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showColorAuditExportPreview ? (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 px-6 py-8"
+          onClick={() => setShowColorAuditExportPreview(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Export preview"
+            className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-default bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-default px-5 py-4">
+              <div>
+                <div className="text-sm font-semibold text-foreground">Export preview</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Review exactly what will be copied before exporting tokens into your project.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close export preview"
+                onClick={() => setShowColorAuditExportPreview(false)}
+                className="rounded-full border border-default bg-white p-2 text-muted-foreground hover:bg-surface-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-0 md:grid-cols-[260px,minmax(0,1fr)]">
+              <div className="border-b border-default bg-surface-50 px-5 py-4 md:border-b-0 md:border-r">
+                <div className="rounded-xl border border-default bg-white px-3 py-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    What you will copy
+                  </div>
+                  <div className="mt-2 text-xs font-semibold text-foreground">
+                    {selectedColorAuditExportFormatLabel}
+                  </div>
+                  <div className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                    Only mapped semantic roles and functional aliases are included.
+                  </div>
+                  <div className="mt-2 inline-flex rounded-full bg-surface-50 px-2 py-1 text-[10px] font-semibold text-muted-foreground">
+                    {colorAuditProjectExportEntries.length} tokens
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Format
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {COLOR_AUDIT_EXPORT_FORMAT_OPTIONS.map((format) => (
+                      <button
+                        key={format.id}
+                        type="button"
+                        onClick={() => setSelectedColorAuditExportFormat(format.id)}
+                        className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                          selectedColorAuditExportFormat === format.id
+                            ? "border-brand-500 bg-brand-50 text-brand-700"
+                            : "border-default bg-white text-muted-foreground hover:bg-surface-50"
+                        }`}
+                      >
+                        {format.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Color mode
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {COLOR_AUDIT_EXPORT_COLOR_MODE_OPTIONS.map((mode) => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => setSelectedColorAuditExportColorMode(mode.id)}
+                        className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                          selectedColorAuditExportColorMode === mode.id
+                            ? "border-brand-500 bg-brand-50 text-brand-700"
+                            : "border-default bg-white text-muted-foreground hover:bg-surface-50"
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex min-h-0 flex-col px-5 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold text-foreground">
+                      {selectedColorAuditExportFormatLabel}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Live preview of the payload that the copy action will use.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyColorAuditExport}
+                    className="inline-flex items-center gap-1 rounded-full border border-default bg-white px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-surface-50"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {copiedColorAuditExportFormat === selectedColorAuditExportFormat
+                      ? "Copied"
+                      : "Copy export"}
+                  </button>
+                </div>
+                <div className="mt-3 min-h-0 flex-1 rounded-xl border border-default bg-surface-950/95 px-4 py-4">
+                  <pre className="h-full overflow-auto whitespace-pre-wrap break-all text-[11px] leading-6 text-surface-50">
+                    {selectedColorAuditExportText}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <span
         ref={colorProbeRef}
@@ -5487,6 +10491,14 @@ function rgbaToCss(color: RGBA) {
   const a = clampValue(color.a, 0, 1)
   if (a >= 1) return `rgb(${r} ${g} ${b})`
   return `rgb(${r} ${g} ${b} / ${Number(a.toFixed(3))})`
+}
+
+function rgbaToHex(color: RGBA) {
+  const toChannel = (value: number) =>
+    Math.round(clampValue(value, 0, 1) * 255)
+      .toString(16)
+      .padStart(2, "0")
+  return `#${toChannel(color.r)}${toChannel(color.g)}${toChannel(color.b)}`
 }
 
 export function parseOklch(input: string): { l: number; c: number; h: number; a: number } | null {
@@ -5699,13 +10711,17 @@ function ColorNode({
   node,
   size,
   minSize,
+  portIds,
   toCanvasPosition,
   resolveColor,
   resolveIsP3,
   resolveExpression,
   resolveLabel,
   selected,
+  highlighted,
+  dimmed,
   connectActive,
+  connectMode,
   connectDragging,
   connectSourceId,
   movable,
@@ -5718,13 +10734,17 @@ function ColorNode({
   node: ColorCanvasNode
   size: { width: number; height: number }
   minSize: { width: number; height: number }
+  portIds: ColorNodePortId[]
   toCanvasPosition: (clientX: number, clientY: number) => { x: number; y: number }
   resolveColor: (nodeId: string) => string | null
   resolveIsP3: (nodeId: string) => boolean
   resolveExpression: (nodeId: string) => string | null
   resolveLabel: (nodeId: string) => string
   selected: boolean
+  highlighted: boolean
+  dimmed: boolean
   connectActive: boolean
+  connectMode: ConnectMode
   connectDragging: boolean
   connectSourceId: string | null
   movable: boolean
@@ -5838,6 +10858,7 @@ function ColorNode({
     showFullLabels && node.type === "relative" && node.relative?.baseId
       ? `From ${resolveLabel(node.relative.baseId)}`
       : null
+  const displayLabel = stripFrameworkPrefix(node.label, node.framework)
   const labelLine = node.preview
     ? node.preview.description ||
       node.preview.note ||
@@ -5848,13 +10869,19 @@ function ColorNode({
   const surfaceClass = node.preview
     ? selected
       ? "border-sky-500 bg-sky-50 shadow-md ring-1 ring-sky-200"
+      : highlighted
+        ? "border-sky-500 bg-sky-50 shadow-lg ring-2 ring-sky-300"
       : "border-sky-200 bg-sky-50/80 shadow-sm"
     : node.group === "system-support"
       ? selected
         ? "border-emerald-500 bg-emerald-50 shadow-md ring-1 ring-emerald-200"
+        : highlighted
+          ? "border-emerald-500 bg-emerald-50 shadow-lg ring-2 ring-emerald-300"
         : "border-emerald-200 bg-emerald-50/80 shadow-sm"
       : selected
         ? "border-brand-500 bg-white shadow-md"
+        : highlighted
+          ? "border-brand-500 bg-white shadow-lg ring-2 ring-brand-200"
         : "border-default bg-white shadow-sm"
   const groupBadge =
     node.group === "system-support"
@@ -5862,6 +10889,15 @@ function ColorNode({
       : node.preview
         ? "Preview"
         : null
+  const familyBadge = !node.preview && node.type !== "token" ? getNodeFamilyLabel(node, "badge") : null
+  const hasMetadataBadges =
+    Boolean(groupBadge || familyBadge || node.preview?.badge || isP3)
+  const activeConnectPortIds =
+    connectActive && connectMode && !connectDragging
+      ? getPortIdsForConnectMode(node, connectMode).filter((portId) =>
+          COLOR_NODE_PORT_META[portId].direction === "out"
+        )
+      : []
   const handleResizePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     e.stopPropagation()
     onClick(node.id)
@@ -5881,11 +10917,15 @@ function ColorNode({
     <div
       data-color-node="true"
       data-node-id={node.id}
+      data-edge-highlighted={highlighted ? "true" : "false"}
+      data-edge-dimmed={dimmed ? "true" : "false"}
       role="button"
       tabIndex={0}
-      className={`absolute overflow-hidden rounded-xl border px-3 py-3 transition-shadow ${
+      className={`absolute overflow-visible rounded-xl border px-3 py-3 transition-shadow ${
         surfaceClass
-      } ${connectSourceId === node.id ? "ring-2 ring-brand-400" : ""} ${
+      } ${dimmed ? "opacity-15 saturate-[0.35]" : "opacity-100"} ${
+        connectSourceId === node.id ? "ring-2 ring-brand-400" : ""
+      } ${
         movable ? "cursor-move" : "cursor-pointer"
       }`}
       style={{
@@ -5898,76 +10938,114 @@ function ColorNode({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {connectActive && (
-        <>
+      {portIds
+        .filter((portId) => !activeConnectPortIds.includes(portId))
+        .map((portId) => {
+          const meta = COLOR_NODE_PORT_META[portId]
+          const offset = getColorNodePortOffset(size, portId)
+          return (
+            <span
+              key={portId}
+              className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-sm"
+              title={meta.label}
+              style={{
+                left: offset.x,
+                top: offset.y,
+                backgroundColor: meta.direction === "out" ? meta.color : "#ffffff",
+                border: `2px solid ${meta.color}`,
+              }}
+            />
+          )
+        })}
+      {activeConnectPortIds.map((portId) => {
+        const meta = COLOR_NODE_PORT_META[portId]
+        const offset = getColorNodePortOffset(size, portId)
+        return (
           <button
+            key={`connect-${portId}`}
             type="button"
             onPointerDown={(e) => {
               e.stopPropagation()
               onConnectStart(node.id, e)
             }}
-            className="absolute -left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-brand-300 bg-white shadow-sm hover:border-brand-500"
-            aria-label="Start connection"
-          />
-          <button
-            type="button"
-            onPointerDown={(e) => {
-              e.stopPropagation()
-              onConnectStart(node.id, e)
+            className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-sm transition-transform hover:scale-110"
+            style={{
+              left: offset.x,
+              top: offset.y,
+              backgroundColor: meta.color,
+              border: "2px solid white",
+              boxShadow: `0 0 0 2px ${meta.color}33`,
             }}
-            className="absolute -right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-brand-300 bg-white shadow-sm hover:border-brand-500"
-            aria-label="Finish connection"
+            aria-label={meta.label}
           />
-        </>
-      )}
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="flex items-center gap-2">
+        )
+      })}
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div
+          className={`grid items-start gap-x-2.5 gap-y-1.5 ${
+            node.preview ? "grid-cols-[1fr,auto]" : "grid-cols-[auto,1fr,auto]"
+          }`}
+        >
           {!node.preview && (
             <div
-              className="h-6 w-6 rounded border border-default"
+              className="mt-0.5 h-6 w-6 shrink-0 rounded-md border border-default"
               style={{ background: colorSample || "transparent" }}
             />
           )}
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-semibold text-foreground">{node.label}</div>
+          <div className="min-w-0">
+            <div className="truncate text-[13px] font-semibold leading-5 text-foreground">{displayLabel}</div>
             <div
-              className="truncate text-[10px] text-muted-foreground"
+              className="truncate text-[10px] leading-4 text-muted-foreground"
               title={showFullLabels ? labelLine : undefined}
             >
               {labelLine}
             </div>
-            {node.type === "relative" && (
-              <div className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-semibold text-amber-700">
-                Relative
-              </div>
-            )}
-            {relativeSummary && (
-              <div className="mt-1 truncate text-[9px] text-muted-foreground">{relativeSummary}</div>
-            )}
-            {relativeBaseLabel && (
-              <div className="mt-1 truncate text-[9px] text-muted-foreground">{relativeBaseLabel}</div>
-            )}
           </div>
-          {groupBadge && !node.preview?.badge && (
-            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-semibold text-muted-foreground">
-              {groupBadge}
-            </span>
+          <div className="flex shrink-0 items-start pt-0.5">
+            <div className="rounded-full bg-surface-50 p-1 text-muted-foreground">
+              <Link2 className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          {(hasMetadataBadges || relativeSummary || relativeBaseLabel) && (
+            <div className="-mt-0.5 col-span-full min-w-0">
+              {hasMetadataBadges && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {familyBadge && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${getNodeFamilyBadgeClass(node)}`}
+                    >
+                      {familyBadge}
+                    </span>
+                  )}
+                  {groupBadge && !node.preview?.badge && (
+                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-semibold text-muted-foreground">
+                      {groupBadge}
+                    </span>
+                  )}
+                  {node.preview?.badge && (
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-semibold text-sky-700">
+                      {node.preview.badge}
+                    </span>
+                  )}
+                  {isP3 && (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-semibold text-emerald-700">
+                      P3
+                    </span>
+                  )}
+                </div>
+              )}
+              {relativeSummary && (
+                <div className="mt-1 truncate text-[9px] leading-4 text-muted-foreground">{relativeSummary}</div>
+              )}
+              {relativeBaseLabel && (
+                <div className="mt-0.5 truncate text-[9px] leading-4 text-muted-foreground">{relativeBaseLabel}</div>
+              )}
+            </div>
           )}
-          {node.preview?.badge && (
-            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-semibold text-sky-700">
-              {node.preview.badge}
-            </span>
-          )}
-          {isP3 && (
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-semibold text-emerald-700">
-              P3
-            </span>
-          )}
-          <Link2 className="h-4 w-4 text-muted-foreground" />
         </div>
         {node.preview && (
           <div
-            className="min-h-0 flex-1 overflow-auto pr-1"
+            className="min-h-0 flex-1 overflow-auto pr-1 pt-2"
             data-system-preview-scroll="true"
           >
             <DesignSystemNodePreview preview={node.preview} />
@@ -5984,6 +11062,143 @@ function ColorNode({
           ↘
         </span>
       </button>
+    </div>
+  )
+}
+
+function WorkspaceCatalogCard({
+  item,
+}: {
+  item: WorkspaceCatalogSection["items"][number]
+}) {
+  const preview = (() => {
+    switch (item.previewKind) {
+      case "artboard":
+        return (
+          <div className="rounded-xl border border-default bg-white p-3">
+            <div className="rounded-lg border border-dashed border-default bg-surface-50 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] font-semibold text-foreground">Artboard 1</div>
+                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  flex
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-md border border-default bg-white px-3 py-2 text-[11px] text-muted-foreground">
+                  Component
+                </div>
+                <div className="rounded-md border border-default bg-white px-3 py-2 text-[11px] text-muted-foreground">
+                  Diagram
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      case "component":
+        return (
+          <div className="rounded-xl border border-default bg-white p-3">
+            <div className="rounded-lg border border-default bg-surface-50 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-foreground">Button / Primary</div>
+                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  interactive
+                </span>
+              </div>
+              <div className="mt-3 inline-flex rounded-full bg-brand-600 px-3 py-2 text-xs font-semibold text-white">
+                Get started
+              </div>
+            </div>
+          </div>
+        )
+      case "embed":
+        return (
+          <div className="rounded-xl border border-default bg-white p-3">
+            <div className="overflow-hidden rounded-lg border border-default bg-surface-50">
+              <div className="border-b border-default bg-white px-3 py-2 text-[11px] text-muted-foreground">
+                https://example.com/preview
+              </div>
+              <div className="flex h-28 items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-[11px] font-semibold text-muted-foreground">
+                Live / snapshot embed
+              </div>
+            </div>
+          </div>
+        )
+      case "media":
+        return (
+          <div className="rounded-xl border border-default bg-white p-3">
+            <div className="overflow-hidden rounded-lg border border-default bg-surface-50">
+              <div className="flex h-28 items-end justify-start bg-gradient-to-br from-fuchsia-200 via-orange-200 to-amber-200 p-3">
+                <span className="rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-semibold text-foreground">
+                  image / video / gif
+                </span>
+              </div>
+            </div>
+          </div>
+        )
+      case "mermaid":
+        return (
+          <div className="rounded-xl border border-default bg-white p-3">
+            <div className="rounded-lg border border-default bg-surface-50 p-3">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>flowchart LR</span>
+                <span>Mermaid</span>
+              </div>
+              <div className="mt-3 flex items-center justify-center gap-3 text-[11px] font-semibold text-foreground">
+                <span className="rounded-md border border-default bg-white px-2 py-1">Start</span>
+                <span>→</span>
+                <span className="rounded-md border border-default bg-white px-2 py-1">Review</span>
+                <span>→</span>
+                <span className="rounded-md border border-default bg-white px-2 py-1">Ship</span>
+              </div>
+            </div>
+          </div>
+        )
+      case "excalidraw":
+        return (
+          <div className="rounded-xl border border-default bg-white p-3">
+            <div className="relative rounded-lg border border-default bg-[linear-gradient(0deg,transparent_24px,#f1f5f9_25px),linear-gradient(90deg,transparent_24px,#f1f5f9_25px)] bg-[length:25px_25px] p-3">
+              <div className="absolute left-5 top-5 h-10 w-20 rotate-[-4deg] rounded-md border-2 border-slate-400/80" />
+              <div className="absolute right-7 top-8 h-12 w-24 rotate-[3deg] rounded-full border-2 border-slate-400/80" />
+              <div className="absolute left-16 bottom-7 h-0.5 w-24 rotate-[8deg] bg-slate-400/80" />
+              <div className="relative h-28">
+                <span className="absolute bottom-0 right-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  rough wireframe
+                </span>
+              </div>
+            </div>
+          </div>
+        )
+      case "markdown":
+        return (
+          <div className="rounded-xl border border-default bg-white p-3">
+            <div className="rounded-lg border border-default bg-surface-50 p-3">
+              <div className="text-[11px] font-semibold text-foreground"># Project notes</div>
+              <div className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+                <div>- Capture requirements</div>
+                <div>- Keep design decisions nearby</div>
+                <div>- Import `.md` files directly</div>
+              </div>
+            </div>
+          </div>
+        )
+      default:
+        return null
+    }
+  })()
+
+  return (
+    <div className="rounded-xl border border-default bg-surface-50 px-3 py-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold text-foreground">{item.label}</div>
+          <div className="text-[11px] text-muted-foreground">{item.kind}</div>
+        </div>
+        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          Canvas
+        </span>
+      </div>
+      {preview}
+      <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{item.description}</p>
     </div>
   )
 }

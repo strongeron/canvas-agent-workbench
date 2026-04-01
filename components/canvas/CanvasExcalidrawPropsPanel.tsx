@@ -1,4 +1,4 @@
-import { RefreshCcw, X } from "lucide-react"
+import { RefreshCcw, Trash2, X } from "lucide-react"
 
 import type { CanvasExcalidrawItem, CanvasExcalidrawScene } from "../../types/canvas"
 
@@ -8,6 +8,7 @@ interface CanvasExcalidrawPropsPanelProps {
   sourceMermaid?: string
   onChange: (updates: Partial<Omit<CanvasExcalidrawItem, "id">>) => void
   onRemapFromMermaid?: () => void
+  onDelete: () => void
   onClose: () => void
 }
 
@@ -29,6 +30,7 @@ export function CanvasExcalidrawPropsPanel({
   sourceMermaid,
   onChange,
   onRemapFromMermaid,
+  onDelete,
   onClose,
 }: CanvasExcalidrawPropsPanelProps) {
   const elementCount = Array.isArray(scene?.elements) ? scene.elements.length : 0
@@ -46,14 +48,25 @@ export function CanvasExcalidrawPropsPanel({
             {elementCount} elements in this scene
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
-          aria-label="Close Excalidraw panel"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            aria-label="Delete excalidraw"
+            title="Delete excalidraw"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+            aria-label="Close Excalidraw panel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3 overflow-y-auto p-4">

@@ -5,9 +5,9 @@ import { createPortal } from "react-dom"
 interface CanvasContextMenuProps {
   position: { x: number; y: number }
   onClose: () => void
-  onFitToContent: () => void
-  onBringToFront: () => void
-  onDuplicate: () => void
+  onFitToContent?: () => void
+  onBringToFront?: () => void
+  onDuplicate?: () => void
   onDelete: () => void
 }
 
@@ -79,37 +79,45 @@ export function CanvasContextMenu({
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <button
-        type="button"
-        onClick={(e) => handleAction(e, onFitToContent)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-surface-100"
-        role="menuitem"
-      >
-        <Maximize2 className="h-4 w-4 text-muted-foreground" />
-        Fit to content
-      </button>
+      {onFitToContent && (
+        <button
+          type="button"
+          onClick={(e) => handleAction(e, onFitToContent)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-surface-100"
+          role="menuitem"
+        >
+          <Maximize2 className="h-4 w-4 text-muted-foreground" />
+          Fit to content
+        </button>
+      )}
 
-      <button
-        type="button"
-        onClick={(e) => handleAction(e, onBringToFront)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-surface-100"
-        role="menuitem"
-      >
-        <Layers className="h-4 w-4 text-muted-foreground" />
-        Bring to front
-      </button>
+      {onBringToFront && (
+        <button
+          type="button"
+          onClick={(e) => handleAction(e, onBringToFront)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-surface-100"
+          role="menuitem"
+        >
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          Bring to front
+        </button>
+      )}
 
-      <button
-        type="button"
-        onClick={(e) => handleAction(e, onDuplicate)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-surface-100"
-        role="menuitem"
-      >
-        <Copy className="h-4 w-4 text-muted-foreground" />
-        Duplicate
-      </button>
+      {onDuplicate && (
+        <button
+          type="button"
+          onClick={(e) => handleAction(e, onDuplicate)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-surface-100"
+          role="menuitem"
+        >
+          <Copy className="h-4 w-4 text-muted-foreground" />
+          Duplicate
+        </button>
+      )}
 
-      <div className="my-1 border-t border-default" role="separator" />
+      {(onFitToContent || onBringToFront || onDuplicate) && (
+        <div className="my-1 border-t border-default" role="separator" />
+      )}
 
       <button
         type="button"

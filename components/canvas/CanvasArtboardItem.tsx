@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useDroppable } from "@dnd-kit/core"
 
 import type { CanvasArtboardItem as CanvasArtboardItemType } from "../../types/canvas"
+import { CanvasContextMenu } from "./CanvasContextMenu"
+import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"
 
@@ -12,6 +14,8 @@ interface CanvasArtboardItemProps {
   isMultiSelected?: boolean
   onSelect: (addToSelection?: boolean) => void
   onUpdate: (updates: Partial<Omit<CanvasArtboardItemType, "id">>) => void
+  onRemove: () => void
+  onDuplicate: () => void
   onBringToFront: () => void
   scale: number
   interactMode: boolean
@@ -76,6 +80,8 @@ export function CanvasArtboardItem({
   isMultiSelected = false,
   onSelect,
   onUpdate,
+  onRemove,
+  onDuplicate,
   onBringToFront,
   scale,
   interactMode,
@@ -88,6 +94,11 @@ export function CanvasArtboardItem({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null)
   const [initialState, setInitialState] = useState({ x: 0, y: 0, width: 0, height: 0, rotation: 0 })
+  const { contextMenu, handleContextMenu, closeContextMenu } = useCanvasItemContextMenu({
+    isSelected,
+    interactMode,
+    onSelect,
+  })
 
   const { setNodeRef, isOver } = useDroppable({
     id: `artboard-${item.id}`,
@@ -273,6 +284,7 @@ export function CanvasArtboardItem({
         }
         onBringToFront()
       }}
+      onContextMenu={handleContextMenu}
     >
       <div
         className={`relative h-full w-full overflow-hidden rounded-2xl bg-white shadow-sm transition-shadow ${borderClass}`}
@@ -343,6 +355,16 @@ export function CanvasArtboardItem({
 
       {isOver && (
         <div className="pointer-events-none absolute inset-2 rounded-xl border-2 border-dashed border-brand-400 bg-brand-50/30" />
+      )}
+
+      {contextMenu && (
+        <CanvasContextMenu
+          position={contextMenu}
+          onClose={closeContextMenu}
+          onBringToFront={onBringToFront}
+          onDuplicate={onDuplicate}
+          onDelete={onRemove}
+        />
       )}
     </div>
   )

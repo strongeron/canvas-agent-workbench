@@ -1,4 +1,4 @@
-import { X } from "lucide-react"
+import { Trash2, X } from "lucide-react"
 
 import type { ThemeOption } from "../../types/theme"
 import { formatLc } from "../../utils/apca"
@@ -33,6 +33,7 @@ interface CanvasArtboardPropsPanelProps {
     themeId?: string
     layout?: CanvasArtboardPropsPanelProps["layout"]
   }) => void
+  onDelete: () => void
   onClose: () => void
 }
 
@@ -87,6 +88,7 @@ export function CanvasArtboardPropsPanel({
   onImportKindChange,
   importingPaper,
   onChange,
+  onDelete,
   onClose,
 }: CanvasArtboardPropsPanelProps) {
   const layoutDefaults = {
@@ -112,13 +114,24 @@ export function CanvasArtboardPropsPanel({
           <h3 className="truncate text-sm font-semibold text-foreground">Artboard</h3>
           <p className="truncate text-xs text-muted-foreground">Layout settings</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="ml-2 rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="ml-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+            aria-label="Delete artboard"
+            title="Delete artboard"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">

@@ -1,6 +1,8 @@
 export type ColorCanvasNodeType = "token" | "semantic" | "component" | "relative"
 export type ColorCanvasEdgeType = "map" | "contrast"
 export type ColorCanvasColorModel = "oklch" | "srgb"
+export type ColorCanvasFrameworkId = "shadcn" | "radix"
+export type ColorCanvasSemanticKind = "role" | "functional"
 export type ColorCanvasPreviewKind =
   | "connector-detail"
   | "font-family"
@@ -93,6 +95,8 @@ export interface ColorCanvasNode {
   size?: { width: number; height: number }
   group?: "color" | "system-support" | "system-preview"
   role?: "text" | "surface" | "border" | "icon" | "accent"
+  framework?: ColorCanvasFrameworkId
+  semanticKind?: ColorCanvasSemanticKind
   cssVar?: string
   value?: string
   relative?: RelativeColorSpec

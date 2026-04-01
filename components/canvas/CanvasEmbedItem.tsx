@@ -2,12 +2,14 @@ import { RotateCw } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { CanvasEmbedItem as CanvasEmbedItemType } from "../../types/canvas"
+import { CanvasContextMenu } from "./CanvasContextMenu"
 import { preflightEmbedFramePolicy } from "./embedFramePolicy"
 import {
   requestEmbedSnapshot,
   resolveEmbedPreviewMode,
   startEmbedLiveSession,
 } from "./embedPreviewService"
+import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"
 
@@ -64,6 +66,11 @@ export function CanvasEmbedItem({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null)
   const [initialState, setInitialState] = useState({ x: 0, y: 0, width: 0, height: 0, rotation: 0 })
+  const { contextMenu, handleContextMenu, closeContextMenu } = useCanvasItemContextMenu({
+    isSelected,
+    interactMode,
+    onSelect,
+  })
   const frameStatus = item.embedFrameStatus ?? "unknown"
   const requestedPreviewMode = item.embedPreviewMode ?? "auto"
   const previewMode = resolveEmbedPreviewMode(requestedPreviewMode, frameStatus, item.url)
@@ -483,6 +490,7 @@ export function CanvasEmbedItem({
         transformOrigin: "center center",
       }}
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
       onClick={(e) => {
         if (interactMode) return
         e.stopPropagation()
@@ -656,6 +664,16 @@ export function CanvasEmbedItem({
         <div className="absolute -bottom-6 left-0 whitespace-nowrap rounded bg-surface-800 px-2 py-0.5 text-xs text-white">
           {Math.round(item.size.width)} × {Math.round(item.size.height)} · {Math.round(item.rotation)}°
         </div>
+      )}
+
+      {contextMenu && (
+        <CanvasContextMenu
+          position={contextMenu}
+          onClose={closeContextMenu}
+          onBringToFront={onBringToFront}
+          onDuplicate={onDuplicate}
+          onDelete={onRemove}
+        />
       )}
     </div>
   )

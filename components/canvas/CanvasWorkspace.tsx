@@ -57,6 +57,7 @@ interface CanvasWorkspaceProps {
   onClearSelection: () => void
   onUpdateItem: (id: string, updates: CanvasItemUpdate) => void
   onRemoveItem: (id: string) => void
+  onRemoveSelected: () => void
   onDuplicateItem: (id: string) => void
   onBringToFront: (id: string) => void
   onPan: (deltaX: number, deltaY: number) => void
@@ -85,6 +86,7 @@ export function CanvasWorkspace({
   onClearSelection,
   onUpdateItem,
   onRemoveItem,
+  onRemoveSelected,
   onDuplicateItem,
   onBringToFront,
   onPan,
@@ -643,6 +645,12 @@ export function CanvasWorkspace({
           onUpdate={(updates: Partial<Omit<CanvasArtboardItemType, "id">>) =>
             onUpdateItem(item.id, updates)
           }
+          onRemove={() =>
+            selectedIds.length > 1 && selectedIds.includes(item.id)
+              ? onRemoveSelected()
+              : onRemoveItem(item.id)
+          }
+          onDuplicate={() => onDuplicateItem(item.id)}
           onBringToFront={() => onBringToFront(item.id)}
           scale={transform.scale}
           interactMode={interactMode}
@@ -662,7 +670,10 @@ export function CanvasWorkspace({
               onSelectItem(item.id, addToSelection)
               onBringToFront(item.id)
             },
-            onRemove: () => onRemoveItem(item.id),
+            onRemove: () =>
+              selectedIds.length > 1 && selectedIds.includes(item.id)
+                ? onRemoveSelected()
+                : onRemoveItem(item.id),
             onDuplicate: () => onDuplicateItem(item.id),
             onBringToFront: () => onBringToFront(item.id),
             scale: transform.scale,
