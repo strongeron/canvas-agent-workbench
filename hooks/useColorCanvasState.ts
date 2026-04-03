@@ -250,6 +250,7 @@ export function useColorCanvasState(storageKey = "gallery-color-canvas") {
     selectedNodeId: state.selectedNodeId,
     selectedEdgeId: state.selectedEdgeId,
     canUndoEdgeRemoval: state.edgeUndoStack.length > 0,
+    applyStateOperation: setState,
     addNode,
     addEdge,
     removeNode,

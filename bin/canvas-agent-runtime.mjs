@@ -1,22 +1,190 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const DEFAULT_TIMEOUT_MS = 15000
+const DEFAULT_SERVER_URL = 'http://127.0.0.1:5173'
+
+export function buildDefaultSystemCanvasWorkspaceKey(projectId) {
+  const normalizedProjectId = typeof projectId === 'string' && projectId.trim() ? projectId.trim() : 'demo'
+  return `gallery-${normalizedProjectId}:system-canvas`
+}
+
+export function buildDefaultColorAuditWorkspaceKey(projectId) {
+  const normalizedProjectId = typeof projectId === 'string' && projectId.trim() ? projectId.trim() : 'demo'
+  return `gallery-${normalizedProjectId}:color-audit`
+}
+
+export function buildDefaultNodeCatalogWorkspaceKey(projectId) {
+  const normalizedProjectId = typeof projectId === 'string' && projectId.trim() ? projectId.trim() : 'demo'
+  return `gallery-${normalizedProjectId}-node-catalog`
+}
+
+export function getDefaultCanvasAgentServerUrl() {
+  return process.env.CANVAS_AGENT_SERVER_URL?.trim() || DEFAULT_SERVER_URL
+}
+
+export function resolveCanvasAgentContextFilePath(cwd = process.cwd()) {
+  return path.resolve(cwd, '.canvas-agent', 'attached-session.json')
+}
+
+export async function readCanvasAgentAttachedContext(filePath = resolveCanvasAgentContextFilePath()) {
+  const payload = await readJsonFile(filePath)
+  if (!payload || typeof payload !== 'object') {
+    fail(`Invalid attached canvas-agent context at ${filePath}`)
+  }
+  return payload
+}
+
+export async function writeCanvasAgentAttachedContext(
+  payload,
+  filePath = resolveCanvasAgentContextFilePath()
+) {
+  if (!payload || typeof payload !== 'object') {
+    fail('Attached canvas-agent context payload is required.')
+  }
+  await mkdir(path.dirname(filePath), { recursive: true })
+  await writeFile(filePath, JSON.stringify(payload, null, 2))
+  return filePath
+}
+
+export async function clearCanvasAgentAttachedContext(filePath = resolveCanvasAgentContextFilePath()) {
+  await rm(filePath, { force: true })
+}
 
 export function getCanvasAgentContextFromEnv() {
   const sessionDir = process.env.CANVAS_AGENT_SESSION_DIR?.trim()
   const projectId = process.env.CANVAS_AGENT_PROJECT_ID?.trim()
   const sessionId = process.env.CANVAS_AGENT_SESSION_ID?.trim()
 
-  if (!sessionDir) fail('CANVAS_AGENT_SESSION_DIR is not set.')
-  if (!projectId) fail('CANVAS_AGENT_PROJECT_ID is not set.')
-  if (!sessionId) fail('CANVAS_AGENT_SESSION_ID is not set.')
-
-  return {
-    sessionDir,
-    projectId,
-    sessionId,
+  if (sessionDir && projectId && sessionId) {
+    return {
+      sessionDir,
+      projectId,
+      sessionId,
+      serverUrl: getDefaultCanvasAgentServerUrl(),
+      colorAuditWorkspaceKey:
+        process.env.CANVAS_AGENT_COLOR_AUDIT_WORKSPACE_KEY?.trim() ||
+        buildDefaultColorAuditWorkspaceKey(projectId),
+      systemCanvasWorkspaceKey:
+        process.env.CANVAS_AGENT_SYSTEM_CANVAS_WORKSPACE_KEY?.trim() ||
+        buildDefaultSystemCanvasWorkspaceKey(projectId),
+      nodeCatalogWorkspaceKey:
+        process.env.CANVAS_AGENT_NODE_CATALOG_WORKSPACE_KEY?.trim() ||
+        buildDefaultNodeCatalogWorkspaceKey(projectId),
+    }
   }
+
+  const contextFilePath =
+    process.env.CANVAS_AGENT_CONTEXT_FILE?.trim() || resolveCanvasAgentContextFilePath()
+
+  try {
+    const attached = JSON.parse(readFileSync(contextFilePath, 'utf8'))
+    if (!attached?.sessionDir) fail(`Attached canvas-agent context is missing sessionDir: ${contextFilePath}`)
+    if (!attached?.projectId) fail(`Attached canvas-agent context is missing projectId: ${contextFilePath}`)
+    if (!attached?.sessionId) fail(`Attached canvas-agent context is missing sessionId: ${contextFilePath}`)
+    return {
+      sessionDir: attached.sessionDir,
+      projectId: attached.projectId,
+      sessionId: attached.sessionId,
+      serverUrl:
+        process.env.CANVAS_AGENT_SERVER_URL?.trim() ||
+        attached.serverUrl ||
+        getDefaultCanvasAgentServerUrl(),
+      colorAuditWorkspaceKey:
+        process.env.CANVAS_AGENT_COLOR_AUDIT_WORKSPACE_KEY?.trim() ||
+        attached.colorAuditWorkspaceKey ||
+        buildDefaultColorAuditWorkspaceKey(attached.projectId),
+      systemCanvasWorkspaceKey:
+        process.env.CANVAS_AGENT_SYSTEM_CANVAS_WORKSPACE_KEY?.trim() ||
+        attached.systemCanvasWorkspaceKey ||
+        buildDefaultSystemCanvasWorkspaceKey(attached.projectId),
+      nodeCatalogWorkspaceKey:
+        process.env.CANVAS_AGENT_NODE_CATALOG_WORKSPACE_KEY?.trim() ||
+        attached.nodeCatalogWorkspaceKey ||
+        buildDefaultNodeCatalogWorkspaceKey(attached.projectId),
+    }
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      fail(
+        `Canvas agent context is not configured. Run "bin/canvas-agent attach --project <project-id>" first, or set CANVAS_AGENT_SESSION_DIR / CANVAS_AGENT_PROJECT_ID / CANVAS_AGENT_SESSION_ID.`
+      )
+    }
+    throw error
+  }
+}
+
+export async function bootstrapCanvasAgentSession({
+  projectId,
+  agentId = 'codex',
+  cwd,
+  title,
+  serverUrl = getDefaultCanvasAgentServerUrl(),
+  surfaceId,
+  reuseSession = true,
+}) {
+  if (!projectId || typeof projectId !== 'string' || !projectId.trim()) {
+    fail('bootstrapCanvasAgentSession requires projectId.')
+  }
+
+  const response = await fetch(new URL('/api/canvas-agent/bootstrap', serverUrl).toString(), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      projectId: projectId.trim(),
+      agentId: typeof agentId === 'string' && agentId.trim() ? agentId.trim() : 'codex',
+      cwd: typeof cwd === 'string' && cwd.trim() ? cwd.trim() : undefined,
+      title: typeof title === 'string' && title.trim() ? title.trim() : undefined,
+      surfaceId: typeof surfaceId === 'string' && surfaceId.trim() ? surfaceId.trim() : undefined,
+      reuseSession: reuseSession !== false,
+    }),
+  })
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    fail(
+      typeof data?.error === 'string'
+        ? data.error
+        : `Canvas agent bootstrap failed (${response.status}).`
+    )
+  }
+
+  const payload = await response.json()
+  return payload?.bootstrap ?? null
+}
+
+export function formatCanvasAgentShellExports(context) {
+  if (!context || typeof context !== 'object') fail('Canvas agent context is required.')
+  const lines = [
+    `export CANVAS_AGENT_SERVER_URL=${JSON.stringify(context.serverUrl || getDefaultCanvasAgentServerUrl())}`,
+    `export CANVAS_AGENT_PROJECT_ID=${JSON.stringify(context.projectId)}`,
+    `export CANVAS_AGENT_SESSION_ID=${JSON.stringify(context.sessionId)}`,
+    `export CANVAS_AGENT_SESSION_DIR=${JSON.stringify(context.sessionDir)}`,
+  ]
+
+  if (context.colorAuditWorkspaceKey) {
+    lines.push(
+      `export CANVAS_AGENT_COLOR_AUDIT_WORKSPACE_KEY=${JSON.stringify(context.colorAuditWorkspaceKey)}`
+    )
+  }
+  if (context.systemCanvasWorkspaceKey) {
+    lines.push(
+      `export CANVAS_AGENT_SYSTEM_CANVAS_WORKSPACE_KEY=${JSON.stringify(
+        context.systemCanvasWorkspaceKey
+      )}`
+    )
+  }
+  if (context.nodeCatalogWorkspaceKey) {
+    lines.push(
+      `export CANVAS_AGENT_NODE_CATALOG_WORKSPACE_KEY=${JSON.stringify(
+        context.nodeCatalogWorkspaceKey
+      )}`
+    )
+  }
+
+  return lines.join('\n')
 }
 
 export async function readCanvasAgentStateEnvelope(context) {
@@ -48,6 +216,163 @@ export async function readCanvasAgentTranscript(context) {
 
 export async function readCanvasAgentDebug(context) {
   return readJsonFile(path.join(context.sessionDir, 'debug.json'))
+}
+
+function buildAgentNativeUrl(context, pathname, searchParams = {}) {
+  const url = new URL(pathname, context.serverUrl)
+  Object.entries(searchParams).forEach(([key, value]) => {
+    if (typeof value === 'string' && value.trim()) {
+      url.searchParams.set(key, value.trim())
+    }
+  })
+  return url.toString()
+}
+
+async function readAgentNativeJson(context, pathname, searchParams = {}) {
+  const url = buildAgentNativeUrl(context, pathname, searchParams)
+  const response = await fetch(url)
+  if (!response.ok) {
+    fail(`Agent-native request failed (${response.status}) for ${url}`)
+  }
+  return response.json()
+}
+
+async function postAgentNativeJson(context, pathname, body) {
+  const url = buildAgentNativeUrl(context, pathname)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    fail(`Agent-native request failed (${response.status}) for ${url}`)
+  }
+  return response.json()
+}
+
+export async function readAgentNativeManifest(context) {
+  const payload = await readAgentNativeJson(context, '/api/agent-native/manifest')
+  return payload?.manifest ?? null
+}
+
+export async function readAgentNativeWorkspaceManifest(context, workspaceId, workspaceKey) {
+  const payload = await readAgentNativeJson(
+    context,
+    `/api/agent-native/workspaces/${encodeURIComponent(workspaceId)}/manifest`,
+    {
+      workspaceKey: workspaceKey || '',
+    }
+  )
+  return payload?.manifest ?? null
+}
+
+export async function readAgentNativeWorkspaceState(context, workspaceId, workspaceKey) {
+  const payload = await readAgentNativeJson(
+    context,
+    `/api/agent-native/workspaces/${encodeURIComponent(workspaceId)}/state`,
+    {
+      workspaceKey: workspaceKey || '',
+    }
+  )
+  return payload?.state ?? null
+}
+
+export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
+  return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
+}
+
+export async function readColorAuditExportPreview(context, workspaceKey = context.colorAuditWorkspaceKey) {
+  const payload = await readAgentNativeJson(
+    context,
+    '/api/agent-native/workspaces/color-audit/export-preview',
+    {
+      workspaceKey,
+    }
+  )
+  return payload?.exportPreview ?? null
+}
+
+export async function readSystemCanvasState(context, workspaceKey = context.systemCanvasWorkspaceKey) {
+  return readAgentNativeWorkspaceState(context, 'system-canvas', workspaceKey)
+}
+
+export async function readNodeCatalogState(context, workspaceKey = context.nodeCatalogWorkspaceKey) {
+  return readAgentNativeWorkspaceState(context, 'node-catalog', workspaceKey)
+}
+
+export async function enqueueAgentNativeWorkspaceOperation(
+  context,
+  workspaceId,
+  workspaceKey,
+  operation,
+  meta = {}
+) {
+  if (!workspaceId || typeof workspaceId !== 'string') {
+    fail('workspaceId is required.')
+  }
+  if (!workspaceKey || typeof workspaceKey !== 'string') {
+    fail('workspaceKey is required.')
+  }
+  if (!operation || typeof operation !== 'object') {
+    fail('operation payload is required.')
+  }
+
+  return postAgentNativeJson(
+    context,
+    `/api/agent-native/workspaces/${encodeURIComponent(workspaceId)}/operations`,
+    {
+      workspaceKey,
+      clientId: meta.clientId || context.sessionId || null,
+      source: meta.source || 'canvas-agent-cli',
+      operation,
+    }
+  )
+}
+
+async function buildWorkspaceScreenshotPayload(context, workspaceId, target) {
+  const normalizedTarget = target === 'mobile' ? 'mobile' : 'desktop'
+
+  switch (workspaceId) {
+    case 'canvas':
+      return {
+        projectId: context.projectId,
+        target: normalizedTarget,
+        snapshot: await readCanvasAgentState(context),
+      }
+    case 'color-audit':
+      return {
+        projectId: context.projectId,
+        workspaceKey: context.colorAuditWorkspaceKey,
+        target: normalizedTarget,
+        snapshot: await readColorAuditState(context),
+      }
+    case 'system-canvas':
+      return {
+        projectId: context.projectId,
+        workspaceKey: context.systemCanvasWorkspaceKey,
+        target: normalizedTarget,
+        snapshot: await readSystemCanvasState(context),
+      }
+    case 'node-catalog':
+      return {
+        projectId: context.projectId,
+        target: normalizedTarget,
+      }
+    default:
+      fail(`Unsupported screenshot workspace: ${workspaceId}`)
+  }
+}
+
+export async function captureWorkspaceScreenshot(context, workspaceId, target = 'desktop') {
+  const payload = await buildWorkspaceScreenshotPayload(context, workspaceId, target)
+  const response = await postAgentNativeJson(
+    context,
+    `/api/agent-native/workspaces/${encodeURIComponent(workspaceId)}/screenshot`,
+    payload
+  )
+  return response?.capture ?? null
 }
 
 export async function enqueueCanvasAgentOperation(context, toolName, operation, meta = {}) {

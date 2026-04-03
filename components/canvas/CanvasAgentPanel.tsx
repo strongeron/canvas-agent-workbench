@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react"
 import { CopilotChat } from "@copilotkit/react-ui"
 
 import type { UseCanvasAgentBridgeResult } from "../../hooks/useCanvasAgentBridge"
+import { AGENT_NATIVE_WORKSPACE_DEFINITIONS } from "../../utils/agentNativeManifest"
 import { CanvasAgentTerminal } from "./CanvasAgentTerminal"
 
 interface CanvasAgentPanelProps {
@@ -284,6 +285,61 @@ export function CanvasAgentPanel({
                     >
                       {pendingAgentId === agent.id ? "Creating..." : "New session"}
                     </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-b border-default px-4 py-3">
+            <div className="mb-2 text-sm font-semibold text-gray-950">Workspace Surfaces</div>
+            <div className="grid grid-cols-1 gap-2">
+              {AGENT_NATIVE_WORKSPACE_DEFINITIONS.map((workspace) => (
+                <div key={workspace.id} className="rounded-lg border border-default bg-gray-50 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-gray-950">{workspace.label}</div>
+                      <div className="mt-1 text-xs leading-5 text-gray-500">
+                        {workspace.description}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          workspace.syncMode === "live-bridge"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {workspace.syncMode === "live-bridge" ? "Live bridge" : "Manifest only"}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          workspace.mutationMode === "remote-operations"
+                            ? "bg-sky-100 text-sky-700"
+                            : workspace.mutationMode === "export-only"
+                              ? "bg-violet-100 text-violet-700"
+                              : "bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {workspace.mutationMode === "remote-operations"
+                          ? "Writable"
+                          : workspace.mutationMode === "export-only"
+                            ? "Export only"
+                            : "Read only"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[11px] text-gray-500">Route: {workspace.route}</div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {workspace.entities.map((entity) => (
+                      <span
+                        key={`${workspace.id}-${entity}`}
+                        className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-600"
+                      >
+                        {entity}
+                      </span>
+                    ))}
                   </div>
                 </div>
               ))}

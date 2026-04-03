@@ -8,6 +8,11 @@ import {
 } from "./iconLibraryRegistry"
 import { CanvasThemePanel } from "../canvas/CanvasThemePanel"
 import { ColorPickerField } from "../color-picker"
+import {
+  useAgentNativeWorkspaceOperations,
+  type AgentNativeWorkspaceOperationRecord,
+} from "../../hooks/useAgentNativeWorkspaceOperations"
+import { useAgentNativeWorkspaceSync } from "../../hooks/useAgentNativeWorkspaceSync"
 import { useCanvasTransform } from "../../hooks/useCanvasTransform"
 import { useThemeRegistry } from "../../hooks/useThemeRegistry"
 import { useColorCanvasState } from "../../hooks/useColorCanvasState"
@@ -33,6 +38,38 @@ import type {
   ColorCanvasState,
   RelativeColorSpec,
 } from "../../types/colorCanvas"
+import {
+  buildColorAuditWorkspaceStateResource,
+  COLOR_AUDIT_EXPORT_COLOR_MODE_OPTIONS,
+  COLOR_AUDIT_EXPORT_FORMAT_OPTIONS,
+  type ColorAuditExportColorMode,
+  type ColorAuditExportEntryResource,
+  type ColorAuditExportFormat,
+  type ColorAuditWorkflowSummary,
+  type ColorAuditNodeResource,
+  type ColorAuditEdgeResource,
+} from "../../utils/colorAuditWorkspaceAdapter"
+import {
+  applyColorAuditOperation,
+  type ColorAuditOperation,
+  type ColorAuditTemplateKitId as SharedColorAuditTemplateKitId,
+} from "../../utils/colorAuditOperations"
+import {
+  buildSystemCanvasWorkspaceStateResource,
+  type SystemCanvasEdgeResource,
+  type SystemCanvasNodeResource,
+} from "../../utils/systemCanvasWorkspaceAdapter"
+import {
+  isSystemCanvasViewMode,
+  sanitizeSystemCanvasConfigPatch,
+  type SystemCanvasOperation,
+  type SystemCanvasViewMode,
+} from "../../utils/systemCanvasOperations"
+import {
+  buildNodeCatalogWorkspaceStateResource,
+  type NodeCatalogNodeSectionResource,
+  type NodeCatalogWorkspaceSectionResource,
+} from "../../utils/nodeCatalogWorkspaceAdapter"
 import {
   APCA_TARGETS,
   DEFAULT_CONTRAST_TARGET_LC,
@@ -68,8 +105,6 @@ type EdgeFilter = "all" | "map" | "contrast"
 type CanvasMode = "color-audit" | "system-canvas"
 type ColorAuditFocusMode = "review" | "build" | "contrast"
 type ColorAuditLayoutMode = "freeform" | "flow" | "center" | "roles"
-type ColorAuditExportFormat = "css-vars" | "dtcg" | "tailwind" | "shadcn" | "radix"
-type ColorAuditExportColorMode = "resolved" | "oklch"
 type CanvasViewMode =
   | "color"
   | "system"
@@ -103,7 +138,7 @@ type CanvasSectionFrame = {
 
 type SystemViewportAction = "fit-width" | "bird-view" | null
 type ColorAuditViewportAction = "bird-view" | null
-type TemplateKitId = "starter" | "shadcn" | "radix"
+type TemplateKitId = SharedColorAuditTemplateKitId
 type FunctionalTokenSourceId =
   | "surface"
   | "surface-muted"
@@ -120,25 +155,6 @@ type FunctionalTokenPreset = {
   framework: ColorCanvasFrameworkId
   description: string
 }
-
-const COLOR_AUDIT_EXPORT_FORMAT_OPTIONS: Array<{
-  id: ColorAuditExportFormat
-  label: string
-}> = [
-  { id: "css-vars", label: "CSS vars" },
-  { id: "dtcg", label: "DTCG JSON" },
-  { id: "tailwind", label: "Tailwind" },
-  { id: "shadcn", label: "shadcn/ui" },
-  { id: "radix", label: "Radix" },
-]
-
-const COLOR_AUDIT_EXPORT_COLOR_MODE_OPTIONS: Array<{
-  id: ColorAuditExportColorMode
-  label: string
-}> = [
-  { id: "oklch", label: "OKLCH colors" },
-  { id: "resolved", label: "Resolved colors" },
-]
 
 async function copyTextToClipboard(text: string) {
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
@@ -181,19 +197,6 @@ type ColorNodePortId =
   | "contrast-out"
   | "dependency-in"
   | "dependency-out"
-
-type ColorExportEntry = {
-  id: string
-  label: string
-  cssVar: string
-  exportKey: string
-  family: "palette" | "relative" | "functional" | "semantic"
-  role?: ColorCanvasNode["role"]
-  framework?: ColorCanvasFrameworkId
-  semanticKind?: ColorCanvasNode["semanticKind"]
-  resolvedExpression: string
-  oklchExpression?: string
-}
 
 type NodeCatalogSection = {
   id: string
@@ -2351,6 +2354,7 @@ export function ColorCanvasPage({
     updateNodeValue,
     updateNodeRole,
     clearSelection,
+    applyStateOperation,
     replaceState,
   } = useColorCanvasState(
     themeStorageKeyPrefix
@@ -3198,309 +3202,7 @@ export function ColorCanvasPage({
     [templateAccent, templateBrand]
   )
 
-  const handleGenerateTemplate = () => {
-    const brandValue = templateBrand.trim() || formatTemplateSeedOklch(templateBrandSeed)
-    const selectedTemplateKit =
-      COLOR_TEMPLATE_KITS.find((kit) => kit.id === templateKitId) ?? COLOR_TEMPLATE_KITS[0]
-    const generatedNodeCache = new Map<string, string>()
-    let offset = 0
-    const positionFor = () => {
-      const baseX = 120
-      const baseY = 80
-      const spacingX = 260
-      const spacingY = 120
-      const index = nodes.length + offset
-      offset += 1
-      const col = index % 4
-      const row = Math.floor(index / 4)
-      return {
-        x: baseX + col * spacingX,
-        y: baseY + row * spacingY,
-      }
-    }
-    const getGeneratedNodeKey = (config: {
-      type: ColorCanvasNode["type"]
-      cssVar?: string
-      label: string
-      role?: ColorCanvasNode["role"]
-      framework?: ColorCanvasNode["framework"]
-    }) =>
-      `${config.type}:${config.cssVar ?? `${config.label}:${config.framework ?? ""}:${config.role ?? ""}`}`
-    const upsertTemplateNode = (config: Parameters<typeof upsertNode>[0]) => {
-      const key = getGeneratedNodeKey(config)
-      const cachedId = generatedNodeCache.get(key)
-      if (cachedId) return cachedId
-      const nodeId = upsertNode(config)
-      generatedNodeCache.set(key, nodeId)
-      return nodeId
-    }
-
-    const brandBaseId = upsertTemplateNode({
-      type: "token",
-      label: "Brand Seed",
-      cssVar: "--color-brand-500",
-      value: brandValue,
-      position: positionFor(),
-    })
-
-    const brandScale = [
-      { cssVar: "--color-brand-300", label: "Brand 300", l: 16, c: -4 },
-      { cssVar: "--color-brand-400", label: "Brand 400", l: 8, c: -2 },
-      { cssVar: "--color-brand-600", label: "Brand 600", l: -6, c: -3 },
-      { cssVar: "--color-brand-700", label: "Brand 700", l: -12, c: -5 },
-    ]
-
-    brandScale.forEach((entry) => {
-      upsertTemplateNode({
-        type: "relative",
-        label: `Brand / ${entry.label.replace("Brand ", "")}`,
-        cssVar: entry.cssVar,
-        position: positionFor(),
-        relative: {
-          model: DEFAULT_COLOR_MODEL,
-          baseId: brandBaseId,
-          lMode: "delta",
-          lValue: entry.l,
-          cMode: "delta",
-          cValue: entry.c,
-          hMode: "inherit",
-          alphaMode: "inherit",
-        },
-      })
-    })
-
-    const surfaceScale = [
-      { cssVar: "--color-surface-50", label: "Surface / Base", l: 98, c: 2 },
-      { cssVar: "--color-surface-100", label: "Surface / Elevated", l: 96, c: 3 },
-      { cssVar: "--color-surface-200", label: "Surface / Muted", l: 92, c: 4 },
-    ]
-
-    const surfaceIds = surfaceScale.reduce<Record<string, string>>((acc, entry) => {
-      const id = upsertTemplateNode({
-        type: "relative",
-        label: entry.label,
-        cssVar: entry.cssVar,
-        position: positionFor(),
-        relative: {
-          model: DEFAULT_COLOR_MODEL,
-          baseId: brandBaseId,
-          lMode: "absolute",
-          lValue: entry.l,
-          cMode: "absolute",
-          cValue: entry.c,
-          hMode: "inherit",
-          alphaMode: "inherit",
-        },
-      })
-      acc[entry.cssVar] = id
-      return acc
-    }, {})
-
-    const textScale = [
-      { cssVar: "--color-foreground", label: "Text / Primary", l: 20, c: 0 },
-      { cssVar: "--color-muted-foreground", label: "Text / Secondary", l: 40, c: 0 },
-      { cssVar: "--color-foreground-inverse", label: "Text / Inverse", l: 99, c: 1 },
-    ]
-
-    const textIds = textScale.reduce<Record<string, string>>((acc, entry) => {
-      const id = upsertTemplateNode({
-        type: "relative",
-        label: entry.label,
-        cssVar: entry.cssVar,
-        position: positionFor(),
-        relative: {
-          model: DEFAULT_COLOR_MODEL,
-          baseId: brandBaseId,
-          lMode: "absolute",
-          lValue: entry.l,
-          cMode: "absolute",
-          cValue: entry.c,
-          hMode: "inherit",
-          alphaMode: "inherit",
-        },
-      })
-      acc[entry.cssVar] = id
-      return acc
-    }, {})
-
-    const borderId = upsertTemplateNode({
-      type: "relative",
-      label: "Border / Default",
-      cssVar: "--color-border-default",
-      position: positionFor(),
-      relative: {
-        model: DEFAULT_COLOR_MODEL,
-        baseId: brandBaseId,
-        lMode: "absolute",
-        lValue: 82,
-        cMode: "absolute",
-        cValue: 1,
-        hMode: "inherit",
-        alphaMode: "absolute",
-        alphaValue: 60,
-      },
-    })
-
-    const accentValue = templateAccent.trim()
-    let accentSourceId = brandBaseId
-    if (accentValue) {
-      const accentBaseId = upsertTemplateNode({
-        type: "token",
-        label: "Accent Seed",
-        cssVar: "--color-accent-500",
-        value: accentValue,
-        position: positionFor(),
-      })
-      accentSourceId = accentBaseId
-
-      const accentScale = [
-        { cssVar: "--color-accent-400", label: "Accent 400", l: 8, c: -2 },
-        { cssVar: "--color-accent-600", label: "Accent 600", l: -6, c: -3 },
-      ]
-      accentScale.forEach((entry) => {
-        upsertTemplateNode({
-          type: "relative",
-          label: entry.label,
-          cssVar: entry.cssVar,
-          position: positionFor(),
-          relative: {
-            model: DEFAULT_COLOR_MODEL,
-            baseId: accentBaseId,
-            lMode: "delta",
-            lValue: entry.l,
-            cMode: "delta",
-            cValue: entry.c,
-            hMode: "inherit",
-            alphaMode: "inherit",
-          },
-        })
-      })
-    }
-
-    const accentPrimaryId = upsertTemplateNode({
-      type: "relative",
-      label: "Accent / Primary",
-      cssVar: "--color-accent-primary",
-      position: positionFor(),
-      relative: {
-        model: DEFAULT_COLOR_MODEL,
-        baseId: accentSourceId,
-        lMode: accentValue ? "inherit" : "delta",
-        lValue: accentValue ? undefined : -6,
-        cMode: accentValue ? "inherit" : "delta",
-        cValue: accentValue ? undefined : -3,
-        hMode: "inherit",
-        alphaMode: "inherit",
-      },
-    })
-
-    const frameworkTokenId = (
-      framework: ColorCanvasFrameworkId,
-      presetIndex: number
-    ) =>
-      upsertTemplateNode({
-        type: "semantic",
-        label: formatFunctionalTokenLabel(FUNCTIONAL_TOKEN_PRESETS[framework][presetIndex]),
-        cssVar: FUNCTIONAL_TOKEN_PRESETS[framework][presetIndex].cssVar,
-        role: FUNCTIONAL_TOKEN_PRESETS[framework][presetIndex].role,
-        framework,
-        semanticKind: "functional",
-        position: positionFor(),
-      })
-
-    const functionalSourceIds: Record<FunctionalTokenSourceId, string> = {
-      surface: surfaceIds["--color-surface-50"],
-      "surface-muted": surfaceIds["--color-surface-200"],
-      text: textIds["--color-foreground"],
-      "text-muted": textIds["--color-muted-foreground"],
-      border: borderId,
-      accent: accentPrimaryId,
-      "accent-contrast": textIds["--color-foreground-inverse"],
-    }
-
-    const semanticRoleMappings: Array<{
-      label: string
-      role: NonNullable<ColorCanvasNode["role"]>
-      sourceId: string
-    }> = [
-      {
-        label: "Text / Foreground",
-        role: "text",
-        sourceId:
-          selectedTemplateKit.framework === "shadcn"
-            ? frameworkTokenId("shadcn", 1)
-            : selectedTemplateKit.framework === "radix"
-              ? frameworkTokenId("radix", 2)
-              : textIds["--color-foreground"],
-      },
-      {
-        label: "Surface / Base",
-        role: "surface",
-        sourceId:
-          selectedTemplateKit.framework === "shadcn"
-            ? frameworkTokenId("shadcn", 0)
-            : selectedTemplateKit.framework === "radix"
-              ? frameworkTokenId("radix", 0)
-              : surfaceIds["--color-surface-50"],
-      },
-      {
-        label: "Border / Default",
-        role: "border",
-        sourceId:
-          selectedTemplateKit.framework === "shadcn"
-            ? frameworkTokenId("shadcn", 10)
-            : selectedTemplateKit.framework === "radix"
-              ? frameworkTokenId("radix", 4)
-              : borderId,
-      },
-      {
-        label: "Accent / Primary",
-        role: "accent",
-        sourceId:
-          selectedTemplateKit.framework === "shadcn"
-            ? frameworkTokenId("shadcn", 6)
-            : selectedTemplateKit.framework === "radix"
-              ? frameworkTokenId("radix", 5)
-              : accentPrimaryId,
-      },
-      {
-        label: "Icon / Default",
-        role: "icon",
-        sourceId:
-          selectedTemplateKit.framework === "radix"
-            ? frameworkTokenId("radix", 8)
-            : textIds["--color-foreground"],
-      },
-    ]
-
-    if (selectedTemplateKit.framework) {
-      FUNCTIONAL_TOKEN_PRESETS[selectedTemplateKit.framework].forEach((preset) => {
-        const functionalId = upsertTemplateNode({
-          type: "semantic",
-          label: formatFunctionalTokenLabel(preset),
-          cssVar: preset.cssVar,
-          role: preset.role,
-          framework: preset.framework,
-          semanticKind: "functional",
-          position: positionFor(),
-        })
-        ensureEdge(functionalSourceIds[preset.source], functionalId, "map", {
-          note: `${getFrameworkLabel(preset.framework)} token`,
-        })
-      })
-    }
-
-    semanticRoleMappings.forEach((entry) => {
-      const semanticId = upsertTemplateNode({
-        type: "semantic",
-        label: entry.label,
-        role: entry.role,
-        semanticKind: "role",
-        position: positionFor(),
-      })
-      ensureEdge(entry.sourceId, semanticId, "map", { note: "Semantic role" })
-    })
-
+  const resetColorAuditAfterTemplateGeneration = useCallback(() => {
     setShowAdvancedAuditControls(false)
     setConnectMode(null)
     setConnectSourceId(null)
@@ -3514,6 +3216,25 @@ export function ColorCanvasPage({
     setColorAuditLayoutMode("flow")
     setPendingColorAuditLayoutMode("flow")
     setPendingColorAuditViewportAction("bird-view")
+  }, [
+    setAutoContrastEnabled,
+    setColorAuditLayoutMode,
+    setPendingColorAuditLayoutMode,
+    setShowAdvancedAuditControls,
+  ])
+
+  const handleGenerateTemplate = () => {
+    const brandValue = templateBrand.trim() || formatTemplateSeedOklch(templateBrandSeed)
+    const accentValue = templateAccent.trim()
+    applyStateOperation((prev) =>
+      applyColorAuditOperation(prev, {
+        type: "generate-template",
+        templateKitId,
+        brandColor: brandValue,
+        accentColor: accentValue || undefined,
+      })
+    )
+    resetColorAuditAfterTemplateGeneration()
     if (!templateBrand.trim()) {
       setTemplateBrand(brandValue)
     }
@@ -5564,6 +5285,43 @@ export function ColorCanvasPage({
     ],
     []
   )
+  const nodeCatalogWorkspaceKey = themeStorageKeyPrefix || "gallery-node-catalog"
+  const nodeCatalogWorkspaceSectionResources = useMemo<NodeCatalogWorkspaceSectionResource[]>(
+    () =>
+      workspaceCatalogSections.map((section) => ({
+        id: section.id,
+        label: section.label,
+        description: section.description,
+        items: section.items.map((item) => ({
+          id: item.id,
+          label: item.label,
+          kind: item.kind,
+          description: item.description,
+          previewKind: item.previewKind,
+        })),
+      })),
+    [workspaceCatalogSections]
+  )
+  const nodeCatalogNodeSectionResources = useMemo<NodeCatalogNodeSectionResource[]>(
+    () =>
+      allNodeCatalogSections.map((section) => ({
+        id: section.id,
+        mode: section.mode,
+        label: section.label,
+        description: section.description,
+        nodes: section.nodes.map((node) => ({
+          id: node.id,
+          label: getDisplayNodeLabelFromNode(node),
+          type: node.type,
+          role: node.role,
+          framework: node.framework,
+          semanticKind: node.semanticKind,
+          group: node.group,
+          previewKind: node.preview?.kind,
+        })),
+      })),
+    [allNodeCatalogSections]
+  )
   const scrollToCatalogSection = useCallback((id: string) => {
     if (typeof document === "undefined") return
     document.getElementById(`node-catalog-section-${id}`)?.scrollIntoView({
@@ -5582,6 +5340,41 @@ export function ColorCanvasPage({
   const nodeCatalogPreviewNode = useMemo(
     () => allNodeCatalogNodes.find((node) => node.preview) ?? allNodeCatalogNodes[0] ?? null,
     [allNodeCatalogNodes]
+  )
+  const nodeCatalogWorkspaceStateResource = useMemo(
+    () =>
+      buildNodeCatalogWorkspaceStateResource({
+        workspaceKey: nodeCatalogWorkspaceKey,
+        stateSummary: {
+          selection: [],
+          itemCount: workspaceCatalogSections.reduce(
+            (total, section) => total + section.items.length,
+            0
+          ),
+          nodeCount: allNodeCatalogSections.reduce(
+            (total, section) => total + section.nodes.length,
+            0
+          ),
+          groupCount: workspaceCatalogSections.length + allNodeCatalogSections.length,
+        },
+        workspaceSections: nodeCatalogWorkspaceSectionResources,
+        nodeSections: nodeCatalogNodeSectionResources,
+        statePreview: {
+          sampleNodeId: nodeCatalogPreviewNode?.id ?? null,
+          sampleNodeLabel: nodeCatalogPreviewNode
+            ? getDisplayNodeLabelFromNode(nodeCatalogPreviewNode)
+            : null,
+          states: ["default", "selected", "highlighted", "dimmed"],
+        },
+      }),
+    [
+      allNodeCatalogSections,
+      nodeCatalogNodeSectionResources,
+      nodeCatalogPreviewNode,
+      nodeCatalogWorkspaceKey,
+      nodeCatalogWorkspaceSectionResources,
+      workspaceCatalogSections,
+    ]
   )
   const getCatalogNodeColor = useCallback(
     (nodeId: string) => allNodeCatalogNodesById[nodeId]?.value || null,
@@ -6087,7 +5880,7 @@ export function ColorCanvasPage({
         return left.node.label.localeCompare(right.node.label)
       })
   }, [getContrastRuleForRoles, getEdgeContrastRaw, getNodeColor, nodes, selectedNode])
-  const colorAuditExportEntries = useMemo<ColorExportEntry[]>(() => {
+  const colorAuditExportEntries = useMemo<ColorAuditExportEntryResource[]>(() => {
     const usedCssVars = new Set<string>()
 
     return nodes
@@ -6096,7 +5889,7 @@ export function ColorCanvasPage({
         const resolvedExpression = getNodeColorExpression(node.id) || getNodeColor(node.id)
         if (!resolvedExpression) return []
 
-        const family: ColorExportEntry["family"] =
+        const family: ColorAuditExportEntryResource["family"] =
           node.type === "token"
             ? "palette"
             : node.type === "relative"
@@ -6189,7 +5982,7 @@ export function ColorCanvasPage({
     }
   }, [colorAuditProjectExportEntries.length, contrastEdges, edges, getEdgeContrast, getNodeColor, nodes])
   const colorAuditExportFormats = useMemo(() => {
-    const formatEntryExpression = (entry: ColorExportEntry) =>
+    const formatEntryExpression = (entry: ColorAuditExportEntryResource) =>
       selectedColorAuditExportColorMode === "oklch"
         ? entry.oklchExpression || entry.resolvedExpression
         : entry.resolvedExpression
@@ -6260,6 +6053,387 @@ export function ColorCanvasPage({
   const selectedColorAuditExportFormatLabel =
     COLOR_AUDIT_EXPORT_FORMAT_OPTIONS.find((option) => option.id === selectedColorAuditExportFormat)
       ?.label ?? "Export"
+  const colorAuditWorkspaceKey = themeStorageKeyPrefix
+    ? `${themeStorageKeyPrefix}:color-audit`
+    : "gallery-color-audit"
+  const colorAuditWorkspaceNodes = useMemo(
+    () =>
+      nodes.filter(
+        (node) =>
+          !node.preview && node.group !== "system-support" && node.group !== "system-preview"
+      ),
+    [nodes]
+  )
+  const colorAuditWorkspaceNodeIds = useMemo(
+    () => new Set(colorAuditWorkspaceNodes.map((node) => node.id)),
+    [colorAuditWorkspaceNodes]
+  )
+  const colorAuditWorkspaceEdges = useMemo(
+    () =>
+      edges.filter(
+        (edge) =>
+          colorAuditWorkspaceNodeIds.has(edge.sourceId) && colorAuditWorkspaceNodeIds.has(edge.targetId)
+      ),
+    [colorAuditWorkspaceNodeIds, edges]
+  )
+  const colorAuditWorkspaceNodeResources = useMemo<ColorAuditNodeResource[]>(
+    () =>
+      colorAuditWorkspaceNodes.map((node) => ({
+        id: node.id,
+        type: node.type,
+        label: node.label,
+        role: node.role,
+        framework: node.framework,
+        semanticKind: node.semanticKind,
+        cssVar: node.cssVar,
+        value: node.value,
+        group: node.group,
+        position: node.position,
+        size: node.size,
+        resolvedExpression: getNodeColorExpression(node.id),
+        resolvedColor: getNodeColor(node.id),
+        isDisplayP3: getNodeIsP3(node.id),
+      })),
+    [colorAuditWorkspaceNodes, getNodeColorExpression, getNodeColor, getNodeIsP3]
+  )
+  const colorAuditWorkspaceEdgeResources = useMemo<ColorAuditEdgeResource[]>(
+    () =>
+      colorAuditWorkspaceEdges.map((edge) => ({
+        id: edge.id,
+        type: edge.type,
+        sourceId: edge.sourceId,
+        targetId: edge.targetId,
+        sourceLabel: getDisplayNodeLabelFromNode(nodesById[edge.sourceId]) || edge.sourceId,
+        targetLabel: getDisplayNodeLabelFromNode(nodesById[edge.targetId]) || edge.targetId,
+        note: edge.rule?.note,
+        targetLc: edge.rule?.targetLc,
+        lc: edge.type === "contrast" ? getEdgeContrast(edge) : null,
+      })),
+    [colorAuditWorkspaceEdges, getEdgeContrast, nodesById]
+  )
+  const colorAuditWorkspaceStateResource = useMemo(
+    () =>
+      buildColorAuditWorkspaceStateResource({
+        workspaceKey: colorAuditWorkspaceKey,
+        rawState: state,
+        stateSummary: {
+          nodeCount: colorAuditWorkspaceNodes.length,
+          edgeCount: colorAuditWorkspaceEdges.length,
+          selection: [selectedNodeId, selectedEdgeId].filter(Boolean) as string[],
+          viewport: colorAuditTransformEnabled
+            ? {
+                x: colorAuditTransform.offset.x,
+                y: colorAuditTransform.offset.y,
+                zoom: colorAuditTransform.scale,
+              }
+            : undefined,
+        },
+        selectedNodeId: selectedNodeId ?? null,
+        selectedEdgeId: selectedEdgeId ?? null,
+        workflow: colorAuditWorkflow satisfies ColorAuditWorkflowSummary,
+        nodes: colorAuditWorkspaceNodeResources,
+        edges: colorAuditWorkspaceEdgeResources,
+        exportEntries: colorAuditProjectExportEntries,
+        exportPreview: {
+          selectedFormat: selectedColorAuditExportFormat,
+          selectedColorMode: selectedColorAuditExportColorMode,
+          selectedFormatLabel: selectedColorAuditExportFormatLabel,
+          tokenCount: colorAuditProjectExportEntries.length,
+          genericReady: colorAuditWorkflow.genericReady,
+          frameworkReady: colorAuditWorkflow.frameworkReady,
+          formats: colorAuditExportFormats,
+        },
+      }),
+    [
+      colorAuditExportFormats,
+      colorAuditTransform.offset.x,
+      colorAuditTransform.offset.y,
+      colorAuditProjectExportEntries,
+      colorAuditTransform.scale,
+      colorAuditTransformEnabled,
+      colorAuditWorkflow,
+      colorAuditWorkspaceEdgeResources,
+      colorAuditWorkspaceEdges.length,
+      colorAuditWorkspaceKey,
+      colorAuditWorkspaceNodeResources,
+      colorAuditWorkspaceNodes.length,
+      selectedColorAuditExportColorMode,
+      selectedColorAuditExportFormat,
+      selectedColorAuditExportFormatLabel,
+      selectedEdgeId,
+      selectedNodeId,
+      state,
+    ]
+  )
+  const handleAgentColorAuditOperations = useCallback(
+    (
+      operations: Array<{
+        operation: ColorAuditOperation
+      }>
+    ) => {
+      let generatedTemplateBrandColor: string | undefined
+      let generatedTemplateAccentColor: string | undefined
+      let didGenerateTemplate = false
+
+      applyStateOperation((prev) =>
+        operations.reduce((nextState, entry) => {
+          if (entry.operation?.type === "generate-template") {
+            generatedTemplateBrandColor = entry.operation.brandColor
+            generatedTemplateAccentColor = entry.operation.accentColor
+            didGenerateTemplate = true
+          }
+          return applyColorAuditOperation(nextState, entry.operation)
+        }, prev)
+      )
+
+      if (didGenerateTemplate) {
+        resetColorAuditAfterTemplateGeneration()
+        if (generatedTemplateBrandColor?.trim()) {
+          setTemplateBrand(generatedTemplateBrandColor.trim())
+        }
+        setTemplateAccent(generatedTemplateAccentColor?.trim() || "")
+      }
+    },
+    [
+      applyStateOperation,
+      resetColorAuditAfterTemplateGeneration,
+      setTemplateAccent,
+      setTemplateBrand,
+    ]
+  )
+  const { lastAppliedCursor: colorAuditOperationCursor } =
+    useAgentNativeWorkspaceOperations<ColorAuditOperation>({
+    workspaceId: "color-audit",
+    workspaceKey: colorAuditWorkspaceKey,
+    enabled: !catalogOnly,
+    onOperations: handleAgentColorAuditOperations,
+  })
+  useAgentNativeWorkspaceSync({
+    workspaceId: "color-audit",
+    workspaceKey: colorAuditWorkspaceKey,
+    payload: colorAuditWorkspaceStateResource,
+    appliedOperationCursor: colorAuditOperationCursor,
+    enabled: !catalogOnly,
+  })
+  useAgentNativeWorkspaceSync({
+    workspaceId: "node-catalog",
+    workspaceKey: nodeCatalogWorkspaceKey,
+    payload: nodeCatalogWorkspaceStateResource,
+    enabled: catalogOnly,
+  })
+  const systemCanvasWorkspaceKey = themeStorageKeyPrefix
+    ? `${themeStorageKeyPrefix}:system-canvas`
+    : "gallery-system-canvas"
+  const systemCanvasNodes = useMemo(
+    () =>
+      nodes.filter(
+        (node) =>
+          node.preview ||
+          node.group === "system-support" ||
+          node.group === "system-preview"
+      ),
+    [nodes]
+  )
+  const systemCanvasNodeIds = useMemo(
+    () => new Set(systemCanvasNodes.map((node) => node.id)),
+    [systemCanvasNodes]
+  )
+  const systemCanvasEdges = useMemo(
+    () =>
+      edges.filter(
+        (edge) =>
+          systemCanvasNodeIds.has(edge.sourceId) && systemCanvasNodeIds.has(edge.targetId)
+      ),
+    [edges, systemCanvasNodeIds]
+  )
+  const systemCanvasRenderedNodesById = useMemo(
+    () =>
+      renderedNodes.reduce<Record<string, ColorCanvasNode>>((acc, node) => {
+        acc[node.id] = node
+        return acc
+      }, {}),
+    [renderedNodes]
+  )
+  const systemCanvasNodeResources = useMemo<SystemCanvasNodeResource[]>(
+    () =>
+      systemCanvasNodes.map((node) => {
+        const renderedNode = systemCanvasRenderedNodesById[node.id]
+        return {
+          id: node.id,
+          type: node.type,
+          label: node.label,
+          group: node.group,
+          role: node.role,
+          framework: node.framework,
+          semanticKind: node.semanticKind,
+          cssVar: node.cssVar,
+          value: node.value,
+          position: renderedNode?.position || node.position,
+          size: node.size,
+          previewKind: node.preview?.kind,
+          previewSectionId: node.preview?.sectionId,
+          resolvedExpression: getNodeColorExpression(node.id),
+          resolvedColor: getNodeColor(node.id),
+          isDisplayP3: getNodeIsP3(node.id),
+        }
+      }),
+    [getNodeColor, getNodeColorExpression, getNodeIsP3, systemCanvasNodes, systemCanvasRenderedNodesById]
+  )
+  const systemCanvasEdgeResources = useMemo<SystemCanvasEdgeResource[]>(
+    () =>
+      systemCanvasEdges.map((edge) => ({
+        id: edge.id,
+        type: edge.type,
+        sourceId: edge.sourceId,
+        targetId: edge.targetId,
+        sourceLabel: getDisplayNodeLabelFromNode(nodesById[edge.sourceId]) || edge.sourceId,
+        targetLabel: getDisplayNodeLabelFromNode(nodesById[edge.targetId]) || edge.targetId,
+        note: edge.rule?.note,
+      })),
+    [nodesById, systemCanvasEdges]
+  )
+  const selectedSystemNodeId =
+    selectedNodeId && systemCanvasNodeIds.has(selectedNodeId) ? selectedNodeId : null
+  const selectedSystemEdgeId =
+    selectedEdgeId && systemCanvasEdges.some((edge) => edge.id === selectedEdgeId) ? selectedEdgeId : null
+  const systemCanvasStateResource = useMemo(
+    () =>
+      buildSystemCanvasWorkspaceStateResource({
+        workspaceKey: systemCanvasWorkspaceKey,
+        rawState: state,
+        stateSummary: {
+          nodeCount: systemCanvasNodes.length,
+          edgeCount: systemCanvasEdges.length,
+          selection: [selectedSystemNodeId, selectedSystemEdgeId].filter(Boolean) as string[],
+          viewport:
+            canvasMode === "system-canvas"
+              ? {
+                  x: systemCanvasTransform.offset.x,
+                  y: systemCanvasTransform.offset.y,
+                  zoom: systemCanvasTransform.scale,
+                }
+              : undefined,
+        },
+        selectedNodeId: selectedSystemNodeId,
+        selectedEdgeId: selectedSystemEdgeId,
+        viewMode: canvasViewMode,
+        scaleConfig: designSystemConfig,
+        requirements: systemNodeRequirements,
+        sections: systemSectionFrames,
+        nodes: systemCanvasNodeResources,
+        edges: systemCanvasEdgeResources,
+      }),
+    [
+      canvasMode,
+      canvasViewMode,
+      designSystemConfig,
+      selectedSystemEdgeId,
+      selectedSystemNodeId,
+      systemCanvasEdgeResources,
+      systemCanvasEdges.length,
+      systemCanvasNodeResources,
+      systemCanvasNodes.length,
+      systemCanvasTransform.offset.x,
+      systemCanvasTransform.offset.y,
+      systemCanvasTransform.scale,
+      systemCanvasWorkspaceKey,
+      systemNodeRequirements,
+      systemSectionFrames,
+      state,
+    ]
+  )
+  const [pendingSystemAgentOperations, setPendingSystemAgentOperations] = useState<
+    AgentNativeWorkspaceOperationRecord<SystemCanvasOperation>[]
+  >([])
+  const [systemCanvasOperationCursor, setSystemCanvasOperationCursor] = useState(0)
+  const handleAgentSystemCanvasOperations = useCallback(
+    (operations: AgentNativeWorkspaceOperationRecord<SystemCanvasOperation>[]) => {
+      setPendingSystemAgentOperations((prev) => {
+        const knownIds = new Set(prev.map((entry) => entry.id))
+        const next = [...prev]
+
+        for (const entry of operations) {
+          if (knownIds.has(entry.id)) continue
+          knownIds.add(entry.id)
+          next.push(entry)
+        }
+
+        return next
+      })
+    },
+    []
+  )
+  useAgentNativeWorkspaceOperations<SystemCanvasOperation>({
+    workspaceId: "system-canvas",
+    workspaceKey: systemCanvasWorkspaceKey,
+    enabled: !catalogOnly,
+    onOperations: handleAgentSystemCanvasOperations,
+  })
+
+  useEffect(() => {
+    setPendingSystemAgentOperations([])
+    setSystemCanvasOperationCursor(0)
+  }, [systemCanvasWorkspaceKey])
+
+  useEffect(() => {
+    if (catalogOnly || pendingSystemAgentOperations.length === 0) return
+
+    const [entry] = pendingSystemAgentOperations
+    const finish = () => {
+      setSystemCanvasOperationCursor((prev) => Math.max(prev, entry.cursor))
+      setPendingSystemAgentOperations((prev) =>
+        prev.filter((candidate) => candidate.id !== entry.id)
+      )
+    }
+
+    switch (entry.operation.type) {
+      case "update-scale-config": {
+        const patch = sanitizeSystemCanvasConfigPatch(entry.operation.patch)
+        if (Object.keys(patch).length > 0) {
+          setDesignSystemConfig((prev) => ({ ...prev, ...patch }))
+        }
+        finish()
+        return
+      }
+      case "set-view-mode": {
+        const nextView: SystemCanvasViewMode = isSystemCanvasViewMode(entry.operation.viewMode)
+          ? entry.operation.viewMode
+          : "system"
+        setCanvasMode("system-canvas")
+        handleCanvasViewModeChange(nextView)
+        finish()
+        return
+      }
+      case "apply-scale-vars": {
+        applyDesignSystemThemeVars()
+        finish()
+        return
+      }
+      case "generate-scale-graph": {
+        handleGenerateDesignSystem()
+        finish()
+        return
+      }
+      default: {
+        finish()
+      }
+    }
+  }, [
+    applyDesignSystemThemeVars,
+    catalogOnly,
+    handleCanvasViewModeChange,
+    handleGenerateDesignSystem,
+    pendingSystemAgentOperations,
+    setCanvasMode,
+    setDesignSystemConfig,
+  ])
+  useAgentNativeWorkspaceSync({
+    workspaceId: "system-canvas",
+    workspaceKey: systemCanvasWorkspaceKey,
+    payload: systemCanvasStateResource,
+    appliedOperationCursor: systemCanvasOperationCursor,
+    enabled: !catalogOnly,
+  })
   const dependencyEdges = useMemo(() => {
     return nodes
       .filter((node) => node.type === "relative" && node.relative?.baseId)

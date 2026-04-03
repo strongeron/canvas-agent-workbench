@@ -3,10 +3,22 @@
 import path from 'node:path'
 
 import {
+  bootstrapCanvasAgentSession,
   buildCanvasContextSummary,
+  clearCanvasAgentAttachedContext,
+  captureWorkspaceScreenshot,
+  enqueueAgentNativeWorkspaceOperation,
   enqueueCanvasAgentOperation,
   fail,
+  formatCanvasAgentShellExports,
+  getDefaultCanvasAgentServerUrl,
   getCanvasAgentContextFromEnv,
+  readAgentNativeManifest,
+  readAgentNativeWorkspaceManifest,
+  readColorAuditExportPreview,
+  readColorAuditState,
+  readNodeCatalogState,
+  readSystemCanvasState,
   parseCanvasAgentIds,
   readCanvasAgentDebug,
   readCanvasAgentPrimitives,
@@ -14,23 +26,58 @@ import {
   readCanvasAgentState,
   readCanvasAgentTranscript,
   readJsonPayload,
+  resolveCanvasAgentContextFilePath,
+  writeCanvasAgentAttachedContext,
   writeJson,
 } from './canvas-agent-runtime.mjs'
+import {
+  createArtboardItem,
+  createClearCanvasOperation,
+  createCreateItemOperation,
+  createDeleteItemsOperation,
+  createPrimitiveCanvasItem,
+  createSelectItemsOperation,
+  createUpdateItemOperation,
+  exportCanvasBoard,
+} from '../utils/canvasAgentOperations.mjs'
 
 const HELP = `canvas-agent
 
 Usage:
   bin/canvas-agent help
+  bin/canvas-agent attach --project <project-id> [--surface <surface-id>] [--agent <agent-id>] [--server <url>] [--json|--shell]
+  bin/canvas-agent detach
+  bin/canvas-agent workspace-manifest
+  bin/canvas-agent surface-manifest <workspace-id>
+  bin/canvas-agent color-audit-state
+  bin/canvas-agent color-audit-export
+  bin/canvas-agent node-catalog-state
+  bin/canvas-agent generate-template <json|@file|->
+  bin/canvas-agent create-color-node <json|@file|->
+  bin/canvas-agent update-color-node <node-id> <json|@file|->
+  bin/canvas-agent delete-color-node <node-id>
+  bin/canvas-agent create-color-edge <json|@file|->
+  bin/canvas-agent update-color-edge <edge-id> <json|@file|->
+  bin/canvas-agent delete-color-edge <edge-id>
+  bin/canvas-agent system-canvas-state
+  bin/canvas-agent update-system-scale-config <json|@file|->
+  bin/canvas-agent set-system-view <system|colors|type|layout|primitives|standards|all>
+  bin/canvas-agent generate-scale-graph
+  bin/canvas-agent apply-scale-vars
+  bin/canvas-agent screenshot <workspace-id> [desktop|mobile]
   bin/canvas-agent state
   bin/canvas-agent context
   bin/canvas-agent selection
   bin/canvas-agent primitives
   bin/canvas-agent primitive <primitive-id>
+  bin/canvas-agent create-artboard <json|@file|->
+  bin/canvas-agent create-primitive-item <json|@file|->
   bin/canvas-agent create-item <json|@file|->
   bin/canvas-agent update-item <item-id> <json|@file|->
   bin/canvas-agent delete-items <id[,id...]>
   bin/canvas-agent select-items <id[,id...]>
   bin/canvas-agent clear-canvas
+  bin/canvas-agent export-board <artboard-id> [format] [component-name]
   bin/canvas-agent transcript
   bin/canvas-agent debug
 
@@ -40,10 +87,81 @@ Payload formats:
   -            Read JSON from stdin
 
 Environment:
-  CANVAS_AGENT_SESSION_DIR  Required session runtime directory
-  CANVAS_AGENT_PROJECT_ID   Required project id
-  CANVAS_AGENT_SESSION_ID   Required session id
+  After "attach", commands use .canvas-agent/attached-session.json automatically.
+  Env vars still override the attached context when set.
+  CANVAS_AGENT_SESSION_DIR  Required only when not using attach
+  CANVAS_AGENT_PROJECT_ID   Required only when not using attach
+  CANVAS_AGENT_SESSION_ID   Required only when not using attach
+  CANVAS_AGENT_SERVER_URL   Optional dev server URL for agent-native resources
 `
+
+function parseOptionArgs(inputArgs) {
+  const options = {}
+  const positionals = []
+
+  for (let index = 0; index < inputArgs.length; index += 1) {
+    const part = inputArgs[index]
+    if (!part.startsWith('--')) {
+      positionals.push(part)
+      continue
+    }
+
+    const [rawKey, inlineValue] = part.slice(2).split('=')
+    const key = rawKey?.trim()
+    if (!key) continue
+
+    if (typeof inlineValue === 'string') {
+      options[key] = inlineValue
+      continue
+    }
+
+    const next = inputArgs[index + 1]
+    if (next && !next.startsWith('--')) {
+      options[key] = next
+      index += 1
+      continue
+    }
+
+    options[key] = true
+  }
+
+  return { options, positionals }
+}
+
+function printAttachSummary(payload) {
+  const lines = [
+    `Attached canvas-agent session ${payload.session.id} (${payload.reused ? 'reused' : 'created'})`,
+    `Project: ${payload.context.projectId}`,
+    `Agent: ${payload.session.agentLabel}`,
+    `Server: ${payload.context.serverUrl}`,
+    `Context file: ${payload.contextFilePath}`,
+  ]
+  if (payload.surfaceId) {
+    lines.push(`Surface: ${payload.surfaceId}`)
+  }
+  lines.push('')
+  lines.push('Next commands:')
+  lines.push('  bin/canvas-agent workspace-manifest')
+  if (payload.surfaceId === 'color-audit') {
+    lines.push('  bin/canvas-agent color-audit-state')
+    lines.push('  bin/canvas-agent color-audit-export')
+  } else if (payload.surfaceId === 'system-canvas') {
+    lines.push('  bin/canvas-agent system-canvas-state')
+    lines.push('  bin/canvas-agent generate-scale-graph')
+    lines.push('  bin/canvas-agent apply-scale-vars')
+  } else if (payload.surfaceId === 'node-catalog') {
+    lines.push('  bin/canvas-agent node-catalog-state')
+  } else {
+    lines.push('  bin/canvas-agent state')
+    lines.push('  bin/canvas-agent color-audit-state')
+    lines.push('  bin/canvas-agent system-canvas-state')
+  }
+  process.stdout.write(`${lines.join('\n')}\n`)
+}
+
+function getCliContextFilePath() {
+  return process.env.CANVAS_AGENT_CONTEXT_FILE?.trim() || resolveCanvasAgentContextFilePath(process.cwd())
+}
 
 async function main() {
   const [command = 'help', ...args] = process.argv.slice(2)
@@ -53,9 +171,291 @@ async function main() {
     return
   }
 
+  if (command === 'attach') {
+    const { options } = parseOptionArgs(args)
+    const projectId = typeof options.project === 'string' ? options.project.trim() : ''
+    if (!projectId) fail('attach requires --project <project-id>.')
+
+    const serverUrl =
+      (typeof options.server === 'string' && options.server.trim()) ||
+      getDefaultCanvasAgentServerUrl()
+    const surfaceId =
+      typeof options.surface === 'string' && options.surface.trim() ? options.surface.trim() : null
+    const bootstrap = await bootstrapCanvasAgentSession({
+      projectId,
+      agentId:
+        typeof options.agent === 'string' && options.agent.trim() ? options.agent.trim() : 'codex',
+      cwd: typeof options.cwd === 'string' && options.cwd.trim() ? path.resolve(options.cwd) : process.cwd(),
+      title: typeof options.title === 'string' && options.title.trim() ? options.title.trim() : undefined,
+      serverUrl,
+      surfaceId: surfaceId || undefined,
+      reuseSession: options.new ? false : true,
+    })
+
+    if (!bootstrap?.context || !bootstrap?.session) {
+      fail('Canvas agent bootstrap did not return session context.')
+    }
+
+    const contextFilePath = getCliContextFilePath()
+    await writeCanvasAgentAttachedContext(bootstrap.context, contextFilePath)
+    const payload = {
+      ...bootstrap,
+      surfaceId,
+      contextFilePath,
+    }
+
+    if (options.shell) {
+      process.stdout.write(`${formatCanvasAgentShellExports(bootstrap.context)}\n`)
+      return
+    }
+
+    if (options.json) {
+      writeJson(payload)
+      return
+    }
+
+    printAttachSummary(payload)
+    return
+  }
+
+  if (command === 'detach') {
+    const contextFilePath = getCliContextFilePath()
+    await clearCanvasAgentAttachedContext(contextFilePath)
+    writeJson({
+      ok: true,
+      detached: true,
+      contextFilePath,
+    })
+    return
+  }
+
   const context = getCanvasAgentContextFromEnv()
 
   switch (command) {
+    case 'workspace-manifest': {
+      writeJson(await readAgentNativeManifest(context))
+      return
+    }
+    case 'surface-manifest': {
+      const workspaceId = args[0]?.trim()
+      if (!workspaceId) fail('surface-manifest requires a workspace id.')
+      writeJson(await readAgentNativeWorkspaceManifest(context, workspaceId))
+      return
+    }
+    case 'color-audit-state': {
+      writeJson(await readColorAuditState(context))
+      return
+    }
+    case 'color-audit-export': {
+      writeJson(await readColorAuditExportPreview(context))
+      return
+    }
+    case 'node-catalog-state': {
+      writeJson(await readNodeCatalogState(context))
+      return
+    }
+    case 'generate-template': {
+      const payload = await readJsonPayload(args[0])
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'color-audit',
+          context.colorAuditWorkspaceKey,
+          {
+            type: 'generate-template',
+            templateKitId: payload?.templateKitId,
+            brandColor: payload?.brandColor,
+            accentColor: payload?.accentColor,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'create-color-node': {
+      const payload = await readJsonPayload(args[0])
+      if (!payload || typeof payload !== 'object') fail('create-color-node requires a JSON object payload.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'color-audit',
+          context.colorAuditWorkspaceKey,
+          {
+            type: 'create-node',
+            node: payload.node ?? payload,
+            select: typeof payload.select === 'boolean' ? payload.select : undefined,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'update-color-node': {
+      const [nodeId, payloadRef] = args
+      if (!nodeId?.trim()) fail('update-color-node requires a node id.')
+      const patch = await readJsonPayload(payloadRef)
+      if (!patch || typeof patch !== 'object') fail('update-color-node requires a JSON object patch.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'color-audit',
+          context.colorAuditWorkspaceKey,
+          {
+            type: 'update-node',
+            nodeId: nodeId.trim(),
+            patch,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'delete-color-node': {
+      const nodeId = args[0]?.trim()
+      if (!nodeId) fail('delete-color-node requires a node id.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'color-audit',
+          context.colorAuditWorkspaceKey,
+          {
+            type: 'delete-node',
+            nodeId,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'create-color-edge': {
+      const payload = await readJsonPayload(args[0])
+      if (!payload || typeof payload !== 'object') fail('create-color-edge requires a JSON object payload.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'color-audit',
+          context.colorAuditWorkspaceKey,
+          {
+            type: 'create-edge',
+            edge: payload.edge ?? payload,
+            select: typeof payload.select === 'boolean' ? payload.select : undefined,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'update-color-edge': {
+      const [edgeId, payloadRef] = args
+      if (!edgeId?.trim()) fail('update-color-edge requires an edge id.')
+      const patch = await readJsonPayload(payloadRef)
+      if (!patch || typeof patch !== 'object') fail('update-color-edge requires a JSON object patch.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'color-audit',
+          context.colorAuditWorkspaceKey,
+          {
+            type: 'update-edge',
+            edgeId: edgeId.trim(),
+            patch,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'delete-color-edge': {
+      const edgeId = args[0]?.trim()
+      if (!edgeId) fail('delete-color-edge requires an edge id.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'color-audit',
+          context.colorAuditWorkspaceKey,
+          {
+            type: 'delete-edge',
+            edgeId,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'system-canvas-state': {
+      writeJson(await readSystemCanvasState(context))
+      return
+    }
+    case 'update-system-scale-config': {
+      const patch = await readJsonPayload(args[0])
+      if (!patch || typeof patch !== 'object') {
+        fail('update-system-scale-config requires a JSON object patch.')
+      }
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'update-scale-config',
+            patch,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'set-system-view': {
+      const viewMode = args[0]?.trim()
+      if (!viewMode) fail('set-system-view requires a view mode.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'set-view-mode',
+            viewMode,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'generate-scale-graph': {
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'generate-scale-graph',
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'apply-scale-vars': {
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'apply-scale-vars',
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'screenshot': {
+      const workspaceId = args[0]?.trim()
+      if (!workspaceId) fail('screenshot requires a workspace id.')
+      writeJson(await captureWorkspaceScreenshot(context, workspaceId, args[1]?.trim() || 'desktop'))
+      return
+    }
     case 'state': {
       writeJson(await readCanvasAgentState(context))
       return
@@ -85,17 +485,52 @@ async function main() {
       writeJson(primitive)
       return
     }
+    case 'create-artboard': {
+      const payload = await readJsonPayload(args[0])
+      const state = await readCanvasAgentState(context)
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'create-artboard',
+          createCreateItemOperation(createArtboardItem(state, payload), payload?.select !== false),
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'create-primitive-item': {
+      const payload = await readJsonPayload(args[0])
+      const primitiveId =
+        typeof payload?.primitiveId === 'string' && payload.primitiveId.trim()
+          ? payload.primitiveId.trim()
+          : ''
+      if (!primitiveId) fail('create-primitive-item requires primitiveId in the payload.')
+      const [state, primitives] = await Promise.all([
+        readCanvasAgentState(context),
+        readCanvasAgentPrimitives(context),
+      ])
+      const primitive = primitives.find(
+        (entry) => entry.primitiveId === primitiveId || entry.entryId === primitiveId
+      )
+      if (!primitive) fail(`Unknown primitive: ${primitiveId}`)
+      const item = createPrimitiveCanvasItem(state, primitive, payload)
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'create-primitive-item',
+          createCreateItemOperation(item, payload?.select !== false),
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
     case 'create-item': {
       const item = await readJsonPayload(args[0])
       writeJson(
         await enqueueCanvasAgentOperation(
           context,
           'create-item',
-          {
-            type: 'create_item',
-            item,
-            select: true,
-          },
+          createCreateItemOperation(item, true),
           { source: 'canvas-agent-cli' }
         )
       )
@@ -109,11 +544,7 @@ async function main() {
         await enqueueCanvasAgentOperation(
           context,
           'update-item',
-          {
-            type: 'update_item',
-            id: itemId,
-            updates,
-          },
+          createUpdateItemOperation(itemId, updates),
           { source: 'canvas-agent-cli' }
         )
       )
@@ -125,10 +556,7 @@ async function main() {
         await enqueueCanvasAgentOperation(
           context,
           'delete-items',
-          {
-            type: 'delete_items',
-            ids,
-          },
+          createDeleteItemsOperation(ids),
           { source: 'canvas-agent-cli' }
         )
       )
@@ -140,10 +568,7 @@ async function main() {
         await enqueueCanvasAgentOperation(
           context,
           'select-items',
-          {
-            type: 'select_items',
-            ids,
-          },
+          createSelectItemsOperation(ids),
           { source: 'canvas-agent-cli' }
         )
       )
@@ -154,11 +579,27 @@ async function main() {
         await enqueueCanvasAgentOperation(
           context,
           'clear-canvas',
-          {
-            type: 'clear_canvas',
-          },
+          createClearCanvasOperation(),
           { source: 'canvas-agent-cli' }
         )
+      )
+      return
+    }
+    case 'export-board': {
+      const [artboardId, format, componentName] = args
+      if (!artboardId?.trim()) fail('export-board requires an artboard id.')
+      const [state, primitives] = await Promise.all([
+        readCanvasAgentState(context),
+        readCanvasAgentPrimitives(context),
+      ])
+      writeJson(
+        exportCanvasBoard({
+          artboardId: artboardId.trim(),
+          format: format?.trim() || undefined,
+          componentName: componentName?.trim() || undefined,
+          state,
+          primitives,
+        })
       )
       return
     }

@@ -2,7 +2,7 @@
 
 import { act } from "react"
 import { createRoot } from "react-dom/client"
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ColorCanvasPage } from "../components/color-canvas/ColorCanvasPage"
 import type { ThemeToken } from "../types/theme"
@@ -88,7 +88,7 @@ function findNode(container: HTMLElement, label: string) {
   return node as HTMLElement
 }
 
-async function renderSystemCanvas() {
+async function renderSystemCanvas(storageKeyPrefixOverride?: string) {
   const host = document.createElement("div")
   host.style.width = `${DEFAULT_VIEWPORT.width}px`
   host.style.height = `${DEFAULT_VIEWPORT.height}px`
@@ -96,7 +96,9 @@ async function renderSystemCanvas() {
   document.body.appendChild(host)
 
   const root = createRoot(host)
-  const storageKeyPrefix = `system-canvas-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const storageKeyPrefix =
+    storageKeyPrefixOverride ||
+    `system-canvas-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
   await act(async () => {
     root.render(
@@ -253,9 +255,12 @@ afterAll(() => {
 
 beforeEach(() => {
   window.localStorage.clear()
+  vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})) as typeof fetch)
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   document.body.innerHTML = ""
 })
 
@@ -333,7 +338,7 @@ describe("system canvas", () => {
     } finally {
       await cleanup()
     }
-  })
+  }, 10000)
 
   it("preserves manual resize across view changes and only resets size on explicit fit width", async () => {
     const { container, cleanup } = await renderSystemCanvas()
@@ -393,5 +398,164 @@ describe("system canvas", () => {
     } finally {
       await cleanup()
     }
-  })
+  }, 10000)
+
+  it("applies queued system-canvas agent operations and syncs generated state", async () => {
+    const syncedStates: Array<{
+      workspaceId: string
+      body: Record<string, any>
+    }> = []
+    let servedOperations = false
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const rawUrl =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const requestUrl = new URL(rawUrl, window.location.origin)
+
+      if (
+        init?.method !== "POST" &&
+        requestUrl.pathname === "/api/agent-native/workspaces/system-canvas/operations"
+      ) {
+        const cursor = Number.parseInt(requestUrl.searchParams.get("cursor") || "0", 10)
+        if (!servedOperations && cursor === 0) {
+          servedOperations = true
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              workspaceId: "system-canvas",
+              workspaceKey: "gallery-demo:system-canvas",
+              operations: [
+                {
+                  id: "op-1",
+                  cursor: 1,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "update-scale-config",
+                    patch: {
+                      typeBaseMinPx: 17,
+                      fontFamilyDisplay: "Inter",
+                    },
+                  },
+                },
+                {
+                  id: "op-2",
+                  cursor: 2,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "generate-scale-graph",
+                  },
+                },
+                {
+                  id: "op-3",
+                  cursor: 3,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "set-view-mode",
+                    viewMode: "layout",
+                  },
+                },
+                {
+                  id: "op-4",
+                  cursor: 4,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "apply-scale-vars",
+                  },
+                },
+              ],
+              cursor: 4,
+            }),
+          } as Response
+        }
+
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            workspaceId: "system-canvas",
+            workspaceKey: "gallery-demo:system-canvas",
+            operations: [],
+            cursor: 4,
+          }),
+        } as Response
+      }
+
+      if (
+        init?.method !== "POST" &&
+        requestUrl.pathname === "/api/agent-native/workspaces/color-audit/operations"
+      ) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            workspaceId: "color-audit",
+            workspaceKey: "gallery-demo:color-audit",
+            operations: [],
+            cursor: 0,
+          }),
+        } as Response
+      }
+
+      if (init?.method === "POST" && requestUrl.pathname.startsWith("/api/agent-native/workspaces/")) {
+        const body = JSON.parse(String(init.body || "{}"))
+        const match = requestUrl.pathname.match(/^\/api\/agent-native\/workspaces\/([^/]+)\/state$/)
+        if (match?.[1]) {
+          syncedStates.push({
+            workspaceId: match[1],
+            body,
+          })
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            updatedAt: new Date().toISOString(),
+          }),
+        } as Response
+      }
+
+      throw new Error(`Unhandled fetch in system canvas test: ${requestUrl.pathname}`)
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { container, cleanup } = await renderSystemCanvas("gallery-demo")
+
+    try {
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 1800))
+      })
+      await flushFrames(8)
+
+      expect(findNode(container, "Layout / Stack Flow")).toBeTruthy()
+
+      const acknowledgedSync = syncedStates.find(
+        (entry) =>
+          entry.workspaceId === "system-canvas" &&
+          entry.body.appliedOperationCursor === 4 &&
+          entry.body.payload?.viewMode === "layout"
+      )
+
+      expect(acknowledgedSync).toBeTruthy()
+      expect(acknowledgedSync?.body.payload?.scaleConfig?.typeBaseMinPx).toBe(17)
+      expect(acknowledgedSync?.body.payload?.scaleConfig?.fontFamilyDisplay).toBe("Inter")
+      expect(acknowledgedSync?.body.payload?.nodes?.length).toBeGreaterThan(0)
+      expect(
+        acknowledgedSync?.body.payload?.nodes?.some((node: { label?: string }) =>
+          node.label?.includes("Layout / Stack Flow")
+        )
+      ).toBe(true)
+    } finally {
+      await cleanup()
+    }
+  }, 10000)
 })

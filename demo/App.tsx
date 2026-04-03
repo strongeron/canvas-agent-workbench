@@ -804,10 +804,16 @@ function getAppViewFromLocation(): AppView {
   return match?.[0] ?? "canvas"
 }
 
+function getProjectIdFromLocation(): ProjectId {
+  if (typeof window === "undefined") return "demo"
+  const projectId = new URLSearchParams(window.location.search).get("project")?.trim()
+  return projectId || "demo"
+}
+
 function App() {
   const [view, setView] = useState<AppView>(() => getAppViewFromLocation())
   const [searchQuery, setSearchQuery] = useState("")
-  const [projectId, setProjectId] = useState<ProjectId>("demo")
+  const [projectId, setProjectId] = useState<ProjectId>(() => getProjectIdFromLocation())
   const [dynamicProjects, setDynamicProjects] = useState<ProjectOption[]>([])
   const [thicketPack, setThicketPack] = useState<null | {
     id: string
@@ -823,6 +829,7 @@ function App() {
   useEffect(() => {
     const handlePopState = () => {
       setView(getAppViewFromLocation())
+      setProjectId(getProjectIdFromLocation())
     }
 
     window.addEventListener("popstate", handlePopState)
@@ -831,9 +838,18 @@ function App() {
 
   useEffect(() => {
     const nextPath = APP_VIEW_TO_PATH[view]
-    if (window.location.pathname === nextPath) return
-    window.history.pushState({ view }, "", nextPath)
-  }, [view])
+    const nextUrl = new URL(window.location.href)
+    nextUrl.pathname = nextPath
+    if (projectId.trim()) {
+      nextUrl.searchParams.set("project", projectId.trim())
+    } else {
+      nextUrl.searchParams.delete("project")
+    }
+    const currentUrl = `${window.location.pathname}${window.location.search}`
+    const targetUrl = `${nextUrl.pathname}${nextUrl.search}`
+    if (currentUrl === targetUrl) return
+    window.history.pushState({ view, projectId }, "", targetUrl)
+  }, [projectId, view])
 
   useEffect(() => {
     if (projectId !== "thicket" || thicketPack || isThicketLoading) return

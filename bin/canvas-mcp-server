@@ -2,12 +2,34 @@
 
 import {
   buildCanvasContextSummary,
+  captureWorkspaceScreenshot,
+  enqueueAgentNativeWorkspaceOperation,
+  readAgentNativeManifest,
+  readAgentNativeWorkspaceManifest,
+  readColorAuditExportPreview,
+  readColorAuditState,
+  readNodeCatalogState,
+  readSystemCanvasState,
   enqueueCanvasAgentOperation,
   getCanvasAgentContextFromEnv,
   readCanvasAgentPrimitives,
   readCanvasAgentSelection,
   readCanvasAgentState,
 } from './canvas-agent-runtime.mjs'
+import {
+  DEFAULT_EXPORT_FORMAT,
+  EXPORT_FORMATS,
+  createArtboardItem,
+  createClearCanvasOperation,
+  createCreateItemOperation,
+  createDeleteItemsOperation,
+  createPrimitiveCanvasItem,
+  createSelectItemsOperation,
+  createUpdateItemOperation,
+  exportCanvasBoard,
+  normalizeIdList,
+  normalizeString,
+} from '../utils/canvasAgentOperations.mjs'
 
 const SERVER_INFO = {
   name: 'canvas-agent-mcp',
@@ -15,20 +37,224 @@ const SERVER_INFO = {
 }
 
 const FALLBACK_PROTOCOL_VERSION = '2025-03-26'
-const DEFAULT_ARTBOARD_LAYOUT = {
-  display: 'flex',
-  direction: 'column',
-  align: 'stretch',
-  justify: 'start',
-  gap: 24,
-  padding: 32,
-}
-const DEFAULT_ARTBOARD_SIZE = { width: 1440, height: 900 }
-const DEFAULT_ARTBOARD_POSITION = { x: 120, y: 120 }
-const DEFAULT_EXPORT_FORMAT = 'react-tailwind'
-const EXPORT_FORMATS = new Set(['react-tailwind', 'react-css-vars'])
-
 const TOOL_DEFINITIONS = [
+  {
+    name: 'get_workspace_manifest',
+    description: 'Return the global agent-native workspace manifest for the current app session.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_surface_manifest',
+    description: 'Return the manifest for a specific workspace surface.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspaceId: {
+          type: 'string',
+          enum: ['canvas', 'color-audit', 'system-canvas', 'node-catalog'],
+        },
+      },
+      required: ['workspaceId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_color_audit_state',
+    description: 'Return the current Color Audit workspace state with nodes, edges, selection, workflow, and export summary.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_color_audit_export_preview',
+    description: 'Return the current Color Audit export preview for the selected format and color mode.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'generate_template',
+    description: 'Generate Starter Ramp, shadcn/ui, or Radix token graphs from brand and accent seeds.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        templateKitId: {
+          type: 'string',
+          enum: ['starter', 'shadcn', 'radix'],
+        },
+        brandColor: { type: 'string' },
+        accentColor: { type: 'string' },
+      },
+      required: ['templateKitId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_color_node',
+    description: 'Create a Color Audit token, relative rule, functional alias, or semantic role node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        node: { type: 'object' },
+        select: { type: 'boolean' },
+      },
+      required: ['node'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_color_node',
+    description: 'Update an existing Color Audit node by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string' },
+        patch: { type: 'object' },
+      },
+      required: ['nodeId', 'patch'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_color_node',
+    description: 'Delete a Color Audit node and any connected edges.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string' },
+      },
+      required: ['nodeId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_color_edge',
+    description: 'Create a Color Audit edge between two nodes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        edge: { type: 'object' },
+        select: { type: 'boolean' },
+      },
+      required: ['edge'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_color_edge',
+    description: 'Update an existing Color Audit edge by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        edgeId: { type: 'string' },
+        patch: { type: 'object' },
+      },
+      required: ['edgeId', 'patch'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_color_edge',
+    description: 'Delete a Color Audit edge by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        edgeId: { type: 'string' },
+      },
+      required: ['edgeId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_system_canvas_state',
+    description: 'Return the current System Canvas state with generated nodes, sections, scale config, and preview coverage.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_system_scale_config',
+    description: 'Patch the current System Canvas scale config before generating or reviewing previews.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        patch: { type: 'object' },
+      },
+      required: ['patch'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_system_canvas_view',
+    description: 'Switch the active System Canvas subview.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        viewMode: {
+          type: 'string',
+          enum: ['system', 'colors', 'type', 'layout', 'primitives', 'standards', 'all'],
+        },
+      },
+      required: ['viewMode'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'generate_scale_graph',
+    description: 'Generate the current System Canvas graph from the active scale config.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'apply_scale_vars',
+    description: 'Apply the current System Canvas scale vars back to the active theme.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_node_catalog_state',
+    description: 'Return the current Node Catalog section structure and node coverage across workspace surfaces.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'capture_workspace_screenshot',
+    description: 'Capture a fresh screenshot for a supported workspace surface using the app-owned renderer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspaceId: {
+          type: 'string',
+          enum: ['canvas', 'color-audit', 'system-canvas', 'node-catalog'],
+        },
+        target: {
+          type: 'string',
+          enum: ['desktop', 'mobile'],
+        },
+      },
+      required: ['workspaceId'],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'get_canvas_context',
     description:
@@ -222,6 +448,133 @@ const TOOL_DEFINITIONS = [
   },
 ]
 
+const RESOURCE_DEFINITIONS = [
+  {
+    uri: 'workspace://manifest',
+    name: 'Workspace manifest',
+    description: 'Global app manifest describing runtimes, surfaces, resources, tools, and prompts.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/canvas/state',
+    name: 'Canvas state',
+    description: 'Live freeform canvas state snapshot.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/canvas/selection',
+    name: 'Canvas selection',
+    description: 'Current selected item ids for the freeform canvas.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/canvas/primitives',
+    name: 'Canvas primitives',
+    description: 'Primitive registry for the current canvas project.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/canvas/viewport/screenshot',
+    name: 'Canvas screenshot',
+    description: 'Fresh screenshot capture for the current Canvas workspace.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/color-audit/manifest',
+    name: 'Color Audit manifest',
+    description: 'Manifest for the Color Audit surface.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/color-audit/state',
+    name: 'Color Audit state',
+    description: 'Read-only Color Audit state with nodes, edges, workflow, and selection.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/color-audit/export-preview',
+    name: 'Color Audit export preview',
+    description: 'Selected Color Audit export payload and readiness summary.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/color-audit/viewport/screenshot',
+    name: 'Color Audit screenshot',
+    description: 'Fresh screenshot capture for the current Color Audit workspace.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/system-canvas/manifest',
+    name: 'System Canvas manifest',
+    description: 'Manifest for the System Canvas surface.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/system-canvas/state',
+    name: 'System Canvas state',
+    description: 'Read-only System Canvas state with generated graph, sections, scale config, and current view.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/system-canvas/viewport/screenshot',
+    name: 'System Canvas screenshot',
+    description: 'Fresh screenshot capture for the current System Canvas workspace.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/node-catalog/state',
+    name: 'Node Catalog state',
+    description: 'Structured section data for Canvas Workspace, Color Audit, and System Canvas node families.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/node-catalog/manifest',
+    name: 'Node Catalog manifest',
+    description: 'Manifest for the Node Catalog surface.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/node-catalog/sections',
+    name: 'Node Catalog sections',
+    description: 'Section list for the Node Catalog route.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/node-catalog/viewport/screenshot',
+    name: 'Node Catalog screenshot',
+    description: 'Fresh screenshot capture for the current Node Catalog route.',
+    mimeType: 'application/json',
+  },
+]
+
+const PROMPT_DEFINITIONS = [
+  {
+    name: 'canvas-layout-review',
+    description:
+      'Guide the agent through inspecting canvas context, selection, primitives, and then making minimal board mutations.',
+  },
+  {
+    name: 'build-color-audit-palette',
+    description:
+      'Guide the agent through Color Audit state review, palette shaping, alias mapping, semantic roles, and export review.',
+  },
+  {
+    name: 'audit-color-contrast',
+    description:
+      'Guide the agent through Color Audit foreground/background contrast review and APCA validation.',
+  },
+  {
+    name: 'review-scale-system',
+    description:
+      'Guide the agent through System Canvas type, icon, layout, primitive, and standards preview review.',
+  },
+  {
+    name: 'review-node-system',
+    description:
+      'Guide the agent through reviewing node-card titles, pills, ports, spacing, and overflow states across all workspace surfaces.',
+  },
+]
+
 let protocolVersion = FALLBACK_PROTOCOL_VERSION
 
 const context = getCanvasAgentContextFromEnv()
@@ -322,6 +675,13 @@ async function handleMessage(message) {
           tools: {
             listChanged: false,
           },
+          resources: {
+            subscribe: false,
+            listChanged: false,
+          },
+          prompts: {
+            listChanged: false,
+          },
         },
         serverInfo: SERVER_INFO,
       })
@@ -330,8 +690,17 @@ async function handleMessage(message) {
     if (method === 'notifications/initialized') return
     if (method === 'ping') return sendResponse(id, {})
     if (method === 'tools/list') return sendResponse(id, { tools: TOOL_DEFINITIONS })
-    if (method === 'resources/list') return sendResponse(id, { resources: [] })
-    if (method === 'prompts/list') return sendResponse(id, { prompts: [] })
+    if (method === 'resources/list') return sendResponse(id, { resources: RESOURCE_DEFINITIONS })
+    if (method === 'resources/read') {
+      const uri = typeof params?.uri === 'string' ? params.uri : ''
+      return sendResponse(id, await readResource(uri))
+    }
+    if (method === 'prompts/list') return sendResponse(id, { prompts: PROMPT_DEFINITIONS })
+    if (method === 'prompts/get') {
+      const name = typeof params?.name === 'string' ? params.name : ''
+      const args = params?.arguments && typeof params.arguments === 'object' ? params.arguments : {}
+      return sendResponse(id, buildPrompt(name, args))
+    }
 
     if (method === 'tools/call') {
       const name = typeof params?.name === 'string' ? params.name : ''
@@ -347,6 +716,48 @@ async function handleMessage(message) {
 
 async function callTool(name, args) {
   switch (name) {
+    case 'get_workspace_manifest':
+      return asToolResult(await readAgentNativeManifest(context))
+    case 'get_surface_manifest': {
+      const workspaceId = normalizeString(args.workspaceId)
+      if (!workspaceId) return asToolError('workspaceId is required.')
+      return asToolResult(await readAgentNativeWorkspaceManifest(context, workspaceId))
+    }
+    case 'get_color_audit_state':
+      return asToolResult(await readColorAuditState(context))
+    case 'get_color_audit_export_preview':
+      return asToolResult(await readColorAuditExportPreview(context))
+    case 'generate_template':
+      return runGenerateTemplate(args)
+    case 'create_color_node':
+      return runCreateColorNode(args)
+    case 'update_color_node':
+      return runUpdateColorNode(args)
+    case 'delete_color_node':
+      return runDeleteColorNode(args)
+    case 'create_color_edge':
+      return runCreateColorEdge(args)
+    case 'update_color_edge':
+      return runUpdateColorEdge(args)
+    case 'delete_color_edge':
+      return runDeleteColorEdge(args)
+    case 'get_system_canvas_state':
+      return asToolResult(await readSystemCanvasState(context))
+    case 'update_system_scale_config':
+      return runUpdateSystemScaleConfig(args)
+    case 'set_system_canvas_view':
+      return runSetSystemCanvasView(args)
+    case 'generate_scale_graph':
+      return runGenerateScaleGraph()
+    case 'apply_scale_vars':
+      return runApplyScaleVars()
+    case 'get_node_catalog_state':
+      return asToolResult(await readNodeCatalogState(context))
+    case 'capture_workspace_screenshot': {
+      const workspaceId = normalizeString(args.workspaceId)
+      if (!workspaceId) return asToolError('workspaceId is required.')
+      return asToolResult(await captureWorkspaceScreenshot(context, workspaceId, normalizeString(args.target) || 'desktop'))
+    }
     case 'get_canvas_context': {
       const [state, primitives] = await Promise.all([
         readCanvasAgentState(context),
@@ -409,72 +820,162 @@ async function callTool(name, args) {
   }
 }
 
+async function readResource(uri) {
+  switch (uri) {
+    case 'workspace://manifest':
+      return asResourceResult(uri, await readAgentNativeManifest(context))
+    case 'workspace://surface/canvas/state':
+      return asResourceResult(uri, await readCanvasAgentState(context))
+    case 'workspace://surface/canvas/selection':
+      return asResourceResult(uri, await readCanvasAgentSelection(context))
+    case 'workspace://surface/canvas/primitives':
+      return asResourceResult(uri, await readCanvasAgentPrimitives(context))
+    case 'workspace://surface/canvas/viewport/screenshot':
+      return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'canvas'))
+    case 'workspace://surface/color-audit/manifest':
+      return asResourceResult(uri, await readAgentNativeWorkspaceManifest(context, 'color-audit'))
+    case 'workspace://surface/color-audit/state':
+      return asResourceResult(uri, await readColorAuditState(context))
+    case 'workspace://surface/color-audit/export-preview':
+      return asResourceResult(uri, await readColorAuditExportPreview(context))
+    case 'workspace://surface/color-audit/viewport/screenshot':
+      return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'color-audit'))
+    case 'workspace://surface/system-canvas/manifest':
+      return asResourceResult(uri, await readAgentNativeWorkspaceManifest(context, 'system-canvas'))
+    case 'workspace://surface/system-canvas/state':
+      return asResourceResult(uri, await readSystemCanvasState(context))
+    case 'workspace://surface/system-canvas/viewport/screenshot':
+      return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'system-canvas'))
+    case 'workspace://surface/node-catalog/state':
+      return asResourceResult(uri, await readNodeCatalogState(context))
+    case 'workspace://surface/node-catalog/manifest':
+      return asResourceResult(uri, await readAgentNativeWorkspaceManifest(context, 'node-catalog'))
+    case 'workspace://surface/node-catalog/sections': {
+      const state = await readNodeCatalogState(context)
+      return asResourceResult(uri, {
+        workspaceSections: Array.isArray(state?.workspaceSections) ? state.workspaceSections : [],
+        nodeSections: Array.isArray(state?.nodeSections) ? state.nodeSections : [],
+      })
+    }
+    case 'workspace://surface/node-catalog/viewport/screenshot':
+      return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'node-catalog'))
+    default:
+      throw new Error(`Unknown resource: ${uri}`)
+  }
+}
+
+function buildPrompt(name) {
+  switch (name) {
+    case 'canvas-layout-review':
+      return {
+        description: 'Inspect the current freeform canvas before mutating it.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                'Start with workspace://manifest, then inspect workspace://surface/canvas/state, workspace://surface/canvas/selection, and workspace://surface/canvas/primitives. Capture workspace://surface/canvas/viewport/screenshot when visual confirmation matters. Summarize the current board briefly before calling any write tools. Prefer create_artboard, create_primitive_item, update_item, select_items, and export_board over shell edits when the task is scene-graph related.',
+            },
+          },
+        ],
+      }
+    case 'build-color-audit-palette':
+      return {
+        description: 'Inspect and iterate on the Color Audit workspace.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                'Read workspace://surface/color-audit/manifest, workspace://surface/color-audit/state, and workspace://surface/color-audit/export-preview. Capture workspace://surface/color-audit/viewport/screenshot when visual confirmation matters. Summarize the current palette inputs, functional aliases, semantic roles, contrast coverage, and export readiness before proposing changes. When you need to mutate the graph, prefer generate_template for seeded starters and create_color_node/update_color_node/create_color_edge/update_color_edge/delete_color_edge for targeted graph edits.',
+            },
+          },
+        ],
+      }
+    case 'audit-color-contrast':
+      return {
+        description: 'Review Color Audit contrast status and missing pair coverage.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                'Inspect workspace://surface/color-audit/state and focus on workflow readiness, mapped semantic roles, and any contrast pairs. Capture workspace://surface/color-audit/viewport/screenshot when you need a rendered comparison. Call out missing or weak text/surface relationships and compare the export preview against the current role graph before suggesting follow-up work.',
+            },
+          },
+        ],
+      }
+    case 'review-scale-system':
+      return {
+        description: 'Review the generated System Canvas graph, section coverage, and responsive preview quality.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                'Read workspace://surface/system-canvas/manifest and workspace://surface/system-canvas/state. Capture workspace://surface/system-canvas/viewport/screenshot when visual confirmation matters. Summarize the active scale config, current view mode, section coverage, and missing preview requirements. Use update_system_scale_config to adjust the engine, set_system_canvas_view to change subviews, generate_scale_graph to rebuild previews, and apply_scale_vars when the theme vars should be pushed back into the active theme.',
+            },
+          },
+        ],
+      }
+    case 'review-node-system':
+      return {
+        description: 'Review the visual node system across Canvas Workspace, Color Audit, System Canvas, and Node Catalog.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                'Start with workspace://manifest, then read workspace://surface/node-catalog/state and workspace://surface/node-catalog/sections. Capture workspace://surface/node-catalog/viewport/screenshot when visual confirmation matters. Review node-card titles, subtitles, pills, swatches, ports, overflow, selected state, highlighted state, and dimmed state across the catalog surfaces before suggesting UI changes.',
+            },
+          },
+        ],
+      }
+    default:
+      throw new Error(`Unknown prompt: ${name}`)
+  }
+}
+
 async function runCreateArtboard(args) {
   const state = await readCanvasAgentState(context)
-  const item = {
-    id: createCanvasItemId('artboard'),
-    type: 'artboard',
-    name: normalizeString(args.name) || 'Artboard',
-    position: normalizePosition(args.position, DEFAULT_ARTBOARD_POSITION),
-    size: normalizeSize(args.size, DEFAULT_ARTBOARD_SIZE),
-    rotation: 0,
-    zIndex: getNextZIndex(state),
-    background: normalizeString(args.background) || undefined,
-    themeId: normalizeString(args.themeId) || undefined,
-    layout: normalizeArtboardLayout(args.layout),
-  }
-  return applyOperation('create_artboard', {
-    type: 'create_item',
-    item,
-    select: args.select !== false,
-  })
+  return applyOperation(
+    'create_artboard',
+    createCreateItemOperation(createArtboardItem(state, args), args.select !== false)
+  )
 }
 
 async function runCreatePrimitiveItem(args) {
   const primitive = await getPrimitiveById(normalizeString(args.primitiveId))
   if (!primitive) return asToolError(`Primitive not found: ${args.primitiveId || ''}`)
 
-  const variantIndex = resolvePrimitiveVariantIndex(primitive, args)
-  if (variantIndex < 0) return asToolError(`Primitive variant not found for ${primitive.primitiveId}.`)
-
-  const variant = primitive.variants[variantIndex]
-  const state = await readCanvasAgentState(context)
-  const mergedProps =
-    args.props && typeof args.props === 'object'
-      ? { ...(variant.props || {}), ...args.props }
-      : null
-  const item = {
-    id: createCanvasItemId(primitive.name),
-    type: 'component',
-    componentId: primitive.entryId,
-    variantIndex,
-    position: normalizePosition(args.position, DEFAULT_ARTBOARD_POSITION),
-    size: normalizeSize(args.size, primitive.defaultSize || { width: 320, height: 140 }),
-    rotation: 0,
-    zIndex: getNextZIndex(state),
-    parentId: normalizeString(args.parentId) || undefined,
-    customProps: mergedProps && Object.keys(mergedProps).length > 0 ? mergedProps : undefined,
+  try {
+    const state = await readCanvasAgentState(context)
+    const item = createPrimitiveCanvasItem(state, primitive, args)
+    const variant = primitive.variants[item.variantIndex]
+    return applyOperation(
+      'create_primitive_item',
+      createCreateItemOperation(item, args.select !== false),
+      {
+        primitiveId: primitive.primitiveId,
+        entryId: primitive.entryId,
+        variantName: variant?.name,
+      }
+    )
+  } catch (error) {
+    return asToolError(error instanceof Error ? error.message : 'Failed to create primitive item.')
   }
-  return applyOperation('create_primitive_item', {
-    type: 'create_item',
-    item,
-    select: args.select !== false,
-  }, {
-    primitiveId: primitive.primitiveId,
-    entryId: primitive.entryId,
-    variantName: variant.name,
-  })
 }
 
 async function runCreateItem(args) {
   if (!args.item || typeof args.item !== 'object') {
     return asToolError('item is required.')
   }
-  return applyOperation('create_item', {
-    type: 'create_item',
-    item: args.item,
-    select: args.select !== false,
-  })
+  return applyOperation('create_item', createCreateItemOperation(args.item, args.select !== false))
 }
 
 async function runUpdateItem(args) {
@@ -483,32 +984,22 @@ async function runUpdateItem(args) {
   if (!args.updates || typeof args.updates !== 'object') {
     return asToolError('updates is required.')
   }
-  return applyOperation('update_item', {
-    type: 'update_item',
-    id,
-    updates: args.updates,
-  })
+  return applyOperation('update_item', createUpdateItemOperation(id, args.updates))
 }
 
 async function runDeleteItems(args) {
   const ids = normalizeIdList(args.ids)
   if (ids.length === 0) return asToolError('ids is required.')
-  return applyOperation('delete_items', {
-    type: 'delete_items',
-    ids,
-  })
+  return applyOperation('delete_items', createDeleteItemsOperation(ids))
 }
 
 async function runSelectItems(args) {
   const ids = normalizeIdList(args.ids)
-  return applyOperation('select_items', {
-    type: 'select_items',
-    ids,
-  })
+  return applyOperation('select_items', createSelectItemsOperation(ids))
 }
 
 async function runClearCanvas() {
-  return applyOperation('clear_canvas', { type: 'clear_canvas' })
+  return applyOperation('clear_canvas', createClearCanvasOperation())
 }
 
 async function runExportBoard(args) {
@@ -519,78 +1010,168 @@ async function runExportBoard(args) {
     return asToolError(`Unsupported export format: ${format}`)
   }
 
-  const [state, primitives] = await Promise.all([
-    readCanvasAgentState(context),
-    readCanvasAgentPrimitives(context),
-  ])
-  const items = Array.isArray(state?.items) ? state.items : []
-  const artboard = items.find((item) => item?.type === 'artboard' && item.id === artboardId)
-  if (!artboard) return asToolError(`Artboard not found: ${artboardId}`)
-
-  const children = items
-    .filter((item) => item?.parentId === artboardId)
-    .sort((left, right) => Number(left?.zIndex || 0) - Number(right?.zIndex || 0))
-
-  const primitiveMap = new Map(primitives.map((primitive) => [primitive.entryId, primitive]))
-  const unsupported = []
-  const primitiveChildren = []
-
-  children.forEach((child) => {
-    if (child?.type !== 'component') {
-      unsupported.push({ id: child?.id || 'unknown', reason: `Unsupported item type: ${child?.type || 'unknown'}` })
-      return
-    }
-    const primitive = primitiveMap.get(child.componentId)
-    if (!primitive) {
-      unsupported.push({ id: child.id, reason: `Component ${child.componentId} is not a registered primitive.` })
-      return
-    }
-    if (primitive.exportable === false) {
-      unsupported.push({ id: child.id, reason: `Primitive ${primitive.primitiveId} is not exportable.` })
-      return
-    }
-    primitiveChildren.push({ item: child, primitive })
-  })
-
-  if (unsupported.length > 0) {
-    return asToolError(
-      `Artboard ${artboardId} is not exportable. Unsupported items: ${unsupported.map((entry) => `${entry.id} (${entry.reason})`).join('; ')}`
+  try {
+    const [state, primitives] = await Promise.all([
+      readCanvasAgentState(context),
+      readCanvasAgentPrimitives(context),
+    ])
+    return asToolResult(
+      exportCanvasBoard({
+        artboardId,
+        format,
+        componentName: args.componentName,
+        state,
+        primitives,
+      })
     )
+  } catch (error) {
+    return asToolError(error instanceof Error ? error.message : 'Failed to export board.')
   }
+}
 
-  const componentName = normalizeComponentName(args.componentName || artboard.name || 'CanvasBoard')
-  const imports = new Map()
-  primitiveChildren.forEach(({ primitive }) => {
-    const { importPath, exportName } = resolvePrimitiveImport(primitive)
-    if (!imports.has(importPath)) {
-      imports.set(importPath, new Set())
+async function applyColorAuditOperation(toolName, operation, meta = {}) {
+  const result = await enqueueAgentNativeWorkspaceOperation(
+    context,
+    'color-audit',
+    context.colorAuditWorkspaceKey,
+    operation,
+    {
+      source: 'canvas-agent-mcp',
     }
-    imports.get(importPath).add(exportName)
+  )
+  if (!result?.ok) return asToolError(result?.error || `Failed to apply ${toolName}.`)
+  return asToolResult({
+    ...result,
+    ...meta,
   })
+}
 
-  const importLines = Array.from(imports.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([importPath, exportNames]) => {
-      const names = Array.from(exportNames).sort().join(', ')
-      return `import { ${names} } from ${JSON.stringify(importPath)}`
-    })
-
-  const warnings = []
-  if (children.length === 0) {
-    warnings.push('Artboard has no child items.')
-  }
-  warnings.push('Export preserves canvas positioning. It does not infer semantic layout from spatial arrangement.')
-
-  const boardCode = format === 'react-tailwind'
-    ? buildTailwindBoardCode(componentName, artboard, primitiveChildren, importLines, warnings)
-    : buildCssVarsBoardCode(componentName, artboard, primitiveChildren, importLines, warnings)
+async function applySystemCanvasOperation(toolName, operation, meta = {}) {
+  const result = await enqueueAgentNativeWorkspaceOperation(
+    context,
+    'system-canvas',
+    context.systemCanvasWorkspaceKey,
+    operation,
+    {
+      source: 'canvas-agent-mcp',
+      ...meta,
+    }
+  )
 
   return asToolResult({
-    artboardId,
-    componentName,
-    format,
-    warnings,
-    code: boardCode,
+    ...result,
+    tool: toolName,
+    workspaceId: 'system-canvas',
+  })
+}
+
+async function runGenerateTemplate(args) {
+  const templateKitId = normalizeString(args.templateKitId)
+  if (!['starter', 'shadcn', 'radix'].includes(templateKitId)) {
+    return asToolError('templateKitId must be one of: starter, shadcn, radix.')
+  }
+  return applyColorAuditOperation('generate_template', {
+    type: 'generate-template',
+    templateKitId,
+    brandColor: normalizeString(args.brandColor) || undefined,
+    accentColor: normalizeString(args.accentColor) || undefined,
+  })
+}
+
+async function runCreateColorNode(args) {
+  if (!args.node || typeof args.node !== 'object') {
+    return asToolError('node is required.')
+  }
+  return applyColorAuditOperation('create_color_node', {
+    type: 'create-node',
+    node: args.node,
+    select: typeof args.select === 'boolean' ? args.select : undefined,
+  })
+}
+
+async function runUpdateColorNode(args) {
+  const nodeId = normalizeString(args.nodeId)
+  if (!nodeId) return asToolError('nodeId is required.')
+  if (!args.patch || typeof args.patch !== 'object') {
+    return asToolError('patch is required.')
+  }
+  return applyColorAuditOperation('update_color_node', {
+    type: 'update-node',
+    nodeId,
+    patch: args.patch,
+  })
+}
+
+async function runDeleteColorNode(args) {
+  const nodeId = normalizeString(args.nodeId)
+  if (!nodeId) return asToolError('nodeId is required.')
+  return applyColorAuditOperation('delete_color_node', {
+    type: 'delete-node',
+    nodeId,
+  })
+}
+
+async function runCreateColorEdge(args) {
+  if (!args.edge || typeof args.edge !== 'object') {
+    return asToolError('edge is required.')
+  }
+  return applyColorAuditOperation('create_color_edge', {
+    type: 'create-edge',
+    edge: args.edge,
+    select: typeof args.select === 'boolean' ? args.select : undefined,
+  })
+}
+
+async function runUpdateColorEdge(args) {
+  const edgeId = normalizeString(args.edgeId)
+  if (!edgeId) return asToolError('edgeId is required.')
+  if (!args.patch || typeof args.patch !== 'object') {
+    return asToolError('patch is required.')
+  }
+  return applyColorAuditOperation('update_color_edge', {
+    type: 'update-edge',
+    edgeId,
+    patch: args.patch,
+  })
+}
+
+async function runDeleteColorEdge(args) {
+  const edgeId = normalizeString(args.edgeId)
+  if (!edgeId) return asToolError('edgeId is required.')
+  return applyColorAuditOperation('delete_color_edge', {
+    type: 'delete-edge',
+    edgeId,
+  })
+}
+
+async function runUpdateSystemScaleConfig(args) {
+  if (!args.patch || typeof args.patch !== 'object') {
+    return asToolError('patch is required.')
+  }
+  return applySystemCanvasOperation('update_system_scale_config', {
+    type: 'update-scale-config',
+    patch: args.patch,
+  })
+}
+
+async function runSetSystemCanvasView(args) {
+  const viewMode = normalizeString(args.viewMode)
+  if (!viewMode) return asToolError('viewMode is required.')
+  return applySystemCanvasOperation('set_system_canvas_view', {
+    type: 'set-view-mode',
+    viewMode,
+  })
+}
+
+async function runGenerateScaleGraph() {
+  return applySystemCanvasOperation('generate_scale_graph', {
+    type: 'generate-scale-graph',
+  })
+}
+
+async function runApplyScaleVars() {
+  return applySystemCanvasOperation('apply_scale_vars', {
+    type: 'apply-scale-vars',
   })
 }
 
@@ -625,180 +1206,6 @@ function flattenCanvasSummaryItems(summary) {
   return map
 }
 
-function normalizeString(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : ''
-}
-
-function normalizeIdList(value) {
-  return Array.isArray(value) ? value.map((entry) => normalizeString(entry)).filter(Boolean) : []
-}
-
-function normalizePosition(value, fallback) {
-  return {
-    x: Number.isFinite(value?.x) ? Number(value.x) : fallback.x,
-    y: Number.isFinite(value?.y) ? Number(value.y) : fallback.y,
-  }
-}
-
-function normalizeSize(value, fallback) {
-  return {
-    width: Number.isFinite(value?.width) ? Math.max(80, Number(value.width)) : fallback.width,
-    height: Number.isFinite(value?.height) ? Math.max(40, Number(value.height)) : fallback.height,
-  }
-}
-
-function normalizeArtboardLayout(value) {
-  const input = value && typeof value === 'object' ? value : {}
-  return {
-    display: input.display === 'grid' ? 'grid' : DEFAULT_ARTBOARD_LAYOUT.display,
-    direction: input.direction === 'row' ? 'row' : DEFAULT_ARTBOARD_LAYOUT.direction,
-    align: ['start', 'center', 'end', 'stretch'].includes(input.align) ? input.align : DEFAULT_ARTBOARD_LAYOUT.align,
-    justify: ['start', 'center', 'end', 'between'].includes(input.justify) ? input.justify : DEFAULT_ARTBOARD_LAYOUT.justify,
-    gap: Number.isFinite(input.gap) ? Number(input.gap) : DEFAULT_ARTBOARD_LAYOUT.gap,
-    columns: Number.isFinite(input.columns) ? Number(input.columns) : undefined,
-    padding: Number.isFinite(input.padding) ? Number(input.padding) : DEFAULT_ARTBOARD_LAYOUT.padding,
-  }
-}
-
-function getNextZIndex(state) {
-  const items = Array.isArray(state?.items) ? state.items : []
-  return items.reduce((max, item) => Math.max(max, Number(item?.zIndex || 0)), 0) + 1
-}
-
-function createCanvasItemId(prefix) {
-  const slug = String(prefix || 'item')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '') || 'item'
-  return `${slug}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function resolvePrimitiveVariantIndex(primitive, args) {
-  if (Number.isFinite(args.variantIndex)) {
-    const variantIndex = Number(args.variantIndex)
-    if (variantIndex >= 0 && variantIndex < primitive.variants.length) return variantIndex
-  }
-  const variantName = normalizeString(args.variantName)
-  if (variantName) {
-    const byName = primitive.variants.findIndex((variant) => variant.name === variantName)
-    if (byName >= 0) return byName
-  }
-  return primitive.variants.length > 0 ? 0 : -1
-}
-
-function resolvePrimitiveImport(primitive) {
-  const importPath = primitive.importPath
-  const exportName = primitive.sourceId?.split('#')[1] || normalizeComponentName(primitive.name)
-  return { importPath, exportName }
-}
-
-function normalizeComponentName(value) {
-  const cleaned = String(value || 'CanvasBoard').replace(/[^a-zA-Z0-9]+/g, ' ').trim()
-  const parts = (cleaned || 'Canvas Board').split(/\s+/)
-  return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('') || 'CanvasBoard'
-}
-
-function buildTailwindBoardCode(componentName, artboard, primitiveChildren, importLines, warnings) {
-  return [
-    ...importLines,
-    '',
-    `export function ${componentName}() {`,
-    '  return (',
-    `    <div`,
-    `      className="relative overflow-hidden rounded-[24px] border border-[var(--color-border-default)] bg-[var(--color-surface-canvas,var(--color-surface-50,#ffffff))]"`,
-    `      style={{ width: ${Number(artboard.size?.width || DEFAULT_ARTBOARD_SIZE.width)}, height: ${Number(artboard.size?.height || DEFAULT_ARTBOARD_SIZE.height)}${artboard.background ? `, background: ${JSON.stringify(artboard.background)}` : ''} }}`,
-    '    >',
-    ...primitiveChildren.flatMap(({ item, primitive }) => formatPrimitiveNodeLines(item, primitive, 'tailwind')),
-    '    </div>',
-    '  )',
-    '}',
-    warnings.length > 0 ? '' : '',
-    ...warnings.map((warning) => `// Warning: ${warning}`),
-    '',
-  ].join('\n')
-}
-
-function buildCssVarsBoardCode(componentName, artboard, primitiveChildren, importLines, warnings) {
-  return [
-    ...importLines,
-    '',
-    `export function ${componentName}() {`,
-    '  return (',
-    `    <div`,
-    `      style={{ position: 'relative', overflow: 'hidden', width: ${Number(artboard.size?.width || DEFAULT_ARTBOARD_SIZE.width)}, height: ${Number(artboard.size?.height || DEFAULT_ARTBOARD_SIZE.height)}, borderRadius: 24, border: '1px solid var(--color-border-default)', background: ${artboard.background ? JSON.stringify(artboard.background) : `'var(--color-surface-canvas, var(--color-surface-50, #ffffff))'`} }}`,
-    '    >',
-    ...primitiveChildren.flatMap(({ item, primitive }) => formatPrimitiveNodeLines(item, primitive, 'css-vars')),
-    '    </div>',
-    '  )',
-    '}',
-    warnings.length > 0 ? '' : '',
-    ...warnings.map((warning) => `// Warning: ${warning}`),
-    '',
-  ].join('\n')
-}
-
-function formatPrimitiveNodeLines(item, primitive, format) {
-  const { exportName } = resolvePrimitiveImport(primitive)
-  const props = item.customProps && typeof item.customProps === 'object'
-    ? item.customProps
-    : primitive.variants[item.variantIndex]?.props || {}
-  const styleValue = formatStyleObject({
-    position: 'absolute',
-    left: Number(item.position?.x || 0),
-    top: Number(item.position?.y || 0),
-    width: Number(item.size?.width || primitive.defaultSize?.width || 320),
-    height: Number(item.size?.height || primitive.defaultSize?.height || 120),
-    transform: Number(item.rotation || 0) ? `rotate(${Number(item.rotation)}deg)` : undefined,
-  })
-
-  return [
-    `      <div${format === 'tailwind' ? ' className="absolute"' : ''} style=${styleValue}>`,
-    `        ${serializePrimitiveComponent(exportName, props)}`,
-    '      </div>',
-  ]
-}
-
-function serializePrimitiveComponent(componentName, props) {
-  const safeProps = props && typeof props === 'object' ? props : {}
-  const attributes = []
-  let children = null
-
-  Object.entries(safeProps).forEach(([key, value]) => {
-    if (value == null) return
-    if (key === 'children' && (typeof value === 'string' || typeof value === 'number')) {
-      children = String(value)
-      return
-    }
-    if (typeof value === 'string') {
-      attributes.push(`${key}=${JSON.stringify(value)}`)
-      return
-    }
-    if (typeof value === 'number' || typeof value === 'boolean') {
-      attributes.push(`${key}={${JSON.stringify(value)}}`)
-      return
-    }
-    attributes.push(`${key}={${JSON.stringify(value)}}`)
-  })
-
-  const openTag = `<${componentName}${attributes.length > 0 ? ` ${attributes.join(' ')}` : ''}>`
-  if (children != null) {
-    return `${openTag}${escapeJsxText(children)}</${componentName}>`
-  }
-  return `${openTag}</${componentName}>`
-}
-
-function formatStyleObject(styleObject) {
-  const entries = Object.entries(styleObject).filter(([, value]) => value != null)
-  if (entries.length === 0) return '{{}}'
-  return `{{ ${entries
-    .map(([key, value]) => `${key}: ${typeof value === 'string' ? JSON.stringify(value) : value}`)
-    .join(', ')} }}`
-}
-
-function escapeJsxText(value) {
-  return String(value).replace(/[{}]/g, (match) => (match === '{' ? '&#123;' : '&#125;'))
-}
-
 function asToolResult(payload) {
   return {
     content: [
@@ -818,6 +1225,18 @@ function asToolError(message) {
       {
         type: 'text',
         text: String(message || 'Canvas MCP tool failed.'),
+      },
+    ],
+  }
+}
+
+function asResourceResult(uri, payload) {
+  return {
+    contents: [
+      {
+        uri,
+        mimeType: 'application/json',
+        text: JSON.stringify(payload, null, 2),
       },
     ],
   }

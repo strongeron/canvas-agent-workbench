@@ -1,0 +1,476 @@
+import type {
+  AgentNativeManifest,
+  AgentNativeRuntimeDefinition,
+  AgentWorkspaceDefinition,
+  AgentNativeWorkspaceId,
+  WorkspaceManifest,
+  WorkspaceManifestStateSummary,
+} from "../types/agentNative"
+
+export const AGENT_NATIVE_RUNTIME_DEFINITIONS: AgentNativeRuntimeDefinition[] = [
+  {
+    id: "codex",
+    label: "Codex CLI",
+    description: "OpenAI Codex CLI session in the current workspace.",
+    launchCommand: "codex",
+    transport: "pty",
+    mcpSupport: "native",
+    configScope: "global",
+    status: "ready",
+  },
+  {
+    id: "claude",
+    label: "Claude Code",
+    description: "Anthropic Claude Code session in the current workspace.",
+    launchCommand: "claude",
+    transport: "pty",
+    mcpSupport: "native",
+    configScope: "project",
+    status: "ready",
+  },
+]
+
+export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
+  {
+    id: "canvas",
+    label: "Canvas Workspace",
+    route: "/canvas",
+    description:
+      "Freeform board with artboards, components, embeds, media, Mermaid diagrams, Excalidraw sketches, and markdown notes.",
+    syncMode: "live-bridge",
+    mutationMode: "remote-operations",
+    entities: ["artboard", "component", "embed", "media", "mermaid", "excalidraw", "markdown"],
+    capabilities: [
+      "read-state",
+      "read-selection",
+      "read-primitives",
+      "read-manifest",
+      "create-items",
+      "update-items",
+      "delete-items",
+      "clear-canvas",
+    ],
+    resources: [
+      {
+        id: "canvas-manifest",
+        uri: "workspace://manifest",
+        title: "Workspace manifest",
+        description: "Machine-readable capabilities, entities, tools, and prompts for the active workspace.",
+        status: "ready",
+      },
+      {
+        id: "canvas-state",
+        uri: "workspace://surface/canvas/state",
+        title: "Canvas state",
+        description: "Live board state with items, groups, z-order, and selection.",
+        status: "ready",
+      },
+      {
+        id: "canvas-selection",
+        uri: "workspace://surface/canvas/selection",
+        title: "Canvas selection",
+        description: "Current selected items with summaries for the active board.",
+        status: "ready",
+      },
+      {
+        id: "canvas-primitives",
+        uri: "workspace://surface/canvas/primitives",
+        title: "Primitive registry",
+        description: "Registered primitives, variants, and prop schemas available to the current project.",
+        status: "ready",
+      },
+      {
+        id: "canvas-viewport-screenshot",
+        uri: "workspace://surface/canvas/viewport/screenshot",
+        title: "Canvas screenshot",
+        description: "Fresh rendered screenshot for the current Canvas workspace.",
+        status: "ready",
+      },
+    ],
+    tools: [
+      {
+        id: "create_item",
+        title: "Create item",
+        description: "Create a freeform canvas item and optionally select it.",
+        status: "ready",
+      },
+      {
+        id: "update_item",
+        title: "Update item",
+        description: "Patch an existing item by id.",
+        status: "ready",
+      },
+      {
+        id: "delete_items",
+        title: "Delete items",
+        description: "Delete one or more selected items from the board.",
+        status: "ready",
+        destructive: true,
+      },
+      {
+        id: "select_items",
+        title: "Select items",
+        description: "Replace the current selection with the provided item ids.",
+        status: "ready",
+      },
+      {
+        id: "clear_canvas",
+        title: "Clear canvas",
+        description: "Remove all items and groups from the current board.",
+        status: "ready",
+        destructive: true,
+      },
+      {
+        id: "capture_workspace_screenshot",
+        title: "Capture workspace screenshot",
+        description: "Capture a fresh screenshot for the current Canvas workspace.",
+        status: "ready",
+      },
+    ],
+    prompts: [
+      {
+        id: "canvas-layout-review",
+        title: "Canvas layout review",
+        description: "Guide an agent to inspect the current board, selection, and primitive registry before mutating anything.",
+        status: "ready",
+      },
+    ],
+  },
+  {
+    id: "color-audit",
+    label: "Color Audit",
+    route: "/color-canvas",
+    description:
+      "Token graph for palette inputs, relative rules, functional aliases, semantic roles, contrast checks, and token exports.",
+    syncMode: "live-bridge",
+    mutationMode: "remote-operations",
+    entities: ["token-node", "relative-node", "semantic-node", "map-edge", "contrast-edge"],
+    capabilities: [
+      "read-manifest",
+      "read-state",
+      "read-export-preview",
+      "review-node-families",
+      "review-contrast",
+      "review-exports",
+      "copy-export-formats",
+      "inspect-templates",
+    ],
+    resources: [
+      {
+        id: "color-audit-manifest",
+        uri: "workspace://surface/color-audit/manifest",
+        title: "Color Audit manifest",
+        description: "Surface capabilities, node families, export formats, and review routes for Color Audit.",
+        status: "ready",
+      },
+      {
+        id: "color-audit-state",
+        uri: "workspace://surface/color-audit/state",
+        title: "Color Audit state",
+        description: "Serialized nodes, edges, selection, and layout state for the active Color Audit session.",
+        status: "ready",
+      },
+      {
+        id: "color-audit-catalog",
+        uri: "workspace://surface/color-audit/catalog",
+        title: "Color Audit node catalog",
+        description: "All supported Color Audit node families, pills, and card states.",
+        status: "planned",
+      },
+      {
+        id: "color-audit-export-preview",
+        uri: "workspace://surface/color-audit/export-preview",
+        title: "Color Audit export preview",
+        description: "Project-ready token export preview for the currently selected format and color mode.",
+        status: "ready",
+      },
+      {
+        id: "color-audit-viewport-screenshot",
+        uri: "workspace://surface/color-audit/viewport/screenshot",
+        title: "Color Audit screenshot",
+        description: "Fresh rendered screenshot for the current Color Audit workspace.",
+        status: "ready",
+      },
+    ],
+    tools: [
+      {
+        id: "get_color_audit_state",
+        title: "Get Color Audit state",
+        description: "Read the active Color Audit graph, workflow coverage, and selection.",
+        status: "ready",
+      },
+      {
+        id: "get_color_audit_export_preview",
+        title: "Get Color Audit export preview",
+        description: "Read the current project-ready token export preview for the selected format and color mode.",
+        status: "ready",
+      },
+      {
+        id: "generate_template",
+        title: "Generate template",
+        description: "Create starter, shadcn/ui, or Radix token graphs from brand and accent seeds.",
+        status: "ready",
+      },
+      {
+        id: "create_color_node",
+        title: "Create color node",
+        description: "Create palette input, relative, functional alias, or semantic role nodes.",
+        status: "ready",
+      },
+      {
+        id: "update_color_node",
+        title: "Update color node",
+        description: "Patch node label, value, role, mapping, and preview settings.",
+        status: "ready",
+      },
+      {
+        id: "delete_color_node",
+        title: "Delete color node",
+        description: "Delete a color-audit node and any connected edges.",
+        status: "ready",
+        destructive: true,
+      },
+      {
+        id: "create_color_edge",
+        title: "Create color edge",
+        description: "Create a map or contrast edge between two Color Audit nodes.",
+        status: "ready",
+      },
+      {
+        id: "update_color_edge",
+        title: "Update color edge",
+        description: "Patch edge type, note, or contrast rule settings.",
+        status: "ready",
+      },
+      {
+        id: "delete_color_edge",
+        title: "Delete color edge",
+        description: "Delete a Color Audit edge.",
+        status: "ready",
+        destructive: true,
+      },
+      {
+        id: "export_surface",
+        title: "Export surface",
+        description: "Export mapped semantic roles and functional aliases in CSS vars, DTCG, Tailwind, shadcn/ui, or Radix formats.",
+        status: "partial",
+      },
+      {
+        id: "capture_workspace_screenshot",
+        title: "Capture workspace screenshot",
+        description: "Capture a fresh screenshot for the current Color Audit workspace.",
+        status: "ready",
+      },
+    ],
+    prompts: [
+      {
+        id: "build-palette",
+        title: "Build palette",
+        description: "Guide an agent through brand seed selection, relative rules, and framework alias mapping.",
+        status: "ready",
+      },
+      {
+        id: "audit-contrast",
+        title: "Audit contrast",
+        description: "Guide an agent through foreground/background role checks and APCA review.",
+        status: "ready",
+      },
+    ],
+  },
+  {
+    id: "system-canvas",
+    label: "System Canvas",
+    route: "/color-canvas",
+    description:
+      "Design-system scale graph for colors, type, icons, layouts, primitives, and standards previews generated from the scale engine.",
+    syncMode: "live-bridge",
+    mutationMode: "remote-operations",
+    entities: ["support-node", "explainer-node", "type-preview", "layout-preview", "primitive-preview"],
+    capabilities: [
+      "read-state",
+      "review-generated-previews",
+      "review-scale-relationships",
+      "review-layout-recipes",
+      "review-standards-adapters",
+      "configure-scale-system",
+      "generate-scale-graph",
+      "apply-scale-vars",
+      "set-view-mode",
+    ],
+    resources: [
+      {
+        id: "system-canvas-manifest",
+        uri: "workspace://surface/system-canvas/manifest",
+        title: "System Canvas manifest",
+        description: "Surface capabilities, node families, and preview sections for System Canvas.",
+        status: "ready",
+      },
+      {
+        id: "system-canvas-state",
+        uri: "workspace://surface/system-canvas/state",
+        title: "System Canvas state",
+        description: "Serialized generated scale graph, previews, and current viewport state.",
+        status: "ready",
+      },
+      {
+        id: "system-canvas-viewport-screenshot",
+        uri: "workspace://surface/system-canvas/viewport/screenshot",
+        title: "System Canvas screenshot",
+        description: "Fresh rendered screenshot for the current System Canvas workspace.",
+        status: "ready",
+      },
+      {
+        id: "system-canvas-catalog",
+        uri: "workspace://surface/system-canvas/catalog",
+        title: "System Canvas node catalog",
+        description: "All support, explainer, type, icon, layout, primitive, and standard node families.",
+        status: "planned",
+      },
+    ],
+    tools: [
+      {
+        id: "get_system_canvas_state",
+        title: "Get System Canvas state",
+        description: "Read the active System Canvas graph, scale config, sections, and preview coverage.",
+        status: "ready",
+      },
+      {
+        id: "generate_scale_graph",
+        title: "Generate scale graph",
+        description: "Generate the current Utopia, Capsize, icon, layout, and standards preview graph.",
+        status: "ready",
+      },
+      {
+        id: "apply_scale_vars",
+        title: "Apply scale vars",
+        description: "Apply the generated scale vars back to the active theme.",
+        status: "ready",
+      },
+      {
+        id: "update_system_scale_config",
+        title: "Update system scale config",
+        description: "Patch the current scale-engine config before generating or reviewing previews.",
+        status: "ready",
+      },
+      {
+        id: "set_system_canvas_view",
+        title: "Set system canvas view",
+        description: "Switch the active System Canvas subview before screenshot or review work.",
+        status: "ready",
+      },
+      {
+        id: "capture_workspace_screenshot",
+        title: "Capture workspace screenshot",
+        description: "Capture a fresh screenshot for the current System Canvas workspace.",
+        status: "ready",
+      },
+    ],
+    prompts: [
+      {
+        id: "review-scale-system",
+        title: "Review scale system",
+        description: "Guide an agent through type, icon, layout, and primitive preview review before export or adapter work.",
+        status: "ready",
+      },
+    ],
+  },
+  {
+    id: "node-catalog",
+    label: "Node Catalog",
+    route: "/node-catalog",
+    description:
+      "Cross-surface review route for Canvas Workspace, Color Audit, and System Canvas node families and card states.",
+    syncMode: "live-bridge",
+    mutationMode: "none",
+    entities: ["workspace-catalog", "color-catalog", "system-catalog", "state-preview"],
+    capabilities: ["read-state", "review-node-design", "review-node-states", "review-node-coverage"],
+    resources: [
+      {
+        id: "node-catalog-state",
+        uri: "workspace://surface/node-catalog/state",
+        title: "Node Catalog state",
+        description: "Structured state for Canvas Workspace, Color Audit, System Canvas sections, and card-state previews.",
+        status: "ready",
+      },
+      {
+        id: "node-catalog-manifest",
+        uri: "workspace://surface/node-catalog/manifest",
+        title: "Node Catalog manifest",
+        description: "Route metadata plus available catalog sections for all workspace surfaces.",
+        status: "ready",
+      },
+      {
+        id: "node-catalog-sections",
+        uri: "workspace://surface/node-catalog/sections",
+        title: "Node Catalog sections",
+        description: "All current catalog sections for workspace, Color Audit, and System Canvas node families.",
+        status: "ready",
+      },
+      {
+        id: "node-catalog-viewport-screenshot",
+        uri: "workspace://surface/node-catalog/viewport/screenshot",
+        title: "Node Catalog screenshot",
+        description: "Fresh rendered screenshot for the current Node Catalog route.",
+        status: "ready",
+      },
+    ],
+    tools: [
+      {
+        id: "get_node_catalog_state",
+        title: "Get Node Catalog state",
+        description: "Read the current catalog sections, workspace item families, and node state preview metadata.",
+        status: "ready",
+      },
+      {
+        id: "capture_workspace_screenshot",
+        title: "Capture workspace screenshot",
+        description: "Capture a fresh screenshot for the current Node Catalog route.",
+        status: "ready",
+      },
+    ],
+    prompts: [
+      {
+        id: "review-node-system",
+        title: "Review node system",
+        description: "Guide an agent through card design, titles, pills, ports, and overflow states across all node families.",
+        status: "ready",
+      },
+    ],
+  },
+]
+
+export function buildAgentNativeManifest(): AgentNativeManifest {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    runtimes: AGENT_NATIVE_RUNTIME_DEFINITIONS,
+    workspaces: AGENT_NATIVE_WORKSPACE_DEFINITIONS,
+  }
+}
+
+export function getAgentNativeWorkspaceDefinition(workspaceId: AgentNativeWorkspaceId) {
+  return AGENT_NATIVE_WORKSPACE_DEFINITIONS.find((workspace) => workspace.id === workspaceId) ?? null
+}
+
+const EMPTY_WORKSPACE_STATE_SUMMARY: WorkspaceManifestStateSummary = {
+  selection: [],
+}
+
+export function buildWorkspaceManifest(
+  workspaceId: AgentNativeWorkspaceId,
+  currentState: WorkspaceManifestStateSummary = EMPTY_WORKSPACE_STATE_SUMMARY
+): WorkspaceManifest | null {
+  const workspace = getAgentNativeWorkspaceDefinition(workspaceId)
+  if (!workspace) return null
+
+  return {
+    surface: workspace.id,
+    version: 1,
+    capabilities: workspace.capabilities,
+    entities: workspace.entities,
+    resources: workspace.resources,
+    tools: workspace.tools,
+    prompts: workspace.prompts,
+    currentState,
+  }
+}
