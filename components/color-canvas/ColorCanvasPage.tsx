@@ -60,6 +60,7 @@ import {
   type SystemCanvasNodeResource,
 } from "../../utils/systemCanvasWorkspaceAdapter"
 import {
+  applySystemCanvasGraphOperation,
   isSystemCanvasViewMode,
   sanitizeSystemCanvasConfigPatch,
   type SystemCanvasOperation,
@@ -6414,11 +6415,22 @@ export function ColorCanvasPage({
         finish()
         return
       }
+      case "create-node":
+      case "update-node":
+      case "delete-node":
+      case "create-edge":
+      case "update-edge":
+      case "delete-edge": {
+        applyStateOperation((prev) => applySystemCanvasGraphOperation(prev, entry.operation))
+        finish()
+        return
+      }
       default: {
         finish()
       }
     }
   }, [
+    applyStateOperation,
     applyDesignSystemThemeVars,
     catalogOnly,
     handleCanvasViewModeChange,

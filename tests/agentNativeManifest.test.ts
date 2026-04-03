@@ -33,10 +33,12 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.entities).toContain("mermaid")
     expect(canvasWorkspace?.entities).toContain("excalidraw")
     expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-state")).toBe(true)
+    expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-events")).toBe(true)
     expect(
       canvasWorkspace?.resources.find((resource) => resource.id === "canvas-viewport-screenshot")?.status
     ).toBe("ready")
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_item")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_events")).toBe(true)
     expect(
       canvasWorkspace?.tools.find((tool) => tool.id === "capture_workspace_screenshot")?.status
     ).toBe("ready")
@@ -53,7 +55,13 @@ describe("agent native manifest", () => {
       colorAuditWorkspace?.resources.find((resource) => resource.id === "color-audit-state")?.status
     ).toBe("ready")
     expect(
+      colorAuditWorkspace?.resources.find((resource) => resource.id === "color-audit-events")?.status
+    ).toBe("ready")
+    expect(
       colorAuditWorkspace?.tools.find((tool) => tool.id === "get_color_audit_state")?.status
+    ).toBe("ready")
+    expect(
+      colorAuditWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status
     ).toBe("ready")
     expect(
       colorAuditWorkspace?.tools.find((tool) => tool.id === "get_color_audit_export_preview")?.status
@@ -90,11 +98,17 @@ describe("agent native manifest", () => {
       systemCanvasWorkspace?.resources.find((resource) => resource.id === "system-canvas-state")?.status
     ).toBe("ready")
     expect(
+      systemCanvasWorkspace?.resources.find((resource) => resource.id === "system-canvas-events")?.status
+    ).toBe("ready")
+    expect(
       systemCanvasWorkspace?.resources.find((resource) => resource.id === "system-canvas-viewport-screenshot")
         ?.status
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.tools.find((tool) => tool.id === "get_system_canvas_state")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.tools.find((tool) => tool.id === "generate_scale_graph")?.status
@@ -107,6 +121,24 @@ describe("agent native manifest", () => {
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.tools.find((tool) => tool.id === "set_system_canvas_view")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "create_system_node")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "update_system_node")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "delete_system_node")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "create_system_edge")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "update_system_edge")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "delete_system_edge")?.status
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.prompts.find((prompt) => prompt.id === "review-scale-system")?.status
@@ -123,6 +155,9 @@ describe("agent native manifest", () => {
       nodeCatalogWorkspace?.resources.find((resource) => resource.id === "node-catalog-state")?.status
     ).toBe("ready")
     expect(
+      nodeCatalogWorkspace?.resources.find((resource) => resource.id === "node-catalog-events")?.status
+    ).toBe("ready")
+    expect(
       nodeCatalogWorkspace?.resources.find((resource) => resource.id === "node-catalog-sections")?.status
     ).toBe("ready")
     expect(
@@ -131,6 +166,9 @@ describe("agent native manifest", () => {
     ).toBe("ready")
     expect(
       nodeCatalogWorkspace?.tools.find((tool) => tool.id === "get_node_catalog_state")?.status
+    ).toBe("ready")
+    expect(
+      nodeCatalogWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status
     ).toBe("ready")
     expect(nodeCatalogWorkspace?.prompts.some((prompt) => prompt.id === "review-node-system")).toBe(
       true

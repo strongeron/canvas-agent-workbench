@@ -180,6 +180,24 @@ describe("canvas MCP server", () => {
                         ],
                       },
                     }
+                  : requestUrl.pathname === "/api/agent-native/workspaces/system-canvas/events"
+                    ? {
+                        ok: true,
+                        workspaceId: "system-canvas",
+                        workspaceKey: "gallery-demo:system-canvas",
+                        cursor: 2,
+                        events: [
+                          {
+                            id: "event-1",
+                            workspaceId: "system-canvas",
+                            workspaceKey: "gallery-demo:system-canvas",
+                            kind: "operation-queued",
+                            actor: "agent",
+                            source: "canvas-agent-mcp",
+                            createdAt: "2026-04-03T10:00:00.000Z",
+                          },
+                        ],
+                      }
                   : requestUrl.pathname === "/api/agent-native/workspaces/color-audit/export-preview"
                   ? {
                       exportPreview: {
@@ -257,6 +275,9 @@ describe("canvas MCP server", () => {
       )
       expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
         "workspace://surface/system-canvas/state"
+      )
+      expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
+        "workspace://surface/system-canvas/events"
       )
       expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
         "workspace://surface/node-catalog/state"
@@ -362,9 +383,25 @@ describe("canvas MCP server", () => {
       expect(sectionsPayload.workspaceSections?.[0]?.id).toBe("canvas-workspace")
       expect(sectionsPayload.nodeSections?.[0]?.id).toBe("starter-ramp")
 
-      const generateTemplate = (await sendRpc({
+      const systemEvents = (await sendRpc({
         jsonrpc: "2.0",
         id: 10,
+        method: "tools/call",
+        params: {
+          name: "get_workspace_events",
+          arguments: {
+            workspaceId: "system-canvas",
+            limit: 10,
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(systemEvents.result?.structuredContent?.events?.[0]?.id).toBe("event-1")
+      expect(systemEvents.result?.structuredContent?.events?.[0]?.kind).toBe("operation-queued")
+
+      const generateTemplate = (await sendRpc({
+        jsonrpc: "2.0",
+        id: 11,
         method: "tools/call",
         params: {
           name: "generate_template",
@@ -389,7 +426,7 @@ describe("canvas MCP server", () => {
 
       const generateScaleGraph = (await sendRpc({
         jsonrpc: "2.0",
-        id: 11,
+        id: 12,
         method: "tools/call",
         params: {
           name: "generate_scale_graph",
@@ -407,9 +444,42 @@ describe("canvas MCP server", () => {
         },
       })
 
+      const createSystemNode = (await sendRpc({
+        jsonrpc: "2.0",
+        id: 13,
+        method: "tools/call",
+        params: {
+          name: "create_system_node",
+          arguments: {
+            node: {
+              id: "system-node-1",
+              type: "semantic",
+              label: "Agent Support",
+              role: "surface",
+              group: "system-support",
+              position: { x: 120, y: 80 },
+            },
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(createSystemNode.result?.structuredContent?.ok).toBe(true)
+      expect(queuedOperations).toHaveLength(3)
+      expect(queuedOperations[2]).toMatchObject({
+        workspaceKey: "gallery-demo:system-canvas",
+        source: "canvas-agent-mcp",
+        operation: {
+          type: "create-node",
+          node: {
+            id: "system-node-1",
+            label: "Agent Support",
+          },
+        },
+      })
+
       const prompt = (await sendRpc({
         jsonrpc: "2.0",
-        id: 12,
+        id: 14,
         method: "prompts/get",
         params: {
           name: "review-scale-system",
@@ -426,7 +496,7 @@ describe("canvas MCP server", () => {
 
       const nodePrompt = (await sendRpc({
         jsonrpc: "2.0",
-        id: 13,
+        id: 15,
         method: "prompts/get",
         params: {
           name: "review-node-system",

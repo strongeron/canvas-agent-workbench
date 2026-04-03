@@ -14,6 +14,7 @@ import {
   getDefaultCanvasAgentServerUrl,
   getCanvasAgentContextFromEnv,
   readAgentNativeManifest,
+  readAgentNativeWorkspaceEvents,
   readAgentNativeWorkspaceManifest,
   readColorAuditExportPreview,
   readColorAuditState,
@@ -48,6 +49,7 @@ Usage:
   bin/canvas-agent attach --project <project-id> [--surface <surface-id>] [--agent <agent-id>] [--server <url>] [--json|--shell]
   bin/canvas-agent detach
   bin/canvas-agent workspace-manifest
+  bin/canvas-agent workspace-events <workspace-id> [limit]
   bin/canvas-agent surface-manifest <workspace-id>
   bin/canvas-agent color-audit-state
   bin/canvas-agent color-audit-export
@@ -64,6 +66,12 @@ Usage:
   bin/canvas-agent set-system-view <system|colors|type|layout|primitives|standards|all>
   bin/canvas-agent generate-scale-graph
   bin/canvas-agent apply-scale-vars
+  bin/canvas-agent create-system-node <json|@file|->
+  bin/canvas-agent update-system-node <node-id> <json|@file|->
+  bin/canvas-agent delete-system-node <node-id>
+  bin/canvas-agent create-system-edge <json|@file|->
+  bin/canvas-agent update-system-edge <edge-id> <json|@file|->
+  bin/canvas-agent delete-system-edge <edge-id>
   bin/canvas-agent screenshot <workspace-id> [desktop|mobile]
   bin/canvas-agent state
   bin/canvas-agent context
@@ -234,6 +242,25 @@ async function main() {
   switch (command) {
     case 'workspace-manifest': {
       writeJson(await readAgentNativeManifest(context))
+      return
+    }
+    case 'workspace-events': {
+      const workspaceId = args[0]?.trim()
+      if (!workspaceId) fail('workspace-events requires a workspace id.')
+      const limit = args[1] ? Number.parseInt(args[1], 10) : undefined
+      const workspaceKey =
+        workspaceId === 'color-audit'
+          ? context.colorAuditWorkspaceKey
+          : workspaceId === 'system-canvas'
+            ? context.systemCanvasWorkspaceKey
+            : workspaceId === 'node-catalog'
+              ? context.nodeCatalogWorkspaceKey
+              : undefined
+      writeJson(
+        await readAgentNativeWorkspaceEvents(context, workspaceId, workspaceKey, {
+          limit,
+        })
+      )
       return
     }
     case 'surface-manifest': {
@@ -444,6 +471,116 @@ async function main() {
           context.systemCanvasWorkspaceKey,
           {
             type: 'apply-scale-vars',
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'create-system-node': {
+      const payload = await readJsonPayload(args[0])
+      if (!payload || typeof payload !== 'object') fail('create-system-node requires a JSON object payload.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'create-node',
+            node: payload.node ?? payload,
+            select: typeof payload.select === 'boolean' ? payload.select : undefined,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'update-system-node': {
+      const [nodeId, payloadRef] = args
+      if (!nodeId?.trim()) fail('update-system-node requires a node id.')
+      const patch = await readJsonPayload(payloadRef)
+      if (!patch || typeof patch !== 'object') fail('update-system-node requires a JSON object patch.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'update-node',
+            nodeId: nodeId.trim(),
+            patch,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'delete-system-node': {
+      const nodeId = args[0]?.trim()
+      if (!nodeId) fail('delete-system-node requires a node id.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'delete-node',
+            nodeId,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'create-system-edge': {
+      const payload = await readJsonPayload(args[0])
+      if (!payload || typeof payload !== 'object') fail('create-system-edge requires a JSON object payload.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'create-edge',
+            edge: payload.edge ?? payload,
+            select: typeof payload.select === 'boolean' ? payload.select : undefined,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'update-system-edge': {
+      const [edgeId, payloadRef] = args
+      if (!edgeId?.trim()) fail('update-system-edge requires an edge id.')
+      const patch = await readJsonPayload(payloadRef)
+      if (!patch || typeof patch !== 'object') fail('update-system-edge requires a JSON object patch.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'update-edge',
+            edgeId: edgeId.trim(),
+            patch,
+          },
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'delete-system-edge': {
+      const edgeId = args[0]?.trim()
+      if (!edgeId) fail('delete-system-edge requires an edge id.')
+      writeJson(
+        await enqueueAgentNativeWorkspaceOperation(
+          context,
+          'system-canvas',
+          context.systemCanvasWorkspaceKey,
+          {
+            type: 'delete-edge',
+            edgeId,
           },
           { source: 'canvas-agent-cli' }
         )

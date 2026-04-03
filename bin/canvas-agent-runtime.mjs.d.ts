@@ -38,6 +38,12 @@ export function readAgentNativeWorkspaceState(
   workspaceId: string,
   workspaceKey?: string
 ): Promise<unknown>
+export function readAgentNativeWorkspaceEvents(
+  context: CanvasAgentContext,
+  workspaceId: string,
+  workspaceKey?: string,
+  options?: { cursor?: number; limit?: number }
+): Promise<{ events: unknown[]; cursor: number }>
 export function readColorAuditState(
   context: CanvasAgentContext,
   workspaceKey?: string

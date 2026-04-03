@@ -558,4 +558,230 @@ describe("system canvas", () => {
       await cleanup()
     }
   }, 10000)
+
+  it("applies queued system-canvas graph mutations for authored nodes and edges", async () => {
+    const syncedStates: Array<{
+      workspaceId: string
+      body: Record<string, any>
+    }> = []
+    let servedOperations = false
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const rawUrl =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const requestUrl = new URL(rawUrl, window.location.origin)
+
+      if (
+        init?.method !== "POST" &&
+        requestUrl.pathname === "/api/agent-native/workspaces/system-canvas/operations"
+      ) {
+        const cursor = Number.parseInt(requestUrl.searchParams.get("cursor") || "0", 10)
+        if (!servedOperations && cursor === 0) {
+          servedOperations = true
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              workspaceId: "system-canvas",
+              workspaceKey: "gallery-demo:system-canvas",
+              operations: [
+                {
+                  id: "op-1",
+                  cursor: 1,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "create-node",
+                    node: {
+                      id: "system-node-1",
+                      type: "semantic",
+                      label: "Agent Support Node",
+                      role: "surface",
+                      group: "system-support",
+                      position: { x: 120, y: 100 },
+                    },
+                  },
+                },
+                {
+                  id: "op-2",
+                  cursor: 2,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "create-node",
+                    node: {
+                      id: "system-node-2",
+                      type: "component",
+                      label: "Agent Layout Preview",
+                      group: "system-preview",
+                      position: { x: 420, y: 120 },
+                      preview: {
+                        kind: "layout-grid",
+                        sectionId: "layout",
+                        title: "Agent Layout Grid",
+                      },
+                    },
+                  },
+                },
+                {
+                  id: "op-3",
+                  cursor: 3,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "create-edge",
+                    edge: {
+                      id: "system-edge-1",
+                      sourceId: "system-node-1",
+                      targetId: "system-node-2",
+                      type: "map",
+                      rule: {
+                        note: "Support -> preview",
+                      },
+                    },
+                  },
+                },
+                {
+                  id: "op-4",
+                  cursor: 4,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "update-node",
+                    nodeId: "system-node-2",
+                    patch: {
+                      label: "Agent Layout Preview Updated",
+                      position: { x: 480, y: 160 },
+                    },
+                  },
+                },
+                {
+                  id: "op-5",
+                  cursor: 5,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "update-edge",
+                    edgeId: "system-edge-1",
+                    patch: {
+                      rule: {
+                        note: "Updated note",
+                      },
+                    },
+                  },
+                },
+                {
+                  id: "op-6",
+                  cursor: 6,
+                  workspaceId: "system-canvas",
+                  workspaceKey: "gallery-demo:system-canvas",
+                  createdAt: new Date().toISOString(),
+                  operation: {
+                    type: "delete-node",
+                    nodeId: "system-node-1",
+                  },
+                },
+              ],
+              cursor: 6,
+            }),
+          } as Response
+        }
+
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            workspaceId: "system-canvas",
+            workspaceKey: "gallery-demo:system-canvas",
+            operations: [],
+            cursor: 6,
+          }),
+        } as Response
+      }
+
+      if (
+        init?.method !== "POST" &&
+        requestUrl.pathname === "/api/agent-native/workspaces/color-audit/operations"
+      ) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            workspaceId: "color-audit",
+            workspaceKey: "gallery-demo:color-audit",
+            operations: [],
+            cursor: 0,
+          }),
+        } as Response
+      }
+
+      if (init?.method === "POST" && requestUrl.pathname.startsWith("/api/agent-native/workspaces/")) {
+        const body = JSON.parse(String(init.body || "{}"))
+        const match = requestUrl.pathname.match(/^\/api\/agent-native\/workspaces\/([^/]+)\/state$/)
+        if (match?.[1]) {
+          syncedStates.push({
+            workspaceId: match[1],
+            body,
+          })
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            updatedAt: new Date().toISOString(),
+          }),
+        } as Response
+      }
+
+      throw new Error(`Unhandled fetch in system canvas graph mutation test: ${requestUrl.pathname}`)
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const { container, cleanup } = await renderSystemCanvas("gallery-demo")
+
+    try {
+      await act(async () => {
+        click(findButton(container, "System Canvas"))
+      })
+      await flushFrames(2)
+
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 1800))
+      })
+      await flushFrames(8)
+
+      expect(findNode(container, "Agent Layout Preview Updated")).toBeTruthy()
+      expect(
+        Array.from(container.querySelectorAll("[data-color-node='true']")).some((candidate) =>
+          candidate.textContent?.includes("Agent Support Node")
+        )
+      ).toBe(false)
+
+      const acknowledgedSync = syncedStates.find(
+        (entry) =>
+          entry.workspaceId === "system-canvas" && entry.body.appliedOperationCursor === 6
+      )
+
+      expect(acknowledgedSync).toBeTruthy()
+      expect(
+        acknowledgedSync?.body.payload?.nodes?.some((node: { label?: string }) =>
+          node.label?.includes("Agent Layout Preview Updated")
+        )
+      ).toBe(true)
+      expect(
+        acknowledgedSync?.body.payload?.nodes?.some((node: { label?: string }) =>
+          node.label?.includes("Agent Support Node")
+        )
+      ).toBe(false)
+      expect(acknowledgedSync?.body.payload?.edges).toHaveLength(0)
+    } finally {
+      await cleanup()
+    }
+  }, 10000)
 })

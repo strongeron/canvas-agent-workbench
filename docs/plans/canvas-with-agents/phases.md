@@ -46,24 +46,28 @@ Phase 1: Contract foundation
 
 **Exit criteria:** At least `Canvas`, `Color Audit`, and `System Canvas` expose structured state via workspace adapters or adapter-shaped resources, agents can read them through local MCP, and at least one surface is served through a shared CLI + MCP operations core.
 
-Current note: `Canvas` now uses a shared operations core for CLI and MCP. `Color Audit` is writable through the same app-owned agent-native path. `System Canvas` is now writable for config/view/generate/apply flows over HTTP, local CLI, and local MCP, while `Node Catalog` remains read-only. The next parity target is the event-log layer and deeper graph-level `System Canvas` mutations.
+Current note: `Canvas` now uses a shared operations core for CLI and MCP. `Color Audit` is writable through the same app-owned agent-native path. `System Canvas` is now writable for config/view/generate/apply plus authored node/edge mutations over HTTP, local CLI, and local MCP, while `Node Catalog` remains read-only. The next parity target is routing those mutation paths through the event-log layer itself.
 
 Bootstrap note: `bin/canvas-agent attach --project <id>` now creates or reuses a real app session, writes `.canvas-agent/attached-session.json`, and makes later CLI commands work without exported env.
 
 ## Phase 3: Event-log mutations
 
 **Goal:** Replace fragile snapshot-only sync with auditable operations.
-**Status:** Planned
+**Status:** In progress
 
 | Step | What | File(s) |
 |------|------|---------|
 | P3.1 | Event envelope type | `types/agentNative.ts` or dedicated operations file |
+| P3.1a | Append-only event resources over HTTP, CLI, and MCP | `vite.config.ts`, `bin/canvas-agent*`, manifest |
 | P3.2 | Event store / middleware | new shared agent-native state layer |
 | P3.3 | Route `Canvas` remote ops through events | `hooks/useCanvasAgentBridge.ts`, `vite.config.ts` |
 | P3.4 | Route `Color Audit` mutations through events | Color audit adapter/bridge |
+| P3.4a | Route `System Canvas` mutations through events | System canvas adapter/bridge |
 | P3.5 | Replay/debug surface | new session or audit UI |
 
 **Exit criteria:** Mutations can be replayed and audited independently from persisted snapshots.
+
+Current note: event envelopes and append-only workspace event reads are now live over HTTP, local CLI, and local MCP. The event log is not yet the mutation source of truth; operations still apply through the current remote-operation queue.
 
 ## Phase 4: Visual context
 

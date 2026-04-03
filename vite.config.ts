@@ -3320,6 +3320,7 @@ function paperImportPlugin() {
       const canvasAgentPrimitivesByProject = new Map()
       const agentNativeWorkspaceStateByKey = new Map()
       const agentNativeWorkspaceOperationsByKey = new Map()
+      const agentNativeWorkspaceEventsByKey = new Map()
       const canvasAgentQueueActive = new Set()
       const canvasAgentServerRuntimeRoot = path.join(
         CANVAS_AGENT_RUNTIME_ROOT,
@@ -3378,6 +3379,60 @@ function paperImportPlugin() {
         return agentNativeWorkspaceOperationsByKey.get(storageKey)
       }
 
+      const getAgentNativeWorkspaceEventLog = (workspaceId, workspaceKey) => {
+        const normalizedWorkspaceKey =
+          typeof workspaceKey === 'string' && workspaceKey.trim() ? workspaceKey.trim() : 'default'
+        const storageKey = getAgentNativeWorkspaceStorageKey(workspaceId, normalizedWorkspaceKey)
+        if (!agentNativeWorkspaceEventsByKey.has(storageKey)) {
+          agentNativeWorkspaceEventsByKey.set(storageKey, {
+            workspaceId,
+            workspaceKey: normalizedWorkspaceKey,
+            nextCursor: 1,
+            events: [],
+          })
+        }
+        return agentNativeWorkspaceEventsByKey.get(storageKey)
+      }
+
+      const appendAgentNativeWorkspaceEvent = (
+        workspaceId,
+        workspaceKey,
+        event
+      ) => {
+        const log = getAgentNativeWorkspaceEventLog(workspaceId, workspaceKey)
+        const cursor = log.nextCursor
+        log.nextCursor += 1
+        const record = {
+          id: `${workspaceId}-event-${cursor}`,
+          cursor,
+          workspaceId,
+          workspaceKey: log.workspaceKey,
+          createdAt: new Date().toISOString(),
+          ...event,
+        }
+        log.events.push(record)
+        if (log.events.length > 500) {
+          log.events = log.events.slice(-500)
+        }
+        return record
+      }
+
+      const listAgentNativeWorkspaceEvents = (
+        workspaceId,
+        workspaceKey,
+        cursor = 0,
+        limit = 100
+      ) => {
+        const log = getAgentNativeWorkspaceEventLog(workspaceId, workspaceKey)
+        const nextCursor = Number.isFinite(cursor) ? Number(cursor) : 0
+        const nextLimit = Number.isFinite(limit) ? Math.max(1, Math.min(500, Number(limit))) : 100
+        const events = log.events.filter((entry) => entry.cursor > nextCursor)
+        return {
+          events: events.slice(-nextLimit),
+          cursor: Math.max(0, log.nextCursor - 1),
+        }
+      }
+
       const appendAgentNativeWorkspaceOperation = (
         workspaceId,
         workspaceKey,
@@ -3402,6 +3457,16 @@ function paperImportPlugin() {
         if (queue.operations.length > 200) {
           queue.operations = queue.operations.slice(-200)
         }
+        appendAgentNativeWorkspaceEvent(workspaceId, queue.workspaceKey, {
+          kind: 'operation-queued',
+          actor: sourceClientId ? 'agent' : 'system',
+          source: source || 'agent-native-operation',
+          sourceClientId: sourceClientId || null,
+          operation,
+          metadata: {
+            operationId: record.id,
+          },
+        })
         return record
       }
 
@@ -3418,7 +3483,20 @@ function paperImportPlugin() {
         const queue = getAgentNativeWorkspaceOperationQueue(workspaceId, workspaceKey)
         const nextCursor = Number.isFinite(cursor) ? Number(cursor) : 0
         if (nextCursor <= 0) return queue
+        const acknowledgedOperations = queue.operations.filter((entry) => entry.cursor <= nextCursor)
         queue.operations = queue.operations.filter((entry) => entry.cursor > nextCursor)
+        acknowledgedOperations.forEach((entry) => {
+          appendAgentNativeWorkspaceEvent(workspaceId, queue.workspaceKey, {
+            kind: 'operation-applied',
+            actor: entry.sourceClientId ? 'agent' : 'system',
+            source: entry.source || 'agent-native-operation',
+            sourceClientId: entry.sourceClientId || null,
+            operation: entry.operation,
+            metadata: {
+              operationId: entry.id,
+            },
+          })
+        })
         return queue
       }
 
@@ -3441,6 +3519,22 @@ function paperImportPlugin() {
           getAgentNativeWorkspaceStorageKey(workspaceId, normalizedWorkspaceKey),
           record
         )
+        appendAgentNativeWorkspaceEvent(workspaceId, normalizedWorkspaceKey, {
+          kind: 'state-synced',
+          actor: sourceClientId ? 'agent' : 'system',
+          source: 'workspace-sync',
+          sourceClientId: sourceClientId || null,
+          stateSummary:
+            payload?.stateSummary && typeof payload.stateSummary === 'object'
+              ? payload.stateSummary
+              : null,
+          metadata: {
+            selectedNodeId:
+              typeof payload?.selection?.selectedNodeId === 'string' ? payload.selection.selectedNodeId : null,
+            selectedEdgeId:
+              typeof payload?.selection?.selectedEdgeId === 'string' ? payload.selection.selectedEdgeId : null,
+          },
+        })
         return record
       }
 
@@ -4167,7 +4261,7 @@ function paperImportPlugin() {
         }
 
         const agentNativeWorkspaceMatch = pathname.match(
-          /^\/api\/agent-native\/workspaces\/([^/]+)\/(manifest|state|sections|export-preview|screenshot|operations)$/
+          /^\/api\/agent-native\/workspaces\/([^/]+)\/(manifest|state|sections|export-preview|screenshot|operations|events)$/
         )
         if (agentNativeWorkspaceMatch) {
           const workspaceId = decodeURIComponent(agentNativeWorkspaceMatch[1])
@@ -4264,6 +4358,19 @@ function paperImportPlugin() {
                 cursor: payload.cursor,
               })
             }
+          }
+
+          if (req.method === 'GET' && resourceName === 'events') {
+            const cursor = Number.parseInt(requestUrl.searchParams.get('cursor') || '0', 10)
+            const limit = Number.parseInt(requestUrl.searchParams.get('limit') || '100', 10)
+            const payload = listAgentNativeWorkspaceEvents(workspaceId, workspaceKey, cursor, limit)
+            return sendJson(res, 200, {
+              ok: true,
+              workspaceId,
+              workspaceKey,
+              events: payload.events,
+              cursor: payload.cursor,
+            })
           }
 
           if (req.method === 'POST' && resourceName === 'state') {

@@ -162,6 +162,63 @@ describe("canvas agent runtime", () => {
     })
   })
 
+  it("reads workspace events from the agent-native endpoint", async () => {
+    const runtime = await loadRuntime()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        workspaceId: "system-canvas",
+        workspaceKey: "gallery-demo:system-canvas",
+        cursor: 2,
+        events: [
+          {
+            id: "event-1",
+            workspaceId: "system-canvas",
+            workspaceKey: "gallery-demo:system-canvas",
+            kind: "operation-queued",
+            actor: "agent",
+            source: "canvas-agent-cli",
+            createdAt: "2026-04-03T10:00:00.000Z",
+          },
+        ],
+      }),
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = {
+      serverUrl: "http://127.0.0.1:5178",
+      systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
+    }
+
+    await expect(
+      runtime.readAgentNativeWorkspaceEvents(
+        context as any,
+        "system-canvas",
+        "gallery-demo:system-canvas",
+        { cursor: 1, limit: 20 }
+      )
+    ).resolves.toEqual({
+      events: [
+        {
+          id: "event-1",
+          workspaceId: "system-canvas",
+          workspaceKey: "gallery-demo:system-canvas",
+          kind: "operation-queued",
+          actor: "agent",
+          source: "canvas-agent-cli",
+          createdAt: "2026-04-03T10:00:00.000Z",
+        },
+      ],
+      cursor: 2,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:5178/api/agent-native/workspaces/system-canvas/events?workspaceKey=gallery-demo%3Asystem-canvas&cursor=1&limit=20"
+    )
+  })
+
   it("queues Color Audit workspace operations through the agent-native endpoint", async () => {
     const runtime = await loadRuntime()
     const fetchMock = vi.fn().mockResolvedValue({

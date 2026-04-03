@@ -117,11 +117,22 @@ export interface AgentRuntimeAdapter<TSession = unknown, TEvent = unknown> {
   getTranscript(sessionId: string): unknown[]
 }
 
+export type AgentWorkspaceEventKind =
+  | "operation-queued"
+  | "operation-applied"
+  | "state-synced"
+
 export interface AgentWorkspaceEvent<TOperation = unknown> {
   id: string
   workspaceId: AgentNativeWorkspaceId
+  workspaceKey: string
+  kind: AgentWorkspaceEventKind
   actor: "user" | "agent" | "system"
   source: string
   createdAt: string
-  operation: TOperation
+  sourceClientId?: string | null
+  cursor?: number | null
+  operation?: TOperation
+  stateSummary?: WorkspaceManifestStateSummary | null
+  metadata?: Record<string, unknown> | null
 }

@@ -204,4 +204,189 @@ describe("canvas-agent CLI bootstrap", () => {
       cursor: 2,
     })
   })
+
+  it("reads workspace events through the attached session context", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-events-"))
+    const contextFilePath = path.join(tempDir, "attached-session.json")
+
+    server = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            bootstrap: {
+              reused: false,
+              surfaceId: "system-canvas",
+              session: {
+                id: "canvas-agent-session-events",
+                projectId: "demo",
+                agentId: "codex",
+                agentLabel: "Codex",
+              },
+              context: {
+                serverUrl: "http://127.0.0.1:5190",
+                projectId: "demo",
+                sessionId: "canvas-agent-session-events",
+                sessionDir: "/tmp/canvas-agent/session-events",
+                colorAuditWorkspaceKey: "gallery-demo:color-audit",
+                systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
+                nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
+              },
+            },
+          })
+        )
+        return
+      }
+
+      if (
+        req.method === "GET" &&
+        req.url ===
+          "/api/agent-native/workspaces/system-canvas/events?workspaceKey=gallery-demo%3Asystem-canvas&limit=10"
+      ) {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            workspaceId: "system-canvas",
+            workspaceKey: "gallery-demo:system-canvas",
+            cursor: 4,
+            events: [
+              {
+                id: "event-1",
+                workspaceId: "system-canvas",
+                workspaceKey: "gallery-demo:system-canvas",
+                kind: "operation-applied",
+                actor: "agent",
+                source: "canvas-agent-cli",
+                createdAt: "2026-04-03T10:00:00.000Z",
+              },
+            ],
+          })
+        )
+        return
+      }
+
+      res.statusCode = 404
+      res.end()
+    })
+
+    server.listen(5190, "127.0.0.1")
+    await once(server, "listening")
+
+    const attachResult = await runCli(
+      ["attach", "--project", "demo", "--surface", "system-canvas", "--server", "http://127.0.0.1:5190", "--json"],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(attachResult.exitCode).toBe(0)
+
+    const commandResult = await runCli(["workspace-events", "system-canvas", "10"], {
+      CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+    })
+
+    expect(commandResult.exitCode).toBe(0)
+    expect(commandResult.stderr).toBe("")
+    expect(JSON.parse(commandResult.stdout)).toEqual({
+      events: [
+        {
+          id: "event-1",
+          workspaceId: "system-canvas",
+          workspaceKey: "gallery-demo:system-canvas",
+          kind: "operation-applied",
+          actor: "agent",
+          source: "canvas-agent-cli",
+          createdAt: "2026-04-03T10:00:00.000Z",
+        },
+      ],
+      cursor: 4,
+    })
+  })
+
+  it("queues deep System Canvas graph mutations through the attached session context", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-system-mutate-"))
+    const contextFilePath = path.join(tempDir, "attached-session.json")
+
+    server = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            bootstrap: {
+              reused: false,
+              surfaceId: "system-canvas",
+              session: {
+                id: "canvas-agent-session-system-mutate",
+                projectId: "demo",
+                agentId: "codex",
+                agentLabel: "Codex",
+              },
+              context: {
+                serverUrl: "http://127.0.0.1:5191",
+                projectId: "demo",
+                sessionId: "canvas-agent-session-system-mutate",
+                sessionDir: "/tmp/canvas-agent/session-system-mutate",
+                colorAuditWorkspaceKey: "gallery-demo:color-audit",
+                systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
+                nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
+              },
+            },
+          })
+        )
+        return
+      }
+
+      if (req.method === "POST" && req.url === "/api/agent-native/workspaces/system-canvas/operations") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            operationId: "system-canvas-operation-node-1",
+            cursor: 5,
+          })
+        )
+        return
+      }
+
+      res.statusCode = 404
+      res.end()
+    })
+
+    server.listen(5191, "127.0.0.1")
+    await once(server, "listening")
+
+    const attachResult = await runCli(
+      ["attach", "--project", "demo", "--surface", "system-canvas", "--server", "http://127.0.0.1:5191", "--json"],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(attachResult.exitCode).toBe(0)
+
+    const commandResult = await runCli(
+      [
+        "create-system-node",
+        '{"node":{"id":"system-node-1","type":"semantic","label":"Agent Support","role":"surface","group":"system-support","position":{"x":120,"y":80}}}',
+      ],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(commandResult.exitCode).toBe(0)
+    expect(commandResult.stderr).toBe("")
+    expect(JSON.parse(commandResult.stdout)).toMatchObject({
+      ok: true,
+      operationId: "system-canvas-operation-node-1",
+      cursor: 5,
+    })
+  })
 })

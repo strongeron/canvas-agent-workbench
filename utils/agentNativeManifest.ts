@@ -80,6 +80,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "canvas-events",
+        uri: "workspace://surface/canvas/events",
+        title: "Canvas event log",
+        description: "Append-only event stream for queued operations, applied operations, and synced state.",
+        status: "ready",
+      },
+      {
         id: "canvas-viewport-screenshot",
         uri: "workspace://surface/canvas/viewport/screenshot",
         title: "Canvas screenshot",
@@ -124,6 +131,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         id: "capture_workspace_screenshot",
         title: "Capture workspace screenshot",
         description: "Capture a fresh screenshot for the current Canvas workspace.",
+        status: "ready",
+      },
+      {
+        id: "get_workspace_events",
+        title: "Get workspace events",
+        description: "Read the append-only event log for the current Canvas workspace.",
         status: "ready",
       },
     ],
@@ -182,6 +195,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         uri: "workspace://surface/color-audit/export-preview",
         title: "Color Audit export preview",
         description: "Project-ready token export preview for the currently selected format and color mode.",
+        status: "ready",
+      },
+      {
+        id: "color-audit-events",
+        uri: "workspace://surface/color-audit/events",
+        title: "Color Audit event log",
+        description: "Append-only event stream for Color Audit operations, applies, and state syncs.",
         status: "ready",
       },
       {
@@ -261,6 +281,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         description: "Capture a fresh screenshot for the current Color Audit workspace.",
         status: "ready",
       },
+      {
+        id: "get_workspace_events",
+        title: "Get workspace events",
+        description: "Read the append-only event log for the current Color Audit workspace.",
+        status: "ready",
+      },
     ],
     prompts: [
       {
@@ -296,6 +322,8 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       "generate-scale-graph",
       "apply-scale-vars",
       "set-view-mode",
+      "mutate-system-nodes",
+      "mutate-system-edges",
     ],
     resources: [
       {
@@ -310,6 +338,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         uri: "workspace://surface/system-canvas/state",
         title: "System Canvas state",
         description: "Serialized generated scale graph, previews, and current viewport state.",
+        status: "ready",
+      },
+      {
+        id: "system-canvas-events",
+        uri: "workspace://surface/system-canvas/events",
+        title: "System Canvas event log",
+        description: "Append-only event stream for System Canvas config updates, graph generation, applies, and state syncs.",
         status: "ready",
       },
       {
@@ -364,6 +399,50 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         description: "Capture a fresh screenshot for the current System Canvas workspace.",
         status: "ready",
       },
+      {
+        id: "create_system_node",
+        title: "Create system node",
+        description: "Create a support or preview node inside the System Canvas graph.",
+        status: "ready",
+      },
+      {
+        id: "update_system_node",
+        title: "Update system node",
+        description: "Patch label, position, preview, or layout metadata for an existing System Canvas node.",
+        status: "ready",
+      },
+      {
+        id: "delete_system_node",
+        title: "Delete system node",
+        description: "Delete a System Canvas node and any connected graph edges.",
+        status: "ready",
+        destructive: true,
+      },
+      {
+        id: "create_system_edge",
+        title: "Create system edge",
+        description: "Create an explicit System Canvas connection between two nodes.",
+        status: "ready",
+      },
+      {
+        id: "update_system_edge",
+        title: "Update system edge",
+        description: "Patch type or note metadata for an existing System Canvas edge.",
+        status: "ready",
+      },
+      {
+        id: "delete_system_edge",
+        title: "Delete system edge",
+        description: "Delete an explicit System Canvas edge.",
+        status: "ready",
+        destructive: true,
+      },
+      {
+        id: "get_workspace_events",
+        title: "Get workspace events",
+        description: "Read the append-only event log for the current System Canvas workspace.",
+        status: "ready",
+      },
     ],
     prompts: [
       {
@@ -407,6 +486,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "node-catalog-events",
+        uri: "workspace://surface/node-catalog/events",
+        title: "Node Catalog event log",
+        description: "Append-only event stream for Node Catalog sync and review activity.",
+        status: "ready",
+      },
+      {
         id: "node-catalog-viewport-screenshot",
         uri: "workspace://surface/node-catalog/viewport/screenshot",
         title: "Node Catalog screenshot",
@@ -425,6 +511,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         id: "capture_workspace_screenshot",
         title: "Capture workspace screenshot",
         description: "Capture a fresh screenshot for the current Node Catalog route.",
+        status: "ready",
+      },
+      {
+        id: "get_workspace_events",
+        title: "Get workspace events",
+        description: "Read the append-only event log for the current Node Catalog surface.",
         status: "ready",
       },
     ],

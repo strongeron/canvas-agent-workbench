@@ -5,6 +5,7 @@ import {
   captureWorkspaceScreenshot,
   enqueueAgentNativeWorkspaceOperation,
   readAgentNativeManifest,
+  readAgentNativeWorkspaceEvents,
   readAgentNativeWorkspaceManifest,
   readColorAuditExportPreview,
   readColorAuditState,
@@ -56,6 +57,24 @@ const TOOL_DEFINITIONS = [
         workspaceId: {
           type: 'string',
           enum: ['canvas', 'color-audit', 'system-canvas', 'node-catalog'],
+        },
+      },
+      required: ['workspaceId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_workspace_events',
+    description: 'Return the append-only event log for a specific workspace surface.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspaceId: {
+          type: 'string',
+          enum: ['canvas', 'color-audit', 'system-canvas', 'node-catalog'],
+        },
+        limit: {
+          type: 'number',
         },
       },
       required: ['workspaceId'],
@@ -224,6 +243,82 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_system_node',
+    description: 'Create a support or preview node in the System Canvas graph.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        node: { type: 'object' },
+        select: { type: 'boolean' },
+      },
+      required: ['node'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_system_node',
+    description: 'Update an existing System Canvas node by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string' },
+        patch: { type: 'object' },
+      },
+      required: ['nodeId', 'patch'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_system_node',
+    description: 'Delete a System Canvas node and any connected edges.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string' },
+      },
+      required: ['nodeId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_system_edge',
+    description: 'Create an explicit System Canvas edge between two nodes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        edge: { type: 'object' },
+        select: { type: 'boolean' },
+      },
+      required: ['edge'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_system_edge',
+    description: 'Update an existing System Canvas edge by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        edgeId: { type: 'string' },
+        patch: { type: 'object' },
+      },
+      required: ['edgeId', 'patch'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_system_edge',
+    description: 'Delete a System Canvas edge by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        edgeId: { type: 'string' },
+      },
+      required: ['edgeId'],
       additionalProperties: false,
     },
   },
@@ -474,6 +569,12 @@ const RESOURCE_DEFINITIONS = [
     mimeType: 'application/json',
   },
   {
+    uri: 'workspace://surface/canvas/events',
+    name: 'Canvas events',
+    description: 'Append-only event log for Canvas operations and state syncs.',
+    mimeType: 'application/json',
+  },
+  {
     uri: 'workspace://surface/canvas/viewport/screenshot',
     name: 'Canvas screenshot',
     description: 'Fresh screenshot capture for the current Canvas workspace.',
@@ -498,6 +599,12 @@ const RESOURCE_DEFINITIONS = [
     mimeType: 'application/json',
   },
   {
+    uri: 'workspace://surface/color-audit/events',
+    name: 'Color Audit events',
+    description: 'Append-only event log for Color Audit operations and state syncs.',
+    mimeType: 'application/json',
+  },
+  {
     uri: 'workspace://surface/color-audit/viewport/screenshot',
     name: 'Color Audit screenshot',
     description: 'Fresh screenshot capture for the current Color Audit workspace.',
@@ -513,6 +620,12 @@ const RESOURCE_DEFINITIONS = [
     uri: 'workspace://surface/system-canvas/state',
     name: 'System Canvas state',
     description: 'Read-only System Canvas state with generated graph, sections, scale config, and current view.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/system-canvas/events',
+    name: 'System Canvas events',
+    description: 'Append-only event log for System Canvas operations and state syncs.',
     mimeType: 'application/json',
   },
   {
@@ -537,6 +650,12 @@ const RESOURCE_DEFINITIONS = [
     uri: 'workspace://surface/node-catalog/sections',
     name: 'Node Catalog sections',
     description: 'Section list for the Node Catalog route.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/node-catalog/events',
+    name: 'Node Catalog events',
+    description: 'Append-only event log for Node Catalog state syncs.',
     mimeType: 'application/json',
   },
   {
@@ -723,6 +842,23 @@ async function callTool(name, args) {
       if (!workspaceId) return asToolError('workspaceId is required.')
       return asToolResult(await readAgentNativeWorkspaceManifest(context, workspaceId))
     }
+    case 'get_workspace_events': {
+      const workspaceId = normalizeString(args.workspaceId)
+      if (!workspaceId) return asToolError('workspaceId is required.')
+      const workspaceKey =
+        workspaceId === 'color-audit'
+          ? context.colorAuditWorkspaceKey
+          : workspaceId === 'system-canvas'
+            ? context.systemCanvasWorkspaceKey
+            : workspaceId === 'node-catalog'
+              ? context.nodeCatalogWorkspaceKey
+              : undefined
+      return asToolResult(
+        await readAgentNativeWorkspaceEvents(context, workspaceId, workspaceKey, {
+          limit: Number.isFinite(args.limit) ? Number(args.limit) : undefined,
+        })
+      )
+    }
     case 'get_color_audit_state':
       return asToolResult(await readColorAuditState(context))
     case 'get_color_audit_export_preview':
@@ -751,6 +887,18 @@ async function callTool(name, args) {
       return runGenerateScaleGraph()
     case 'apply_scale_vars':
       return runApplyScaleVars()
+    case 'create_system_node':
+      return runCreateSystemNode(args)
+    case 'update_system_node':
+      return runUpdateSystemNode(args)
+    case 'delete_system_node':
+      return runDeleteSystemNode(args)
+    case 'create_system_edge':
+      return runCreateSystemEdge(args)
+    case 'update_system_edge':
+      return runUpdateSystemEdge(args)
+    case 'delete_system_edge':
+      return runDeleteSystemEdge(args)
     case 'get_node_catalog_state':
       return asToolResult(await readNodeCatalogState(context))
     case 'capture_workspace_screenshot': {
@@ -830,6 +978,8 @@ async function readResource(uri) {
       return asResourceResult(uri, await readCanvasAgentSelection(context))
     case 'workspace://surface/canvas/primitives':
       return asResourceResult(uri, await readCanvasAgentPrimitives(context))
+    case 'workspace://surface/canvas/events':
+      return asResourceResult(uri, await readAgentNativeWorkspaceEvents(context, 'canvas'))
     case 'workspace://surface/canvas/viewport/screenshot':
       return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'canvas'))
     case 'workspace://surface/color-audit/manifest':
@@ -838,12 +988,22 @@ async function readResource(uri) {
       return asResourceResult(uri, await readColorAuditState(context))
     case 'workspace://surface/color-audit/export-preview':
       return asResourceResult(uri, await readColorAuditExportPreview(context))
+    case 'workspace://surface/color-audit/events':
+      return asResourceResult(
+        uri,
+        await readAgentNativeWorkspaceEvents(context, 'color-audit', context.colorAuditWorkspaceKey)
+      )
     case 'workspace://surface/color-audit/viewport/screenshot':
       return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'color-audit'))
     case 'workspace://surface/system-canvas/manifest':
       return asResourceResult(uri, await readAgentNativeWorkspaceManifest(context, 'system-canvas'))
     case 'workspace://surface/system-canvas/state':
       return asResourceResult(uri, await readSystemCanvasState(context))
+    case 'workspace://surface/system-canvas/events':
+      return asResourceResult(
+        uri,
+        await readAgentNativeWorkspaceEvents(context, 'system-canvas', context.systemCanvasWorkspaceKey)
+      )
     case 'workspace://surface/system-canvas/viewport/screenshot':
       return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'system-canvas'))
     case 'workspace://surface/node-catalog/state':
@@ -857,6 +1017,11 @@ async function readResource(uri) {
         nodeSections: Array.isArray(state?.nodeSections) ? state.nodeSections : [],
       })
     }
+    case 'workspace://surface/node-catalog/events':
+      return asResourceResult(
+        uri,
+        await readAgentNativeWorkspaceEvents(context, 'node-catalog', context.nodeCatalogWorkspaceKey)
+      )
     case 'workspace://surface/node-catalog/viewport/screenshot':
       return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'node-catalog'))
     default:
@@ -917,7 +1082,7 @@ function buildPrompt(name) {
             content: {
               type: 'text',
               text:
-                'Read workspace://surface/system-canvas/manifest and workspace://surface/system-canvas/state. Capture workspace://surface/system-canvas/viewport/screenshot when visual confirmation matters. Summarize the active scale config, current view mode, section coverage, and missing preview requirements. Use update_system_scale_config to adjust the engine, set_system_canvas_view to change subviews, generate_scale_graph to rebuild previews, and apply_scale_vars when the theme vars should be pushed back into the active theme.',
+                'Read workspace://surface/system-canvas/manifest and workspace://surface/system-canvas/state. Capture workspace://surface/system-canvas/viewport/screenshot when visual confirmation matters. Summarize the active scale config, current view mode, section coverage, and missing preview requirements. Use update_system_scale_config to adjust the engine, set_system_canvas_view to change subviews, generate_scale_graph to rebuild previews, apply_scale_vars when the theme vars should be pushed back into the active theme, and create_system_node/update_system_node/create_system_edge/update_system_edge/delete_system_edge for explicit graph authoring.',
             },
           },
         ],
@@ -1172,6 +1337,72 @@ async function runGenerateScaleGraph() {
 async function runApplyScaleVars() {
   return applySystemCanvasOperation('apply_scale_vars', {
     type: 'apply-scale-vars',
+  })
+}
+
+async function runCreateSystemNode(args) {
+  if (!args.node || typeof args.node !== 'object') {
+    return asToolError('node is required.')
+  }
+  return applySystemCanvasOperation('create_system_node', {
+    type: 'create-node',
+    node: args.node,
+    select: typeof args.select === 'boolean' ? args.select : undefined,
+  })
+}
+
+async function runUpdateSystemNode(args) {
+  const nodeId = normalizeString(args.nodeId)
+  if (!nodeId) return asToolError('nodeId is required.')
+  if (!args.patch || typeof args.patch !== 'object') {
+    return asToolError('patch is required.')
+  }
+  return applySystemCanvasOperation('update_system_node', {
+    type: 'update-node',
+    nodeId,
+    patch: args.patch,
+  })
+}
+
+async function runDeleteSystemNode(args) {
+  const nodeId = normalizeString(args.nodeId)
+  if (!nodeId) return asToolError('nodeId is required.')
+  return applySystemCanvasOperation('delete_system_node', {
+    type: 'delete-node',
+    nodeId,
+  })
+}
+
+async function runCreateSystemEdge(args) {
+  if (!args.edge || typeof args.edge !== 'object') {
+    return asToolError('edge is required.')
+  }
+  return applySystemCanvasOperation('create_system_edge', {
+    type: 'create-edge',
+    edge: args.edge,
+    select: typeof args.select === 'boolean' ? args.select : undefined,
+  })
+}
+
+async function runUpdateSystemEdge(args) {
+  const edgeId = normalizeString(args.edgeId)
+  if (!edgeId) return asToolError('edgeId is required.')
+  if (!args.patch || typeof args.patch !== 'object') {
+    return asToolError('patch is required.')
+  }
+  return applySystemCanvasOperation('update_system_edge', {
+    type: 'update-edge',
+    edgeId,
+    patch: args.patch,
+  })
+}
+
+async function runDeleteSystemEdge(args) {
+  const edgeId = normalizeString(args.edgeId)
+  if (!edgeId) return asToolError('edgeId is required.')
+  return applySystemCanvasOperation('delete_system_edge', {
+    type: 'delete-edge',
+    edgeId,
   })
 }
 

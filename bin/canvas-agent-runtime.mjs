@@ -279,6 +279,33 @@ export async function readAgentNativeWorkspaceState(context, workspaceId, worksp
   return payload?.state ?? null
 }
 
+export async function readAgentNativeWorkspaceEvents(
+  context,
+  workspaceId,
+  workspaceKey,
+  options = {}
+) {
+  const payload = await readAgentNativeJson(
+    context,
+    `/api/agent-native/workspaces/${encodeURIComponent(workspaceId)}/events`,
+    {
+      workspaceKey: workspaceKey || '',
+      cursor:
+        Number.isFinite(options.cursor) && Number(options.cursor) > 0
+          ? String(Number(options.cursor))
+          : '',
+      limit:
+        Number.isFinite(options.limit) && Number(options.limit) > 0
+          ? String(Number(options.limit))
+          : '',
+    }
+  )
+  return {
+    events: Array.isArray(payload?.events) ? payload.events : [],
+    cursor: Number.isFinite(payload?.cursor) ? Number(payload.cursor) : 0,
+  }
+}
+
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
   return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
 }
