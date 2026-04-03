@@ -46,7 +46,7 @@ Phase 1: Contract foundation
 
 **Exit criteria:** At least `Canvas`, `Color Audit`, and `System Canvas` expose structured state via workspace adapters or adapter-shaped resources, agents can read them through local MCP, and at least one surface is served through a shared CLI + MCP operations core.
 
-Current note: `Canvas` now uses a shared operations core for CLI and MCP. `Color Audit` is writable through the same app-owned agent-native path. `System Canvas` is now writable for config/view/generate/apply plus authored node/edge mutations over HTTP, local CLI, and local MCP, while `Node Catalog` remains read-only. The next parity target is routing those mutation paths through the event-log layer itself.
+Current note: `Canvas` now uses a shared operations core for CLI and MCP. `Color Audit` is writable through the same app-owned agent-native path. `System Canvas` is now writable for config/view/generate/apply plus authored node/edge mutations over HTTP, local CLI, and local MCP, while `Node Catalog` remains read-only. `Color Audit` and `System Canvas` mutations now read pending work from the event log; the remaining parity target is moving the older `Canvas` path onto the same model.
 
 Bootstrap note: `bin/canvas-agent attach --project <id>` now creates or reuses a real app session, writes `.canvas-agent/attached-session.json`, and makes later CLI commands work without exported env.
 
@@ -67,7 +67,7 @@ Bootstrap note: `bin/canvas-agent attach --project <id>` now creates or reuses a
 
 **Exit criteria:** Mutations can be replayed and audited independently from persisted snapshots.
 
-Current note: event envelopes and append-only workspace event reads are now live over HTTP, local CLI, and local MCP. The event log is not yet the mutation source of truth; operations still apply through the current remote-operation queue.
+Current note: event envelopes and append-only workspace event reads are now live over HTTP, local CLI, and local MCP. `Color Audit` and `System Canvas` now use the event log as the server-side mutation source of truth. `Canvas` still uses the older remote-operation path, so replay/debug and undo/redo are not unified yet.
 
 ## Phase 4: Visual context
 

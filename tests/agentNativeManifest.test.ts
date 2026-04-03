@@ -47,7 +47,7 @@ describe("agent native manifest", () => {
       (workspace) => workspace.id === "color-audit"
     )
     expect(colorAuditWorkspace?.syncMode).toBe("live-bridge")
-    expect(colorAuditWorkspace?.mutationMode).toBe("remote-operations")
+    expect(colorAuditWorkspace?.mutationMode).toBe("event-log")
     expect(
       colorAuditWorkspace?.resources.some((resource) => resource.id === "color-audit-state")
     ).toBe(true)
@@ -91,7 +91,7 @@ describe("agent native manifest", () => {
       (workspace) => workspace.id === "system-canvas"
     )
     expect(systemCanvasWorkspace?.syncMode).toBe("live-bridge")
-    expect(systemCanvasWorkspace?.mutationMode).toBe("remote-operations")
+    expect(systemCanvasWorkspace?.mutationMode).toBe("event-log")
     expect(systemCanvasWorkspace?.capabilities).toContain("generate-scale-graph")
     expect(systemCanvasWorkspace?.capabilities).toContain("apply-scale-vars")
     expect(

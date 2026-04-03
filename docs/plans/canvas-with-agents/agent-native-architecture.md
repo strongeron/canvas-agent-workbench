@@ -79,8 +79,8 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 
 ### Partially working
 
-- `Color Audit` is now exposed as a writable agent-native surface with structured manifest, state, export-preview resources, app-owned screenshot capture, shared-core template/node/edge operations, and local CLI + MCP write paths.
-- `System Canvas` is now exposed as a writable agent-native surface for config patching, view switching, scale-graph generation, theme-var application, and authored node/edge graph mutations, with structured manifest/state resources, app-owned screenshot capture, and local CLI + MCP write paths.
+- `Color Audit` is now exposed as a writable agent-native surface with structured manifest, state, export-preview resources, app-owned screenshot capture, shared-core template/node/edge operations, local CLI + MCP write paths, and event-log-backed mutation delivery.
+- `System Canvas` is now exposed as a writable agent-native surface for config patching, view switching, scale-graph generation, theme-var application, and authored node/edge graph mutations, with structured manifest/state resources, app-owned screenshot capture, local CLI + MCP write paths, and event-log-backed mutation delivery.
 - `Node Catalog` is now exposed as a read-only agent-native surface with structured state, section metadata, app-owned screenshot capture, and local CLI + MCP reads.
 - Append-only workspace events are now exposed over HTTP, local CLI, and local MCP for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog`.
 
@@ -88,7 +88,7 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 
 - Shared `WorkspaceAdapter` implementations.
 - Shared `AgentRuntimeAdapter` implementations.
-- Event log as the mutation source of truth.
+- Event log as the mutation source of truth for `Canvas`.
 - Multi-surface tool routing in MCP.
 - Replay/debug surface for workspace events and agent actions.
 
@@ -203,7 +203,7 @@ Why:
 
 Persistence can still use snapshots. The sync mechanism should use events.
 
-Current implementation note: we now have the event envelope plus append-only event reads across HTTP, CLI, and MCP. Mutation delivery still uses the existing remote-operation queue, so replay/debug exists only at the read-model layer for now.
+Current implementation note: we now have the event envelope plus append-only event reads across HTTP, CLI, and MCP. `Color Audit` and `System Canvas` mutation delivery now uses that event log on the server side. `Canvas` still uses the older queue path, so replay/debug exists only partially and undo/redo is not unified yet.
 
 ## Slices
 

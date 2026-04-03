@@ -8,11 +8,11 @@ Date: April 3, 2026
 |------|--------|-------|
 | Shared runtime/workspace manifest | In progress | Manifest endpoint exists and now lists runtime/workspace metadata plus resources/tools/prompts. |
 | `Canvas` live bridge | Working | Sessions, transcript, state sync, remote operations, and local MCP tools/resources/prompts already exist. |
-| `Color Audit` adapter | In progress | State sync, queued remote operations, export-preview resources, screenshot capture, and local CLI + MCP writes are now wired. |
-| `System Canvas` adapter | In progress | State sync, queued remote operations for config/view/generate/apply plus authored node/edge mutation, screenshot capture, and local CLI + MCP writes are now wired. |
+| `Color Audit` adapter | In progress | State sync, event-log-backed operations, export-preview resources, screenshot capture, and local CLI + MCP writes are now wired. |
+| `System Canvas` adapter | In progress | State sync, event-log-backed operations for config/view/generate/apply plus authored node/edge mutation, screenshot capture, and local CLI + MCP writes are now wired. |
 | `Node Catalog` adapter | In progress | Read-only state sync, sections resource, screenshot capture, and local CLI + MCP reads are now wired; no write tools are needed. |
 | CLI face | In progress | `bin/canvas-agent` now shares Canvas operations with the MCP server, reads `Color Audit`, `System Canvas`, and `Node Catalog`, can request app-owned screenshots, can mutate `Color Audit` and `System Canvas`, supports `attach`/`detach`, and can read append-only workspace events. |
-| Event log | In progress | Event envelope, append-only workspace event storage, HTTP reads, local CLI reads, and local MCP reads now exist; mutations still flow through the current remote-operation queue rather than using the event log as the source of truth. |
+| Event log | In progress | Event envelope, append-only workspace event storage, HTTP reads, local CLI reads, and local MCP reads now exist. `Color Audit` and `System Canvas` operations are now sourced from the event log on the server side; `Canvas` still uses its older remote-operation path. |
 | Visual context | In progress | App-owned screenshot capture now exists for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog` via the dev server Playwright renderer. |
 | Runtime adapters | Not started | Manifest lists runtimes, but dedicated adapter contracts are not wired yet. |
 
@@ -44,8 +44,8 @@ Date: April 3, 2026
 - [x] Define event envelope for workspace operations
 - [x] Add append-only workspace event reads over HTTP, local CLI, and local MCP
 - [ ] Route `Canvas` mutations through event log
-- [ ] Route `Color Audit` mutations through event log
-- [ ] Route `System Canvas` mutations through event log
+- [x] Route `Color Audit` mutations through event log
+- [x] Route `System Canvas` mutations through event log
 - [ ] Add replay/debug view for agent actions
 - [ ] Preserve undo/redo on top of event log
 
@@ -65,7 +65,7 @@ Date: April 3, 2026
 ## Next Active Slice
 
 1. Extract the current `Canvas` bridge behind the shared workspace-adapter contract.
-2. Start routing `Canvas`, then `Color Audit`, then `System Canvas` mutations through the validated event-log layer.
+2. Route the remaining `Canvas` mutation path through the validated event-log layer.
 3. Add a replay/debug surface for agent actions and workspace events.
 4. Add richer `Color Audit` write tools for export selection, role mapping, and contrast edge management workflows.
 

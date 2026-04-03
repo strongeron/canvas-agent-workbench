@@ -156,7 +156,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
     description:
       "Token graph for palette inputs, relative rules, functional aliases, semantic roles, contrast checks, and token exports.",
     syncMode: "live-bridge",
-    mutationMode: "remote-operations",
+    mutationMode: "event-log",
     entities: ["token-node", "relative-node", "semantic-node", "map-edge", "contrast-edge"],
     capabilities: [
       "read-manifest",
@@ -310,7 +310,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
     description:
       "Design-system scale graph for colors, type, icons, layouts, primitives, and standards previews generated from the scale engine.",
     syncMode: "live-bridge",
-    mutationMode: "remote-operations",
+    mutationMode: "event-log",
     entities: ["support-node", "explainer-node", "type-preview", "layout-preview", "primitive-preview"],
     capabilities: [
       "read-state",
