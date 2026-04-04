@@ -136,3 +136,14 @@ export interface AgentWorkspaceEvent<TOperation = unknown> {
   stateSummary?: WorkspaceManifestStateSummary | null
   metadata?: Record<string, unknown> | null
 }
+
+export interface AgentWorkspaceDebug<TOperation = unknown> {
+  workspaceId: AgentNativeWorkspaceId
+  workspaceKey: string
+  cursor: number
+  appliedCursor: number
+  updatedAt?: string | null
+  stateSummary?: WorkspaceManifestStateSummary | null
+  pendingOperationCount: number
+  events: AgentWorkspaceEvent<TOperation>[]
+}

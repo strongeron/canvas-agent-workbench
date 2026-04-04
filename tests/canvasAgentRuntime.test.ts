@@ -15,8 +15,11 @@ describe("canvas agent runtime", () => {
     vi.unstubAllGlobals()
   })
 
-  it("builds the default Color Audit workspace key from the project id", async () => {
+  it("builds the default workspace keys from the project id", async () => {
     const runtime = await loadRuntime()
+    expect(runtime.buildDefaultCanvasWorkspaceKey("demo")).toBe("gallery-demo:canvas")
+    expect(runtime.buildDefaultCanvasWorkspaceKey("  thicket  ")).toBe("gallery-thicket:canvas")
+    expect(runtime.buildDefaultCanvasWorkspaceKey("")).toBe("gallery-demo:canvas")
     expect(runtime.buildDefaultColorAuditWorkspaceKey("demo")).toBe("gallery-demo:color-audit")
     expect(runtime.buildDefaultColorAuditWorkspaceKey("  thicket  ")).toBe("gallery-thicket:color-audit")
     expect(runtime.buildDefaultColorAuditWorkspaceKey("")).toBe("gallery-demo:color-audit")
@@ -91,6 +94,7 @@ describe("canvas agent runtime", () => {
     const context = {
       serverUrl: "http://127.0.0.1:5178",
       projectId: "demo",
+      canvasWorkspaceKey: "gallery-demo:canvas",
       colorAuditWorkspaceKey: "gallery-demo:color-audit",
       systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
       nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
@@ -189,6 +193,7 @@ describe("canvas agent runtime", () => {
 
     const context = {
       serverUrl: "http://127.0.0.1:5178",
+      canvasWorkspaceKey: "gallery-demo:canvas",
       systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
     }
 
@@ -219,6 +224,70 @@ describe("canvas agent runtime", () => {
     )
   })
 
+  it("reads workspace debug payloads from the agent-native endpoint", async () => {
+    const runtime = await loadRuntime()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        workspaceId: "canvas",
+        workspaceKey: "gallery-demo:canvas",
+        debug: {
+          workspaceId: "canvas",
+          workspaceKey: "gallery-demo:canvas",
+          cursor: 5,
+          appliedCursor: 3,
+          pendingOperationCount: 1,
+          events: [
+            {
+              id: "canvas-event-4",
+              workspaceId: "canvas",
+              workspaceKey: "gallery-demo:canvas",
+              kind: "operation-applied",
+              actor: "agent",
+              source: "canvas-agent-cli",
+              createdAt: "2026-04-04T09:00:00.000Z",
+            },
+          ],
+        },
+      }),
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = {
+      serverUrl: "http://127.0.0.1:5178",
+      canvasWorkspaceKey: "gallery-demo:canvas",
+    }
+
+    await expect(
+      runtime.readAgentNativeWorkspaceDebug(context as any, "canvas", "gallery-demo:canvas", {
+        limit: 25,
+      })
+    ).resolves.toEqual({
+      workspaceId: "canvas",
+      workspaceKey: "gallery-demo:canvas",
+      cursor: 5,
+      appliedCursor: 3,
+      pendingOperationCount: 1,
+      events: [
+        {
+          id: "canvas-event-4",
+          workspaceId: "canvas",
+          workspaceKey: "gallery-demo:canvas",
+          kind: "operation-applied",
+          actor: "agent",
+          source: "canvas-agent-cli",
+          createdAt: "2026-04-04T09:00:00.000Z",
+        },
+      ],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:5178/api/agent-native/workspaces/canvas/debug?workspaceKey=gallery-demo%3Acanvas&limit=25"
+    )
+  })
+
   it("queues Color Audit workspace operations through the agent-native endpoint", async () => {
     const runtime = await loadRuntime()
     const fetchMock = vi.fn().mockResolvedValue({
@@ -235,6 +304,7 @@ describe("canvas agent runtime", () => {
     const context = {
       serverUrl: "http://127.0.0.1:5178",
       sessionId: "session-1",
+      canvasWorkspaceKey: "gallery-demo:canvas",
       colorAuditWorkspaceKey: "gallery-demo:color-audit",
     }
 
@@ -293,6 +363,7 @@ describe("canvas agent runtime", () => {
     const context = {
       serverUrl: "http://127.0.0.1:5178",
       sessionId: "session-1",
+      canvasWorkspaceKey: "gallery-demo:canvas",
       systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
     }
 
@@ -361,6 +432,7 @@ describe("canvas agent runtime", () => {
     const context = {
       serverUrl: "http://127.0.0.1:5178",
       projectId: "demo",
+      canvasWorkspaceKey: "gallery-demo:canvas",
       systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
     }
 
@@ -410,6 +482,7 @@ describe("canvas agent runtime", () => {
             projectId: "demo",
             sessionId: "canvas-agent-session-1",
             sessionDir: "/tmp/canvas-agent/session-1",
+            canvasWorkspaceKey: "gallery-demo:canvas",
             colorAuditWorkspaceKey: "gallery-demo:color-audit",
             systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
             nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
@@ -435,6 +508,7 @@ describe("canvas agent runtime", () => {
       },
       context: {
         projectId: "demo",
+        canvasWorkspaceKey: "gallery-demo:canvas",
         colorAuditWorkspaceKey: "gallery-demo:color-audit",
       },
     })
@@ -468,6 +542,7 @@ describe("canvas agent runtime", () => {
     vi.stubEnv("CANVAS_AGENT_PROJECT_ID", "")
     vi.stubEnv("CANVAS_AGENT_SESSION_ID", "")
     vi.stubEnv("CANVAS_AGENT_SERVER_URL", "")
+    vi.stubEnv("CANVAS_AGENT_CANVAS_WORKSPACE_KEY", "")
     vi.stubEnv("CANVAS_AGENT_COLOR_AUDIT_WORKSPACE_KEY", "")
     vi.stubEnv("CANVAS_AGENT_SYSTEM_CANVAS_WORKSPACE_KEY", "")
     vi.stubEnv("CANVAS_AGENT_NODE_CATALOG_WORKSPACE_KEY", "")
@@ -477,6 +552,7 @@ describe("canvas agent runtime", () => {
       projectId: "demo",
       sessionId: "canvas-agent-session-2",
       sessionDir: "/tmp/canvas-agent/session-2",
+      canvasWorkspaceKey: "gallery-demo:canvas",
       colorAuditWorkspaceKey: "gallery-demo:color-audit",
       systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
       nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
@@ -487,6 +563,7 @@ describe("canvas agent runtime", () => {
       projectId: "demo",
       sessionId: "canvas-agent-session-2",
       sessionDir: "/tmp/canvas-agent/session-2",
+      canvasWorkspaceKey: "gallery-demo:canvas",
       colorAuditWorkspaceKey: "gallery-demo:color-audit",
       systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
       nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",

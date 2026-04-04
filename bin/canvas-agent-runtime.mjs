@@ -5,6 +5,11 @@ import path from 'node:path'
 const DEFAULT_TIMEOUT_MS = 15000
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:5173'
 
+export function buildDefaultCanvasWorkspaceKey(projectId) {
+  const normalizedProjectId = typeof projectId === 'string' && projectId.trim() ? projectId.trim() : 'demo'
+  return `gallery-${normalizedProjectId}:canvas`
+}
+
 export function buildDefaultSystemCanvasWorkspaceKey(projectId) {
   const normalizedProjectId = typeof projectId === 'string' && projectId.trim() ? projectId.trim() : 'demo'
   return `gallery-${normalizedProjectId}:system-canvas`
@@ -63,6 +68,9 @@ export function getCanvasAgentContextFromEnv() {
       projectId,
       sessionId,
       serverUrl: getDefaultCanvasAgentServerUrl(),
+      canvasWorkspaceKey:
+        process.env.CANVAS_AGENT_CANVAS_WORKSPACE_KEY?.trim() ||
+        buildDefaultCanvasWorkspaceKey(projectId),
       colorAuditWorkspaceKey:
         process.env.CANVAS_AGENT_COLOR_AUDIT_WORKSPACE_KEY?.trim() ||
         buildDefaultColorAuditWorkspaceKey(projectId),
@@ -91,6 +99,10 @@ export function getCanvasAgentContextFromEnv() {
         process.env.CANVAS_AGENT_SERVER_URL?.trim() ||
         attached.serverUrl ||
         getDefaultCanvasAgentServerUrl(),
+      canvasWorkspaceKey:
+        process.env.CANVAS_AGENT_CANVAS_WORKSPACE_KEY?.trim() ||
+        attached.canvasWorkspaceKey ||
+        buildDefaultCanvasWorkspaceKey(attached.projectId),
       colorAuditWorkspaceKey:
         process.env.CANVAS_AGENT_COLOR_AUDIT_WORKSPACE_KEY?.trim() ||
         attached.colorAuditWorkspaceKey ||
@@ -164,6 +176,11 @@ export function formatCanvasAgentShellExports(context) {
     `export CANVAS_AGENT_SESSION_DIR=${JSON.stringify(context.sessionDir)}`,
   ]
 
+  if (context.canvasWorkspaceKey) {
+    lines.push(
+      `export CANVAS_AGENT_CANVAS_WORKSPACE_KEY=${JSON.stringify(context.canvasWorkspaceKey)}`
+    )
+  }
   if (context.colorAuditWorkspaceKey) {
     lines.push(
       `export CANVAS_AGENT_COLOR_AUDIT_WORKSPACE_KEY=${JSON.stringify(context.colorAuditWorkspaceKey)}`
@@ -304,6 +321,26 @@ export async function readAgentNativeWorkspaceEvents(
     events: Array.isArray(payload?.events) ? payload.events : [],
     cursor: Number.isFinite(payload?.cursor) ? Number(payload.cursor) : 0,
   }
+}
+
+export async function readAgentNativeWorkspaceDebug(
+  context,
+  workspaceId,
+  workspaceKey,
+  options = {}
+) {
+  const payload = await readAgentNativeJson(
+    context,
+    `/api/agent-native/workspaces/${encodeURIComponent(workspaceId)}/debug`,
+    {
+      workspaceKey: workspaceKey || '',
+      limit:
+        Number.isFinite(options.limit) && Number(options.limit) > 0
+          ? String(Number(options.limit))
+          : '',
+    }
+  )
+  return payload?.debug ?? null
 }
 
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {

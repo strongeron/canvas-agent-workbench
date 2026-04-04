@@ -3,6 +3,7 @@
 import {
   buildCanvasContextSummary,
   captureWorkspaceScreenshot,
+  readAgentNativeWorkspaceDebug,
   enqueueAgentNativeWorkspaceOperation,
   readAgentNativeManifest,
   readAgentNativeWorkspaceEvents,
@@ -66,6 +67,24 @@ const TOOL_DEFINITIONS = [
   {
     name: 'get_workspace_events',
     description: 'Return the append-only event log for a specific workspace surface.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspaceId: {
+          type: 'string',
+          enum: ['canvas', 'color-audit', 'system-canvas', 'node-catalog'],
+        },
+        limit: {
+          type: 'number',
+        },
+      },
+      required: ['workspaceId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_workspace_debug',
+    description: 'Return replay/debug information for a specific workspace surface.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -575,6 +594,12 @@ const RESOURCE_DEFINITIONS = [
     mimeType: 'application/json',
   },
   {
+    uri: 'workspace://surface/canvas/debug',
+    name: 'Canvas debug',
+    description: 'Replay/debug payload for the current Canvas workspace event log.',
+    mimeType: 'application/json',
+  },
+  {
     uri: 'workspace://surface/canvas/viewport/screenshot',
     name: 'Canvas screenshot',
     description: 'Fresh screenshot capture for the current Canvas workspace.',
@@ -605,6 +630,12 @@ const RESOURCE_DEFINITIONS = [
     mimeType: 'application/json',
   },
   {
+    uri: 'workspace://surface/color-audit/debug',
+    name: 'Color Audit debug',
+    description: 'Replay/debug payload for the current Color Audit workspace event log.',
+    mimeType: 'application/json',
+  },
+  {
     uri: 'workspace://surface/color-audit/viewport/screenshot',
     name: 'Color Audit screenshot',
     description: 'Fresh screenshot capture for the current Color Audit workspace.',
@@ -626,6 +657,12 @@ const RESOURCE_DEFINITIONS = [
     uri: 'workspace://surface/system-canvas/events',
     name: 'System Canvas events',
     description: 'Append-only event log for System Canvas operations and state syncs.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/system-canvas/debug',
+    name: 'System Canvas debug',
+    description: 'Replay/debug payload for the current System Canvas workspace event log.',
     mimeType: 'application/json',
   },
   {
@@ -656,6 +693,12 @@ const RESOURCE_DEFINITIONS = [
     uri: 'workspace://surface/node-catalog/events',
     name: 'Node Catalog events',
     description: 'Append-only event log for Node Catalog state syncs.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/node-catalog/debug',
+    name: 'Node Catalog debug',
+    description: 'Replay/debug payload for the current Node Catalog workspace event log.',
     mimeType: 'application/json',
   },
   {
@@ -840,13 +883,25 @@ async function callTool(name, args) {
     case 'get_surface_manifest': {
       const workspaceId = normalizeString(args.workspaceId)
       if (!workspaceId) return asToolError('workspaceId is required.')
-      return asToolResult(await readAgentNativeWorkspaceManifest(context, workspaceId))
+      const workspaceKey =
+        workspaceId === 'canvas'
+          ? context.canvasWorkspaceKey
+          : workspaceId === 'color-audit'
+            ? context.colorAuditWorkspaceKey
+            : workspaceId === 'system-canvas'
+              ? context.systemCanvasWorkspaceKey
+              : workspaceId === 'node-catalog'
+                ? context.nodeCatalogWorkspaceKey
+                : undefined
+      return asToolResult(await readAgentNativeWorkspaceManifest(context, workspaceId, workspaceKey))
     }
     case 'get_workspace_events': {
       const workspaceId = normalizeString(args.workspaceId)
       if (!workspaceId) return asToolError('workspaceId is required.')
       const workspaceKey =
-        workspaceId === 'color-audit'
+        workspaceId === 'canvas'
+          ? context.canvasWorkspaceKey
+          : workspaceId === 'color-audit'
           ? context.colorAuditWorkspaceKey
           : workspaceId === 'system-canvas'
             ? context.systemCanvasWorkspaceKey
@@ -855,6 +910,25 @@ async function callTool(name, args) {
               : undefined
       return asToolResult(
         await readAgentNativeWorkspaceEvents(context, workspaceId, workspaceKey, {
+          limit: Number.isFinite(args.limit) ? Number(args.limit) : undefined,
+        })
+      )
+    }
+    case 'get_workspace_debug': {
+      const workspaceId = normalizeString(args.workspaceId)
+      if (!workspaceId) return asToolError('workspaceId is required.')
+      const workspaceKey =
+        workspaceId === 'canvas'
+          ? context.canvasWorkspaceKey
+          : workspaceId === 'color-audit'
+            ? context.colorAuditWorkspaceKey
+            : workspaceId === 'system-canvas'
+              ? context.systemCanvasWorkspaceKey
+              : workspaceId === 'node-catalog'
+                ? context.nodeCatalogWorkspaceKey
+                : undefined
+      return asToolResult(
+        await readAgentNativeWorkspaceDebug(context, workspaceId, workspaceKey, {
           limit: Number.isFinite(args.limit) ? Number(args.limit) : undefined,
         })
       )
@@ -979,7 +1053,15 @@ async function readResource(uri) {
     case 'workspace://surface/canvas/primitives':
       return asResourceResult(uri, await readCanvasAgentPrimitives(context))
     case 'workspace://surface/canvas/events':
-      return asResourceResult(uri, await readAgentNativeWorkspaceEvents(context, 'canvas'))
+      return asResourceResult(
+        uri,
+        await readAgentNativeWorkspaceEvents(context, 'canvas', context.canvasWorkspaceKey)
+      )
+    case 'workspace://surface/canvas/debug':
+      return asResourceResult(
+        uri,
+        await readAgentNativeWorkspaceDebug(context, 'canvas', context.canvasWorkspaceKey)
+      )
     case 'workspace://surface/canvas/viewport/screenshot':
       return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'canvas'))
     case 'workspace://surface/color-audit/manifest':
@@ -993,6 +1075,11 @@ async function readResource(uri) {
         uri,
         await readAgentNativeWorkspaceEvents(context, 'color-audit', context.colorAuditWorkspaceKey)
       )
+    case 'workspace://surface/color-audit/debug':
+      return asResourceResult(
+        uri,
+        await readAgentNativeWorkspaceDebug(context, 'color-audit', context.colorAuditWorkspaceKey)
+      )
     case 'workspace://surface/color-audit/viewport/screenshot':
       return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'color-audit'))
     case 'workspace://surface/system-canvas/manifest':
@@ -1003,6 +1090,11 @@ async function readResource(uri) {
       return asResourceResult(
         uri,
         await readAgentNativeWorkspaceEvents(context, 'system-canvas', context.systemCanvasWorkspaceKey)
+      )
+    case 'workspace://surface/system-canvas/debug':
+      return asResourceResult(
+        uri,
+        await readAgentNativeWorkspaceDebug(context, 'system-canvas', context.systemCanvasWorkspaceKey)
       )
     case 'workspace://surface/system-canvas/viewport/screenshot':
       return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'system-canvas'))
@@ -1021,6 +1113,11 @@ async function readResource(uri) {
       return asResourceResult(
         uri,
         await readAgentNativeWorkspaceEvents(context, 'node-catalog', context.nodeCatalogWorkspaceKey)
+      )
+    case 'workspace://surface/node-catalog/debug':
+      return asResourceResult(
+        uri,
+        await readAgentNativeWorkspaceDebug(context, 'node-catalog', context.nodeCatalogWorkspaceKey)
       )
     case 'workspace://surface/node-catalog/viewport/screenshot':
       return asResourceResult(uri, await captureWorkspaceScreenshot(context, 'node-catalog'))

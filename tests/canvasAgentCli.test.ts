@@ -83,6 +83,7 @@ describe("canvas-agent CLI bootstrap", () => {
                 projectId: "demo",
                 sessionId: "canvas-agent-session-boot",
                 sessionDir: "/tmp/canvas-agent/session-boot",
+                canvasWorkspaceKey: "gallery-demo:canvas",
                 colorAuditWorkspaceKey: "gallery-demo:color-audit",
                 systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
                 nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
@@ -153,6 +154,7 @@ describe("canvas-agent CLI bootstrap", () => {
                 projectId: "demo",
                 sessionId: "canvas-agent-session-system",
                 sessionDir: "/tmp/canvas-agent/session-system",
+                canvasWorkspaceKey: "gallery-demo:canvas",
                 colorAuditWorkspaceKey: "gallery-demo:color-audit",
                 systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
                 nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
@@ -230,6 +232,7 @@ describe("canvas-agent CLI bootstrap", () => {
                 projectId: "demo",
                 sessionId: "canvas-agent-session-events",
                 sessionDir: "/tmp/canvas-agent/session-events",
+                canvasWorkspaceKey: "gallery-demo:canvas",
                 colorAuditWorkspaceKey: "gallery-demo:color-audit",
                 systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
                 nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
@@ -307,6 +310,119 @@ describe("canvas-agent CLI bootstrap", () => {
     })
   })
 
+  it("reads workspace debug through the attached session context", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-debug-"))
+    const contextFilePath = path.join(tempDir, "attached-session.json")
+
+    server = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            bootstrap: {
+              reused: false,
+              surfaceId: "canvas",
+              session: {
+                id: "canvas-agent-session-debug",
+                projectId: "demo",
+                agentId: "codex",
+                agentLabel: "Codex",
+              },
+              context: {
+                serverUrl: "http://127.0.0.1:5194",
+                projectId: "demo",
+                sessionId: "canvas-agent-session-debug",
+                sessionDir: "/tmp/canvas-agent/session-debug",
+                canvasWorkspaceKey: "gallery-demo:canvas",
+                colorAuditWorkspaceKey: "gallery-demo:color-audit",
+                systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
+                nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
+              },
+            },
+          })
+        )
+        return
+      }
+
+      if (
+        req.method === "GET" &&
+        req.url ===
+          "/api/agent-native/workspaces/canvas/debug?workspaceKey=gallery-demo%3Acanvas&limit=12"
+      ) {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            workspaceId: "canvas",
+            workspaceKey: "gallery-demo:canvas",
+            debug: {
+              workspaceId: "canvas",
+              workspaceKey: "gallery-demo:canvas",
+              cursor: 9,
+              appliedCursor: 7,
+              pendingOperationCount: 1,
+              events: [
+                {
+                  id: "canvas-event-7",
+                  workspaceId: "canvas",
+                  workspaceKey: "gallery-demo:canvas",
+                  kind: "state-synced",
+                  actor: "agent",
+                  source: "workspace-sync",
+                  createdAt: "2026-04-04T09:10:00.000Z",
+                },
+              ],
+            },
+          })
+        )
+        return
+      }
+
+      res.statusCode = 404
+      res.end()
+    })
+
+    server.listen(5194, "127.0.0.1")
+    await once(server, "listening")
+
+    const attachResult = await runCli(
+      ["attach", "--project", "demo", "--surface", "canvas", "--server", "http://127.0.0.1:5194", "--json"],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(attachResult.exitCode).toBe(0)
+
+    const commandResult = await runCli(["workspace-debug", "canvas", "12"], {
+      CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+    })
+
+    expect(commandResult.exitCode).toBe(0)
+    expect(commandResult.stderr).toBe("")
+    expect(JSON.parse(commandResult.stdout)).toEqual({
+      workspaceId: "canvas",
+      workspaceKey: "gallery-demo:canvas",
+      cursor: 9,
+      appliedCursor: 7,
+      pendingOperationCount: 1,
+      events: [
+        {
+          id: "canvas-event-7",
+          workspaceId: "canvas",
+          workspaceKey: "gallery-demo:canvas",
+          kind: "state-synced",
+          actor: "agent",
+          source: "workspace-sync",
+          createdAt: "2026-04-04T09:10:00.000Z",
+        },
+      ],
+    })
+  })
+
   it("queues deep System Canvas graph mutations through the attached session context", async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-system-mutate-"))
     const contextFilePath = path.join(tempDir, "attached-session.json")
@@ -332,6 +448,7 @@ describe("canvas-agent CLI bootstrap", () => {
                 projectId: "demo",
                 sessionId: "canvas-agent-session-system-mutate",
                 sessionDir: "/tmp/canvas-agent/session-system-mutate",
+                canvasWorkspaceKey: "gallery-demo:canvas",
                 colorAuditWorkspaceKey: "gallery-demo:color-audit",
                 systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
                 nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",

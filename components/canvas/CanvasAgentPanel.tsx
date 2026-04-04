@@ -276,6 +276,31 @@ export function CanvasAgentPanel({
                     <div>
                       <div className="text-sm font-medium text-gray-950">{agent.label}</div>
                       <div className="mt-1 text-xs text-gray-500">{agent.description}</div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
+                          {agent.transport === "pty" ? "PTY" : "CLI"}
+                        </span>
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          {agent.mcpSupport === "native" ? "Native MCP" : "Planned MCP"}
+                        </span>
+                        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+                          {agent.configScope === "project"
+                            ? "Project config"
+                            : agent.configScope === "global"
+                              ? "Global config"
+                              : "User config"}
+                        </span>
+                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                          {agent.configMode === "strict-config-file"
+                            ? "Strict MCP file"
+                            : "Inline MCP overrides"}
+                        </span>
+                      </div>
+                      {agent.guardNotes && (
+                        <div className="mt-2 text-[11px] leading-5 text-gray-500">
+                          {agent.guardNotes}
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -478,6 +503,7 @@ export function CanvasAgentPanel({
                     <div className="flex items-center justify-between gap-3 text-[11px] text-gray-500">
                       <span>{activeDebug.transcript.length} transcript entries</span>
                       <span>{activeDebug.stateHistory.length} state events</span>
+                      <span>{activeDebug.workspaceEvents?.length || 0} workspace events</span>
                     </div>
                     <div className="mt-2 max-h-36 overflow-y-auto rounded bg-white p-2 font-mono text-[11px] leading-5 text-gray-700">
                       {activeDebug.transcript.length === 0 ? (
@@ -488,6 +514,19 @@ export function CanvasAgentPanel({
                             <span className="text-gray-400">{formatTimestamp(entry.at)}</span>{" "}
                             <span className="font-semibold text-gray-900">{entry.kind}</span>{" "}
                             <span>{entry.text}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className="mt-2 max-h-28 overflow-y-auto rounded bg-white p-2 font-mono text-[11px] leading-5 text-gray-700">
+                      {(activeDebug.workspaceEvents?.length || 0) === 0 ? (
+                        <div className="text-gray-500">No workspace events captured yet.</div>
+                      ) : (
+                        activeDebug.workspaceEvents?.slice(-6).map((entry) => (
+                          <div key={entry.id}>
+                            <span className="text-gray-400">{formatTimestamp(entry.createdAt)}</span>{" "}
+                            <span className="font-semibold text-gray-900">{entry.kind}</span>{" "}
+                            <span>{entry.source}</span>
                           </div>
                         ))
                       )}

@@ -78,6 +78,7 @@ export function appendAgentNativeWorkspaceOperationEvent<TOperation>(
     sourceClientId?: string | null
     source?: string | null
     actor?: "user" | "agent" | "system"
+    metadata?: Record<string, unknown> | null
   }
 ): AgentNativeWorkspaceOperationRecord<TOperation> {
   const event = appendAgentNativeWorkspaceEvent(log, {
@@ -86,7 +87,7 @@ export function appendAgentNativeWorkspaceOperationEvent<TOperation>(
     source: input.source || "agent-native-operation",
     sourceClientId: input.sourceClientId || null,
     operation: input.operation,
-    metadata: null,
+    metadata: input.metadata || null,
     stateSummary: null,
   })
 

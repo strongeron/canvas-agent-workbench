@@ -1,3 +1,8 @@
+import type {
+  AgentCapabilityStatus,
+  AgentWorkspaceEvent,
+} from "./agentNative"
+
 export type CanvasItem =
   | CanvasComponentItem
   | CanvasEmbedItem
@@ -237,6 +242,13 @@ export interface CanvasAgentDefinition {
   label: string
   description: string
   launchCommand: string
+  transport: "cli" | "pty"
+  mcpSupport: "native" | "planned"
+  configScope: "global" | "project" | "user"
+  status: AgentCapabilityStatus
+  configMode: "inline-overrides" | "strict-config-file"
+  startupMode: "inline-bootstrap" | "append-system-prompt"
+  guardNotes?: string | null
 }
 
 export interface CanvasAgentSession {
@@ -345,6 +357,7 @@ export interface CanvasAgentSessionDebug {
   projectState: CanvasStateSnapshot | null
   primitives?: CanvasAgentPrimitive[]
   stateHistory: CanvasAgentStateHistoryEntry[]
+  workspaceEvents?: AgentWorkspaceEvent<CanvasRemoteOperation>[]
   toolCommand: string
   toolExamples: string[]
 }

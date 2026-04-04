@@ -198,6 +198,30 @@ describe("canvas MCP server", () => {
                           },
                         ],
                       }
+                    : requestUrl.pathname === "/api/agent-native/workspaces/canvas/debug"
+                      ? {
+                          ok: true,
+                          workspaceId: "canvas",
+                          workspaceKey: "gallery-demo:canvas",
+                          debug: {
+                            workspaceId: "canvas",
+                            workspaceKey: "gallery-demo:canvas",
+                            cursor: 7,
+                            appliedCursor: 5,
+                            pendingOperationCount: 1,
+                            events: [
+                              {
+                                id: "canvas-event-6",
+                                workspaceId: "canvas",
+                                workspaceKey: "gallery-demo:canvas",
+                                kind: "operation-applied",
+                                actor: "agent",
+                                source: "canvas-agent-mcp",
+                                createdAt: "2026-04-04T09:00:00.000Z",
+                              },
+                            ],
+                          },
+                        }
                   : requestUrl.pathname === "/api/agent-native/workspaces/color-audit/export-preview"
                   ? {
                       exportPreview: {
@@ -270,6 +294,9 @@ describe("canvas MCP server", () => {
         method: "resources/list",
       })) as { result?: { resources?: Array<{ uri: string }> } }
 
+      expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
+        "workspace://surface/canvas/debug"
+      )
       expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
         "workspace://surface/color-audit/state"
       )
@@ -399,9 +426,26 @@ describe("canvas MCP server", () => {
       expect(systemEvents.result?.structuredContent?.events?.[0]?.id).toBe("event-1")
       expect(systemEvents.result?.structuredContent?.events?.[0]?.kind).toBe("operation-queued")
 
-      const generateTemplate = (await sendRpc({
+      const canvasDebug = (await sendRpc({
         jsonrpc: "2.0",
         id: 11,
+        method: "tools/call",
+        params: {
+          name: "get_workspace_debug",
+          arguments: {
+            workspaceId: "canvas",
+            limit: 12,
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(canvasDebug.result?.structuredContent?.workspaceId).toBe("canvas")
+      expect(canvasDebug.result?.structuredContent?.pendingOperationCount).toBe(1)
+      expect(canvasDebug.result?.structuredContent?.events?.[0]?.id).toBe("canvas-event-6")
+
+      const generateTemplate = (await sendRpc({
+        jsonrpc: "2.0",
+        id: 12,
         method: "tools/call",
         params: {
           name: "generate_template",
@@ -426,7 +470,7 @@ describe("canvas MCP server", () => {
 
       const generateScaleGraph = (await sendRpc({
         jsonrpc: "2.0",
-        id: 12,
+        id: 13,
         method: "tools/call",
         params: {
           name: "generate_scale_graph",
@@ -446,7 +490,7 @@ describe("canvas MCP server", () => {
 
       const createSystemNode = (await sendRpc({
         jsonrpc: "2.0",
-        id: 13,
+        id: 14,
         method: "tools/call",
         params: {
           name: "create_system_node",
@@ -479,7 +523,7 @@ describe("canvas MCP server", () => {
 
       const prompt = (await sendRpc({
         jsonrpc: "2.0",
-        id: 14,
+        id: 15,
         method: "prompts/get",
         params: {
           name: "review-scale-system",
@@ -496,7 +540,7 @@ describe("canvas MCP server", () => {
 
       const nodePrompt = (await sendRpc({
         jsonrpc: "2.0",
-        id: 15,
+        id: 16,
         method: "prompts/get",
         params: {
           name: "review-node-system",
@@ -510,6 +554,19 @@ describe("canvas MCP server", () => {
       expect(nodePrompt.result?.messages?.[0]?.content?.text).toContain(
         "workspace://surface/node-catalog/sections"
       )
+
+      const canvasDebugResource = (await sendRpc({
+        jsonrpc: "2.0",
+        id: 17,
+        method: "resources/read",
+        params: {
+          uri: "workspace://surface/canvas/debug",
+        },
+      })) as { result?: { contents?: Array<{ text: string }> } }
+
+      const canvasDebugPayload = JSON.parse(canvasDebugResource.result?.contents?.[0]?.text || "{}")
+      expect(canvasDebugPayload.workspaceKey).toBe("gallery-demo:canvas")
+      expect(canvasDebugPayload.cursor).toBe(7)
     } finally {
       child.kill("SIGTERM")
       await once(child, "exit")

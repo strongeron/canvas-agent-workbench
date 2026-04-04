@@ -1,34 +1,12 @@
 import type {
   AgentNativeManifest,
-  AgentNativeRuntimeDefinition,
   AgentWorkspaceDefinition,
   AgentNativeWorkspaceId,
   WorkspaceManifest,
   WorkspaceManifestStateSummary,
 } from "../types/agentNative"
-
-export const AGENT_NATIVE_RUNTIME_DEFINITIONS: AgentNativeRuntimeDefinition[] = [
-  {
-    id: "codex",
-    label: "Codex CLI",
-    description: "OpenAI Codex CLI session in the current workspace.",
-    launchCommand: "codex",
-    transport: "pty",
-    mcpSupport: "native",
-    configScope: "global",
-    status: "ready",
-  },
-  {
-    id: "claude",
-    label: "Claude Code",
-    description: "Anthropic Claude Code session in the current workspace.",
-    launchCommand: "claude",
-    transport: "pty",
-    mcpSupport: "native",
-    configScope: "project",
-    status: "ready",
-  },
-]
+export { AGENT_NATIVE_RUNTIME_DEFINITIONS } from "./agentNativeRuntimeAdapters"
+import { AGENT_NATIVE_RUNTIME_DEFINITIONS } from "./agentNativeRuntimeAdapters"
 
 export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
   {
@@ -38,7 +16,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
     description:
       "Freeform board with artboards, components, embeds, media, Mermaid diagrams, Excalidraw sketches, and markdown notes.",
     syncMode: "live-bridge",
-    mutationMode: "remote-operations",
+    mutationMode: "event-log",
     entities: ["artboard", "component", "embed", "media", "mermaid", "excalidraw", "markdown"],
     capabilities: [
       "read-state",
@@ -84,6 +62,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         uri: "workspace://surface/canvas/events",
         title: "Canvas event log",
         description: "Append-only event stream for queued operations, applied operations, and synced state.",
+        status: "ready",
+      },
+      {
+        id: "canvas-debug",
+        uri: "workspace://surface/canvas/debug",
+        title: "Canvas event debug",
+        description: "Replay/debug payload with recent canvas events, cursor state, and pending operation counts.",
         status: "ready",
       },
       {
@@ -137,6 +122,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         id: "get_workspace_events",
         title: "Get workspace events",
         description: "Read the append-only event log for the current Canvas workspace.",
+        status: "ready",
+      },
+      {
+        id: "get_workspace_debug",
+        title: "Get workspace debug",
+        description: "Inspect recent Canvas workspace events with cursor and pending-operation state.",
         status: "ready",
       },
     ],
@@ -202,6 +193,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         uri: "workspace://surface/color-audit/events",
         title: "Color Audit event log",
         description: "Append-only event stream for Color Audit operations, applies, and state syncs.",
+        status: "ready",
+      },
+      {
+        id: "color-audit-debug",
+        uri: "workspace://surface/color-audit/debug",
+        title: "Color Audit event debug",
+        description: "Replay/debug payload with recent Color Audit events, cursor state, and pending operations.",
         status: "ready",
       },
       {
@@ -287,6 +285,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         description: "Read the append-only event log for the current Color Audit workspace.",
         status: "ready",
       },
+      {
+        id: "get_workspace_debug",
+        title: "Get workspace debug",
+        description: "Inspect recent Color Audit workspace events with cursor and pending-operation state.",
+        status: "ready",
+      },
     ],
     prompts: [
       {
@@ -345,6 +349,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         uri: "workspace://surface/system-canvas/events",
         title: "System Canvas event log",
         description: "Append-only event stream for System Canvas config updates, graph generation, applies, and state syncs.",
+        status: "ready",
+      },
+      {
+        id: "system-canvas-debug",
+        uri: "workspace://surface/system-canvas/debug",
+        title: "System Canvas event debug",
+        description: "Replay/debug payload with recent System Canvas events, cursor state, and pending operations.",
         status: "ready",
       },
       {
@@ -443,6 +454,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         description: "Read the append-only event log for the current System Canvas workspace.",
         status: "ready",
       },
+      {
+        id: "get_workspace_debug",
+        title: "Get workspace debug",
+        description: "Inspect recent System Canvas workspace events with cursor and pending-operation state.",
+        status: "ready",
+      },
     ],
     prompts: [
       {
@@ -493,6 +510,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "node-catalog-debug",
+        uri: "workspace://surface/node-catalog/debug",
+        title: "Node Catalog event debug",
+        description: "Replay/debug payload with recent Node Catalog events, cursor state, and pending operations.",
+        status: "ready",
+      },
+      {
         id: "node-catalog-viewport-screenshot",
         uri: "workspace://surface/node-catalog/viewport/screenshot",
         title: "Node Catalog screenshot",
@@ -517,6 +541,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         id: "get_workspace_events",
         title: "Get workspace events",
         description: "Read the append-only event log for the current Node Catalog surface.",
+        status: "ready",
+      },
+      {
+        id: "get_workspace_debug",
+        title: "Get workspace debug",
+        description: "Inspect recent Node Catalog workspace events with cursor and pending-operation state.",
         status: "ready",
       },
     ],

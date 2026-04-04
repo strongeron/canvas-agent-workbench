@@ -29,16 +29,18 @@ describe("agent native manifest", () => {
       (workspace) => workspace.id === "canvas"
     )
     expect(canvasWorkspace?.syncMode).toBe("live-bridge")
-    expect(canvasWorkspace?.mutationMode).toBe("remote-operations")
+    expect(canvasWorkspace?.mutationMode).toBe("event-log")
     expect(canvasWorkspace?.entities).toContain("mermaid")
     expect(canvasWorkspace?.entities).toContain("excalidraw")
     expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-state")).toBe(true)
     expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-events")).toBe(true)
+    expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-debug")).toBe(true)
     expect(
       canvasWorkspace?.resources.find((resource) => resource.id === "canvas-viewport-screenshot")?.status
     ).toBe("ready")
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_item")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_events")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_debug")).toBe(true)
     expect(
       canvasWorkspace?.tools.find((tool) => tool.id === "capture_workspace_screenshot")?.status
     ).toBe("ready")
@@ -58,10 +60,16 @@ describe("agent native manifest", () => {
       colorAuditWorkspace?.resources.find((resource) => resource.id === "color-audit-events")?.status
     ).toBe("ready")
     expect(
+      colorAuditWorkspace?.resources.find((resource) => resource.id === "color-audit-debug")?.status
+    ).toBe("ready")
+    expect(
       colorAuditWorkspace?.tools.find((tool) => tool.id === "get_color_audit_state")?.status
     ).toBe("ready")
     expect(
       colorAuditWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status
+    ).toBe("ready")
+    expect(
+      colorAuditWorkspace?.tools.find((tool) => tool.id === "get_workspace_debug")?.status
     ).toBe("ready")
     expect(
       colorAuditWorkspace?.tools.find((tool) => tool.id === "get_color_audit_export_preview")?.status
@@ -101,6 +109,9 @@ describe("agent native manifest", () => {
       systemCanvasWorkspace?.resources.find((resource) => resource.id === "system-canvas-events")?.status
     ).toBe("ready")
     expect(
+      systemCanvasWorkspace?.resources.find((resource) => resource.id === "system-canvas-debug")?.status
+    ).toBe("ready")
+    expect(
       systemCanvasWorkspace?.resources.find((resource) => resource.id === "system-canvas-viewport-screenshot")
         ?.status
     ).toBe("ready")
@@ -109,6 +120,9 @@ describe("agent native manifest", () => {
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "get_workspace_debug")?.status
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.tools.find((tool) => tool.id === "generate_scale_graph")?.status
@@ -158,6 +172,9 @@ describe("agent native manifest", () => {
       nodeCatalogWorkspace?.resources.find((resource) => resource.id === "node-catalog-events")?.status
     ).toBe("ready")
     expect(
+      nodeCatalogWorkspace?.resources.find((resource) => resource.id === "node-catalog-debug")?.status
+    ).toBe("ready")
+    expect(
       nodeCatalogWorkspace?.resources.find((resource) => resource.id === "node-catalog-sections")?.status
     ).toBe("ready")
     expect(
@@ -169,6 +186,9 @@ describe("agent native manifest", () => {
     ).toBe("ready")
     expect(
       nodeCatalogWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status
+    ).toBe("ready")
+    expect(
+      nodeCatalogWorkspace?.tools.find((tool) => tool.id === "get_workspace_debug")?.status
     ).toBe("ready")
     expect(nodeCatalogWorkspace?.prompts.some((prompt) => prompt.id === "review-node-system")).toBe(
       true

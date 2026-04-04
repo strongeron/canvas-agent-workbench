@@ -13,6 +13,7 @@ import {
   formatCanvasAgentShellExports,
   getDefaultCanvasAgentServerUrl,
   getCanvasAgentContextFromEnv,
+  readAgentNativeWorkspaceDebug,
   readAgentNativeManifest,
   readAgentNativeWorkspaceEvents,
   readAgentNativeWorkspaceManifest,
@@ -50,6 +51,7 @@ Usage:
   bin/canvas-agent detach
   bin/canvas-agent workspace-manifest
   bin/canvas-agent workspace-events <workspace-id> [limit]
+  bin/canvas-agent workspace-debug <workspace-id> [limit]
   bin/canvas-agent surface-manifest <workspace-id>
   bin/canvas-agent color-audit-state
   bin/canvas-agent color-audit-export
@@ -249,7 +251,9 @@ async function main() {
       if (!workspaceId) fail('workspace-events requires a workspace id.')
       const limit = args[1] ? Number.parseInt(args[1], 10) : undefined
       const workspaceKey =
-        workspaceId === 'color-audit'
+        workspaceId === 'canvas'
+          ? context.canvasWorkspaceKey
+          : workspaceId === 'color-audit'
           ? context.colorAuditWorkspaceKey
           : workspaceId === 'system-canvas'
             ? context.systemCanvasWorkspaceKey
@@ -263,10 +267,37 @@ async function main() {
       )
       return
     }
+    case 'workspace-debug': {
+      const workspaceId = args[0]?.trim()
+      if (!workspaceId) fail('workspace-debug requires a workspace id.')
+      const limit = args[1] ? Number.parseInt(args[1], 10) : undefined
+      const workspaceKey =
+        workspaceId === 'canvas'
+          ? context.canvasWorkspaceKey
+          : workspaceId === 'color-audit'
+            ? context.colorAuditWorkspaceKey
+            : workspaceId === 'system-canvas'
+              ? context.systemCanvasWorkspaceKey
+              : workspaceId === 'node-catalog'
+                ? context.nodeCatalogWorkspaceKey
+                : undefined
+      writeJson(await readAgentNativeWorkspaceDebug(context, workspaceId, workspaceKey, { limit }))
+      return
+    }
     case 'surface-manifest': {
       const workspaceId = args[0]?.trim()
       if (!workspaceId) fail('surface-manifest requires a workspace id.')
-      writeJson(await readAgentNativeWorkspaceManifest(context, workspaceId))
+      const workspaceKey =
+        workspaceId === 'canvas'
+          ? context.canvasWorkspaceKey
+          : workspaceId === 'color-audit'
+            ? context.colorAuditWorkspaceKey
+            : workspaceId === 'system-canvas'
+              ? context.systemCanvasWorkspaceKey
+              : workspaceId === 'node-catalog'
+                ? context.nodeCatalogWorkspaceKey
+                : undefined
+      writeJson(await readAgentNativeWorkspaceManifest(context, workspaceId, workspaceKey))
       return
     }
     case 'color-audit-state': {

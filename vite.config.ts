@@ -22,10 +22,14 @@ import {
   toPascalCase,
 } from './core/mcp/paper'
 import {
-  AGENT_NATIVE_RUNTIME_DEFINITIONS,
   buildAgentNativeManifest,
   buildWorkspaceManifest,
 } from './utils/agentNativeManifest'
+import {
+  CANVAS_AGENT_RUNTIME_MCP_GUIDANCE,
+  getAgentNativeRuntimeAdapter,
+  listCanvasAgentDefinitions,
+} from './utils/agentNativeRuntimeAdapters'
 import {
   acknowledgeAgentNativeWorkspaceOperations as acknowledgeWorkspaceEventOperations,
   appendAgentNativeWorkspaceEvent as appendWorkspaceEvent,
@@ -159,7 +163,7 @@ async function readJson(req) {
   return JSON.parse(body)
 }
 
-const CANVAS_AGENT_DEFINITIONS = AGENT_NATIVE_RUNTIME_DEFINITIONS
+const CANVAS_AGENT_DEFINITIONS = listCanvasAgentDefinitions()
 
 const CANVAS_AGENT_RUNTIME_ROOT = path.join(__dirname, '.canvas-agent', 'servers')
 const CANVAS_AGENT_DEFAULT_TERMINAL = {
@@ -174,9 +178,7 @@ const CANVAS_MCP_SERVER_ENTRY = path.join(__dirname, 'bin', 'canvas-mcp-server')
 const CANVAS_AGENT_OUTPUT_LIMIT = 200_000
 const CANVAS_AGENT_TRANSCRIPT_LIMIT = 240
 const CANVAS_AGENT_STATE_HISTORY_LIMIT = 80
-const CANVAS_AGENT_MCP_GUIDANCE =
-  'This session is attached to a live canvas MCP server named "canvas". Prefer MCP resources and tools before Bash when the task touches the app surfaces. Start with workspace://manifest or get_workspace_manifest. For the freeform Canvas surface, use get_canvas_context or get_canvas_state, inspect primitives with list_primitives or get_primitive, create boards with create_artboard and create_primitive_item, then use update_item/select_items as needed. For Color Audit review tasks, use get_color_audit_state and get_color_audit_export_preview. For System Canvas review tasks, use get_system_canvas_state. Use export_board only for primitive-only artboards. Use shell and file edits only for repo code changes, tests, or debugging outside the scene graph.'
-const CANVAS_AGENT_CODEX_BOOTSTRAP_PROMPT = `${CANVAS_AGENT_MCP_GUIDANCE} Acknowledge briefly that the canvas MCP tools are available, then wait for the next user task.`
+const CANVAS_AGENT_MCP_GUIDANCE = CANVAS_AGENT_RUNTIME_MCP_GUIDANCE
 
 function normalizeCanvasAgentPrimitivePropSchema(input) {
   if (!input || typeof input !== 'object' || typeof input.type !== 'string') return null
@@ -285,10 +287,6 @@ function normalizeCanvasAgentPrimitiveList(input) {
   return input.map((entry) => normalizeCanvasAgentPrimitiveRecord(entry)).filter(Boolean)
 }
 
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, `'\"'\"'`)}'`
-}
-
 function writeSseEvent(res, eventName, payload) {
   res.write(`event: ${eventName}\n`)
   res.write(`data: ${JSON.stringify(payload)}\n\n`)
@@ -363,12 +361,6 @@ function resolveCanvasAgentServerUrl(server) {
   return 'http://127.0.0.1:5173'
 }
 
-function formatTomlInlineTable(record) {
-  return `{${Object.entries(record)
-    .map(([key, value]) => `${key}=${JSON.stringify(String(value))}`)
-    .join(',')}}`
-}
-
 function buildCanvasAgentMcpServerEnv(session, sessionDir, toolCommand, serverUrl) {
   return {
     CANVAS_AGENT_PROJECT_ID: session.projectId,
@@ -376,6 +368,7 @@ function buildCanvasAgentMcpServerEnv(session, sessionDir, toolCommand, serverUr
     CANVAS_AGENT_SESSION_DIR: sessionDir,
     CANVAS_AGENT_TOOL_COMMAND: toolCommand || CANVAS_AGENT_TOOL_COMMAND,
     CANVAS_AGENT_SERVER_URL: serverUrl,
+    CANVAS_AGENT_CANVAS_WORKSPACE_KEY: `gallery-${session.projectId}:canvas`,
     CANVAS_AGENT_COLOR_AUDIT_WORKSPACE_KEY: `gallery-${session.projectId}:color-audit`,
     CANVAS_AGENT_SYSTEM_CANVAS_WORKSPACE_KEY: `gallery-${session.projectId}:system-canvas`,
     CANVAS_AGENT_NODE_CATALOG_WORKSPACE_KEY: `gallery-${session.projectId}-node-catalog`,
@@ -384,6 +377,7 @@ function buildCanvasAgentMcpServerEnv(session, sessionDir, toolCommand, serverUr
 
 function buildCanvasAgentWorkspaceKeys(projectId) {
   return {
+    canvasWorkspaceKey: `gallery-${projectId}:canvas`,
     colorAuditWorkspaceKey: `gallery-${projectId}:color-audit`,
     systemCanvasWorkspaceKey: `gallery-${projectId}:system-canvas`,
     nodeCatalogWorkspaceKey: `gallery-${projectId}-node-catalog`,
@@ -400,64 +394,9 @@ function buildCanvasAgentBootstrapContext(session, sessionDir, serverUrl) {
   }
 }
 
-function buildClaudeCanvasMcpConfig(session, sessionDir, toolCommand, serverUrl) {
-  return {
-    mcpServers: {
-      [CANVAS_MCP_SERVER_NAME]: {
-        type: 'stdio',
-        command: process.execPath,
-        args: [CANVAS_MCP_SERVER_ENTRY],
-        env: buildCanvasAgentMcpServerEnv(session, sessionDir, toolCommand, serverUrl),
-      },
-    },
-  }
-}
-
-function buildCanvasAgentLaunchMetadata(definition, session, sessionDir, toolCommand, serverUrl) {
-  const mcpEnv = buildCanvasAgentMcpServerEnv(session, sessionDir, toolCommand, serverUrl)
-  const mcpServerCommand = `${process.execPath} ${CANVAS_MCP_SERVER_ENTRY}`
-  const launchCommandBase = definition.launchCommand
-
-  if (definition.id === 'claude') {
-    const mcpConfigPath = path.join(sessionDir, 'canvas-mcp.json')
-    const agentCommand = `${launchCommandBase} --append-system-prompt ${shellQuote(CANVAS_AGENT_MCP_GUIDANCE)} --strict-mcp-config --mcp-config ${shellQuote(mcpConfigPath)}`
-    return {
-      agentCommand,
-      launchCommand: `cd ${JSON.stringify(session.cwd)} && ${agentCommand}`,
-      mcpServerName: CANVAS_MCP_SERVER_NAME,
-      mcpServerCommand,
-      mcpConfigPath,
-      mcpConfigContent: JSON.stringify(
-        buildClaudeCanvasMcpConfig(session, sessionDir, toolCommand, serverUrl),
-        null,
-        2
-      ),
-      startupGuidance: CANVAS_AGENT_MCP_GUIDANCE,
-    }
-  }
-
-  const codexOverrides = [
-    `mcp_servers.${CANVAS_MCP_SERVER_NAME}.command=${JSON.stringify(process.execPath)}`,
-    `mcp_servers.${CANVAS_MCP_SERVER_NAME}.args=${JSON.stringify([CANVAS_MCP_SERVER_ENTRY])}`,
-    `mcp_servers.${CANVAS_MCP_SERVER_NAME}.env=${formatTomlInlineTable(mcpEnv)}`,
-    `mcp_servers.${CANVAS_MCP_SERVER_NAME}.cwd=${JSON.stringify(session.cwd)}`,
-  ]
-  const overrideArgs = codexOverrides.map((override) => `-c ${shellQuote(override)}`).join(' ')
-  const agentCommand = `${launchCommandBase} ${overrideArgs} ${shellQuote(CANVAS_AGENT_CODEX_BOOTSTRAP_PROMPT)}`.trim()
-  return {
-    agentCommand,
-    launchCommand: `cd ${JSON.stringify(session.cwd)} && ${agentCommand}`,
-    mcpServerName: CANVAS_MCP_SERVER_NAME,
-    mcpServerCommand,
-    mcpConfigPath: null,
-    mcpConfigContent: null,
-    startupGuidance: CANVAS_AGENT_MCP_GUIDANCE,
-  }
-}
-
-function resolveCanvasAgentSpawn(definition, session) {
+function resolveCanvasAgentSpawn(runtimeAdapter, session) {
   const cwd = session?.cwd || __dirname
-  const command = session?.agentCommand || definition.launchCommand
+  const command = session?.agentCommand || runtimeAdapter.launchCommand
   if (process.platform === 'win32') {
     const shell = process.env.COMSPEC || 'cmd.exe'
     return {
@@ -3324,7 +3263,6 @@ function paperImportPlugin() {
       const canvasAgentPtysBySession = new Map()
       const canvasAgentOutputBySession = new Map()
       const canvasAgentTranscriptBySession = new Map()
-      const canvasAgentStateHistoryByProject = new Map()
       const canvasAgentPrimitivesByProject = new Map()
       const agentNativeWorkspaceStateByKey = new Map()
       const agentNativeWorkspaceEventsByKey = new Map()
@@ -3357,11 +3295,40 @@ function paperImportPlugin() {
       }
 
       const getCanvasAgentStateHistory = (projectId) => {
-        if (!canvasAgentStateHistoryByProject.has(projectId)) {
-          canvasAgentStateHistoryByProject.set(projectId, [])
-        }
-        return canvasAgentStateHistoryByProject.get(projectId)
+        const log = getAgentNativeWorkspaceEventLog(
+          'canvas',
+          buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey
+        )
+
+        return trimCanvasAgentStateHistory(
+          log.events
+            .filter((entry) => entry.kind === 'state-synced' && entry.stateSummary)
+            .map((entry) => ({
+              id: entry.id,
+              at: entry.createdAt,
+              source: entry.source || 'workspace-sync',
+              itemCount: Number(entry.stateSummary?.itemCount || 0),
+              groupCount: Number(entry.stateSummary?.groupCount || 0),
+              selectedIds: Array.isArray(entry.stateSummary?.selection)
+                ? entry.stateSummary.selection
+                : [],
+              operationType:
+                typeof entry.metadata?.operationType === 'string'
+                  ? entry.metadata.operationType
+                  : null,
+              sessionId:
+                typeof entry.metadata?.sessionId === 'string' ? entry.metadata.sessionId : null,
+              toolName:
+                typeof entry.metadata?.toolName === 'string' ? entry.metadata.toolName : null,
+            }))
+        )
       }
+
+      const buildCanvasStateSummary = (state) => ({
+        itemCount: Array.isArray(state?.items) ? state.items.length : 0,
+        groupCount: Array.isArray(state?.groups) ? state.groups.length : 0,
+        selection: Array.isArray(state?.selectedIds) ? state.selectedIds : [],
+      })
 
       const getAgentNativeWorkspaceStorageKey = (workspaceId, workspaceKey) =>
         `${workspaceId}:${workspaceKey || 'default'}`
@@ -3399,14 +3366,22 @@ function paperImportPlugin() {
         workspaceKey,
         operation,
         sourceClientId,
-        source
+        source,
+        options = {}
       ) => {
         const log = getAgentNativeWorkspaceEventLog(workspaceId, workspaceKey)
         const record = appendAgentNativeWorkspaceOperationEvent(log, {
           operation,
-          sourceClientId: sourceClientId || null,
+          sourceClientId:
+            sourceClientId || (typeof options.sessionId === 'string' ? options.sessionId : null),
           source: source || null,
-          actor: sourceClientId ? 'agent' : 'system',
+          actor:
+            options.actor ||
+            (sourceClientId || options.sessionId || source === 'canvas-ui'
+              ? 'agent'
+              : 'system'),
+          metadata:
+            options.metadata && typeof options.metadata === 'object' ? options.metadata : null,
         })
         return record
       }
@@ -3425,7 +3400,8 @@ function paperImportPlugin() {
         workspaceId,
         workspaceKey,
         payload,
-        sourceClientId
+        sourceClientId,
+        options = {}
       ) => {
         const normalizedWorkspaceKey =
           typeof workspaceKey === 'string' && workspaceKey.trim() ? workspaceKey.trim() : 'default'
@@ -3450,6 +3426,7 @@ function paperImportPlugin() {
               ? payload.stateSummary
               : null,
           metadata: {
+            ...(options.metadata && typeof options.metadata === 'object' ? options.metadata : {}),
             selectedNodeId:
               typeof payload?.selection?.selectedNodeId === 'string' ? payload.selection.selectedNodeId : null,
             selectedEdgeId:
@@ -3482,18 +3459,24 @@ function paperImportPlugin() {
 
       const prepareCanvasAgentSessionLaunch = async (session) => {
         const sessionDir = await ensureCanvasAgentSessionDir(session.id)
-        const launch = buildCanvasAgentLaunchMetadata(
-          CANVAS_AGENT_DEFINITIONS.find((item) => item.id === session.agentId) || {
-            id: session.agentId,
-            label: session.agentLabel,
-            description: '',
-            launchCommand: session.agentCommand || session.launchCommand,
-          },
+        const runtimeAdapter = getAgentNativeRuntimeAdapter(session.agentId)
+        if (!runtimeAdapter) {
+          throw new Error(`Unknown agent runtime: ${session.agentId}`)
+        }
+        const launch = runtimeAdapter.buildLaunchMetadata({
           session,
           sessionDir,
-          session.toolCommand || CANVAS_AGENT_TOOL_COMMAND,
-          resolveCanvasAgentServerUrl(server)
-        )
+          toolCommand: session.toolCommand || CANVAS_AGENT_TOOL_COMMAND,
+          serverUrl: resolveCanvasAgentServerUrl(server),
+          mcpServerName: CANVAS_MCP_SERVER_NAME,
+          mcpServerEntry: CANVAS_MCP_SERVER_ENTRY,
+          mcpEnv: buildCanvasAgentMcpServerEnv(
+            session,
+            sessionDir,
+            session.toolCommand || CANVAS_AGENT_TOOL_COMMAND,
+            resolveCanvasAgentServerUrl(server)
+          ),
+        })
 
         if (launch.mcpConfigPath && launch.mcpConfigContent) {
           await fs.writeFile(launch.mcpConfigPath, launch.mcpConfigContent)
@@ -3548,6 +3531,7 @@ function paperImportPlugin() {
         const primitives = canvasAgentPrimitivesByProject.get(session.projectId) || []
         const transcript = getCanvasAgentTranscript(sessionId)
         const stateHistory = getCanvasAgentStateHistory(session.projectId)
+        const workspaceDebug = getCanvasWorkspaceDebug(session.projectId, 80)
         const toolCommand = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
         const debugPayload = {
           session,
@@ -3556,6 +3540,7 @@ function paperImportPlugin() {
           projectState: stateRecord?.state || null,
           primitives,
           stateHistory,
+          workspaceEvents: workspaceDebug.events,
           toolCommand,
           toolExamples: [
             `${toolCommand} attach --project ${session.projectId} --surface color-audit`,
@@ -3644,29 +3629,12 @@ function paperImportPlugin() {
         return entry
       }
 
-      const pushCanvasAgentStateHistory = (projectId, entry) => {
-        const history = getCanvasAgentStateHistory(projectId)
-        const previousEntry = history[history.length - 1]
-        if (
-          previousEntry &&
-          previousEntry.source === entry.source &&
-          previousEntry.itemCount === entry.itemCount &&
-          previousEntry.groupCount === entry.groupCount &&
-          previousEntry.operationType === entry.operationType &&
-          previousEntry.sessionId === entry.sessionId &&
-          previousEntry.toolName === entry.toolName &&
-          JSON.stringify(previousEntry.selectedIds) === JSON.stringify(entry.selectedIds)
-        ) {
-          return previousEntry
-        }
-        history.push(entry)
-        canvasAgentStateHistoryByProject.set(projectId, trimCanvasAgentStateHistory(history))
-        return entry
-      }
-
       const upsertCanvasAgentState = (projectId, state, sourceClientId, meta = {}) => {
         const normalizedState = normalizeCanvasStateSnapshot(state)
-        const normalizedPrimitives = normalizeCanvasAgentPrimitiveList(meta.primitives)
+        const normalizedPrimitives =
+          Array.isArray(meta.primitives) || (meta.primitives && typeof meta.primitives === 'object')
+            ? normalizeCanvasAgentPrimitiveList(meta.primitives)
+            : canvasAgentPrimitivesByProject.get(projectId) || []
         const record = {
           projectId,
           state: normalizedState,
@@ -3676,29 +3644,65 @@ function paperImportPlugin() {
         }
         canvasAgentStateByProject.set(projectId, record)
         canvasAgentPrimitivesByProject.set(projectId, normalizedPrimitives)
-        pushCanvasAgentStateHistory(projectId, {
-          id: `canvas-agent-state-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          at: record.updatedAt,
-          source:
-            typeof meta.source === 'string' && meta.source.trim()
-              ? meta.source.trim()
-              : sourceClientId
-                ? 'canvas-ui'
-                : 'system',
-          itemCount: normalizedState.items.length,
-          groupCount: normalizedState.groups.length,
-          selectedIds: normalizedState.selectedIds,
-          operationType: meta.operationType || null,
-          sessionId: meta.sessionId || null,
-          toolName: meta.toolName || null,
-        })
+        upsertAgentNativeWorkspaceState(
+          'canvas',
+          buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey,
+          {
+            surface: 'canvas',
+            state: normalizedState,
+            selection: normalizedState.selectedIds,
+            primitives: normalizedPrimitives,
+            stateSummary: buildCanvasStateSummary(normalizedState),
+          },
+          sourceClientId,
+          {
+            metadata: {
+              source:
+                typeof meta.source === 'string' && meta.source.trim()
+                  ? meta.source.trim()
+                  : sourceClientId
+                    ? 'canvas-ui'
+                    : 'system',
+              operationType: meta.operationType || null,
+              sessionId: meta.sessionId || null,
+              toolName: meta.toolName || null,
+            },
+          }
+        )
         void syncCanvasAgentProjectArtifacts(projectId)
         return record
       }
 
+      const buildWorkspaceDebugPayload = (workspaceId, workspaceKey, stateRecord, limit = 60) => {
+        const log = getAgentNativeWorkspaceEventLog(workspaceId, workspaceKey)
+        const nextLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, Number(limit))) : 60
+        const payload = listWorkspaceEvents(log, 0, nextLimit)
+        const pending = listPendingAgentNativeWorkspaceOperations(log, log.appliedCursor)
+
+        return {
+          workspaceId,
+          workspaceKey,
+          cursor: payload.cursor,
+          appliedCursor: log.appliedCursor,
+          updatedAt: stateRecord?.updatedAt || null,
+          stateSummary:
+            stateRecord?.payload?.stateSummary && typeof stateRecord.payload.stateSummary === 'object'
+              ? stateRecord.payload.stateSummary
+              : null,
+          pendingOperationCount: Array.isArray(pending.operations) ? pending.operations.length : 0,
+          events: Array.isArray(payload.events) ? payload.events : [],
+        }
+      }
+
+      const getCanvasWorkspaceDebug = (projectId, limit = 60) => {
+        const workspaceKey = buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey
+        const stateRecord = getAgentNativeWorkspaceStateRecord('canvas', workspaceKey)
+        return buildWorkspaceDebugPayload('canvas', workspaceKey, stateRecord, limit)
+      }
+
       const createCanvasAgentSession = async ({ projectId, agentId, cwd, title }) => {
-        const definition = CANVAS_AGENT_DEFINITIONS.find((item) => item.id === agentId)
-        if (!definition) {
+        const runtimeAdapter = getAgentNativeRuntimeAdapter(agentId)
+        if (!runtimeAdapter) {
           throw new Error(`Unknown agent: ${agentId}`)
         }
         const now = new Date().toISOString()
@@ -3706,20 +3710,20 @@ function paperImportPlugin() {
         const session = {
           id: `canvas-agent-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           projectId,
-          agentId: definition.id,
-          agentLabel: definition.label,
+          agentId: runtimeAdapter.id,
+          agentLabel: runtimeAdapter.label,
           title:
             typeof title === 'string' && title.trim()
               ? title.trim()
-              : `${definition.label} session`,
+              : `${runtimeAdapter.label} session`,
           cwd: safeCwd,
-          agentCommand: definition.launchCommand,
-          launchCommand: `cd ${JSON.stringify(safeCwd)} && ${definition.launchCommand}`,
+          agentCommand: runtimeAdapter.launchCommand,
+          launchCommand: `cd ${JSON.stringify(safeCwd)} && ${runtimeAdapter.launchCommand}`,
           toolCommand: CANVAS_AGENT_TOOL_COMMAND,
           mcpServerName: CANVAS_MCP_SERVER_NAME,
           mcpServerCommand: `${process.execPath} ${CANVAS_MCP_SERVER_ENTRY}`,
           mcpConfigPath: null,
-          startupGuidance: CANVAS_AGENT_MCP_GUIDANCE,
+          startupGuidance: runtimeAdapter.startupGuidance,
           transport: 'manual-cli',
           status: 'configured',
           createdAt: now,
@@ -3739,8 +3743,8 @@ function paperImportPlugin() {
         pushCanvasAgentTranscript(
           session.id,
           'session-created',
-          `Created ${definition.label} session.`,
-          { agentId: definition.id }
+          `Created ${runtimeAdapter.label} session.`,
+          { agentId: runtimeAdapter.id }
         )
         return session
       }
@@ -3852,8 +3856,8 @@ function paperImportPlugin() {
           return session
         }
 
-        const definition = CANVAS_AGENT_DEFINITIONS.find((item) => item.id === session.agentId)
-        if (!definition) {
+        const runtimeAdapter = getAgentNativeRuntimeAdapter(session.agentId)
+        if (!runtimeAdapter) {
           throw new Error(`Unknown agent: ${session.agentId}`)
         }
 
@@ -3864,7 +3868,7 @@ function paperImportPlugin() {
           ...session,
           ...launchUpdates,
         }
-        const spawnConfig = resolveCanvasAgentSpawn(definition, preparedSession)
+        const spawnConfig = resolveCanvasAgentSpawn(runtimeAdapter, preparedSession)
         const sessionEnv = buildCanvasAgentEnv(spawnConfig.cwd, spawnConfig.shell)
         sessionEnv.CANVAS_AGENT_PROJECT_ID = preparedSession.projectId
         sessionEnv.CANVAS_AGENT_SERVER_URL = resolveCanvasAgentServerUrl(server)
@@ -3897,7 +3901,7 @@ function paperImportPlugin() {
         pushCanvasAgentTranscript(
           sessionId,
           'session-started',
-          `Started ${definition.label} session at ${cols}x${rows}.`,
+          `Started ${runtimeAdapter.label} session at ${cols}x${rows}.`,
           { cols, rows, pid: ptyProcess.pid }
         )
 
@@ -3926,7 +3930,7 @@ function paperImportPlugin() {
           appendCanvasAgentOutput(runningSession || session, message)
         })
 
-        appendCanvasAgentOutput(runningSession || session, `[starting ${definition.label}]\r\n`)
+        appendCanvasAgentOutput(runningSession || session, `[starting ${runtimeAdapter.label}]\r\n`)
         appendCanvasAgentOutput(
           runningSession || session,
           `[canvas tool] ${session.toolCommand || CANVAS_AGENT_TOOL_COMMAND} help\r\n`
@@ -3942,6 +3946,24 @@ function paperImportPlugin() {
         source = 'canvas-operation',
         toolName = null,
       }) => {
+        const canvasWorkspaceKey = buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey
+        const operationRecord = appendAgentNativeWorkspaceOperation(
+          'canvas',
+          canvasWorkspaceKey,
+          operation,
+          clientId || null,
+          source,
+          {
+            actor: clientId || sessionId ? 'agent' : 'system',
+            sessionId,
+            metadata: {
+              projectId,
+              sessionId,
+              toolName,
+              operationType: operation?.type || null,
+            },
+          }
+        )
         const currentRecord =
           canvasAgentStateByProject.get(projectId) ||
           upsertCanvasAgentState(projectId, { items: [], groups: [], nextZIndex: 1, selectedIds: [] }, null)
@@ -3952,6 +3974,7 @@ function paperImportPlugin() {
           sessionId,
           toolName,
         })
+        acknowledgeAgentNativeWorkspaceOperations('canvas', canvasWorkspaceKey, operationRecord.cursor)
 
         if (sessionId) {
           pushCanvasAgentTranscript(
@@ -4182,14 +4205,27 @@ function paperImportPlugin() {
         }
 
         const agentNativeWorkspaceMatch = pathname.match(
-          /^\/api\/agent-native\/workspaces\/([^/]+)\/(manifest|state|sections|export-preview|screenshot|operations|events)$/
+          /^\/api\/agent-native\/workspaces\/([^/]+)\/(manifest|state|selection|primitives|sections|export-preview|screenshot|operations|events|debug)$/
         )
         if (agentNativeWorkspaceMatch) {
           const workspaceId = decodeURIComponent(agentNativeWorkspaceMatch[1])
           const resourceName = agentNativeWorkspaceMatch[2]
           const requestUrl = new URL(req.url, 'http://localhost')
-          const workspaceKey = requestUrl.searchParams.get('workspaceKey')?.trim() || 'default'
-          const stateRecord = getAgentNativeWorkspaceStateRecord(workspaceId, workspaceKey)
+          const requestedWorkspaceKey = requestUrl.searchParams.get('workspaceKey')?.trim() || ''
+          const workspaceProjectId = requestUrl.searchParams.get('projectId')?.trim() || 'demo'
+          const workspaceKey =
+            requestedWorkspaceKey ||
+            (workspaceId === 'canvas'
+              ? buildCanvasAgentWorkspaceKeys(workspaceProjectId).canvasWorkspaceKey
+              : 'default')
+          const stateRecord =
+            workspaceId === 'canvas'
+              ? getAgentNativeWorkspaceStateRecord(
+                  workspaceId,
+                  buildCanvasAgentWorkspaceKeys(workspaceProjectId).canvasWorkspaceKey
+                ) ||
+                getAgentNativeWorkspaceStateRecord(workspaceId, workspaceKey)
+              : getAgentNativeWorkspaceStateRecord(workspaceId, workspaceKey)
 
           if (req.method === 'POST' && resourceName === 'screenshot') {
             try {
@@ -4294,6 +4330,35 @@ function paperImportPlugin() {
             })
           }
 
+          if (req.method === 'GET' && resourceName === 'debug') {
+            const limit = Number.parseInt(requestUrl.searchParams.get('limit') || '60', 10)
+            const fallbackDebugStateRecord =
+              workspaceId === 'canvas' && !stateRecord
+                ? (() => {
+                    const canvasState = canvasAgentStateByProject.get(workspaceProjectId) || null
+                    if (!canvasState) return null
+                    return {
+                      updatedAt: canvasState.updatedAt,
+                      payload: {
+                        stateSummary: buildCanvasStateSummary(canvasState.state),
+                      },
+                    }
+                  })()
+                : stateRecord
+            const debug = buildWorkspaceDebugPayload(
+              workspaceId,
+              workspaceKey,
+              fallbackDebugStateRecord,
+              limit
+            )
+            return sendJson(res, 200, {
+              ok: true,
+              workspaceId,
+              workspaceKey,
+              debug,
+            })
+          }
+
           if (req.method === 'POST' && resourceName === 'state') {
             try {
               const body = await readJson(req)
@@ -4335,11 +4400,68 @@ function paperImportPlugin() {
           }
 
           if (req.method === 'GET' && resourceName === 'state') {
+            if (workspaceId === 'canvas' && !stateRecord) {
+              const canvasState = canvasAgentStateByProject.get(workspaceProjectId) || null
+              return sendJson(res, 200, {
+                ok: true,
+                workspaceId,
+                workspaceKey,
+                state: canvasState
+                  ? {
+                      surface: 'canvas',
+                      state: canvasState.state,
+                      selection: canvasState.state.selectedIds,
+                      primitives: canvasState.primitives,
+                      stateSummary: buildCanvasStateSummary(canvasState.state),
+                    }
+                  : null,
+                updatedAt: canvasState?.updatedAt || null,
+              })
+            }
             return sendJson(res, 200, {
               ok: true,
               workspaceId,
               workspaceKey,
               state: stateRecord?.payload || null,
+              updatedAt: stateRecord?.updatedAt || null,
+            })
+          }
+
+          if (req.method === 'GET' && resourceName === 'selection') {
+            if (workspaceId !== 'canvas') {
+              return sendJson(res, 404, { error: 'Selection is not available for this workspace.' })
+            }
+            const fallbackCanvasState = canvasAgentStateByProject.get(workspaceProjectId) || null
+            const selection = Array.isArray(stateRecord?.payload?.selection)
+              ? stateRecord.payload.selection
+              : Array.isArray(stateRecord?.payload?.state?.selectedIds)
+                ? stateRecord.payload.state.selectedIds
+                : Array.isArray(fallbackCanvasState?.state?.selectedIds)
+                  ? fallbackCanvasState.state.selectedIds
+                  : []
+            return sendJson(res, 200, {
+              ok: true,
+              workspaceId,
+              workspaceKey,
+              selection,
+              updatedAt: stateRecord?.updatedAt || null,
+            })
+          }
+
+          if (req.method === 'GET' && resourceName === 'primitives') {
+            if (workspaceId !== 'canvas') {
+              return sendJson(res, 404, { error: 'Primitives are not available for this workspace.' })
+            }
+            const fallbackCanvasState = canvasAgentStateByProject.get(workspaceProjectId) || null
+            return sendJson(res, 200, {
+              ok: true,
+              workspaceId,
+              workspaceKey,
+              primitives: Array.isArray(stateRecord?.payload?.primitives)
+                ? stateRecord.payload.primitives
+                : Array.isArray(fallbackCanvasState?.primitives)
+                  ? fallbackCanvasState.primitives
+                  : [],
               updatedAt: stateRecord?.updatedAt || null,
             })
           }
@@ -4374,7 +4496,11 @@ function paperImportPlugin() {
           }
 
           if (req.method === 'GET' && resourceName === 'manifest') {
-            const currentState = stateRecord?.payload?.stateSummary
+            const currentState =
+              stateRecord?.payload?.stateSummary ||
+              (workspaceId === 'canvas'
+                ? buildCanvasStateSummary(canvasAgentStateByProject.get(workspaceProjectId)?.state)
+                : undefined)
             const manifest =
               workspaceId === 'color-audit'
                 ? buildColorAuditWorkspaceManifest(stateRecord?.payload || null)
@@ -4493,6 +4619,7 @@ function paperImportPlugin() {
 
           const stateRecord = canvasAgentStateByProject.get(session.projectId) || null
           const primitives = canvasAgentPrimitivesByProject.get(session.projectId) || []
+          const workspaceDebug = getCanvasWorkspaceDebug(session.projectId, 80)
           const toolCommand = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
           return sendJson(res, 200, {
             ok: true,
@@ -4503,6 +4630,7 @@ function paperImportPlugin() {
               projectState: stateRecord?.state || null,
               primitives,
               stateHistory: getCanvasAgentStateHistory(session.projectId),
+              workspaceEvents: workspaceDebug.events,
               toolCommand,
               toolExamples: [
                 `${toolCommand} attach --project ${session.projectId} --surface color-audit`,

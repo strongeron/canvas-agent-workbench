@@ -4,7 +4,7 @@ shaping: true
 
 # Agent-Native Canvas Architecture
 
-Date: April 3, 2026
+Date: April 4, 2026
 Status: Active plan
 Selected shape: A
 
@@ -46,8 +46,8 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 | A1 | Shared agent-native manifest listing runtimes and workspaces | In progress |
 | A2 | Shared contract types for runtimes, workspace manifests, resources, tools, prompts, adapters, and events | In progress |
 | A3 | Workspace adapters per surface (`Canvas`, `Color Audit`, `System Canvas`, `Node Catalog`) | Planned |
-| A4 | Runtime adapters per agent (`Codex`, `Claude`, future `Gemini`) | Planned |
-| A5 | Event-log mutation layer for co-editing, replay, undo/redo, and audit trail | Planned |
+| A4 | Runtime adapters per agent (`Codex`, `Claude`, future `Gemini`) | In progress |
+| A5 | Event-log mutation layer for co-editing, replay, undo/redo, and audit trail | In progress |
 | A6 | Dual-context surface access: structured state + visual context | Planned |
 
 ## Fit Check
@@ -64,7 +64,7 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 
 ## Notes
 
-- A still needs a visual context path and a real event log before it fully satisfies R2 and R3 in implementation.
+- A still needs visual-diff validation and fuller runtime lifecycle formalization before it fully satisfies R2 and R3 in implementation.
 - A works incrementally because the existing `Canvas` bridge can remain live while other surfaces move from manifest-only to read/write adapters in slices.
 
 ## Current State
@@ -76,6 +76,7 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 - The local `canvas-agent-mcp` server now exposes manifests, resources, prompts, and screenshot capture for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog`.
 - `Node Catalog` now provides both a visual review route and structured read-only state/sections resources across node families.
 - `bin/canvas-agent attach --project <id>` now bootstraps or reuses a real app-owned session and persists local CLI context, removing the need for manual env setup during Codex-style local usage.
+- `Canvas` now appends queued/applied/state-synced events into the shared workspace event log, and that log is readable over HTTP, local CLI, local MCP, and the in-app agent debug panel.
 
 ### Partially working
 
@@ -83,14 +84,14 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 - `System Canvas` is now exposed as a writable agent-native surface for config patching, view switching, scale-graph generation, theme-var application, and authored node/edge graph mutations, with structured manifest/state resources, app-owned screenshot capture, local CLI + MCP write paths, and event-log-backed mutation delivery.
 - `Node Catalog` is now exposed as a read-only agent-native surface with structured state, section metadata, app-owned screenshot capture, and local CLI + MCP reads.
 - Append-only workspace events are now exposed over HTTP, local CLI, and local MCP for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog`.
+- Replay/debug payloads for workspace events now exist for all surfaces over HTTP, local CLI, and local MCP.
 
 ### Missing
 
 - Shared `WorkspaceAdapter` implementations.
-- Shared `AgentRuntimeAdapter` implementations.
-- Event log as the mutation source of truth for `Canvas`.
-- Multi-surface tool routing in MCP.
-- Replay/debug surface for workspace events and agent actions.
+- Shared `AgentRuntimeAdapter` implementations beyond the new Codex/Claude launch/bootstrap adapters.
+- Multi-surface tool routing in MCP beyond the current hand-wired surface set.
+- Visual-diff screenshot validation.
 
 ## Architecture Layers
 
@@ -144,6 +145,8 @@ Runtime-specific code should stay thin:
 - MCP config wiring
 - transcript parsing
 - runtime-specific guard behavior
+
+Current implementation note: `Codex` and `Claude` now have a shared runtime-adapter registry for launch metadata, MCP bootstrap wiring, config style, and runtime-specific guidance. The next step is pushing more of the existing session lifecycle through that adapter contract instead of leaving it in `vite.config.ts`.
 
 ## Resource Model
 
@@ -203,7 +206,7 @@ Why:
 
 Persistence can still use snapshots. The sync mechanism should use events.
 
-Current implementation note: we now have the event envelope plus append-only event reads across HTTP, CLI, and MCP. `Color Audit` and `System Canvas` mutation delivery now uses that event log on the server side. `Canvas` still uses the older queue path, so replay/debug exists only partially and undo/redo is not unified yet.
+Current implementation note: we now have the event envelope plus append-only event reads across HTTP, CLI, and MCP. `Canvas`, `Color Audit`, and `System Canvas` mutation delivery now uses that event log on the server side. `Canvas` still keeps its queue transport for embedded sessions, but the server interprets those queued operations through the shared event log before state update. Undo/redo is still not unified yet.
 
 ## Slices
 

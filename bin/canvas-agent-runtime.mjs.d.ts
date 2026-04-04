@@ -3,11 +3,13 @@ export interface CanvasAgentContext {
   projectId?: string
   sessionId?: string
   serverUrl: string
+  canvasWorkspaceKey: string
   colorAuditWorkspaceKey: string
   systemCanvasWorkspaceKey: string
   nodeCatalogWorkspaceKey: string
 }
 
+export function buildDefaultCanvasWorkspaceKey(projectId: string): string
 export function buildDefaultColorAuditWorkspaceKey(projectId: string): string
 export function buildDefaultSystemCanvasWorkspaceKey(projectId: string): string
 export function buildDefaultNodeCatalogWorkspaceKey(projectId: string): string
@@ -44,6 +46,12 @@ export function readAgentNativeWorkspaceEvents(
   workspaceKey?: string,
   options?: { cursor?: number; limit?: number }
 ): Promise<{ events: unknown[]; cursor: number }>
+export function readAgentNativeWorkspaceDebug(
+  context: CanvasAgentContext,
+  workspaceId: string,
+  workspaceKey?: string,
+  options?: { limit?: number }
+): Promise<unknown>
 export function readColorAuditState(
   context: CanvasAgentContext,
   workspaceKey?: string
