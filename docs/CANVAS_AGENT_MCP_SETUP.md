@@ -47,9 +47,29 @@ The MCP server and CLI read that file automatically.
 
 ## Claude Code
 
-Repo-local config:
+Real repo-local config:
 
 - [.mcp/claude.canvas-mcp.json](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/.mcp/claude.canvas-mcp.json)
+
+Actual file contents:
+
+```json
+{
+  "mcpServers": {
+    "canvas": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/Users/strongeron/Evil Martians/Open Source/gallery-poc/bin/canvas-mcp-server"
+      ],
+      "env": {
+        "CANVAS_AGENT_CONTEXT_FILE": "/Users/strongeron/Evil Martians/Open Source/gallery-poc/.canvas-agent/attached-session.json",
+        "CANVAS_AGENT_SERVER_URL": "http://127.0.0.1:5178"
+      }
+    }
+  }
+}
+```
 
 Helper launcher:
 
@@ -72,9 +92,22 @@ claude \
 
 ## Codex
 
-Repo-local TOML snippet:
+Real repo-local config:
 
 - [.mcp/codex.canvas-mcp.toml](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/.mcp/codex.canvas-mcp.toml)
+
+Actual file contents:
+
+```toml
+[mcp_servers.canvas]
+command = "node"
+args = ["/Users/strongeron/Evil Martians/Open Source/gallery-poc/bin/canvas-mcp-server"]
+cwd = "/Users/strongeron/Evil Martians/Open Source/gallery-poc"
+
+[mcp_servers.canvas.env]
+CANVAS_AGENT_CONTEXT_FILE = "/Users/strongeron/Evil Martians/Open Source/gallery-poc/.canvas-agent/attached-session.json"
+CANVAS_AGENT_SERVER_URL = "http://127.0.0.1:5178"
+```
 
 Helper launcher:
 
@@ -86,7 +119,7 @@ Run:
 ./scripts/run-codex-canvas-mcp.sh
 ```
 
-The script uses the same inline MCP overrides as the runtime adapter implementation, because Codex is currently configured that way in this repo.
+The script uses the same real inline MCP overrides as the runtime adapter implementation. The TOML file above is also a real repo-local Codex config reference for this workspace.
 
 ## Useful CLI Checks
 
