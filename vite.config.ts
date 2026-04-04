@@ -27,9 +27,18 @@ import {
 } from './utils/agentNativeManifest'
 import {
   CANVAS_AGENT_RUNTIME_MCP_GUIDANCE,
+  buildCanvasAgentSessionDraft,
   getAgentNativeRuntimeAdapter,
   listCanvasAgentDefinitions,
+  resolveAgentRuntimeSpawn,
 } from './utils/agentNativeRuntimeAdapters'
+import {
+  buildAgentNativeWorkspaceScreenshotConfig,
+} from './utils/agentNativeWorkspaceScreenshots'
+import {
+  buildCanvasWorkspaceManifest,
+  buildCanvasWorkspaceStateResource,
+} from './utils/canvasWorkspaceAdapter'
 import {
   acknowledgeAgentNativeWorkspaceOperations as acknowledgeWorkspaceEventOperations,
   appendAgentNativeWorkspaceEvent as appendWorkspaceEvent,
@@ -391,26 +400,6 @@ function buildCanvasAgentBootstrapContext(session, sessionDir, serverUrl) {
     sessionId: session.id,
     sessionDir,
     ...buildCanvasAgentWorkspaceKeys(session.projectId),
-  }
-}
-
-function resolveCanvasAgentSpawn(runtimeAdapter, session) {
-  const cwd = session?.cwd || __dirname
-  const command = session?.agentCommand || runtimeAdapter.launchCommand
-  if (process.platform === 'win32') {
-    const shell = process.env.COMSPEC || 'cmd.exe'
-    return {
-      shell,
-      args: ['/d', '/s', '/c', command],
-      cwd,
-    }
-  }
-
-  const shell = resolveCanvasAgentShell()
-  return {
-    shell,
-    args: ['-lic', command],
-    cwd,
   }
 }
 
@@ -2981,93 +2970,6 @@ async function captureEmbedSnapshotTarget(url, target, provider, force = false) 
   }
 }
 
-function buildAgentNativeCanvasStorageEntries(projectId, snapshot) {
-  if (!snapshot || typeof snapshot !== 'object') return []
-  return [
-    {
-      key: `gallery-${projectId}-state`,
-      value: JSON.stringify(snapshot),
-    },
-  ]
-}
-
-function buildAgentNativeColorCanvasStorageEntries(workspaceId, projectId, snapshot) {
-  if (!snapshot || typeof snapshot !== 'object') return []
-
-  const storageEntries = []
-  const stateValue =
-    snapshot.rawState && typeof snapshot.rawState === 'object'
-      ? JSON.stringify(snapshot.rawState)
-      : null
-
-  if (stateValue) {
-    storageEntries.push({
-      key: `gallery-${projectId}-color-canvas`,
-      value: stateValue,
-    })
-  }
-
-  storageEntries.push({
-    key: `gallery-${projectId}-color-canvas-mode`,
-    value: JSON.stringify(workspaceId === 'system-canvas' ? 'system-canvas' : 'color-audit'),
-  })
-
-  storageEntries.push({
-    key: `gallery-${projectId}-color-canvas-view`,
-    value: JSON.stringify(
-      workspaceId === 'system-canvas' && typeof snapshot.viewMode === 'string' && snapshot.viewMode.trim()
-        ? snapshot.viewMode.trim()
-        : workspaceId === 'system-canvas'
-          ? 'system'
-          : 'color'
-    ),
-  })
-
-  if (
-    workspaceId === 'system-canvas' &&
-    snapshot.scaleConfig &&
-    typeof snapshot.scaleConfig === 'object'
-  ) {
-    storageEntries.push({
-      key: `gallery-${projectId}-design-system-scale`,
-      value: JSON.stringify(snapshot.scaleConfig),
-    })
-  }
-
-  return storageEntries
-}
-
-function buildAgentNativeWorkspaceScreenshotConfig(workspaceId, projectId, snapshot) {
-  switch (workspaceId) {
-    case 'canvas':
-      return {
-        route: `/canvas?project=${encodeURIComponent(projectId)}`,
-        waitForText: 'Canvas',
-        storageEntries: buildAgentNativeCanvasStorageEntries(projectId, snapshot),
-      }
-    case 'color-audit':
-      return {
-        route: `/color-canvas?project=${encodeURIComponent(projectId)}`,
-        waitForText: 'Color Audit',
-        storageEntries: buildAgentNativeColorCanvasStorageEntries(workspaceId, projectId, snapshot),
-      }
-    case 'system-canvas':
-      return {
-        route: `/color-canvas?project=${encodeURIComponent(projectId)}`,
-        waitForText: 'System Canvas',
-        storageEntries: buildAgentNativeColorCanvasStorageEntries(workspaceId, projectId, snapshot),
-      }
-    case 'node-catalog':
-      return {
-        route: `/node-catalog?project=${encodeURIComponent(projectId)}`,
-        waitForText: 'Node Catalog',
-        storageEntries: [],
-      }
-    default:
-      return null
-  }
-}
-
 async function captureAgentNativeWorkspaceScreenshot(input) {
   const config = buildAgentNativeWorkspaceScreenshotConfig(
     input.workspaceId,
@@ -3647,13 +3549,13 @@ function paperImportPlugin() {
         upsertAgentNativeWorkspaceState(
           'canvas',
           buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey,
-          {
-            surface: 'canvas',
+          buildCanvasWorkspaceStateResource({
+            workspaceKey: buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey,
             state: normalizedState,
             selection: normalizedState.selectedIds,
             primitives: normalizedPrimitives,
             stateSummary: buildCanvasStateSummary(normalizedState),
-          },
+          }),
           sourceClientId,
           {
             metadata: {
@@ -3709,32 +3611,16 @@ function paperImportPlugin() {
         const safeCwd = typeof cwd === 'string' && cwd.trim() ? path.resolve(cwd.trim()) : __dirname
         const session = {
           id: `canvas-agent-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          projectId,
-          agentId: runtimeAdapter.id,
-          agentLabel: runtimeAdapter.label,
-          title:
-            typeof title === 'string' && title.trim()
-              ? title.trim()
-              : `${runtimeAdapter.label} session`,
-          cwd: safeCwd,
-          agentCommand: runtimeAdapter.launchCommand,
-          launchCommand: `cd ${JSON.stringify(safeCwd)} && ${runtimeAdapter.launchCommand}`,
-          toolCommand: CANVAS_AGENT_TOOL_COMMAND,
-          mcpServerName: CANVAS_MCP_SERVER_NAME,
-          mcpServerCommand: `${process.execPath} ${CANVAS_MCP_SERVER_ENTRY}`,
-          mcpConfigPath: null,
-          startupGuidance: runtimeAdapter.startupGuidance,
-          transport: 'manual-cli',
-          status: 'configured',
-          createdAt: now,
-          updatedAt: now,
-          cols: CANVAS_AGENT_DEFAULT_TERMINAL.cols,
-          rows: CANVAS_AGENT_DEFAULT_TERMINAL.rows,
-          pid: null,
-          lastStartedAt: null,
-          endedAt: null,
-          exitCode: null,
-          errorMessage: null,
+          ...buildCanvasAgentSessionDraft(runtimeAdapter, {
+            projectId,
+            cwd: safeCwd,
+            title,
+            now,
+            toolCommand: CANVAS_AGENT_TOOL_COMMAND,
+            mcpServerName: CANVAS_MCP_SERVER_NAME,
+            mcpServerEntry: CANVAS_MCP_SERVER_ENTRY,
+            defaultTerminal: CANVAS_AGENT_DEFAULT_TERMINAL,
+          }),
         }
         const sessions = getCanvasAgentSessions(projectId)
         sessions.unshift(session)
@@ -3868,7 +3754,12 @@ function paperImportPlugin() {
           ...session,
           ...launchUpdates,
         }
-        const spawnConfig = resolveCanvasAgentSpawn(runtimeAdapter, preparedSession)
+        const spawnConfig = resolveAgentRuntimeSpawn(runtimeAdapter, preparedSession, {
+          shell: resolveCanvasAgentShell(),
+          platform: process.platform,
+          cwdFallback: __dirname,
+          windowsShell: process.env.COMSPEC || 'cmd.exe',
+        })
         const sessionEnv = buildCanvasAgentEnv(spawnConfig.cwd, spawnConfig.shell)
         sessionEnv.CANVAS_AGENT_PROJECT_ID = preparedSession.projectId
         sessionEnv.CANVAS_AGENT_SERVER_URL = resolveCanvasAgentServerUrl(server)
@@ -4373,12 +4264,34 @@ function paperImportPlugin() {
                 return sendJson(res, 400, { error: 'payload is required.' })
               }
 
-              const record = upsertAgentNativeWorkspaceState(
-                workspaceId,
-                nextWorkspaceKey,
-                body.payload,
-                body.clientId || null
-              )
+              const record =
+                workspaceId === 'canvas'
+                  ? upsertCanvasAgentState(
+                      workspaceProjectId,
+                      body.payload.state,
+                      body.clientId || null,
+                      {
+                        source:
+                          typeof body.payload?.source === 'string' && body.payload.source.trim()
+                            ? body.payload.source.trim()
+                            : 'canvas-ui',
+                        primitives: body.payload.primitives,
+                        sessionId:
+                          typeof body.payload?.sessionId === 'string' && body.payload.sessionId.trim()
+                            ? body.payload.sessionId.trim()
+                            : null,
+                        toolName:
+                          typeof body.payload?.toolName === 'string' && body.payload.toolName.trim()
+                            ? body.payload.toolName.trim()
+                            : null,
+                      }
+                    )
+                  : upsertAgentNativeWorkspaceState(
+                      workspaceId,
+                      nextWorkspaceKey,
+                      body.payload,
+                      body.clientId || null
+                    )
 
               if (Number.isFinite(body.appliedOperationCursor)) {
                 acknowledgeAgentNativeWorkspaceOperations(
@@ -4407,13 +4320,13 @@ function paperImportPlugin() {
                 workspaceId,
                 workspaceKey,
                 state: canvasState
-                  ? {
-                      surface: 'canvas',
+                  ? buildCanvasWorkspaceStateResource({
+                      workspaceKey,
                       state: canvasState.state,
                       selection: canvasState.state.selectedIds,
                       primitives: canvasState.primitives,
                       stateSummary: buildCanvasStateSummary(canvasState.state),
-                    }
+                    })
                   : null,
                 updatedAt: canvasState?.updatedAt || null,
               })
@@ -4502,7 +4415,9 @@ function paperImportPlugin() {
                 ? buildCanvasStateSummary(canvasAgentStateByProject.get(workspaceProjectId)?.state)
                 : undefined)
             const manifest =
-              workspaceId === 'color-audit'
+              workspaceId === 'canvas'
+                ? buildCanvasWorkspaceManifest(stateRecord?.payload || (currentState ? { stateSummary: currentState } : null))
+                : workspaceId === 'color-audit'
                 ? buildColorAuditWorkspaceManifest(stateRecord?.payload || null)
                 : buildWorkspaceManifest(workspaceId, currentState)
 
@@ -4739,7 +4654,15 @@ function paperImportPlugin() {
           const stateRecord = canvasAgentStateByProject.get(projectId) || null
           return sendJson(res, 200, {
             ok: true,
-            state: stateRecord?.state || null,
+            state: stateRecord
+              ? buildCanvasWorkspaceStateResource({
+                  workspaceKey: buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey,
+                  state: stateRecord.state,
+                  selection: stateRecord.state.selectedIds,
+                  primitives: stateRecord.primitives,
+                  stateSummary: buildCanvasStateSummary(stateRecord.state),
+                })
+              : null,
             primitives: stateRecord?.primitives || [],
             updatedAt: stateRecord?.updatedAt || null,
             sourceClientId: stateRecord?.sourceClientId || null,
@@ -4754,12 +4677,21 @@ function paperImportPlugin() {
               return sendJson(res, 400, { error: 'projectId is required.' })
             }
 
-            const stateRecord = upsertCanvasAgentState(projectId, body.state, body.clientId, {
+            const nextState =
+              body.payload && typeof body.payload === 'object' && body.payload.state
+                ? body.payload.state
+                : body.state
+            const nextPrimitives =
+              body.payload && typeof body.payload === 'object' && Array.isArray(body.payload.primitives)
+                ? body.payload.primitives
+                : body.primitives
+
+            const stateRecord = upsertCanvasAgentState(projectId, nextState, body.clientId, {
               source:
                 typeof body.source === 'string' && body.source.trim()
                   ? body.source.trim()
                   : 'canvas-ui',
-              primitives: body.primitives,
+              primitives: nextPrimitives,
               sessionId:
                 typeof body.sessionId === 'string' && body.sessionId.trim()
                   ? body.sessionId.trim()

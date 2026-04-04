@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 
 import {
   AGENT_NATIVE_RUNTIME_ADAPTERS,
+  buildCanvasAgentSessionDraft,
   CANVAS_AGENT_RUNTIME_MCP_GUIDANCE,
   getAgentNativeRuntimeAdapter,
   listCanvasAgentDefinitions,
+  resolveAgentRuntimeSpawn,
 } from "../utils/agentNativeRuntimeAdapters"
 
 describe("agent native runtime adapters", () => {
@@ -90,5 +92,54 @@ describe("agent native runtime adapters", () => {
     expect(launch.mcpConfigContent).toContain('"canvas"')
     expect(launch.mcpConfigContent).toContain('"type": "stdio"')
     expect(launch.startupGuidance).toBe(CANVAS_AGENT_RUNTIME_MCP_GUIDANCE)
+  })
+
+  it("builds a configured session draft from the runtime adapter", () => {
+    const adapter = getAgentNativeRuntimeAdapter("codex")
+    expect(adapter).not.toBeNull()
+
+    const draft = buildCanvasAgentSessionDraft(adapter!, {
+      projectId: "demo",
+      cwd: "/tmp/gallery-poc",
+      now: "2026-04-04T10:00:00.000Z",
+      toolCommand: "bin/canvas-agent",
+      mcpServerName: "canvas",
+      mcpServerEntry: "/tmp/gallery-poc/bin/canvas-mcp-server",
+      defaultTerminal: { cols: 96, rows: 28 },
+    })
+
+    expect(draft).toMatchObject({
+      projectId: "demo",
+      agentId: "codex",
+      agentLabel: "Codex CLI",
+      cwd: "/tmp/gallery-poc",
+      transport: "manual-cli",
+      status: "configured",
+      startupGuidance: CANVAS_AGENT_RUNTIME_MCP_GUIDANCE,
+    })
+  })
+
+  it("resolves runtime spawn config for POSIX shells", () => {
+    const adapter = getAgentNativeRuntimeAdapter("claude")
+    expect(adapter).not.toBeNull()
+
+    const spawnConfig = resolveAgentRuntimeSpawn(
+      adapter!,
+      {
+        cwd: "/tmp/gallery-poc",
+        agentCommand: "claude --strict-mcp-config",
+      },
+      {
+        shell: "/bin/zsh",
+        platform: "darwin",
+        cwdFallback: "/fallback",
+      }
+    )
+
+    expect(spawnConfig).toEqual({
+      shell: "/bin/zsh",
+      args: ["-lic", "claude --strict-mcp-config"],
+      cwd: "/tmp/gallery-poc",
+    })
   })
 })

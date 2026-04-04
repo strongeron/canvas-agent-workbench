@@ -143,6 +143,7 @@ export function useCanvasAgentBridge({
   applyRemoteOperation,
 }: UseCanvasAgentBridgeOptions): UseCanvasAgentBridgeResult {
   const clientIdRef = useRef(`canvas-client-${Math.random().toString(36).slice(2, 10)}`)
+  const canvasWorkspaceKey = projectId ? `gallery-${projectId}:canvas` : null
   const [agents, setAgents] = useState<CanvasAgentDefinition[]>([])
   const [sessions, setSessions] = useState<CanvasAgentSession[]>([])
   const [connectionState, setConnectionState] =
@@ -368,7 +369,9 @@ export function useCanvasAgentBridge({
           refreshSessions(),
           (async () => {
             const response = await fetch(
-              `/api/canvas-agent/state${buildQuery({ projectId })}`
+              `/api/agent-native/workspaces/canvas/state${buildQuery({
+                workspaceKey: canvasWorkspaceKey || undefined,
+              })}`
             )
             if (!response.ok) {
               throw new Error("Failed to load canvas agent state.")
@@ -376,7 +379,7 @@ export function useCanvasAgentBridge({
             const data = await response.json()
             if (cancelled) return
 
-            const remoteState = data.state as CanvasStateSnapshot | null | undefined
+            const remoteState = (data.state?.state ?? null) as CanvasStateSnapshot | null | undefined
             const hasLocalState = snapshot.items.length > 0 || snapshot.groups.length > 0
             if (remoteState && !hasLocalState) {
               replaceState(remoteState)
@@ -403,6 +406,7 @@ export function useCanvasAgentBridge({
     }
   }, [
     loadAgents,
+    canvasWorkspaceKey,
     projectId,
     refreshSessions,
     replaceState,
@@ -515,16 +519,27 @@ export function useCanvasAgentBridge({
       setSyncState("syncing")
       void (async () => {
         try {
-          const response = await fetch("/api/canvas-agent/state", {
+          const response = await fetch("/api/agent-native/workspaces/canvas/state", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              projectId,
+              workspaceKey: canvasWorkspaceKey,
               clientId: clientIdRef.current,
-              state: snapshot,
-              primitives: primitiveSnapshot,
+              payload: {
+                surface: "canvas",
+                workspaceKey: canvasWorkspaceKey,
+                state: snapshot,
+                selection: snapshot.selectedIds,
+                primitives: primitiveSnapshot,
+                stateSummary: {
+                  itemCount: snapshot.items.length,
+                  groupCount: snapshot.groups.length,
+                  selection: snapshot.selectedIds,
+                },
+              },
+              appliedOperationCursor: undefined,
             }),
           })
 
@@ -544,7 +559,7 @@ export function useCanvasAgentBridge({
     }, 350)
 
     return () => window.clearTimeout(timeoutId)
-  }, [bridgeReady, primitiveSnapshot, projectId, snapshot])
+  }, [bridgeReady, canvasWorkspaceKey, primitiveSnapshot, projectId, snapshot])
 
   const status = useMemo<CanvasAgentBridgeStatus>(
     () => ({

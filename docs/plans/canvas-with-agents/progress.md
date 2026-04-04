@@ -7,13 +7,13 @@ Date: April 4, 2026
 | Area | Status | Notes |
 |------|--------|-------|
 | Shared runtime/workspace manifest | In progress | Manifest endpoint exists and now lists runtime/workspace metadata plus resources/tools/prompts. |
-| `Canvas` live bridge | Working | Sessions, transcript, state sync, queue-backed transport, and local CLI + MCP tools/resources/prompts already exist. Canvas mutations now also flow through the shared workspace event log on the server side. |
+| `Canvas` live bridge | Working | Sessions, transcript, state sync, queue-backed transport, and local CLI + MCP tools/resources/prompts already exist. Canvas mutations now also flow through the shared workspace event log on the server side, and Canvas state now uses the same workspace resource shape as the newer surfaces. |
 | `Color Audit` adapter | In progress | State sync, event-log-backed operations, export-preview resources, screenshot capture, and local CLI + MCP writes are now wired. |
 | `System Canvas` adapter | In progress | State sync, event-log-backed operations for config/view/generate/apply plus authored node/edge mutation, screenshot capture, and local CLI + MCP writes are now wired. |
 | `Node Catalog` adapter | In progress | Read-only state sync, sections resource, screenshot capture, and local CLI + MCP reads are now wired; no write tools are needed. |
 | CLI face | In progress | `bin/canvas-agent` now shares Canvas operations with the MCP server, reads `Color Audit`, `System Canvas`, and `Node Catalog`, can request app-owned screenshots, can mutate `Color Audit` and `System Canvas`, supports `attach`/`detach`, and can read append-only workspace events. |
 | Event log | In progress | Event envelope, append-only workspace event storage, HTTP reads, local CLI reads, and local MCP reads now exist. `Canvas`, `Color Audit`, and `System Canvas` mutations are now sourced from the event log on the server side. |
-| Visual context | In progress | App-owned screenshot capture now exists for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog` via the dev server Playwright renderer. |
+| Visual context | In progress | App-owned screenshot capture now exists for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog` via the dev server Playwright renderer, and screenshot route/storage config is now unit-tested. |
 | Runtime adapters | In progress | `Codex` and `Claude` now have shared adapter modules for launch/bootstrap/config wiring; full runtime lifecycle formalization is still incomplete. |
 
 ## Phase Tracker
@@ -30,7 +30,7 @@ Date: April 4, 2026
 ### Phase 2: Workspace adapters
 
 - [ ] Extract generic workspace adapter contract into implementation code
-- [ ] Wrap current `Canvas` bridge with a workspace adapter
+- [x] Wrap current `Canvas` bridge with a workspace adapter
 - [x] Add read-only `Color Audit` adapter foundation
 - [x] Add local MCP read bridge for `Color Audit`
 - [x] Add writable `Color Audit` operations over the shared CLI + MCP flow
@@ -65,7 +65,7 @@ Date: April 4, 2026
 ## Next Active Slice
 
 1. Decide whether the next quality slice should be visual-diff screenshot coverage or runtime bootstrap hardening.
-2. Extract the current `Canvas` bridge behind the shared workspace-adapter contract instead of keeping it as a specialized legacy hook.
+2. Push more of the session lifecycle out of `vite.config.ts` and behind the runtime adapter contract.
 3. Add richer `Color Audit` write tools for export selection, role mapping, and contrast edge management workflows.
 4. Add `Gemini` only when a real runtime integration path exists.
 

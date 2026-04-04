@@ -26,6 +26,20 @@ export interface AgentNativeRuntimeLaunchContext {
   mcpEnv: Record<string, string>
 }
 
+export interface AgentNativeRuntimeSessionDraftInput {
+  projectId: string
+  cwd: string
+  title?: string
+  now: string
+  toolCommand: string
+  mcpServerName: string
+  mcpServerEntry: string
+  defaultTerminal: {
+    cols: number
+    rows: number
+  }
+}
+
 export interface AgentNativeRuntimeAdapter extends AgentNativeRuntimeDefinition {
   configMode: "inline-overrides" | "strict-config-file"
   startupMode: "inline-bootstrap" | "append-system-prompt"
@@ -180,4 +194,65 @@ export function getAgentNativeRuntimeAdapter(runtimeId: string) {
 
 export function listCanvasAgentDefinitions(): CanvasAgentDefinition[] {
   return AGENT_NATIVE_RUNTIME_ADAPTERS.map((adapter) => adapter.toCanvasAgentDefinition())
+}
+
+export function buildCanvasAgentSessionDraft(
+  adapter: AgentNativeRuntimeAdapter,
+  input: AgentNativeRuntimeSessionDraftInput
+) {
+  return {
+    projectId: input.projectId,
+    agentId: adapter.id,
+    agentLabel: adapter.label,
+    title:
+      typeof input.title === "string" && input.title.trim()
+        ? input.title.trim()
+        : `${adapter.label} session`,
+    cwd: input.cwd,
+    agentCommand: adapter.launchCommand,
+    launchCommand: `cd ${JSON.stringify(input.cwd)} && ${adapter.launchCommand}`,
+    toolCommand: input.toolCommand,
+    mcpServerName: input.mcpServerName,
+    mcpServerCommand: `${process.execPath} ${input.mcpServerEntry}`,
+    mcpConfigPath: null,
+    startupGuidance: adapter.startupGuidance,
+    transport: "manual-cli" as const,
+    status: "configured" as const,
+    createdAt: input.now,
+    updatedAt: input.now,
+    cols: input.defaultTerminal.cols,
+    rows: input.defaultTerminal.rows,
+    pid: null,
+    lastStartedAt: null,
+    endedAt: null,
+    exitCode: null,
+    errorMessage: null,
+  }
+}
+
+export function resolveAgentRuntimeSpawn(
+  adapter: AgentNativeRuntimeAdapter,
+  session: Pick<CanvasAgentSession, "cwd" | "agentCommand">,
+  options: {
+    shell: string
+    platform: NodeJS.Platform
+    cwdFallback: string
+    windowsShell?: string
+  }
+) {
+  const cwd = session?.cwd || options.cwdFallback
+  const command = session?.agentCommand || adapter.launchCommand
+  if (options.platform === "win32") {
+    return {
+      shell: options.windowsShell || "cmd.exe",
+      args: ["/d", "/s", "/c", command],
+      cwd,
+    }
+  }
+
+  return {
+    shell: options.shell,
+    args: ["-lic", command],
+    cwd,
+  }
 }

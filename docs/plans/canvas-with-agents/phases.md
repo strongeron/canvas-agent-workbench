@@ -46,7 +46,7 @@ Phase 1: Contract foundation
 
 **Exit criteria:** At least `Canvas`, `Color Audit`, and `System Canvas` expose structured state via workspace adapters or adapter-shaped resources, agents can read them through local MCP, and at least one surface is served through a shared CLI + MCP operations core.
 
-Current note: `Canvas` now uses a shared operations core for CLI and MCP and its server-side mutation path now appends and acknowledges workspace events before updating state. `Color Audit` is writable through the same app-owned agent-native path. `System Canvas` is now writable for config/view/generate/apply plus authored node/edge mutations over HTTP, local CLI, and local MCP, while `Node Catalog` remains read-only.
+Current note: `Canvas` now uses a shared operations core for CLI and MCP, its server-side mutation path now appends and acknowledges workspace events before updating state, and its browser bridge now syncs through the same workspace-state resource shape as the newer surfaces. `Color Audit` is writable through the same app-owned agent-native path. `System Canvas` is now writable for config/view/generate/apply plus authored node/edge mutations over HTTP, local CLI, and local MCP, while `Node Catalog` remains read-only.
 
 Bootstrap note: `bin/canvas-agent attach --project <id>` now creates or reuses a real app session, writes `.canvas-agent/attached-session.json`, and makes later CLI commands work without exported env.
 
@@ -82,7 +82,7 @@ Current note: event envelopes and append-only workspace event reads are now live
 
 **Exit criteria:** Agents can read both state and a current render/screenshot for at least one surface.
 
-Current note: App-owned screenshot capture now works through the Vite/Playwright renderer for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog`. The next improvement is making that visual loop cheaper and more deterministic for long-running sessions.
+Current note: App-owned screenshot capture now works through the Vite/Playwright renderer for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog`. Route/storage configuration for those captures is now unit-tested. The next improvement is true visual-diff coverage for selected surfaces.
 
 ## Phase 5: Runtime adapters
 

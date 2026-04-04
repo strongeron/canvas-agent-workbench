@@ -76,7 +76,7 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 - The local `canvas-agent-mcp` server now exposes manifests, resources, prompts, and screenshot capture for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog`.
 - `Node Catalog` now provides both a visual review route and structured read-only state/sections resources across node families.
 - `bin/canvas-agent attach --project <id>` now bootstraps or reuses a real app-owned session and persists local CLI context, removing the need for manual env setup during Codex-style local usage.
-- `Canvas` now appends queued/applied/state-synced events into the shared workspace event log, and that log is readable over HTTP, local CLI, local MCP, and the in-app agent debug panel.
+- `Canvas` now appends queued/applied/state-synced events into the shared workspace event log, that log is readable over HTTP, local CLI, local MCP, and the in-app agent debug panel, and the Canvas bridge now syncs through the same workspace-state resource shape as the newer surfaces.
 
 ### Partially working
 
@@ -91,7 +91,7 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 - Shared `WorkspaceAdapter` implementations.
 - Shared `AgentRuntimeAdapter` implementations beyond the new Codex/Claude launch/bootstrap adapters.
 - Multi-surface tool routing in MCP beyond the current hand-wired surface set.
-- Visual-diff screenshot validation.
+- Visual-diff screenshot validation beyond the now-tested screenshot route/storage configuration.
 
 ## Architecture Layers
 
