@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "canvas": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/Users/strongeron/Evil Martians/Open Source/gallery-poc/bin/canvas-mcp-server"
+      ],
+      "env": {
+        "CANVAS_AGENT_CONTEXT_FILE": "/Users/strongeron/Evil Martians/Open Source/gallery-poc/.canvas-agent/attached-session.json",
+        "CANVAS_AGENT_SERVER_URL": "http://127.0.0.1:5178"
+      }
+    }
+  }
+}

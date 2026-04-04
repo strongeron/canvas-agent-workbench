@@ -62,6 +62,7 @@ The demo shows how to integrate the gallery with example components (Button, Bad
 ## Canvas Guides
 
 - [Color Canvas README](./docs/COLOR_CANVAS_README.md) — current `Color Audit` and `System Canvas` modes, generated nodes, connectors, and testing scenarios
+- [Canvas Agent MCP Setup](./docs/CANVAS_AGENT_MCP_SETUP.md) — how to attach a session and run Claude Code or Codex against the local stdio MCP server
 - [Relative Color Canvas](./docs/RELATIVE_COLOR_CANVAS.md) — focused guide for manual OKLCH relative-color authoring in `Color Audit`
 
 ## Use in Your Project
