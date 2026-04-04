@@ -40,6 +40,11 @@ A Claude Code or Codex CLI session runs inside the canvas. The agent can read ca
 | R5 | Universal adapter — plug in any AI agent (Gemini, custom, future) not just CLI agents | Must-have |
 | R6 | Observability — read agent session logs (JSONL) for tracing, not full replay | Must-have |
 | R7 | Agent-native: atomic tool primitives, parity with user capabilities, dynamic discovery | Must-have |
+| **R8** | 🟡 Agent composes from registered primitives (Box, Stack, Text, Heading, Surface, Button) — not arbitrary JSX | Must-have |
+| **R9** | 🟡 CLI agents discover primitive schemas (props, families, token usage) via MCP tools — same knowledge CopilotKit actions have | Must-have |
+| **R10** | 🟡 Generated compositions use design tokens (CSS vars) — no hardcoded colors, sizes, or fonts | Must-have |
+| **R11** | 🟡 Canvas exports primitive compositions as clean React + CSS (not canvas-internal format) | Nice-to-have |
+| **R12** | 🟡 Primitive metadata (family, level, htmlTag, exportable, tokenUsage) is the contract between canvas and agents — not CopilotKit action schemas | Must-have |
 
 ---
 
@@ -116,6 +121,11 @@ All three shapes share the same MCP base (all agents speak MCP). They differ in 
 | R5 | Universal adapter — plug in any AI agent not just CLI agents | Must-have | ✅ | ✅ | ✅ |
 | R6 | Observability — read agent session logs (JSONL) for tracing | Must-have | ✅ | ❌ | ✅ |
 | R7 | Agent-native: atomic tools, parity, dynamic discovery | Must-have | ✅ | ❌ | ✅ |
+| R8 | 🟡 Agent composes from registered primitives, not arbitrary JSX | Must-have | ❌ | ❌ | ❌ |
+| R9 | 🟡 CLI agents discover primitive schemas via MCP tools | Must-have | ❌ | ❌ | ❌ |
+| R10 | 🟡 Generated compositions use design tokens, no hardcoded values | Must-have | ✅ | ✅ | ✅ |
+| R11 | 🟡 Canvas exports compositions as clean React + CSS | Nice-to-have | ❌ | ❌ | ❌ |
+| R12 | 🟡 Primitive metadata is the agent-canvas contract | Must-have | ❌ | ❌ | ❌ |
 
 **Notes:**
 - B fails R2: CopilotKit's state sync model (StateDelta/JSON Patch) doesn't natively map to canvas item creation. Canvas state reducer exists — AG-UI adds an abstraction layer between MCP tool calls and canvas mutations without clear benefit.
@@ -123,6 +133,11 @@ All three shapes share the same MCP base (all agents speak MCP). They differ in 
 - B fails R6: CopilotKit has its own lifecycle events but doesn't read Claude Code/Codex JSONL logs. Would need custom integration anyway.
 - B fails R7: CopilotKit's `useCopilotAction` defines tools from the frontend side — opposite of agent-native where the MCP server is the single tool source of truth. Creates two tool definition surfaces.
 - B has 6 flagged unknowns (⚠️) — we don't concretely know how CopilotKit integrates with CLI agent subprocesses.
+- All fail R8: None of A/B/C define primitive-aware tools. `create_node` takes a generic `componentId` — the agent has no guidance toward foundation primitives vs demo components. Need a `list_primitives` or primitive-specific creation tool.
+- All fail R9: MCP tools in A/C return node types (component, embed, artboard) but not PrimitiveMeta (family, level, htmlTag, tokenUsage). The metadata exists in gallery entries but isn't exposed through any tool surface. B has it in-process via `useCopilotReadable` but locked to CopilotKit.
+- R10 passes for all: Primitives already enforce token usage internally (Box uses `--color-surface`, Heading uses `--font-family-display`, etc.). Any agent creating items from registered primitives gets tokens for free.
+- All fail R11: No export mechanism in any shape. Canvas state is internal JSON (`CanvasItem[]`). No codegen path from canvas nodes → React source.
+- All fail R12: PrimitiveMeta exists on `GalleryEntry.primitive` but no shape exposes it through MCP or any external tool surface. The contract exists in TypeScript but not at the protocol level.
 
 ### AI-Native Architecture Comparison
 
@@ -215,6 +230,15 @@ The architecture has three clean layers:
 | D8.1 | JSON file `agent-registry.json`: array of `{ id, name, spawn_command, mcp_config_template, log_path_pattern }` |
 | D8.2 | Add new agent type = add entry to registry. No code changes. |
 | D8.3 | CLI panel reads registry to offer agent picker dropdown |
+| **D9** | 🟡 **Primitive discovery + composition tools** |
+| D9.1 | MCP tool `list_primitives` — returns all registered primitives with full PrimitiveMeta: `{ primitiveId, name, family, level, htmlTag, exportable, tokenUsage, propSchema }`. Reads from Vite state cache (frontend pushes primitive registry alongside canvas state). |
+| D9.2 | MCP tool `get_primitive(primitiveId)` — returns deep detail: prop schema with allowed values, variant examples, canvas default size, token dependencies. Same data CopilotKit's `useCopilotReadable("foundationPrimitives")` exposes today. |
+| D9.3 | MCP tool `create_primitive_board(primitiveIds[], layout, themeId)` — same logic as CopilotKit's `createPrimitiveBoard` action but callable from any MCP client. Agent picks from discovered primitives, not hardcoded IDs. |
+| D9.4 | `create_node` enhanced: when `componentId` matches a registered primitive, tool response includes the primitive's metadata so the agent can reason about composition without extra round-trips. |
+| **D10** | 🟡 **Export pipeline** |
+| D10.1 | MCP tool `export_board(artboardId, format)` — serializes an artboard's primitive tree to clean React + CSS. Format options: `react-tailwind`, `react-css-vars`. Only works for artboards containing exportable primitives. |
+| D10.2 | Vite endpoint `GET /api/canvas/export/:artboardId` — renders the same export for frontend "Copy as React" button. |
+| D10.3 | Export respects primitive metadata: `exportable: true` primitives become React imports, non-exportable nodes become comments/placeholders. Token references stay as CSS var names. |
 
 ---
 
@@ -230,8 +254,13 @@ The architecture has three clean layers:
 | R5 | Universal adapter — plug in any AI agent not just CLI agents | Must-have | ✅ | D8 (registry, new agent = config entry) + D1 (MCP is universal) |
 | R6 | Observability — read agent session logs (JSONL) for tracing | Must-have | ✅ | D7 (reads JSONL, sidebar viewer) |
 | R7 | Agent-native: atomic tools, parity, dynamic discovery | Must-have | ✅ | D1.1 (atomic tools) + D1.2 (list_node_types discovery) + D6.3 (parity) |
+| R8 | Agent composes from registered primitives, not arbitrary JSX | Must-have | ✅ | 🟡 D9.3 (`create_primitive_board` via MCP) + D9.4 (`create_node` returns primitive metadata). Agent discovers primitives first (D9.1), then composes from them. |
+| R9 | CLI agents discover primitive schemas via MCP tools | Must-have | ✅ | 🟡 D9.1 (`list_primitives`) + D9.2 (`get_primitive`) expose full PrimitiveMeta + prop schemas through MCP. |
+| R10 | Generated compositions use design tokens, no hardcoded values | Must-have | ✅ | Primitives already use CSS vars (--color-surface, --font-family-sans, etc.). D5 context includes theme info. Agent creates items using registered components that consume tokens by default. |
+| R11 | Canvas exports compositions as clean React + CSS | Nice-to-have | ✅ | 🟡 D10.1 (`export_board` MCP tool) + D10.2 (Vite export endpoint). Only exportable primitives become React imports. |
+| R12 | Primitive metadata is the agent-canvas contract | Must-have | ✅ | 🟡 D9.1 exposes PrimitiveMeta through MCP. D9.4 returns it inline on `create_node`. D10.3 uses `exportable` flag to determine what exports cleanly. |
 
-All requirements pass. No flagged unknowns.
+**All requirements pass with D9 + D10 additions.** R8, R9, R11, R12 were unaddressed in the original D — now covered by primitive discovery tools (D9) and export pipeline (D10).
 
 ---
 
@@ -272,6 +301,7 @@ Agent ←stdio→ MCP Server ←HTTP→ Vite Server ←SSE/POST→ Canvas Fronte
 | U9 | P3 | SessionLogPanel | session list | render | — | — |
 | U10 | P3 | SessionLogPanel | session selector | click | → N16 | — |
 | U11 | P3 | SessionLogPanel | log entries (tool calls, timing) | render | — | — |
+| 🟡 U12 | P1 | CanvasWorkspace | "Copy as React" export button (per artboard) | click | → N25 | — |
 
 ### Code Affordances
 
@@ -301,6 +331,14 @@ Agent ←stdio→ MCP Server ←HTTP→ Vite Server ←SSE/POST→ Canvas Fronte
 | N18 | P1 | CanvasWorkspace | operation reducer → existing `useCanvasState` dispatch | call | → S5 | → U1 |
 | N19 | P1 | CanvasWorkspace | `pushCanvasState()` on state change | call | → N15 (POST) | — |
 | N20 | P1 | CanvasWorkspace | selection change → `POST /api/canvas/state` | call | → N15 | — |
+| 🟡 **Primitive discovery (D9)** | | | | | | |
+| 🟡 N21 | P5 | CanvasMCP | `list_primitives()` — returns all registered primitives with PrimitiveMeta + prop schemas | tool | → N23 | → N7 |
+| 🟡 N22 | P5 | CanvasMCP | `get_primitive(primitiveId)` — returns deep detail: props, variants, canvas size, tokens | tool | → N23 | → N7 |
+| 🟡 N23 | P4 | ViteMiddleware | `GET /api/canvas/primitives` — reads from primitive registry cache | call | — | → N21, N22, S6 |
+| 🟡 N24 | P1 | CanvasWorkspace | `pushPrimitiveRegistry()` — frontend syncs primitive entries to Vite on project pack change | call | → N23 (POST) | — |
+| 🟡 **Export pipeline (D10)** | | | | | | |
+| 🟡 N25 | P4 | ViteMiddleware | `GET /api/canvas/export/:artboardId` — serializes artboard primitives to React + CSS | call | → S2, S6 | → U12 |
+| 🟡 N26 | P5 | CanvasMCP | `export_board(artboardId, format)` — MCP tool wrapping N25 endpoint | tool | → N25 | → N7 |
 
 ### Data Stores
 
@@ -311,6 +349,7 @@ Agent ←stdio→ MCP Server ←HTTP→ Vite Server ←SSE/POST→ Canvas Fronte
 | S3 | P2 | Agent session state | `{ status: running|stopped|error, sessionId, pid }` |
 | S4 | P4 | SSE event bus | Event emitter: `node_created`, `node_updated`, `node_deleted`, `node_moved` with `{ sessionId, sequenceId, operation, payload }` |
 | S5 | P1 | Canvas state (existing) | `{ items: CanvasItem[], groups: CanvasGroup[], nextZIndex, selectedIds }` — localStorage + IndexedDB |
+| 🟡 S6 | P4 | Primitive registry cache | In-memory copy of primitive entries with PrimitiveMeta + prop schemas. Updated by frontend POST (N24) on project pack change. Read by MCP tools (N21, N22) and export (N25). |
 
 ### Wiring Diagram
 
@@ -319,16 +358,19 @@ flowchart TB
     subgraph P1["P1: Canvas Workspace"]
         U1["U1: canvas items"]
         U2["U2: selection"]
+        U12["🟡 U12: Copy as React button"]
         N17["N17: useAgentEvents() SSE subscriber"]
         N18["N18: operation reducer → useCanvasState"]
         N19["N19: pushCanvasState()"]
         N20["N20: selection change POST"]
+        N24["🟡 N24: pushPrimitiveRegistry()"]
         S5["S5: Canvas state (localStorage)"]
 
         N17 --> N18
         N18 --> S5
         S5 -.-> U1
         U2 --> N20
+        U12 --> N25
     end
 
     subgraph P2["P2: Agent Panel"]
@@ -377,13 +419,19 @@ flowchart TB
         N13["N13: GET /api/agent/events (SSE)"]
         N14["N14: POST /api/agent/operation"]
         N15["N15: GET /api/canvas/state"]
+        N23["🟡 N23: GET /api/canvas/primitives"]
+        N25["🟡 N25: GET /api/canvas/export/:id"]
         S2["S2: canvas state cache"]
         S4["S4: SSE event bus"]
+        S6["🟡 S6: primitive registry cache"]
 
         N14 --> S4
         N14 --> S2
         N15 -.-> S2
         S4 -.-> N13
+        N23 -.-> S6
+        N25 -.-> S2
+        N25 -.-> S6
     end
 
     subgraph P5["P5: Canvas MCP Server"]
@@ -393,12 +441,18 @@ flowchart TB
         N10["N10: delete_node"]
         N11["N11: move_node"]
         N12["N12: get_state / get_node / list_node_types"]
+        N21["🟡 N21: list_primitives"]
+        N22["🟡 N22: get_primitive"]
+        N26["🟡 N26: export_board"]
 
         N7 --> N8
         N7 --> N9
         N7 --> N10
         N7 --> N11
         N7 --> N12
+        N7 --> N21
+        N7 --> N22
+        N7 --> N26
     end
 
     %% Cross-place wiring
@@ -415,6 +469,13 @@ flowchart TB
     %% MCP read tools → Vite server
     N12 --> N15
 
+    %% 🟡 Primitive discovery tools → Vite server
+    N21 --> N23
+    N22 --> N23
+
+    %% 🟡 Export tool → Vite server
+    N26 --> N25
+
     %% Vite SSE → Frontend subscriber
     N13 -.-> N17
     N6 --> N13
@@ -423,10 +484,23 @@ flowchart TB
     N19 --> N15
     N20 --> N15
 
+    %% 🟡 Frontend → Vite primitive registry sync
+    N24 --> N23
+
     %% Read tools return to agent
     N15 -.-> N12
     N12 -.-> N7
     N7 -.-> N5
+
+    %% 🟡 Primitive tools return to agent
+    N23 -.-> N21
+    N23 -.-> N22
+    N21 -.-> N7
+    N22 -.-> N7
+
+    %% 🟡 Export returns to agent
+    N25 -.-> N26
+    N26 -.-> N7
 
     %% Session log reads filesystem
     N16 -.->|JSONL files| S1
@@ -434,10 +508,14 @@ flowchart TB
     classDef ui fill:#ffb6c1,stroke:#d87093,color:#000
     classDef nonui fill:#d3d3d3,stroke:#808080,color:#000
     classDef store fill:#e6e6fa,stroke:#9370db,color:#000
+    classDef new fill:#fffacd,stroke:#daa520,color:#000
 
     class U1,U2,U3,U4,U5,U6,U7,U8,U9,U10,U11 ui
+    class U12 new
     class N1,N2,N3,N4,N5,N6,N7,N8,N9,N10,N11,N12,N13,N14,N15,N16,N17,N18,N19,N20 nonui
+    class N21,N22,N23,N24,N25,N26 new
     class S1,S2,S3,S4,S5 store
+    class S6 new
 ```
 
 ### Key Workflows
@@ -450,6 +528,15 @@ flowchart TB
 
 **3. Agent creates item:**
 `N5 (agent calls create_node) → N7 (stdio) → N8 (tool) → N14 (Vite POST) → S4 (emit SSE) + S2 (update cache) → N13 (SSE) → N17 (subscriber) → N18 (reducer) → S5 (canvas state) → U1 (item renders)`
+
+**🟡 5. Agent discovers primitives:**
+`N5 (agent calls list_primitives) → N7 (stdio) → N21 (tool) → N23 (Vite GET /api/canvas/primitives) → S6 (primitive cache) → returns PrimitiveMeta[] to agent`
+
+**🟡 6. Agent exports board:**
+`N5 (agent calls export_board) → N7 (stdio) → N26 (tool) → N25 (Vite GET /api/canvas/export/:id) → S2 + S6 (resolve items + primitive metadata) → returns React + CSS source to agent`
+
+**🟡 7. User exports from canvas:**
+`U12 (Copy as React button) → N25 (Vite GET) → clipboard`
 
 **4. Frontend keeps server in sync:**
 `S5 (canvas state changes) → N19 (push) → N15 (POST to Vite) → S2 (cache updated)`
@@ -492,6 +579,8 @@ V2: CLI panel (xterm.js)      → Native CLI experience
 V3: SSE pipeline              → Real-time from MCP to canvas
 V4: Observability              → JSONL log viewer
 V5: Agent registry            → Multi-agent config
+V6: Primitive discovery tools  → Agents compose from registered primitives
+V7: Export pipeline            → Canvas → clean React + CSS
 ```
 
 **V0 tests the hard question cheaply. V1-V5 build the hard infrastructure only if V0 validates the concept.**
@@ -637,6 +726,49 @@ V5: Agent registry            → Multi-agent config
 
 ---
 
+### 🟡 V6: Primitive Discovery Tools
+
+**Gate:** V1 works (MCP server exists).
+
+**Goal:** CLI agents discover and compose from registered primitives — not just generic `componentId` strings.
+
+**Affordances from breadboard:**
+
+| # | Affordance | Part |
+|---|------------|------|
+| N21 | `list_primitives()` MCP tool | D9.1 |
+| N22 | `get_primitive(primitiveId)` MCP tool | D9.2 |
+| N23 | `GET /api/canvas/primitives` Vite endpoint | D9.1 |
+| N24 | `pushPrimitiveRegistry()` — frontend syncs primitive entries | D9.1 |
+| S6 | Primitive registry cache (in-memory) | D9.1 |
+
+**Demo:** "Agent calls `list_primitives`, sees Box/Stack/Text/Heading/Surface/Button with prop schemas and token usage. Agent calls `create_node` with `primitive/heading` componentId, gets PrimitiveMeta back in the response."
+
+**What V6 validates:**
+- Can agents reason better about composition when they know primitive families (layout, content, control)?
+- Does the prop schema (allowed values, defaults) reduce hallucinated props?
+- Does `tokenUsage` metadata help agents make theme-aware decisions?
+
+---
+
+### 🟡 V7: Export Pipeline
+
+**Gate:** V6 works (primitives discoverable via MCP).
+
+**Goal:** Canvas compositions become portable React + CSS — not locked in canvas JSON.
+
+**Affordances from breadboard:**
+
+| # | Affordance | Part |
+|---|------------|------|
+| U12 | "Copy as React" button per artboard | D10 |
+| N25 | `GET /api/canvas/export/:artboardId` Vite endpoint | D10.2 |
+| N26 | `export_board(artboardId, format)` MCP tool | D10.1 |
+
+**Demo:** "Agent builds a hero section from primitives on an artboard. User clicks 'Copy as React' — gets clean `<Stack><Heading>...</Heading><Text>...</Text><Button>...</Button></Stack>` with CSS var references. Or agent calls `export_board` and gets the same output programmatically."
+
+---
+
 ### Slice Summary
 
 | # | Slice | Build/Buy | Effort | Demo | Gate |
@@ -647,7 +779,11 @@ V5: Agent registry            → Multi-agent config
 | **V3** | SSE pipeline | Build | Small | "Real-time tool → canvas render" | V2 works |
 | **V4** | Observability | Build | Small | "See tool call log" | V1 works |
 | **V5** | Agent registry | Build | Small | "Add agent to JSON, appears in picker" | V2 works |
+| 🟡 **V6** | Primitive discovery tools | Build | Small | "Agent discovers primitives via MCP" | V1 works |
+| 🟡 **V7** | Export pipeline | Build | Medium | "Artboard → clean React + CSS" | V6 works |
 
 **Note:** V0 may prove CopilotKit is sufficient for many use cases. The chat UI could live alongside the CLI panel permanently — CopilotKit for API agents (Gemini, Claude API), CLI panel for CLI agents (Claude Code, Codex).
+
+**Note:** V6 can run in parallel with V2–V5 — it only depends on V1 (MCP server). V7 depends on V6 (needs primitive metadata to know what's exportable).
 
 ---

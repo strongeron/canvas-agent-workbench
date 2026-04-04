@@ -64,7 +64,8 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 
 ## Notes
 
-- A still needs visual-diff validation and fuller runtime lifecycle formalization before it fully satisfies R2 and R3 in implementation.
+- A now has one live golden visual-diff check over the app-owned screenshot/render path, so R2 is validated beyond pure contract tests for at least one review surface.
+- A now has shared runtime adapters plus a shared runtime session manager, so the remaining runtime work is mostly cleanup of server-side HTTP glue rather than missing lifecycle shape.
 - A works incrementally because the existing `Canvas` bridge can remain live while other surfaces move from manifest-only to read/write adapters in slices.
 
 ## Current State
@@ -88,10 +89,10 @@ For implementation, we should treat the app as a **dual-face capability layer**:
 
 ### Missing
 
-- Shared `WorkspaceAdapter` implementations.
-- Shared `AgentRuntimeAdapter` implementations beyond the new Codex/Claude launch/bootstrap adapters.
-- Multi-surface tool routing in MCP beyond the current hand-wired surface set.
-- Visual-diff screenshot validation beyond the now-tested screenshot route/storage configuration.
+- A fully generic `WorkspaceAdapter` implementation layer instead of today’s surface-specific adapter modules.
+- Broader visual-diff coverage across more than the current `Node Catalog` state-preview slice.
+- Further cleanup of the remaining app-specific session/storage HTTP wiring in `vite.config.ts`.
+- Optional future runtime adapters such as `Gemini`, only when a real integration path exists.
 
 ## Architecture Layers
 
@@ -146,7 +147,7 @@ Runtime-specific code should stay thin:
 - transcript parsing
 - runtime-specific guard behavior
 
-Current implementation note: `Codex` and `Claude` now have a shared runtime-adapter registry for launch metadata, MCP bootstrap wiring, config style, and runtime-specific guidance. The next step is pushing more of the existing session lifecycle through that adapter contract instead of leaving it in `vite.config.ts`.
+Current implementation note: `Codex` and `Claude` now have a shared runtime-adapter registry for launch metadata, MCP bootstrap wiring, config style, and runtime-specific guidance. Session bootstrap/start/stop now run through a shared runtime session manager and browser/runtime helper modules. The next step is reducing the remaining app-specific HTTP/session storage glue in `vite.config.ts`.
 
 ## Resource Model
 
@@ -255,3 +256,4 @@ The next milestone is complete when:
 4. `Node Catalog` has read-only state/sections resources over HTTP, local CLI, and local MCP.
 5. The progress tracker clearly shows what is live, partial, or planned.
 6. At least one surface can be inspected through both structured state and an app-owned screenshot path.
+7. Local CLI bootstrap is good enough that Codex/Claude can attach, read state, mutate supported surfaces, and inspect screenshot/debug output without manual env wiring.

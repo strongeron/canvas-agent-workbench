@@ -5,3 +5,8 @@ dist
 .env
 .env.*
 !.env.example
+.canvas-agent/
+.canvas-media/
+.codex/
+projects/appsignal-local/
+tests/visual-baselines/.tmp/

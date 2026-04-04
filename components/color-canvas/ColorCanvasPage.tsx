@@ -7076,6 +7076,7 @@ export function ColorCanvasPage({
       <div
         ref={rootRef}
         className="flex h-full min-h-0 w-full min-w-0 bg-surface-100"
+        data-node-catalog-root="true"
         data-theme={activeThemeId}
         style={designSystem.cssVars as React.CSSProperties}
       >
@@ -7251,7 +7252,10 @@ export function ColorCanvasPage({
             </div>
 
             {nodeCatalogPreviewNode ? (
-              <section id="node-catalog-section-state-preview">
+              <section
+                id="node-catalog-section-state-preview"
+                data-node-catalog-state-preview="true"
+              >
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-foreground">State preview</div>

@@ -82,7 +82,7 @@ Current note: event envelopes and append-only workspace event reads are now live
 
 **Exit criteria:** Agents can read both state and a current render/screenshot for at least one surface.
 
-Current note: App-owned screenshot capture now works through the Vite/Playwright renderer for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog`. Route/storage configuration for those captures is now unit-tested. The next improvement is true visual-diff coverage for selected surfaces.
+Current note: App-owned screenshot capture now works through the Vite/Playwright renderer for `Canvas`, `Color Audit`, `System Canvas`, and `Node Catalog`. Route/storage configuration for those captures is unit-tested, browser resolution is centralized, and a live golden visual-diff check now exists for the `Node Catalog` state-preview surface. The next improvement is broadening golden coverage to more surfaces.
 
 ## Phase 5: Runtime adapters
 
@@ -98,7 +98,7 @@ Current note: App-owned screenshot capture now works through the Vite/Playwright
 
 **Exit criteria:** Adding a new agent runtime is adapter registration, not workspace rewiring.
 
-Current note: `Codex` and `Claude` now share a dedicated runtime-adapter registry for launch metadata, MCP config wiring, config style, and runtime-specific guard/bootstrap guidance. The remaining work is moving more of the session lifecycle and runtime event handling through that adapter contract.
+Current note: `Codex` and `Claude` now share a dedicated runtime-adapter registry for launch metadata, MCP config wiring, config style, and runtime-specific guard/bootstrap guidance. Session bootstrap/start/stop now run through a shared runtime session manager plus browser/runtime helper modules. The remaining work is mostly shrinking app-specific HTTP glue rather than lifecycle logic.
 
 ---
 

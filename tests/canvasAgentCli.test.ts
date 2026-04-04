@@ -41,6 +41,16 @@ describe("canvas-agent CLI bootstrap", () => {
   let tempDir = ""
   let server: ReturnType<typeof createServer> | null = null
 
+  const listenOnRandomPort = async () => {
+    server?.listen(0, "127.0.0.1")
+    await once(server as ReturnType<typeof createServer>, "listening")
+    const address = server?.address()
+    if (!address || typeof address === "string") {
+      throw new Error("CLI test server did not expose a TCP port.")
+    }
+    return address.port
+  }
+
   afterEach(async () => {
     if (server) {
       await new Promise<void>((resolve, reject) => {
@@ -61,6 +71,7 @@ describe("canvas-agent CLI bootstrap", () => {
   it("attaches to a bootstrap session and persists local context", async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-"))
     const contextFilePath = path.join(tempDir, "attached-session.json")
+    let serverUrl = ""
 
     server = createServer((req, res) => {
       if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
@@ -79,7 +90,7 @@ describe("canvas-agent CLI bootstrap", () => {
                 agentLabel: "Codex",
               },
               context: {
-                serverUrl: "http://127.0.0.1:5188",
+                serverUrl,
                 projectId: "demo",
                 sessionId: "canvas-agent-session-boot",
                 sessionDir: "/tmp/canvas-agent/session-boot",
@@ -98,11 +109,11 @@ describe("canvas-agent CLI bootstrap", () => {
       res.end()
     })
 
-    server.listen(5188, "127.0.0.1")
-    await once(server, "listening")
+    const port = await listenOnRandomPort()
+    serverUrl = `http://127.0.0.1:${port}`
 
     const attachResult = await runCli(
-      ["attach", "--project", "demo", "--surface", "color-audit", "--server", "http://127.0.0.1:5188", "--json"],
+      ["attach", "--project", "demo", "--surface", "color-audit", "--server", serverUrl, "--json"],
       {
         CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
       }
@@ -132,6 +143,7 @@ describe("canvas-agent CLI bootstrap", () => {
   it("uses attached context to queue System Canvas operations without manual env setup", async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-system-"))
     const contextFilePath = path.join(tempDir, "attached-session.json")
+    let serverUrl = ""
 
     server = createServer((req, res) => {
       if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
@@ -150,7 +162,7 @@ describe("canvas-agent CLI bootstrap", () => {
                 agentLabel: "Codex",
               },
               context: {
-                serverUrl: "http://127.0.0.1:5189",
+                serverUrl,
                 projectId: "demo",
                 sessionId: "canvas-agent-session-system",
                 sessionDir: "/tmp/canvas-agent/session-system",
@@ -182,11 +194,11 @@ describe("canvas-agent CLI bootstrap", () => {
       res.end()
     })
 
-    server.listen(5189, "127.0.0.1")
-    await once(server, "listening")
+    const port = await listenOnRandomPort()
+    serverUrl = `http://127.0.0.1:${port}`
 
     const attachResult = await runCli(
-      ["attach", "--project", "demo", "--surface", "system-canvas", "--server", "http://127.0.0.1:5189", "--json"],
+      ["attach", "--project", "demo", "--surface", "system-canvas", "--server", serverUrl, "--json"],
       {
         CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
       }
@@ -210,6 +222,7 @@ describe("canvas-agent CLI bootstrap", () => {
   it("reads workspace events through the attached session context", async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-events-"))
     const contextFilePath = path.join(tempDir, "attached-session.json")
+    let serverUrl = ""
 
     server = createServer((req, res) => {
       if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
@@ -228,7 +241,7 @@ describe("canvas-agent CLI bootstrap", () => {
                 agentLabel: "Codex",
               },
               context: {
-                serverUrl: "http://127.0.0.1:5190",
+                serverUrl,
                 projectId: "demo",
                 sessionId: "canvas-agent-session-events",
                 sessionDir: "/tmp/canvas-agent/session-events",
@@ -276,11 +289,11 @@ describe("canvas-agent CLI bootstrap", () => {
       res.end()
     })
 
-    server.listen(5190, "127.0.0.1")
-    await once(server, "listening")
+    const port = await listenOnRandomPort()
+    serverUrl = `http://127.0.0.1:${port}`
 
     const attachResult = await runCli(
-      ["attach", "--project", "demo", "--surface", "system-canvas", "--server", "http://127.0.0.1:5190", "--json"],
+      ["attach", "--project", "demo", "--surface", "system-canvas", "--server", serverUrl, "--json"],
       {
         CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
       }

@@ -32,9 +32,11 @@ import {
   listCanvasAgentDefinitions,
   resolveAgentRuntimeSpawn,
 } from './utils/agentNativeRuntimeAdapters'
+import { createAgentNativeRuntimeSessionManager } from './utils/agentNativeRuntimeSessions'
 import {
   buildAgentNativeWorkspaceScreenshotConfig,
 } from './utils/agentNativeWorkspaceScreenshots'
+import { resolveAgentNativeBrowserExecutable } from './utils/agentNativeBrowser'
 import {
   buildCanvasWorkspaceManifest,
   buildCanvasWorkspaceStateResource,
@@ -2785,7 +2787,11 @@ async function captureSnapshotWithPlaywright(url, target, options = {}) {
   let browser = null
 
   try {
-    browser = await chromium.launch({ headless: true })
+    const executablePath = resolveAgentNativeBrowserExecutable()
+    browser = await chromium.launch({
+      headless: true,
+      ...(executablePath ? { executablePath } : {}),
+    })
     const context = await browser.newContext({
       viewport,
       deviceScaleFactor: 2,
@@ -3602,124 +3608,6 @@ function paperImportPlugin() {
         return buildWorkspaceDebugPayload('canvas', workspaceKey, stateRecord, limit)
       }
 
-      const createCanvasAgentSession = async ({ projectId, agentId, cwd, title }) => {
-        const runtimeAdapter = getAgentNativeRuntimeAdapter(agentId)
-        if (!runtimeAdapter) {
-          throw new Error(`Unknown agent: ${agentId}`)
-        }
-        const now = new Date().toISOString()
-        const safeCwd = typeof cwd === 'string' && cwd.trim() ? path.resolve(cwd.trim()) : __dirname
-        const session = {
-          id: `canvas-agent-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          ...buildCanvasAgentSessionDraft(runtimeAdapter, {
-            projectId,
-            cwd: safeCwd,
-            title,
-            now,
-            toolCommand: CANVAS_AGENT_TOOL_COMMAND,
-            mcpServerName: CANVAS_MCP_SERVER_NAME,
-            mcpServerEntry: CANVAS_MCP_SERVER_ENTRY,
-            defaultTerminal: CANVAS_AGENT_DEFAULT_TERMINAL,
-          }),
-        }
-        const sessions = getCanvasAgentSessions(projectId)
-        sessions.unshift(session)
-        const launchUpdates = await prepareCanvasAgentSessionLaunch(session)
-        Object.assign(session, launchUpdates)
-        pushCanvasAgentTranscript(
-          session.id,
-          'session-created',
-          `Created ${runtimeAdapter.label} session.`,
-          { agentId: runtimeAdapter.id }
-        )
-        return session
-      }
-
-      const findReusableCanvasAgentSessionForBootstrap = ({ projectId, agentId, cwd }) => {
-        const safeCwd =
-          typeof cwd === 'string' && cwd.trim() ? path.resolve(cwd.trim()) : null
-        const sessions = getCanvasAgentSessions(projectId)
-        return (
-          sessions.find((session) => {
-            if (session.agentId !== agentId) return false
-            if (safeCwd && path.resolve(session.cwd) !== safeCwd) return false
-            return true
-          }) || null
-        )
-      }
-
-      const bootstrapCanvasAgentSession = async ({
-        projectId,
-        agentId,
-        cwd,
-        title,
-        surfaceId,
-        reuseSession = true,
-      }) => {
-        let session =
-          reuseSession === false
-            ? null
-            : findReusableCanvasAgentSessionForBootstrap({
-                projectId,
-                agentId,
-                cwd,
-              })
-        const reused = Boolean(session)
-
-        if (!session) {
-          session = await createCanvasAgentSession({ projectId, agentId, cwd, title })
-        }
-
-        const sessionDir = await ensureCanvasAgentSessionDir(session.id)
-        const launchUpdates = await prepareCanvasAgentSessionLaunch(session)
-        const preparedSession = updateCanvasAgentSession(session.id, launchUpdates) || {
-          ...session,
-          ...launchUpdates,
-        }
-        await syncCanvasAgentSessionArtifacts(preparedSession.id)
-
-        return {
-          reused,
-          surfaceId: typeof surfaceId === 'string' && surfaceId.trim() ? surfaceId.trim() : null,
-          session: preparedSession,
-          context: buildCanvasAgentBootstrapContext(
-            preparedSession,
-            sessionDir,
-            resolveCanvasAgentServerUrl(server)
-          ),
-        }
-      }
-
-      const stopCanvasAgentSession = (sessionId, reason = 'stopped') => {
-        const ptyProcess = canvasAgentPtysBySession.get(sessionId)
-        const session = findCanvasAgentSession(sessionId)
-        if (ptyProcess) {
-          try {
-            ptyProcess.kill()
-          } catch (error) {
-            console.warn(`[canvas agent] Failed to kill session ${sessionId}:`, error)
-          }
-          canvasAgentPtysBySession.delete(sessionId)
-        }
-
-        const nextSession = updateCanvasAgentSession(sessionId, {
-          transport: 'pty',
-          status: reason === 'error' ? 'error' : 'stopped',
-          endedAt: new Date().toISOString(),
-        })
-        if (session) {
-          pushCanvasAgentTranscript(
-            sessionId,
-            reason === 'error' ? 'session-error' : 'session-stopped',
-            reason === 'error'
-              ? `Session stopped with an error.`
-              : `Session stopped by request.`,
-            { status: nextSession?.status || session.status }
-          )
-        }
-        return nextSession
-      }
-
       const appendCanvasAgentOutput = (session, chunk) => {
         if (!session || typeof chunk !== 'string' || chunk.length === 0) return
         const nextOutput = trimCanvasAgentOutput(
@@ -3733,101 +3621,43 @@ function paperImportPlugin() {
         pushCanvasAgentTranscript(session.id, 'output', chunk)
       }
 
-      const startCanvasAgentSession = async (sessionId, dimensions) => {
-        const session = findCanvasAgentSession(sessionId)
-        if (!session) {
-          throw new Error('Canvas agent session not found.')
-        }
-        if (canvasAgentPtysBySession.has(sessionId)) {
-          return session
-        }
-
-        const runtimeAdapter = getAgentNativeRuntimeAdapter(session.agentId)
-        if (!runtimeAdapter) {
-          throw new Error(`Unknown agent: ${session.agentId}`)
-        }
-
-        const cols = Math.max(40, Number(dimensions?.cols || session.cols || CANVAS_AGENT_DEFAULT_TERMINAL.cols))
-        const rows = Math.max(10, Number(dimensions?.rows || session.rows || CANVAS_AGENT_DEFAULT_TERMINAL.rows))
-        const launchUpdates = await prepareCanvasAgentSessionLaunch(session)
-        const preparedSession = updateCanvasAgentSession(sessionId, launchUpdates) || {
-          ...session,
-          ...launchUpdates,
-        }
-        const spawnConfig = resolveAgentRuntimeSpawn(runtimeAdapter, preparedSession, {
+      const runtimeSessionManager = createAgentNativeRuntimeSessionManager({
+        config: {
+          toolCommand: CANVAS_AGENT_TOOL_COMMAND,
+          mcpServerName: CANVAS_MCP_SERVER_NAME,
+          mcpServerEntry: CANVAS_MCP_SERVER_ENTRY,
+          defaultTerminal: CANVAS_AGENT_DEFAULT_TERMINAL,
           shell: resolveCanvasAgentShell(),
           platform: process.platform,
           cwdFallback: __dirname,
           windowsShell: process.env.COMSPEC || 'cmd.exe',
-        })
-        const sessionEnv = buildCanvasAgentEnv(spawnConfig.cwd, spawnConfig.shell)
-        sessionEnv.CANVAS_AGENT_PROJECT_ID = preparedSession.projectId
-        sessionEnv.CANVAS_AGENT_SERVER_URL = resolveCanvasAgentServerUrl(server)
-        sessionEnv.CANVAS_AGENT_SESSION_ID = preparedSession.id
-        sessionEnv.CANVAS_AGENT_SESSION_DIR = getCanvasAgentSessionDir(preparedSession.id)
-        sessionEnv.CANVAS_AGENT_TOOL_COMMAND = preparedSession.toolCommand || CANVAS_AGENT_TOOL_COMMAND
+        },
+        getRuntimeAdapter: getAgentNativeRuntimeAdapter,
+        buildSessionDraft: buildCanvasAgentSessionDraft,
+        resolveRuntimeSpawn: resolveAgentRuntimeSpawn,
+        createSessionId: () =>
+          `canvas-agent-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        getSessions: getCanvasAgentSessions,
+        findSession: findCanvasAgentSession,
+        updateSession: updateCanvasAgentSession,
+        ensureSessionDir: ensureCanvasAgentSessionDir,
+        getSessionDir: getCanvasAgentSessionDir,
+        prepareSessionLaunch: prepareCanvasAgentSessionLaunch,
+        syncSessionArtifacts: syncCanvasAgentSessionArtifacts,
+        buildBootstrapContext: buildCanvasAgentBootstrapContext,
+        resolveServerUrl: () => resolveCanvasAgentServerUrl(server),
+        buildAgentEnv: buildCanvasAgentEnv,
+        pushTranscript: pushCanvasAgentTranscript,
+        appendOutput: appendCanvasAgentOutput,
+        createPty: (shell, args, options) => nodePty.spawn(shell, args, options),
+        sessionPtysById: canvasAgentPtysBySession,
+        sessionOutputById: canvasAgentOutputBySession,
+      })
 
-        const ptyProcess = nodePty.spawn(spawnConfig.shell, spawnConfig.args, {
-          name: 'xterm-256color',
-          cols,
-          rows,
-          cwd: spawnConfig.cwd,
-          env: sessionEnv,
-        })
-
-        canvasAgentPtysBySession.set(sessionId, ptyProcess)
-        canvasAgentOutputBySession.set(sessionId, '')
-
-        const runningSession = updateCanvasAgentSession(sessionId, {
-          transport: 'pty',
-          status: 'running',
-          pid: ptyProcess.pid,
-          cols,
-          rows,
-          lastStartedAt: new Date().toISOString(),
-          endedAt: null,
-          exitCode: null,
-          errorMessage: null,
-        })
-        pushCanvasAgentTranscript(
-          sessionId,
-          'session-started',
-          `Started ${runtimeAdapter.label} session at ${cols}x${rows}.`,
-          { cols, rows, pid: ptyProcess.pid }
-        )
-
-        ptyProcess.onData((data) => {
-          appendCanvasAgentOutput(runningSession || session, data)
-        })
-
-        ptyProcess.onExit(({ exitCode, signal }) => {
-          canvasAgentPtysBySession.delete(sessionId)
-          updateCanvasAgentSession(sessionId, {
-            status: 'exited',
-            endedAt: new Date().toISOString(),
-            exitCode: Number.isFinite(exitCode) ? exitCode : null,
-            pid: null,
-          })
-          pushCanvasAgentTranscript(
-            sessionId,
-            'session-exited',
-            `Session exited${Number.isFinite(exitCode) ? ` with code ${exitCode}` : ''}${signal ? ` (${signal})` : ''}.`,
-            {
-              exitCode: Number.isFinite(exitCode) ? exitCode : null,
-              signal: signal || null,
-            }
-          )
-          const message = `\r\n[session exited${Number.isFinite(exitCode) ? `: ${exitCode}` : ''}${signal ? `, signal ${signal}` : ''}]\r\n`
-          appendCanvasAgentOutput(runningSession || session, message)
-        })
-
-        appendCanvasAgentOutput(runningSession || session, `[starting ${runtimeAdapter.label}]\r\n`)
-        appendCanvasAgentOutput(
-          runningSession || session,
-          `[canvas tool] ${session.toolCommand || CANVAS_AGENT_TOOL_COMMAND} help\r\n`
-        )
-        return runningSession || session
-      }
+      const createCanvasAgentSession = runtimeSessionManager.createSession
+      const bootstrapCanvasAgentSession = runtimeSessionManager.bootstrapSession
+      const stopCanvasAgentSession = runtimeSessionManager.stopSession
+      const startCanvasAgentSession = runtimeSessionManager.startSession
 
       const applyCanvasAgentOperation = ({
         projectId,
