@@ -72,6 +72,26 @@ Supported overrides:
 - `CANVAS_AGENT_HOST`
 - `CANVAS_AGENT_PORT`
 
+## One Command For Codex
+
+You can run the full Codex flow with one command too:
+
+```bash
+npm run agent:codex
+```
+
+That command does the same three steps:
+
+1. starts the dev server on `127.0.0.1:5178` if needed
+2. attaches a `canvas-agent` session for project `demo`
+3. launches Codex with the real checked-in MCP wiring
+
+Optional env overrides:
+
+```bash
+CANVAS_AGENT_PROJECT=demo CANVAS_AGENT_SURFACE=system-canvas npm run agent:codex
+```
+
 ## Claude Code
 
 Real repo-local config:
