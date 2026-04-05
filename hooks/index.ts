@@ -14,6 +14,7 @@ export { useInteractiveProps } from "./useInteractiveProps"
 export { useCanvasState } from "./useCanvasState"
 export { useCanvasTransform } from "./useCanvasTransform"
 export { useCanvasScenes } from "./useCanvasScenes"
+export { useCanvasFiles } from "./useCanvasFiles"
 export { useCanvasShortcuts, CANVAS_SHORTCUTS } from "./useCanvasShortcuts"
 
 // Types

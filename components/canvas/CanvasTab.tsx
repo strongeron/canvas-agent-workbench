@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, useMemo, useRef } from "react"
 
 import { useCanvasAgentBridge } from "../../hooks/useCanvasAgentBridge"
 import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShortcuts"
+import { useCanvasFiles } from "../../hooks/useCanvasFiles"
 import { useCanvasState } from "../../hooks/useCanvasState"
 import { useCanvasScenes } from "../../hooks/useCanvasScenes"
 import { useCanvasTransform } from "../../hooks/useCanvasTransform"
@@ -11,6 +12,7 @@ import { useCopilotCanvasActions } from "../../hooks/useCopilotCanvasActions"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import type {
   DragData,
+  CanvasFileDocument,
   CanvasMediaItem,
   CanvasScene,
   CanvasMermaidItem,
@@ -563,7 +565,9 @@ export function CanvasTab({
     zoomIn,
     zoomOut,
     resetZoom,
+    zoomTo,
     pan,
+    panTo,
     handleWheel,
     fitToView,
     setWorkspaceDimensions,
@@ -581,6 +585,11 @@ export function CanvasTab({
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 })
   const [isImportingPaper, setIsImportingPaper] = useState(false)
   const [importKind, setImportKind] = useState<"ui" | "page">("ui")
+  const [activeCanvasFile, setActiveCanvasFile] = useState<{
+    path: string
+    document: CanvasFileDocument
+  } | null>(null)
+  const [lastSavedCanvasFileSignature, setLastSavedCanvasFileSignature] = useState<string | null>(null)
   const canvasRootRef = useRef<HTMLDivElement>(null)
   const importQueueStorageKey = storageKey
     ? `${storageKey}-imports`
@@ -605,6 +614,17 @@ export function CanvasTab({
       defaultThemes: DEFAULT_THEMES,
       rootRef: canvasRootRef,
     })
+
+  const {
+    files: canvasFiles,
+    isLoading: canvasFilesLoading,
+    isSaving: canvasFilesSaving,
+    error: canvasFilesError,
+    refreshFiles: refreshCanvasFiles,
+    openCanvasFile,
+    createCanvasFile,
+    saveCanvasFile,
+  } = useCanvasFiles(activeProjectId)
 
   // Get the first selected item (for props panel - shows single item when one is selected)
   const selectedItem = selectedIds.length === 1
@@ -641,6 +661,59 @@ export function CanvasTab({
     replaceState,
     applyRemoteOperation,
   })
+
+  const buildCurrentCanvasFilePayload = useCallback(() => {
+    return {
+      document: {
+        items,
+        groups,
+        nextZIndex,
+        selectedIds: [] as string[],
+      },
+      view: {
+        transform,
+      },
+    }
+  }, [groups, items, nextZIndex, transform])
+
+  const currentCanvasFileSignature = useMemo(
+    () => JSON.stringify(buildCurrentCanvasFilePayload()),
+    [buildCurrentCanvasFilePayload]
+  )
+  const activeCanvasFilePath = activeCanvasFile?.path ?? null
+  const activeCanvasFileTitle = activeCanvasFile?.document.meta.title ?? null
+  const canvasFileDirty =
+    activeCanvasFile !== null && lastSavedCanvasFileSignature !== currentCanvasFileSignature
+
+  const applyCanvasFileToWorkspace = useCallback(
+    (file: { path: string; document: CanvasFileDocument }) => {
+      replaceState(file.document.document)
+      setActiveCanvasFile(file)
+      setLastSavedCanvasFileSignature(
+        JSON.stringify({
+          document: file.document.document,
+          view: {
+            transform:
+              file.document.view?.transform ?? { scale: 1, offset: { x: 0, y: 0 } },
+          },
+        })
+      )
+
+      const nextTransform = file.document.view?.transform
+      if (nextTransform) {
+        zoomTo(nextTransform.scale)
+        panTo(nextTransform.offset.x, nextTransform.offset.y)
+      } else {
+        resetZoom()
+      }
+    },
+    [panTo, replaceState, resetZoom, zoomTo]
+  )
+
+  useEffect(() => {
+    setActiveCanvasFile(null)
+    setLastSavedCanvasFileSignature(null)
+  }, [activeProjectId])
 
   useEffect(() => {
     if (!selectedArtboardItem) {
@@ -1585,6 +1658,87 @@ export function CanvasTab({
     )
   }, [])
 
+  const handleOpenCanvasFile = useCallback(
+    async (filePath: string) => {
+      try {
+        const file = await openCanvasFile(filePath)
+        applyCanvasFileToWorkspace(file)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to open canvas file."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [applyCanvasFileToWorkspace, openCanvasFile]
+  )
+
+  const handleCreateCanvasFile = useCallback(async () => {
+    if (!activeProjectId) return
+    const requestedTitle =
+      typeof window === "undefined"
+        ? "Untitled Canvas"
+        : window.prompt("New canvas file title", "Untitled Canvas")
+    if (requestedTitle === null) return
+    const title = requestedTitle.trim() || "Untitled Canvas"
+
+    try {
+      const file = await createCanvasFile({ title })
+      applyCanvasFileToWorkspace(file)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to create canvas file."
+      if (typeof window !== "undefined") {
+        window.alert(message)
+      }
+    }
+  }, [activeProjectId, applyCanvasFileToWorkspace, createCanvasFile])
+
+  const handleSaveCanvasFile = useCallback(async () => {
+    if (!activeProjectId) return
+    const payload = buildCurrentCanvasFilePayload()
+
+    try {
+      if (!activeCanvasFile) {
+        const requestedTitle =
+          typeof window === "undefined"
+            ? "Untitled Canvas"
+            : window.prompt("Save canvas as", "Untitled Canvas")
+        if (requestedTitle === null) return
+        const title = requestedTitle.trim() || "Untitled Canvas"
+        const created = await createCanvasFile({
+          title,
+          document: payload.document,
+          view: payload.view,
+        })
+        setActiveCanvasFile(created)
+        setLastSavedCanvasFileSignature(JSON.stringify(payload))
+        return
+      }
+
+      const saved = await saveCanvasFile(activeCanvasFile.path, {
+        ...activeCanvasFile.document,
+        document: payload.document,
+        view: payload.view,
+      })
+      setActiveCanvasFile(saved)
+      setLastSavedCanvasFileSignature(JSON.stringify(payload))
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save canvas file."
+      if (typeof window !== "undefined") {
+        window.alert(message)
+      }
+    }
+  }, [
+    activeCanvasFile,
+    activeProjectId,
+    buildCurrentCanvasFilePayload,
+    createCanvasFile,
+    saveCanvasFile,
+  ])
+
   // Scene operations
   const handleSaveScene = useCallback(
     async (name: string) => {
@@ -1944,6 +2098,17 @@ export function CanvasTab({
                 onSelectProject={onSelectProject}
                 onCreateProject={onCreateProject}
                 onScanLocalProject={onScanLocalProject}
+                canvasFiles={canvasFiles}
+                activeCanvasFilePath={activeCanvasFilePath}
+                activeCanvasFileTitle={activeCanvasFileTitle}
+                canvasFilesLoading={canvasFilesLoading}
+                canvasFilesSaving={canvasFilesSaving}
+                canvasFilesError={canvasFilesError}
+                canvasFileDirty={canvasFileDirty}
+                onRefreshCanvasFiles={refreshCanvasFiles}
+                onOpenCanvasFile={handleOpenCanvasFile}
+                onCreateCanvasFile={handleCreateCanvasFile}
+                onSaveCanvasFile={handleSaveCanvasFile}
               />
             </div>
           </div>

@@ -1,15 +1,16 @@
 import { useDraggable } from "@dnd-kit/core"
-import { ChevronDown, ChevronRight, GripVertical, Plus, Search } from "lucide-react"
+import { ChevronDown, ChevronRight, FileText, GripVertical, Plus, RefreshCw, Save, Search } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { GalleryEntry } from "../../core/types"
+import type { CanvasFileIndexEntry } from "../../types/canvas"
 import type { PaperImportQueueItem } from "./CanvasTab"
 import { fetchLocalApps, type LocalAppEntry } from "./localAppsService"
 import { inferMediaKindFromFile } from "./mediaStorageService"
 
 /** Component entry type for sidebar */
 type ComponentEntry = GalleryEntry
-type SidebarPanelId = "projects" | "components" | "media" | "embeds" | "diagrams" | "imports"
+type SidebarPanelId = "projects" | "canvases" | "components" | "media" | "embeds" | "diagrams" | "imports"
 type ProjectSidebarEntry = {
   id: string
   label: string
@@ -159,6 +160,17 @@ interface CanvasSidebarProps {
   onSelectProject?: (id: string) => void
   onCreateProject?: () => void
   onScanLocalProject?: () => void | Promise<void>
+  canvasFiles?: CanvasFileIndexEntry[]
+  activeCanvasFilePath?: string | null
+  activeCanvasFileTitle?: string | null
+  canvasFilesLoading?: boolean
+  canvasFilesSaving?: boolean
+  canvasFilesError?: string | null
+  canvasFileDirty?: boolean
+  onRefreshCanvasFiles?: () => void | Promise<void>
+  onOpenCanvasFile?: (filePath: string) => void | Promise<void>
+  onCreateCanvasFile?: () => void | Promise<void>
+  onSaveCanvasFile?: () => void | Promise<void>
 }
 
 export function CanvasSidebar({
@@ -177,8 +189,20 @@ export function CanvasSidebar({
   onSelectProject,
   onCreateProject,
   onScanLocalProject,
+  canvasFiles,
+  activeCanvasFilePath,
+  activeCanvasFileTitle,
+  canvasFilesLoading,
+  canvasFilesSaving,
+  canvasFilesError,
+  canvasFileDirty,
+  onRefreshCanvasFiles,
+  onOpenCanvasFile,
+  onCreateCanvasFile,
+  onSaveCanvasFile,
 }: CanvasSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [canvasSearchQuery, setCanvasSearchQuery] = useState("")
   const [embedUrl, setEmbedUrl] = useState("")
   const [localPort, setLocalPort] = useState("3000")
   const [localPath, setLocalPath] = useState("/")
@@ -204,6 +228,7 @@ export function CanvasSidebar({
   const [expandedComponents, setExpandedComponents] = useState<Set<string>>(new Set())
   const [collapsedPanels, setCollapsedPanels] = useState<Record<SidebarPanelId, boolean>>({
     projects: false,
+    canvases: false,
     components: false,
     media: false,
     embeds: false,
@@ -329,6 +354,19 @@ export function CanvasSidebar({
   const activeProject = projects?.find((project) => project.id === activeProjectId) || null
   const activeLocalScan = activeProject?.localScan || null
   const activeLocalScanSyncedLabel = formatRelativeSyncTime(activeLocalScan?.scannedAt)
+  const filteredCanvasFiles = useMemo(() => {
+    if (!canvasFiles) return []
+    if (!canvasSearchQuery.trim()) return canvasFiles
+    const query = canvasSearchQuery.trim().toLowerCase()
+    return canvasFiles.filter((file) => {
+      const folderPath = file.path.split("/").slice(0, -1).join("/")
+      return (
+        file.title.toLowerCase().includes(query) ||
+        file.path.toLowerCase().includes(query) ||
+        folderPath.toLowerCase().includes(query)
+      )
+    })
+  }, [canvasFiles, canvasSearchQuery])
 
   return (
     <aside className="flex h-full min-h-0 w-72 shrink-0 flex-col overflow-y-auto border-r border-default bg-white">
@@ -454,6 +492,152 @@ export function CanvasSidebar({
                   </div>
                 </div>
               ) : null}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeProjectId && (
+        <div className="border-b border-default p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => togglePanel("canvases")}
+              className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              {collapsedPanels.canvases ? (
+                <ChevronRight className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+              <span>Canvases</span>
+            </button>
+            <div className="flex items-center gap-1">
+              {onRefreshCanvasFiles && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onRefreshCanvasFiles()
+                  }}
+                  className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+                  aria-label="Refresh canvas files"
+                  title="Refresh canvas files"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${canvasFilesLoading ? "animate-spin" : ""}`} />
+                </button>
+              )}
+              {onSaveCanvasFile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onSaveCanvasFile()
+                  }}
+                  className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+                  aria-label="Save current canvas file"
+                  title="Save current canvas file"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {onCreateCanvasFile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onCreateCanvasFile()
+                  }}
+                  className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+                  aria-label="Create canvas file"
+                  title="Create canvas file"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+          {!collapsedPanels.canvases && (
+            <div className="space-y-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                <input
+                  type="text"
+                  value={canvasSearchQuery}
+                  onChange={(e) => setCanvasSearchQuery(e.target.value)}
+                  placeholder="Search canvases..."
+                  className="w-full rounded-md border border-default bg-white py-1.5 pl-8 pr-3 text-sm text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+              </div>
+              <div className="rounded-md border border-default bg-surface-50/60 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Current file
+                </p>
+                <p className="mt-1 truncate text-sm font-medium text-foreground">
+                  {activeCanvasFileTitle || "Unsaved canvas"}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {activeCanvasFilePath || "Create or save a real .canvas file for this board."}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {canvasFileDirty ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                      Unsaved changes
+                    </span>
+                  ) : !activeCanvasFilePath ? (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                      Local draft
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                      Saved
+                    </span>
+                  )}
+                  {canvasFilesSaving ? (
+                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
+                      Saving…
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              {canvasFilesError ? (
+                <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {canvasFilesError}
+                </div>
+              ) : null}
+              <div className="max-h-56 overflow-y-auto rounded-md border border-default">
+                {filteredCanvasFiles.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                    {canvasFilesLoading ? "Loading canvas files…" : "No canvas files yet"}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-default">
+                    {filteredCanvasFiles.map((file) => {
+                      const folderPath = file.path.split("/").slice(0, -1).join("/")
+                      const isActive = activeCanvasFilePath === file.path
+                      return (
+                        <button
+                          key={file.path}
+                          type="button"
+                          onClick={() => {
+                            void onOpenCanvasFile?.(file.path)
+                          }}
+                          className={`flex w-full items-start gap-2 px-3 py-2 text-left transition-colors ${
+                            isActive ? "bg-brand-50" : "hover:bg-surface-50"
+                          }`}
+                        >
+                          <FileText className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? "text-brand-700" : "text-muted-foreground"}`} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-foreground">
+                              {file.title}
+                            </span>
+                            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                              {folderPath || "root"} · {file.itemCount} items
+                            </span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

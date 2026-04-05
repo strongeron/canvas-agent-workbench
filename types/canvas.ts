@@ -204,6 +204,47 @@ export interface CanvasScene {
   thumbnail?: string
 }
 
+export type CanvasDocumentSurface = "canvas" | "color-audit" | "system-canvas"
+
+export interface CanvasFileMeta {
+  id: string
+  title: string
+  slug: string
+  projectId: string
+  createdAt: string
+  updatedAt: string
+  tags: string[]
+  favorite: boolean
+  archived: boolean
+}
+
+export interface CanvasFileDocument {
+  kind: "gallery-poc.canvas"
+  schemaVersion: number
+  surface: CanvasDocumentSurface
+  meta: CanvasFileMeta
+  document: CanvasStateSnapshot
+  view?: {
+    transform?: CanvasTransform
+  }
+}
+
+export interface CanvasFileIndexEntry {
+  id: string
+  projectId: string
+  path: string
+  title: string
+  surface: CanvasDocumentSurface
+  updatedAt: string
+  createdAt: string
+  tags: string[]
+  favorite: boolean
+  archived: boolean
+  itemCount: number
+  groupCount: number
+  thumbnail?: string
+}
+
 export interface CanvasState {
   items: CanvasItem[]
   groups: CanvasGroup[]

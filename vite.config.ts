@@ -42,6 +42,13 @@ import {
   buildCanvasWorkspaceStateResource,
 } from './utils/canvasWorkspaceAdapter'
 import {
+  createCanvasFile,
+  ensureProjectCanvasDir,
+  listCanvasFiles,
+  readCanvasFile,
+  saveCanvasFile,
+} from './utils/canvasFileStore'
+import {
   acknowledgeAgentNativeWorkspaceOperations as acknowledgeWorkspaceEventOperations,
   appendAgentNativeWorkspaceEvent as appendWorkspaceEvent,
   appendAgentNativeWorkspaceOperationEvent,
@@ -431,6 +438,7 @@ async function ensureProjectScaffold(projectId, label) {
   const projectDir = path.join(PROJECTS_ROOT, projectId)
   await fs.mkdir(path.join(projectDir, 'components', 'paper'), { recursive: true })
   await fs.mkdir(path.join(projectDir, 'configs', 'paper'), { recursive: true })
+  await ensureProjectCanvasDir(PROJECTS_ROOT, projectId)
 
   const metaPath = path.join(projectDir, 'project.json')
   if (!existsSync(metaPath)) {
@@ -4637,6 +4645,79 @@ function paperImportPlugin() {
             return sendJson(res, 200, { ok: true, projects })
           } catch (error) {
             return sendJson(res, 500, { error: error?.message || 'Failed to list projects.' })
+          }
+        }
+
+        const canvasFilesMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases$/)
+        if (req.method === 'GET' && canvasFilesMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasFilesMatch[1])
+            const files = await listCanvasFiles(PROJECTS_ROOT, projectId)
+            return sendJson(res, 200, { ok: true, files })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to list canvas files.' })
+          }
+        }
+
+        const canvasFileReadMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/file$/)
+        if (req.method === 'GET' && canvasFileReadMatch) {
+          try {
+            const requestUrl = new URL(req.url, 'http://localhost')
+            const projectId = decodeURIComponent(canvasFileReadMatch[1])
+            const canvasPath = requestUrl.searchParams.get('path') || ''
+            if (!canvasPath) {
+              return sendJson(res, 400, { error: 'path query param is required.' })
+            }
+            const file = await readCanvasFile(PROJECTS_ROOT, projectId, canvasPath)
+            return sendJson(res, 200, { ok: true, file })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to open canvas file.' })
+          }
+        }
+
+        const canvasFileCreateMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/create$/)
+        if (req.method === 'POST' && canvasFileCreateMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasFileCreateMatch[1])
+            const body = await readJson(req)
+            const title = typeof body.title === 'string' ? body.title.trim() : ''
+            if (!title) {
+              return sendJson(res, 400, { error: 'title is required.' })
+            }
+            const file = await createCanvasFile(PROJECTS_ROOT, {
+              projectId,
+              title,
+              folder: typeof body.folder === 'string' ? body.folder : undefined,
+              surface: body.surface,
+              document: body.document,
+              view: body.view,
+            })
+            return sendJson(res, 200, { ok: true, file })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to create canvas file.' })
+          }
+        }
+
+        const canvasFileSaveMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/save$/)
+        if (req.method === 'POST' && canvasFileSaveMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasFileSaveMatch[1])
+            const body = await readJson(req)
+            const canvasPath = typeof body.path === 'string' ? body.path.trim() : ''
+            if (!canvasPath) {
+              return sendJson(res, 400, { error: 'path is required.' })
+            }
+            if (!body.document || typeof body.document !== 'object') {
+              return sendJson(res, 400, { error: 'document is required.' })
+            }
+            const file = await saveCanvasFile(PROJECTS_ROOT, {
+              projectId,
+              path: canvasPath,
+              document: body.document,
+            })
+            return sendJson(res, 200, { ok: true, file })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to save canvas file.' })
           }
         }
 
