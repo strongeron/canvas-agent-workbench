@@ -2,6 +2,10 @@
 
 This document records the agreed phases and TODOs for canvas persistence and layout evolution.
 
+File-backed document storage is now being designed separately in
+`docs/plans/canvas-files-storage-navigation.md`.
+This older plan remains the record of the browser-scene and artboard work that already landed.
+
 ## Goals
 - Save canvas sessions locally as JSON (scenes).
 - Persist iframe state when embeds opt into a postMessage protocol.
