@@ -45,6 +45,33 @@ That writes:
 
 The MCP server and CLI read that file automatically.
 
+## One Command For Claude
+
+You can now run the full Claude flow with one command:
+
+```bash
+npm run agent:claude
+```
+
+That command:
+
+1. starts the dev server on `127.0.0.1:5178` if it is not already running
+2. attaches a `canvas-agent` session for project `demo`
+3. launches Claude with the real checked-in MCP config
+
+Optional env overrides:
+
+```bash
+CANVAS_AGENT_PROJECT=demo CANVAS_AGENT_SURFACE=color-audit npm run agent:claude
+```
+
+Supported overrides:
+
+- `CANVAS_AGENT_PROJECT`
+- `CANVAS_AGENT_SURFACE`
+- `CANVAS_AGENT_HOST`
+- `CANVAS_AGENT_PORT`
+
 ## Claude Code
 
 Real repo-local config:
