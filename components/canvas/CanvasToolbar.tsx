@@ -349,14 +349,14 @@ export function CanvasToolbar({
 
       <div className="h-6 w-px bg-border-default" />
 
-      {/* Scenes */}
-      <Tooltip content="Saved scenes">
+      {/* Templates */}
+      <Tooltip content="Templates and snippets">
         <Button
           variant="ghost"
           size="sm"
           onClick={onToggleScenes}
           className={scenesVisible ? activeIconButtonClass : iconButtonClass}
-          aria-label="Toggle scenes panel"
+          aria-label="Toggle templates panel"
           aria-pressed={scenesVisible}
         >
           <FolderOpen className="h-5 w-5" />

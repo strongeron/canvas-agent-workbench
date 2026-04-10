@@ -323,6 +323,81 @@ describe("canvas-agent CLI bootstrap", () => {
     })
   })
 
+  it("lists stored canvas files through the attached session context", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-files-"))
+    const contextFilePath = path.join(tempDir, "attached-session.json")
+    let serverUrl = ""
+
+    server = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            bootstrap: {
+              reused: false,
+              surfaceId: "canvas",
+              session: {
+                id: "canvas-agent-session-files",
+                projectId: "demo",
+                agentId: "codex",
+                agentLabel: "Codex",
+              },
+              context: {
+                serverUrl,
+                projectId: "demo",
+                sessionId: "canvas-agent-session-files",
+                sessionDir: "/tmp/canvas-agent/session-files",
+                canvasWorkspaceKey: "gallery-demo:canvas",
+                colorAuditWorkspaceKey: "gallery-demo:color-audit",
+                systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
+                nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
+              },
+            },
+          })
+        )
+        return
+      }
+
+      if (req.method === "GET" && req.url === "/api/projects/demo/canvases?surface=canvas") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            files: [{ path: "boards/demo.canvas", title: "Demo", surface: "canvas" }],
+          })
+        )
+        return
+      }
+
+      res.statusCode = 404
+      res.end()
+    })
+
+    const port = await listenOnRandomPort()
+    serverUrl = `http://127.0.0.1:${port}`
+
+    const attachResult = await runCli(
+      ["attach", "--project", "demo", "--surface", "canvas", "--server", serverUrl, "--json"],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(attachResult.exitCode).toBe(0)
+
+    const listResult = await runCli(["canvas-files", "canvas"], {
+      CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+    })
+
+    expect(listResult.exitCode).toBe(0)
+    expect(JSON.parse(listResult.stdout)).toEqual([
+      { path: "boards/demo.canvas", title: "Demo", surface: "canvas" },
+    ])
+  })
+
   it("reads workspace debug through the attached session context", async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-debug-"))
     const contextFilePath = path.join(tempDir, "attached-session.json")

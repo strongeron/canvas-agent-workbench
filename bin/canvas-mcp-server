@@ -3,6 +3,7 @@
 import {
   buildCanvasContextSummary,
   captureWorkspaceScreenshot,
+  createProjectCanvasFile,
   readAgentNativeWorkspaceDebug,
   enqueueAgentNativeWorkspaceOperation,
   readAgentNativeManifest,
@@ -10,8 +11,12 @@ import {
   readAgentNativeWorkspaceManifest,
   readColorAuditExportPreview,
   readColorAuditState,
+  listProjectCanvasFiles,
   readNodeCatalogState,
+  openProjectCanvasFile,
+  saveProjectCanvasFile,
   readSystemCanvasState,
+  updateProjectCanvasFileMetadata,
   enqueueCanvasAgentOperation,
   getCanvasAgentContextFromEnv,
   readCanvasAgentPrimitives,
@@ -61,6 +66,91 @@ const TOOL_DEFINITIONS = [
         },
       },
       required: ['workspaceId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_canvas_files',
+    description: 'List stored .canvas files for the current project, optionally filtered by surface.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        surface: {
+          type: 'string',
+          enum: ['canvas', 'color-audit', 'system-canvas'],
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'open_canvas_file',
+    description: 'Open a stored .canvas file by project-relative path.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_canvas_file',
+    description: 'Create a stored .canvas file, including optional local asset packing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        folder: { type: 'string' },
+        surface: {
+          type: 'string',
+          enum: ['canvas', 'color-audit', 'system-canvas'],
+        },
+        document: { type: 'object' },
+        view: { type: 'object' },
+        assets: {
+          type: 'array',
+          items: { type: 'object' },
+        },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'save_canvas_file',
+    description: 'Save a stored .canvas file by project-relative path, including optional local asset packing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        document: { type: 'object' },
+        assets: {
+          type: 'array',
+          items: { type: 'object' },
+        },
+      },
+      required: ['path', 'document'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_canvas_file_metadata',
+    description: 'Update title, tags, favorite, or archived state for a stored .canvas file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        title: { type: 'string' },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+        },
+        favorite: { type: 'boolean' },
+        archived: { type: 'boolean' },
+      },
+      required: ['path'],
       additionalProperties: false,
     },
   },
@@ -570,6 +660,12 @@ const RESOURCE_DEFINITIONS = [
     mimeType: 'application/json',
   },
   {
+    uri: 'workspace://project/canvases/index',
+    name: 'Project canvas files',
+    description: 'Stored .canvas files for the current project across Canvas, Color Audit, and System Canvas surfaces.',
+    mimeType: 'application/json',
+  },
+  {
     uri: 'workspace://surface/canvas/state',
     name: 'Canvas state',
     description: 'Live freeform canvas state snapshot.',
@@ -895,6 +991,54 @@ async function callTool(name, args) {
                 : undefined
       return asToolResult(await readAgentNativeWorkspaceManifest(context, workspaceId, workspaceKey))
     }
+    case 'list_canvas_files':
+      return asToolResult(await listProjectCanvasFiles(context, { surface: normalizeString(args.surface) || undefined }))
+    case 'open_canvas_file': {
+      const canvasPath = normalizeString(args.path)
+      if (!canvasPath) return asToolError('path is required.')
+      return asToolResult(await openProjectCanvasFile(context, canvasPath))
+    }
+    case 'create_canvas_file': {
+      const title = normalizeString(args.title)
+      if (!title) return asToolError('title is required.')
+      return asToolResult(
+        await createProjectCanvasFile(context, {
+          title,
+          folder: normalizeString(args.folder) || undefined,
+          surface: normalizeString(args.surface) || undefined,
+          document: args.document,
+          view: args.view,
+          assets: Array.isArray(args.assets) ? args.assets : undefined,
+        })
+      )
+    }
+    case 'save_canvas_file': {
+      const canvasPath = normalizeString(args.path)
+      if (!canvasPath) return asToolError('path is required.')
+      if (!args.document || typeof args.document !== 'object') {
+        return asToolError('document is required.')
+      }
+      return asToolResult(
+        await saveProjectCanvasFile(
+          context,
+          canvasPath,
+          args.document,
+          Array.isArray(args.assets) ? args.assets : undefined
+        )
+      )
+    }
+    case 'update_canvas_file_metadata': {
+      const canvasPath = normalizeString(args.path)
+      if (!canvasPath) return asToolError('path is required.')
+      return asToolResult(
+        await updateProjectCanvasFileMetadata(context, canvasPath, {
+          title: normalizeString(args.title) || undefined,
+          tags: Array.isArray(args.tags) ? args.tags : undefined,
+          favorite: typeof args.favorite === 'boolean' ? args.favorite : undefined,
+          archived: typeof args.archived === 'boolean' ? args.archived : undefined,
+        })
+      )
+    }
     case 'get_workspace_events': {
       const workspaceId = normalizeString(args.workspaceId)
       if (!workspaceId) return asToolError('workspaceId is required.')
@@ -1046,6 +1190,8 @@ async function readResource(uri) {
   switch (uri) {
     case 'workspace://manifest':
       return asResourceResult(uri, await readAgentNativeManifest(context))
+    case 'workspace://project/canvases/index':
+      return asResourceResult(uri, await listProjectCanvasFiles(context))
     case 'workspace://surface/canvas/state':
       return asResourceResult(uri, await readCanvasAgentState(context))
     case 'workspace://surface/canvas/selection':

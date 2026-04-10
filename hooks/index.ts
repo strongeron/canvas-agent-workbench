@@ -15,6 +15,7 @@ export { useCanvasState } from "./useCanvasState"
 export { useCanvasTransform } from "./useCanvasTransform"
 export { useCanvasScenes } from "./useCanvasScenes"
 export { useCanvasFiles } from "./useCanvasFiles"
+export { useCanvasFileBrowserState } from "./useCanvasFileBrowserState"
 export { useCanvasShortcuts, CANVAS_SHORTCUTS } from "./useCanvasShortcuts"
 
 // Types

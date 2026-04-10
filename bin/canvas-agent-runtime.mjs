@@ -343,6 +343,62 @@ export async function readAgentNativeWorkspaceDebug(
   return payload?.debug ?? null
 }
 
+export async function listProjectCanvasFiles(context, options = {}) {
+  const payload = await readAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases`,
+    {
+      surface: typeof options.surface === 'string' ? options.surface : '',
+    }
+  )
+  return Array.isArray(payload?.files) ? payload.files : []
+}
+
+export async function openProjectCanvasFile(context, canvasPath) {
+  const payload = await readAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases/file`,
+    {
+      path: typeof canvasPath === 'string' ? canvasPath : '',
+    }
+  )
+  return payload?.file ?? null
+}
+
+export async function createProjectCanvasFile(context, input) {
+  const payload = await postAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases/create`,
+    input
+  )
+  return payload?.file ?? null
+}
+
+export async function saveProjectCanvasFile(context, canvasPath, document, assets) {
+  const payload = await postAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases/save`,
+    {
+      path: canvasPath,
+      document,
+      assets: Array.isArray(assets) ? assets : undefined,
+    }
+  )
+  return payload?.file ?? null
+}
+
+export async function updateProjectCanvasFileMetadata(context, canvasPath, updates) {
+  const payload = await postAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases/metadata`,
+    {
+      path: canvasPath,
+      ...updates,
+    }
+  )
+  return payload?.file ?? null
+}
+
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
   return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
 }

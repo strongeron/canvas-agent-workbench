@@ -238,6 +238,42 @@ describe("canvas MCP server", () => {
                           mediaUrl: "/api/media/file/color-audit.png",
                         },
                       }
+                    : requestUrl.pathname === "/api/projects/demo/canvases"
+                      ? {
+                          ok: true,
+                          files: [
+                            {
+                              path: "boards/demo.canvas",
+                              title: "Demo",
+                              surface: "canvas",
+                            },
+                          ],
+                        }
+                      : requestUrl.pathname === "/api/projects/demo/canvases/file"
+                        ? {
+                            ok: true,
+                            file: {
+                              path: "boards/demo.canvas",
+                              document: {
+                                meta: {
+                                  title: "Demo",
+                                },
+                              },
+                            },
+                          }
+                        : req.method === "POST" &&
+                            requestUrl.pathname === "/api/projects/demo/canvases/create"
+                          ? {
+                              ok: true,
+                              file: {
+                                path: "boards/new.canvas",
+                                document: {
+                                  meta: {
+                                    title: "New File",
+                                  },
+                                },
+                              },
+                            }
                     : { error: `Unhandled path: ${requestUrl.pathname}` }
 
       res.statusCode = "error" in payload ? 404 : 200
@@ -294,6 +330,9 @@ describe("canvas MCP server", () => {
         method: "resources/list",
       })) as { result?: { resources?: Array<{ uri: string }> } }
 
+      expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
+        "workspace://project/canvases/index"
+      )
       expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
         "workspace://surface/canvas/debug"
       )
@@ -354,6 +393,63 @@ describe("canvas MCP server", () => {
       const exportPayload = JSON.parse(exportResource.result?.contents?.[0]?.text || "{}")
       expect(exportPayload.tokenCount).toBe(1)
       expect(exportPayload.selectedColorMode).toBe("oklch")
+
+      const projectCanvasFiles = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5b",
+        method: "tools/call",
+        params: {
+          name: "list_canvas_files",
+          arguments: {
+            surface: "canvas",
+          },
+        },
+      })) as { result?: { structuredContent?: Array<Record<string, any>> } }
+
+      expect(projectCanvasFiles.result?.structuredContent?.[0]?.path).toBe("boards/demo.canvas")
+
+      const projectCanvasFileResource = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5c",
+        method: "resources/read",
+        params: {
+          uri: "workspace://project/canvases/index",
+        },
+      })) as { result?: { contents?: Array<{ text: string }> } }
+
+      const projectCanvasFilePayload = JSON.parse(
+        projectCanvasFileResource.result?.contents?.[0]?.text || "[]"
+      )
+      expect(projectCanvasFilePayload[0]?.title).toBe("Demo")
+
+      const openedCanvasFile = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5d",
+        method: "tools/call",
+        params: {
+          name: "open_canvas_file",
+          arguments: {
+            path: "boards/demo.canvas",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(openedCanvasFile.result?.structuredContent?.document?.meta?.title).toBe("Demo")
+
+      const createdCanvasFile = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e",
+        method: "tools/call",
+        params: {
+          name: "create_canvas_file",
+          arguments: {
+            title: "New File",
+            surface: "canvas",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(createdCanvasFile.result?.structuredContent?.path).toBe("boards/new.canvas")
 
       const systemState = (await sendRpc({
         jsonrpc: "2.0",

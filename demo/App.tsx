@@ -1400,11 +1400,13 @@ function App() {
           ) : view === "color-canvas" ? (
             <ColorCanvasPage
               tokens={themeTokens}
+              projectId={projectId}
               themeStorageKeyPrefix={`gallery-${projectId}`}
             />
           ) : view === "node-catalog" ? (
             <ColorCanvasPage
               tokens={themeTokens}
+              projectId={projectId}
               themeStorageKeyPrefix={`gallery-${projectId}-node-catalog`}
               catalogOnly
             />

@@ -1,11 +1,11 @@
 /**
- * CanvasScenesPanel - Panel for managing saved canvas scenes/templates
+ * CanvasScenesPanel - Panel for managing saved canvas templates/snippets
  *
  * Features:
- * - Save current canvas as a new scene
- * - Load saved scenes
- * - Rename and delete scenes
- * - Export/import scenes as JSON
+ * - Save current canvas as a reusable template
+ * - Load saved templates/snippets
+ * - Rename and delete templates
+ * - Export/import templates as JSON
  */
 
 import {
@@ -21,7 +21,7 @@ import {
 } from "lucide-react"
 import { useState, useCallback, useRef } from "react"
 
-import type { CanvasScene, CanvasItem, CanvasGroup } from "../../types/canvas"
+import type { CanvasScene } from "../../types/canvas"
 
 /** Props for injected Button component */
 export interface ButtonComponentProps {
@@ -56,7 +56,7 @@ export function CanvasScenesPanel({
   onRename,
   onDelete,
   onDuplicate,
-  onExport,
+  onExport: _onExport,
   onImport,
   onClose,
   Button,
@@ -71,7 +71,7 @@ export function CanvasScenesPanel({
 
   const handleSave = useCallback(() => {
     if (currentItemCount === 0) return
-    onSave(newSceneName.trim() || `Scene ${scenes.length + 1}`)
+    onSave(newSceneName.trim() || `Template ${scenes.length + 1}`)
     setNewSceneName("")
   }, [currentItemCount, newSceneName, scenes.length, onSave])
 
@@ -132,7 +132,7 @@ export function CanvasScenesPanel({
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `${scene.name.replace(/\s+/g, "-").toLowerCase()}.scene.json`
+      a.download = `${scene.name.replace(/\s+/g, "-").toLowerCase()}.canvas-template.json`
       a.click()
       URL.revokeObjectURL(url)
     },
@@ -155,7 +155,7 @@ export function CanvasScenesPanel({
       <div className="flex items-center justify-between border-b border-default px-4 py-3">
         <div className="flex items-center gap-2">
           <FolderOpen className="h-4 w-4 text-brand-600" />
-          <h3 className="text-sm font-semibold text-foreground">Scenes</h3>
+          <h3 className="text-sm font-semibold text-foreground">Templates</h3>
           <span className="rounded-full bg-surface-100 px-2 py-0.5 text-xs text-muted-foreground">
             {scenes.length}
           </span>
@@ -169,17 +169,17 @@ export function CanvasScenesPanel({
         </button>
       </div>
 
-      {/* Save New Scene */}
+      {/* Save New Template */}
       <div className="border-b border-default px-4 py-3">
         <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
-          Save Current Canvas
+          Save current canvas as template
         </label>
         <div className="flex gap-2">
           <input
             type="text"
             value={newSceneName}
             onChange={(e) => setNewSceneName(e.target.value)}
-            placeholder={`Scene ${scenes.length + 1}`}
+            placeholder={`Template ${scenes.length + 1}`}
             className="h-8 flex-1 rounded-md border border-default bg-white px-2.5 text-sm text-foreground placeholder:text-muted focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
             onKeyDown={(e) => e.key === "Enter" && handleSave()}
           />
@@ -196,19 +196,19 @@ export function CanvasScenesPanel({
         </div>
         {currentItemCount === 0 && (
           <p className="mt-1.5 text-[10px] text-muted">
-            Add components to canvas to save a scene
+            Add components to canvas to save a reusable template or snippet
           </p>
         )}
       </div>
 
-      {/* Scenes List */}
+      {/* Templates List */}
       <div className="flex-1 overflow-y-auto">
         {scenes.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
             <FolderOpen className="mb-2 h-8 w-8 text-muted" />
-            <p className="text-sm text-muted-foreground">No saved scenes yet</p>
+            <p className="text-sm text-muted-foreground">No saved templates yet</p>
             <p className="mt-1 text-xs text-muted">
-              Save your canvas arrangements to reuse them later
+              Save reusable canvas templates and snippets for quick reuse
             </p>
           </div>
         ) : (
@@ -318,7 +318,7 @@ export function CanvasScenesPanel({
           <div className="px-4 py-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[11px] font-medium text-muted-foreground">
-                Import Scene
+                Import Template
               </span>
               <button
                 onClick={() => {
@@ -337,7 +337,7 @@ export function CanvasScenesPanel({
                 setImportJson(e.target.value)
                 setImportError(null)
               }}
-              placeholder="Paste scene JSON here..."
+              placeholder="Paste template JSON here..."
               rows={4}
               className={`w-full resize-none rounded-md border bg-surface-50 px-2.5 py-2 font-mono text-xs text-foreground focus:outline-none focus:ring-1 ${
                 importError
@@ -356,7 +356,7 @@ export function CanvasScenesPanel({
                 disabled={!importJson.trim()}
                 className="flex-1"
               >
-                Import
+                Import template
               </Button>
               <Button
                 variant="outline"
@@ -376,7 +376,7 @@ export function CanvasScenesPanel({
               className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-surface-100 hover:text-foreground"
             >
               <Plus className="h-3.5 w-3.5" />
-              Import Scene
+              Import Template
             </button>
           </div>
         )}

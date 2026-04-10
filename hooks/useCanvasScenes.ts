@@ -1,7 +1,7 @@
 /**
- * useCanvasScenes - Manage saved canvas scenes/templates
+ * useCanvasScenes - Manage saved canvas templates/snippets
  *
- * Allows users to save, load, and manage canvas arrangements as reusable scenes.
+ * Allows users to save, load, and manage canvas arrangements as reusable templates.
  */
 
 import { useCallback, useEffect, useState } from "react"
@@ -177,7 +177,7 @@ export function useCanvasScenes(storageKey = "gallery-canvas-scenes") {
   }, [namespace, storageKey])
 
   /**
-   * Save current canvas state as a new scene
+   * Save current canvas state as a new template
    */
   const saveScene = useCallback(
     (name: string, items: CanvasItem[], groups: CanvasGroup[]) => {
@@ -185,7 +185,7 @@ export function useCanvasScenes(storageKey = "gallery-canvas-scenes") {
 
       const scene: CanvasScene = {
         id: `scene-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        name: name.trim() || `Scene ${scenes.length + 1}`,
+        name: name.trim() || `Template ${scenes.length + 1}`,
         items: items.map((item) => ({ ...item })), // Deep copy
         groups: groups.map((group) => ({ ...group })), // Deep copy
         createdAt: new Date().toISOString(),

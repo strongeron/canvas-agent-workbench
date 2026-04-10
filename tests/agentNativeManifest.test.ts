@@ -36,9 +36,14 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-events")).toBe(true)
     expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-debug")).toBe(true)
     expect(
+      canvasWorkspace?.resources.some((resource) => resource.id === "project-canvas-files")
+    ).toBe(true)
+    expect(
       canvasWorkspace?.resources.find((resource) => resource.id === "canvas-viewport-screenshot")?.status
     ).toBe("ready")
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_item")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "list_canvas_files")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "save_canvas_file")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_events")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_debug")).toBe(true)
     expect(
@@ -57,6 +62,9 @@ describe("agent native manifest", () => {
       colorAuditWorkspace?.resources.find((resource) => resource.id === "color-audit-state")?.status
     ).toBe("ready")
     expect(
+      colorAuditWorkspace?.resources.find((resource) => resource.id === "project-canvas-files")?.status
+    ).toBe("ready")
+    expect(
       colorAuditWorkspace?.resources.find((resource) => resource.id === "color-audit-events")?.status
     ).toBe("ready")
     expect(
@@ -64,6 +72,9 @@ describe("agent native manifest", () => {
     ).toBe("ready")
     expect(
       colorAuditWorkspace?.tools.find((tool) => tool.id === "get_color_audit_state")?.status
+    ).toBe("ready")
+    expect(
+      colorAuditWorkspace?.tools.find((tool) => tool.id === "save_canvas_file")?.status
     ).toBe("ready")
     expect(
       colorAuditWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status
@@ -106,6 +117,9 @@ describe("agent native manifest", () => {
       systemCanvasWorkspace?.resources.find((resource) => resource.id === "system-canvas-state")?.status
     ).toBe("ready")
     expect(
+      systemCanvasWorkspace?.resources.find((resource) => resource.id === "project-canvas-files")?.status
+    ).toBe("ready")
+    expect(
       systemCanvasWorkspace?.resources.find((resource) => resource.id === "system-canvas-events")?.status
     ).toBe("ready")
     expect(
@@ -117,6 +131,9 @@ describe("agent native manifest", () => {
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.tools.find((tool) => tool.id === "get_system_canvas_state")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "list_canvas_files")?.status
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status

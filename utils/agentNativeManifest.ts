@@ -37,6 +37,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "project-canvas-files",
+        uri: "workspace://project/canvases/index",
+        title: "Project canvas files",
+        description: "Stored .canvas files for the current project across Canvas, Color Audit, and System Canvas surfaces.",
+        status: "ready",
+      },
+      {
         id: "canvas-state",
         uri: "workspace://surface/canvas/state",
         title: "Canvas state",
@@ -80,6 +87,36 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       },
     ],
     tools: [
+      {
+        id: "list_canvas_files",
+        title: "List canvas files",
+        description: "List stored .canvas files for the current project before opening or saving them.",
+        status: "ready",
+      },
+      {
+        id: "open_canvas_file",
+        title: "Open canvas file",
+        description: "Open a stored .canvas document by project-relative path.",
+        status: "ready",
+      },
+      {
+        id: "create_canvas_file",
+        title: "Create canvas file",
+        description: "Create a stored .canvas document for Canvas, Color Audit, or System Canvas.",
+        status: "ready",
+      },
+      {
+        id: "save_canvas_file",
+        title: "Save canvas file",
+        description: "Save a stored .canvas document, including document-local asset packing for media.",
+        status: "ready",
+      },
+      {
+        id: "update_canvas_file_metadata",
+        title: "Update canvas file metadata",
+        description: "Update stored file metadata such as title, tags, favorite, or archived state.",
+        status: "ready",
+      },
       {
         id: "create_item",
         title: "Create item",
@@ -168,6 +205,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "project-canvas-files",
+        uri: "workspace://project/canvases/index",
+        title: "Project canvas files",
+        description: "Stored .canvas files for the current project, including Color Audit documents.",
+        status: "ready",
+      },
+      {
         id: "color-audit-state",
         uri: "workspace://surface/color-audit/state",
         title: "Color Audit state",
@@ -211,6 +255,36 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       },
     ],
     tools: [
+      {
+        id: "list_canvas_files",
+        title: "List canvas files",
+        description: "List stored .canvas files for the current project and filter to Color Audit when needed.",
+        status: "ready",
+      },
+      {
+        id: "open_canvas_file",
+        title: "Open canvas file",
+        description: "Open a stored .canvas document by project-relative path.",
+        status: "ready",
+      },
+      {
+        id: "create_canvas_file",
+        title: "Create canvas file",
+        description: "Create a stored .canvas document for Color Audit review or editing.",
+        status: "ready",
+      },
+      {
+        id: "save_canvas_file",
+        title: "Save canvas file",
+        description: "Save a stored Color Audit .canvas document.",
+        status: "ready",
+      },
+      {
+        id: "update_canvas_file_metadata",
+        title: "Update canvas file metadata",
+        description: "Update stored file metadata such as title, tags, favorite, or archived state.",
+        status: "ready",
+      },
       {
         id: "get_color_audit_state",
         title: "Get Color Audit state",
@@ -338,6 +412,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "project-canvas-files",
+        uri: "workspace://project/canvases/index",
+        title: "Project canvas files",
+        description: "Stored .canvas files for the current project, including System Canvas documents.",
+        status: "ready",
+      },
+      {
         id: "system-canvas-state",
         uri: "workspace://surface/system-canvas/state",
         title: "System Canvas state",
@@ -374,6 +455,36 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       },
     ],
     tools: [
+      {
+        id: "list_canvas_files",
+        title: "List canvas files",
+        description: "List stored .canvas files for the current project and filter to System Canvas when needed.",
+        status: "ready",
+      },
+      {
+        id: "open_canvas_file",
+        title: "Open canvas file",
+        description: "Open a stored .canvas document by project-relative path.",
+        status: "ready",
+      },
+      {
+        id: "create_canvas_file",
+        title: "Create canvas file",
+        description: "Create a stored .canvas document for System Canvas review or editing.",
+        status: "ready",
+      },
+      {
+        id: "save_canvas_file",
+        title: "Save canvas file",
+        description: "Save a stored System Canvas .canvas document.",
+        status: "ready",
+      },
+      {
+        id: "update_canvas_file_metadata",
+        title: "Update canvas file metadata",
+        description: "Update stored file metadata such as title, tags, favorite, or archived state.",
+        status: "ready",
+      },
       {
         id: "get_system_canvas_state",
         title: "Get System Canvas state",

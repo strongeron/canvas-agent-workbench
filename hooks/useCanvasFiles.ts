@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useState } from "react"
 
 import type {
+  CanvasDocumentSurface,
+  CanvasFileAssetInput,
   CanvasFileDocument,
   CanvasFileIndexEntry,
   CanvasStateSnapshot,
   CanvasTransform,
 } from "../types/canvas"
 
-interface CreateCanvasFileInput {
+interface CreateCanvasFileInput<TDocument = CanvasStateSnapshot, TView = { transform?: CanvasTransform }> {
   title: string
   folder?: string
-  document?: CanvasStateSnapshot
-  view?: { transform?: CanvasTransform }
+  surface?: CanvasDocumentSurface
+  document?: TDocument
+  view?: TView
+  assets?: CanvasFileAssetInput[]
 }
 
-export function useCanvasFiles(projectId?: string) {
+export function useCanvasFiles<
+  TDocument = CanvasStateSnapshot,
+  TView = { transform?: CanvasTransform }
+>(projectId?: string) {
   const [files, setFiles] = useState<CanvasFileIndexEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -61,7 +68,7 @@ export function useCanvasFiles(projectId?: string) {
           throw new Error(data?.error || "Failed to open canvas file.")
         }
 
-        return data.file as { path: string; document: CanvasFileDocument }
+        return data.file as { path: string; document: CanvasFileDocument<TDocument, TView> }
       } catch (nextError) {
         const message =
           nextError instanceof Error ? nextError.message : "Failed to open canvas file."
@@ -73,7 +80,7 @@ export function useCanvasFiles(projectId?: string) {
   )
 
   const createCanvasFile = useCallback(
-    async (input: CreateCanvasFileInput) => {
+    async (input: CreateCanvasFileInput<TDocument, TView>) => {
       if (!projectId) throw new Error("Select a project before creating a canvas file.")
       setIsSaving(true)
       setError(null)
@@ -84,8 +91,10 @@ export function useCanvasFiles(projectId?: string) {
           body: JSON.stringify({
             title: input.title,
             folder: input.folder,
+            surface: input.surface,
             document: input.document,
             view: input.view,
+            assets: Array.isArray(input.assets) ? input.assets : undefined,
           }),
         })
         const data = await response.json().catch(() => null)
@@ -93,7 +102,7 @@ export function useCanvasFiles(projectId?: string) {
           throw new Error(data?.error || "Failed to create canvas file.")
         }
         await refreshFiles()
-        return data.file as { path: string; document: CanvasFileDocument }
+        return data.file as { path: string; document: CanvasFileDocument<TDocument, TView> }
       } catch (nextError) {
         const message =
           nextError instanceof Error ? nextError.message : "Failed to create canvas file."
@@ -107,7 +116,11 @@ export function useCanvasFiles(projectId?: string) {
   )
 
   const saveCanvasFile = useCallback(
-    async (filePath: string, document: CanvasFileDocument) => {
+    async (
+      filePath: string,
+      document: CanvasFileDocument<TDocument, TView>,
+      assets?: CanvasFileAssetInput[]
+    ) => {
       if (!projectId) throw new Error("Select a project before saving a canvas file.")
       setIsSaving(true)
       setError(null)
@@ -118,6 +131,7 @@ export function useCanvasFiles(projectId?: string) {
           body: JSON.stringify({
             path: filePath,
             document,
+            assets: Array.isArray(assets) ? assets : undefined,
           }),
         })
         const data = await response.json().catch(() => null)
@@ -125,10 +139,45 @@ export function useCanvasFiles(projectId?: string) {
           throw new Error(data?.error || "Failed to save canvas file.")
         }
         await refreshFiles()
-        return data.file as { path: string; document: CanvasFileDocument }
+        return data.file as { path: string; document: CanvasFileDocument<TDocument, TView> }
       } catch (nextError) {
         const message =
           nextError instanceof Error ? nextError.message : "Failed to save canvas file."
+        setError(message)
+        throw nextError
+      } finally {
+        setIsSaving(false)
+      }
+    },
+    [projectId, refreshFiles]
+  )
+
+  const updateCanvasFileMetadata = useCallback(
+    async (
+      filePath: string,
+      updates: Partial<Pick<CanvasFileDocument["meta"], "title" | "tags" | "favorite" | "archived">>
+    ) => {
+      if (!projectId) throw new Error("Select a project before updating canvas file metadata.")
+      setIsSaving(true)
+      setError(null)
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvases/metadata`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: filePath,
+            ...updates,
+          }),
+        })
+        const data = await response.json().catch(() => null)
+        if (!response.ok || !data?.ok || !data?.file?.document) {
+          throw new Error(data?.error || "Failed to update canvas file metadata.")
+        }
+        await refreshFiles()
+        return data.file as { path: string; document: CanvasFileDocument<TDocument, TView> }
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error ? nextError.message : "Failed to update canvas file metadata."
         setError(message)
         throw nextError
       } finally {
@@ -147,5 +196,6 @@ export function useCanvasFiles(projectId?: string) {
     openCanvasFile,
     createCanvasFile,
     saveCanvasFile,
+    updateCanvasFileMetadata,
   }
 }

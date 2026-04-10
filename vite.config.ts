@@ -47,7 +47,12 @@ import {
   listCanvasFiles,
   readCanvasFile,
   saveCanvasFile,
+  updateCanvasFileMetadata,
 } from './utils/canvasFileStore'
+import {
+  packCanvasDocumentAssets,
+  readCanvasDocumentAsset,
+} from './utils/canvasFileAssets'
 import {
   acknowledgeAgentNativeWorkspaceOperations as acknowledgeWorkspaceEventOperations,
   appendAgentNativeWorkspaceEvent as appendWorkspaceEvent,
@@ -4651,11 +4656,41 @@ function paperImportPlugin() {
         const canvasFilesMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases$/)
         if (req.method === 'GET' && canvasFilesMatch) {
           try {
+            const requestUrl = new URL(req.url, 'http://localhost')
             const projectId = decodeURIComponent(canvasFilesMatch[1])
+            const surface = requestUrl.searchParams.get('surface') || ''
             const files = await listCanvasFiles(PROJECTS_ROOT, projectId)
-            return sendJson(res, 200, { ok: true, files })
+            const filteredFiles =
+              surface === 'canvas' || surface === 'color-audit' || surface === 'system-canvas'
+                ? files.filter((file) => file.surface === surface)
+                : files
+            return sendJson(res, 200, { ok: true, files: filteredFiles })
           } catch (error) {
             return sendJson(res, 500, { error: error?.message || 'Failed to list canvas files.' })
+          }
+        }
+
+        const canvasAssetReadMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/assets\/file$/)
+        if (req.method === 'GET' && canvasAssetReadMatch) {
+          try {
+            const requestUrl = new URL(req.url, 'http://localhost')
+            const projectId = decodeURIComponent(canvasAssetReadMatch[1])
+            const canvasPath = requestUrl.searchParams.get('path') || ''
+            const assetName = requestUrl.searchParams.get('asset') || ''
+            if (!canvasPath) {
+              return sendJson(res, 400, { error: 'path query param is required.' })
+            }
+            if (!assetName) {
+              return sendJson(res, 400, { error: 'asset query param is required.' })
+            }
+            const asset = await readCanvasDocumentAsset(PROJECTS_ROOT, projectId, canvasPath, assetName)
+            res.statusCode = 200
+            res.setHeader('content-type', asset.mimeType)
+            res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+            res.end(asset.content)
+            return
+          } catch (error) {
+            return sendJson(res, 404, { error: error?.message || 'Failed to read canvas asset.' })
           }
         }
 
@@ -4684,7 +4719,7 @@ function paperImportPlugin() {
             if (!title) {
               return sendJson(res, 400, { error: 'title is required.' })
             }
-            const file = await createCanvasFile(PROJECTS_ROOT, {
+            const createdFile = await createCanvasFile(PROJECTS_ROOT, {
               projectId,
               title,
               folder: typeof body.folder === 'string' ? body.folder : undefined,
@@ -4692,6 +4727,19 @@ function paperImportPlugin() {
               document: body.document,
               view: body.view,
             })
+            const file = Array.isArray(body.assets) && body.assets.length > 0
+              ? await saveCanvasFile(PROJECTS_ROOT, {
+                  projectId,
+                  path: createdFile.path,
+                  document: await packCanvasDocumentAssets(PROJECTS_ROOT, {
+                    projectId,
+                    path: createdFile.path,
+                    document: createdFile.document,
+                    assets: body.assets,
+                    sharedMediaRoot: MEDIA_STORE_DIR,
+                  }),
+                })
+              : createdFile
             return sendJson(res, 200, { ok: true, file })
           } catch (error) {
             return sendJson(res, 500, { error: error?.message || 'Failed to create canvas file.' })
@@ -4710,14 +4758,46 @@ function paperImportPlugin() {
             if (!body.document || typeof body.document !== 'object') {
               return sendJson(res, 400, { error: 'document is required.' })
             }
-            const file = await saveCanvasFile(PROJECTS_ROOT, {
+            const packedDocument = await packCanvasDocumentAssets(PROJECTS_ROOT, {
               projectId,
               path: canvasPath,
               document: body.document,
+              assets: Array.isArray(body.assets) ? body.assets : undefined,
+              sharedMediaRoot: MEDIA_STORE_DIR,
+            })
+            const file = await saveCanvasFile(PROJECTS_ROOT, {
+              projectId,
+              path: canvasPath,
+              document: packedDocument,
             })
             return sendJson(res, 200, { ok: true, file })
           } catch (error) {
             return sendJson(res, 500, { error: error?.message || 'Failed to save canvas file.' })
+          }
+        }
+
+        const canvasFileMetadataMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/metadata$/)
+        if (req.method === 'POST' && canvasFileMetadataMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasFileMetadataMatch[1])
+            const body = await readJson(req)
+            const canvasPath = typeof body.path === 'string' ? body.path.trim() : ''
+            if (!canvasPath) {
+              return sendJson(res, 400, { error: 'path is required.' })
+            }
+            const file = await updateCanvasFileMetadata(PROJECTS_ROOT, {
+              projectId,
+              path: canvasPath,
+              updates: {
+                title: typeof body.title === 'string' ? body.title : undefined,
+                tags: Array.isArray(body.tags) ? body.tags : undefined,
+                favorite: typeof body.favorite === 'boolean' ? body.favorite : undefined,
+                archived: typeof body.archived === 'boolean' ? body.archived : undefined,
+              },
+            })
+            return sendJson(res, 200, { ok: true, file })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to update canvas file metadata.' })
           }
         }
 

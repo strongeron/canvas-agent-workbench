@@ -2,6 +2,8 @@ import type {
   AgentCapabilityStatus,
   AgentWorkspaceEvent,
 } from "./agentNative"
+import type { DesignSystemScaleConfig } from "../projects/design-system-foundation/designSystemApi"
+import type { ColorCanvasState } from "./colorCanvas"
 
 export type CanvasItem =
   | CanvasComponentItem
@@ -218,16 +220,54 @@ export interface CanvasFileMeta {
   archived: boolean
 }
 
-export interface CanvasFileDocument {
+export type CanvasFileAssetField = "src" | "poster" | "embedSnapshotUrl"
+
+export interface CanvasFileAssetInput {
+  itemId: string
+  field?: CanvasFileAssetField
+  fileName?: string
+  dataUrl?: string
+  filePath?: string
+}
+
+export interface ColorCanvasFileDocumentData {
+  state: ColorCanvasState
+  canvasMode: "color-audit" | "system-canvas"
+  canvasViewMode?: string
+  colorAuditLayoutMode?: string
+  templateKitId?: string
+  autoContrastEnabled?: boolean
+  contrastRules?: unknown[]
+  designSystemConfig?: DesignSystemScaleConfig
+  viewNodePositions?: Record<string, { x: number; y: number }>
+}
+
+export interface ColorCanvasFileViewState {
+  colorAuditTransform?: CanvasTransform
+  systemCanvasTransform?: CanvasTransform
+}
+
+export interface CanvasFileDocument<
+  TDocument = CanvasStateSnapshot,
+  TView = { transform?: CanvasTransform }
+> {
   kind: "gallery-poc.canvas"
   schemaVersion: number
   surface: CanvasDocumentSurface
   meta: CanvasFileMeta
-  document: CanvasStateSnapshot
-  view?: {
-    transform?: CanvasTransform
-  }
+  document: TDocument
+  view?: TView
 }
+
+export type CanvasWorkspaceFileDocument = CanvasFileDocument<
+  CanvasStateSnapshot,
+  { transform?: CanvasTransform }
+>
+
+export type ColorCanvasWorkspaceFileDocument = CanvasFileDocument<
+  ColorCanvasFileDocumentData,
+  ColorCanvasFileViewState
+>
 
 export interface CanvasFileIndexEntry {
   id: string

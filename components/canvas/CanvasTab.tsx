@@ -2,6 +2,7 @@ import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from 
 import { useCallback, useEffect, useState, useMemo, useRef } from "react"
 
 import { useCanvasAgentBridge } from "../../hooks/useCanvasAgentBridge"
+import { useCanvasFileBrowserState } from "../../hooks/useCanvasFileBrowserState"
 import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShortcuts"
 import { useCanvasFiles } from "../../hooks/useCanvasFiles"
 import { useCanvasState } from "../../hooks/useCanvasState"
@@ -12,6 +13,8 @@ import { useCopilotCanvasActions } from "../../hooks/useCopilotCanvasActions"
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import type {
   DragData,
+  CanvasFileAssetField,
+  CanvasFileAssetInput,
   CanvasFileDocument,
   CanvasMediaItem,
   CanvasScene,
@@ -78,6 +81,50 @@ const LAYOUT_SIZE_DEFAULTS: Record<string, { width: number; minHeight: number }>
   medium: { width: 350, minHeight: 120 },  // cards, widgets
   large: { width: 500, minHeight: 200 },   // tables, lists
   full: { width: 600, minHeight: 250 },    // tabs, sidebars, full-width
+}
+
+function fileNameFromCanvasAsset(
+  itemId: string,
+  field: CanvasFileAssetField,
+  fallbackName: string | undefined,
+  sourceUrl: string
+) {
+  const candidate = (fallbackName || "").trim()
+  if (candidate) return candidate
+
+  if (sourceUrl.startsWith("data:")) {
+    const mimeMatch = /^data:([^;,]+)?/i.exec(sourceUrl)
+    const extension =
+      mimeMatch?.[1] === "image/png"
+        ? ".png"
+        : mimeMatch?.[1] === "image/jpeg"
+          ? ".jpg"
+          : mimeMatch?.[1] === "image/gif"
+            ? ".gif"
+            : mimeMatch?.[1] === "image/webp"
+              ? ".webp"
+              : mimeMatch?.[1] === "video/mp4"
+                ? ".mp4"
+                : ""
+    return `${itemId}-${field}${extension}`
+  }
+
+  return `${itemId}-${field}`
+}
+
+async function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error || new Error("Failed to read blob asset."))
+    reader.onload = () => {
+      if (typeof reader.result !== "string" || !reader.result) {
+        reject(new Error("Failed to build data URL for blob asset."))
+        return
+      }
+      resolve(reader.result)
+    }
+    reader.readAsDataURL(blob)
+  })
 }
 
 function isEditablePasteTarget(target: EventTarget | null) {
@@ -624,7 +671,14 @@ export function CanvasTab({
     openCanvasFile,
     createCanvasFile,
     saveCanvasFile,
+    updateCanvasFileMetadata,
   } = useCanvasFiles(activeProjectId)
+  const canvasFileBrowser = useCanvasFileBrowserState(
+    activeProjectId ? `gallery-${activeProjectId}` : "gallery-canvas",
+    canvasFiles,
+    activeCanvasFile?.path ?? null,
+    "canvas"
+  )
 
   // Get the first selected item (for props panel - shows single item when one is selected)
   const selectedItem = selectedIds.length === 1
@@ -675,6 +729,56 @@ export function CanvasTab({
       },
     }
   }, [groups, items, nextZIndex, transform])
+
+  const buildCurrentCanvasFileAssets = useCallback(async (): Promise<CanvasFileAssetInput[]> => {
+    if (typeof window === "undefined") return []
+
+    const assets: CanvasFileAssetInput[] = []
+
+    const captureAsset = async (
+      itemId: string,
+      field: CanvasFileAssetField,
+      sourceUrl: string | undefined,
+      fallbackName?: string
+    ) => {
+      const trimmed = sourceUrl?.trim()
+      if (!trimmed) return
+      if (!trimmed.startsWith("blob:") && !trimmed.startsWith("data:")) return
+
+      const dataUrl = trimmed.startsWith("data:")
+        ? trimmed
+        : await fetch(trimmed).then(async (response) => {
+            const blob = await response.blob()
+            return blobToDataUrl(blob)
+          })
+
+      assets.push({
+        itemId,
+        field,
+        fileName: fileNameFromCanvasAsset(itemId, field, fallbackName, trimmed),
+        dataUrl,
+      })
+    }
+
+    for (const item of items) {
+      if (item.type === "media") {
+        await captureAsset(item.id, "src", item.src, item.title)
+        await captureAsset(item.id, "poster", item.poster, item.title ? `${item.title}-poster` : undefined)
+        continue
+      }
+
+      if (item.type === "embed") {
+        await captureAsset(
+          item.id,
+          "embedSnapshotUrl",
+          item.embedSnapshotUrl,
+          item.title ? `${item.title}-snapshot` : undefined
+        )
+      }
+    }
+
+    return assets
+  }, [items])
 
   const currentCanvasFileSignature = useMemo(
     () => JSON.stringify(buildCurrentCanvasFilePayload()),
@@ -1700,6 +1804,7 @@ export function CanvasTab({
     const payload = buildCurrentCanvasFilePayload()
 
     try {
+      const assets = await buildCurrentCanvasFileAssets()
       if (!activeCanvasFile) {
         const requestedTitle =
           typeof window === "undefined"
@@ -1711,6 +1816,7 @@ export function CanvasTab({
           title,
           document: payload.document,
           view: payload.view,
+          assets,
         })
         setActiveCanvasFile(created)
         setLastSavedCanvasFileSignature(JSON.stringify(payload))
@@ -1721,7 +1827,7 @@ export function CanvasTab({
         ...activeCanvasFile.document,
         document: payload.document,
         view: payload.view,
-      })
+      }, assets)
       setActiveCanvasFile(saved)
       setLastSavedCanvasFileSignature(JSON.stringify(payload))
     } catch (error) {
@@ -1734,10 +1840,33 @@ export function CanvasTab({
   }, [
     activeCanvasFile,
     activeProjectId,
+    buildCurrentCanvasFileAssets,
     buildCurrentCanvasFilePayload,
     createCanvasFile,
     saveCanvasFile,
   ])
+
+  const handleToggleCanvasFavorite = useCallback(
+    async (filePath: string) => {
+      const target = canvasFiles.find((file) => file.path === filePath)
+      if (!target) return
+      try {
+        const updated = await updateCanvasFileMetadata(filePath, {
+          favorite: !target.favorite,
+        })
+        if (activeCanvasFile?.path === filePath) {
+          setActiveCanvasFile(updated)
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to update canvas favorite."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [activeCanvasFile?.path, canvasFiles, updateCanvasFileMetadata]
+  )
 
   // Scene operations
   const handleSaveScene = useCallback(
@@ -2098,7 +2227,7 @@ export function CanvasTab({
                 onSelectProject={onSelectProject}
                 onCreateProject={onCreateProject}
                 onScanLocalProject={onScanLocalProject}
-                canvasFiles={canvasFiles}
+                canvasFiles={canvasFileBrowser.visibleFiles}
                 activeCanvasFilePath={activeCanvasFilePath}
                 activeCanvasFileTitle={activeCanvasFileTitle}
                 canvasFilesLoading={canvasFilesLoading}
@@ -2109,6 +2238,14 @@ export function CanvasTab({
                 onOpenCanvasFile={handleOpenCanvasFile}
                 onCreateCanvasFile={handleCreateCanvasFile}
                 onSaveCanvasFile={handleSaveCanvasFile}
+                onToggleCanvasFavorite={handleToggleCanvasFavorite}
+                openCanvasTabs={canvasFileBrowser.openTabs}
+                recentCanvasFiles={canvasFileBrowser.recentFiles}
+                favoriteCanvasFiles={canvasFileBrowser.favoriteFiles}
+                canvasFolderEntries={canvasFileBrowser.folderEntries}
+                selectedCanvasFolder={canvasFileBrowser.selectedFolder}
+                onSelectCanvasFolder={canvasFileBrowser.setSelectedFolder}
+                onCloseCanvasTab={canvasFileBrowser.closeOpenTab}
               />
             </div>
           </div>

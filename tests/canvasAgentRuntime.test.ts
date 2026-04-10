@@ -224,6 +224,90 @@ describe("canvas agent runtime", () => {
     )
   })
 
+  it("reads and writes stored canvas files through project file endpoints", async () => {
+    const runtime = await loadRuntime()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          files: [{ path: "boards/demo.canvas", surface: "canvas", title: "Demo" }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          file: { path: "boards/demo.canvas", document: { meta: { title: "Demo" } } },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          file: { path: "boards/new.canvas", document: { meta: { title: "New Board" } } },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          file: { path: "boards/demo.canvas", document: { meta: { title: "Demo Saved" } } },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          file: { path: "boards/demo.canvas", document: { meta: { favorite: true } } },
+        }),
+      })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = {
+      serverUrl: "http://127.0.0.1:5178",
+      projectId: "demo",
+    }
+
+    await expect(runtime.listProjectCanvasFiles(context as any, { surface: "canvas" })).resolves.toEqual([
+      { path: "boards/demo.canvas", surface: "canvas", title: "Demo" },
+    ])
+    await expect(runtime.openProjectCanvasFile(context as any, "boards/demo.canvas")).resolves.toEqual({
+      path: "boards/demo.canvas",
+      document: { meta: { title: "Demo" } },
+    })
+    await expect(
+      runtime.createProjectCanvasFile(context as any, { title: "New Board", surface: "canvas" })
+    ).resolves.toEqual({
+      path: "boards/new.canvas",
+      document: { meta: { title: "New Board" } },
+    })
+    await expect(
+      runtime.saveProjectCanvasFile(
+        context as any,
+        "boards/demo.canvas",
+        { meta: { title: "Demo Saved" }, document: { items: [] } },
+        [{ itemId: "media-1", dataUrl: "data:image/png;base64,AA==" }]
+      )
+    ).resolves.toEqual({
+      path: "boards/demo.canvas",
+      document: { meta: { title: "Demo Saved" } },
+    })
+    await expect(
+      runtime.updateProjectCanvasFileMetadata(context as any, "boards/demo.canvas", { favorite: true })
+    ).resolves.toEqual({
+      path: "boards/demo.canvas",
+      document: { meta: { favorite: true } },
+    })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://127.0.0.1:5178/api/projects/demo/canvases?surface=canvas"
+    )
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "http://127.0.0.1:5178/api/projects/demo/canvases/file?path=boards%2Fdemo.canvas"
+    )
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/create")
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/save")
+    expect(fetchMock.mock.calls[4]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/metadata")
+  })
+
   it("reads workspace debug payloads from the agent-native endpoint", async () => {
     const runtime = await loadRuntime()
     const fetchMock = vi.fn().mockResolvedValue({

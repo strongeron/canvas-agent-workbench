@@ -1,4 +1,4 @@
-import { Copy, Eye, Link2, Minus, Move, Palette, Plus, RotateCcw, Trash2, Type, X } from "lucide-react"
+import { Copy, Eye, FileText, Link2, Minus, Move, Palette, Plus, RefreshCw, RotateCcw, Save, Star, Trash2, Type, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { DesignSystemNodePreview } from "./DesignSystemNodePreview"
@@ -12,6 +12,8 @@ import {
   useAgentNativeWorkspaceOperations,
   type AgentNativeWorkspaceOperationRecord,
 } from "../../hooks/useAgentNativeWorkspaceOperations"
+import { useCanvasFileBrowserState } from "../../hooks/useCanvasFileBrowserState"
+import { useCanvasFiles } from "../../hooks/useCanvasFiles"
 import { useAgentNativeWorkspaceSync } from "../../hooks/useAgentNativeWorkspaceSync"
 import { useCanvasTransform } from "../../hooks/useCanvasTransform"
 import { useThemeRegistry } from "../../hooks/useThemeRegistry"
@@ -38,6 +40,12 @@ import type {
   ColorCanvasState,
   RelativeColorSpec,
 } from "../../types/colorCanvas"
+import type {
+  CanvasDocumentSurface,
+  ColorCanvasFileDocumentData,
+  ColorCanvasFileViewState,
+  ColorCanvasWorkspaceFileDocument,
+} from "../../types/canvas"
 import {
   buildColorAuditWorkspaceStateResource,
   COLOR_AUDIT_EXPORT_COLOR_MODE_OPTIONS,
@@ -97,6 +105,7 @@ export interface OklchColor {
 
 interface ColorCanvasPageProps {
   tokens: ThemeToken[]
+  projectId?: string
   themeStorageKeyPrefix?: string
   catalogOnly?: boolean
 }
@@ -250,6 +259,9 @@ const SEMANTIC_PRESETS: Array<{ label: string; role: ColorCanvasNode["role"] }> 
   { label: "Icon / Default", role: "icon" },
   { label: "Accent / Primary", role: "accent" },
 ]
+
+const SURFACE_CANVAS_FILE_ROW_HEIGHT = 56
+const SURFACE_CANVAS_FILE_LIST_HEIGHT = 256
 
 const FUNCTIONAL_TOKEN_PRESETS: Record<ColorCanvasFrameworkId, FunctionalTokenPreset[]> = {
   shadcn: [
@@ -2132,6 +2144,7 @@ function buildSystemFlowLayout(
 
 export function ColorCanvasPage({
   tokens,
+  projectId,
   themeStorageKeyPrefix,
   catalogOnly = false,
 }: ColorCanvasPageProps) {
@@ -2139,7 +2152,10 @@ export function ColorCanvasPage({
   const workspaceRef = useRef<HTMLDivElement>(null)
   const workspaceCanvasRef = useRef<HTMLDivElement>(null)
   const colorProbeRef = useRef<HTMLSpanElement>(null)
+  const surfaceCanvasListRef = useRef<HTMLDivElement>(null)
   const [tokenQuery, setTokenQuery] = useState("")
+  const [surfaceCanvasSearchQuery, setSurfaceCanvasSearchQuery] = useState("")
+  const [surfaceCanvasListScrollTop, setSurfaceCanvasListScrollTop] = useState(0)
   const [connectMode, setConnectMode] = useState<ConnectMode>(null)
   const [connectSourceId, setConnectSourceId] = useState<string | null>(null)
   const [connectDrag, setConnectDrag] = useState<{ active: boolean; x: number; y: number }>({
@@ -2362,6 +2378,83 @@ export function ColorCanvasPage({
       ? `${themeStorageKeyPrefix}-color-canvas`
       : "gallery-color-canvas"
   )
+  const {
+    files: allCanvasFiles,
+    isLoading: canvasFilesLoading,
+    error: canvasFilesError,
+    refreshFiles: refreshCanvasFiles,
+    openCanvasFile,
+    createCanvasFile,
+    saveCanvasFile,
+    updateCanvasFileMetadata,
+  } = useCanvasFiles<ColorCanvasFileDocumentData, ColorCanvasFileViewState>(projectId)
+  type ColorCanvasSurface = Extract<CanvasDocumentSurface, "color-audit" | "system-canvas">
+  const colorSurface: ColorCanvasSurface =
+    canvasMode === "color-audit" ? "color-audit" : "system-canvas"
+  const surfaceCanvasFiles = useMemo(
+    () => allCanvasFiles.filter((file) => file.surface === colorSurface),
+    [allCanvasFiles, colorSurface]
+  )
+  const [activeSurfaceCanvasFiles, setActiveSurfaceCanvasFiles] = useState<
+    Record<
+      ColorCanvasSurface,
+      {
+        path: string
+        document: ColorCanvasWorkspaceFileDocument
+      } | null
+    >
+  >({
+    "color-audit": null,
+    "system-canvas": null,
+  })
+  const [lastSavedSurfaceCanvasFileSignatures, setLastSavedSurfaceCanvasFileSignatures] =
+    useState<Record<ColorCanvasSurface, string | null>>({
+      "color-audit": null,
+      "system-canvas": null,
+    })
+  const activeSurfaceCanvasFile = activeSurfaceCanvasFiles[colorSurface]
+  const lastSavedSurfaceCanvasFileSignature =
+    lastSavedSurfaceCanvasFileSignatures[colorSurface]
+  const colorCanvasFileBrowser = useCanvasFileBrowserState(
+    themeStorageKeyPrefix || `gallery-${projectId || "color-canvas"}`,
+    surfaceCanvasFiles,
+    activeSurfaceCanvasFiles[colorSurface]?.path ?? null,
+    colorSurface
+  )
+  const filteredSurfaceCanvasFiles = useMemo(() => {
+    if (!surfaceCanvasSearchQuery.trim()) return colorCanvasFileBrowser.visibleFiles
+    const query = surfaceCanvasSearchQuery.trim().toLowerCase()
+    return colorCanvasFileBrowser.visibleFiles.filter((file) => {
+      const folderPath = file.path.split("/").slice(0, -1).join("/")
+      return (
+        file.title.toLowerCase().includes(query) ||
+        file.path.toLowerCase().includes(query) ||
+        folderPath.toLowerCase().includes(query)
+      )
+    })
+  }, [colorCanvasFileBrowser.visibleFiles, surfaceCanvasSearchQuery])
+  const visibleSurfaceCanvasRange = useMemo(() => {
+    const startIndex = Math.max(
+      0,
+      Math.floor(surfaceCanvasListScrollTop / SURFACE_CANVAS_FILE_ROW_HEIGHT) - 4
+    )
+    const viewportRows =
+      Math.ceil(SURFACE_CANVAS_FILE_LIST_HEIGHT / SURFACE_CANVAS_FILE_ROW_HEIGHT) + 8
+    const endIndex = Math.min(filteredSurfaceCanvasFiles.length, startIndex + viewportRows)
+    return { startIndex, endIndex }
+  }, [filteredSurfaceCanvasFiles.length, surfaceCanvasListScrollTop])
+  const visibleSurfaceCanvasFiles = useMemo(
+    () =>
+      filteredSurfaceCanvasFiles.slice(
+        visibleSurfaceCanvasRange.startIndex,
+        visibleSurfaceCanvasRange.endIndex
+      ),
+    [
+      filteredSurfaceCanvasFiles,
+      visibleSurfaceCanvasRange.endIndex,
+      visibleSurfaceCanvasRange.startIndex,
+    ]
+  )
 
   const filteredTokens = useMemo(() => {
     if (!tokenQuery.trim()) return colorTokens
@@ -2371,6 +2464,292 @@ export function ColorCanvasPage({
       return haystack.includes(lower)
     })
   }, [colorTokens, tokenQuery])
+
+  const buildColorCanvasFilePayload = useCallback((): {
+    document: ColorCanvasFileDocumentData
+    view: ColorCanvasFileViewState
+  } => {
+    return {
+      document: {
+        state,
+        canvasMode,
+        canvasViewMode,
+        colorAuditLayoutMode,
+        templateKitId,
+        autoContrastEnabled,
+        contrastRules,
+        designSystemConfig,
+        viewNodePositions,
+      },
+      view: {
+        colorAuditTransform,
+        systemCanvasTransform,
+      },
+    }
+  }, [
+    autoContrastEnabled,
+    canvasMode,
+    canvasViewMode,
+    colorAuditLayoutMode,
+    colorAuditTransform,
+    contrastRules,
+    designSystemConfig,
+    state,
+    systemCanvasTransform,
+    templateKitId,
+    viewNodePositions,
+  ])
+
+  const currentColorCanvasFileSignature = useMemo(
+    () => JSON.stringify(buildColorCanvasFilePayload()),
+    [buildColorCanvasFilePayload]
+  )
+  const activeSurfaceCanvasFilePath = activeSurfaceCanvasFile?.path ?? null
+  const activeSurfaceCanvasFileTitle = activeSurfaceCanvasFile?.document.meta.title ?? null
+  const colorCanvasFileDirty =
+    activeSurfaceCanvasFile !== null &&
+    lastSavedSurfaceCanvasFileSignature !== currentColorCanvasFileSignature
+
+  const applySurfaceCanvasFile = useCallback(
+    (file: { path: string; document: ColorCanvasWorkspaceFileDocument }) => {
+      const nextDocument = file.document.document
+      replaceState(nextDocument.state)
+      setCanvasMode(nextDocument.canvasMode)
+      if (nextDocument.canvasViewMode) {
+        setCanvasViewMode(nextDocument.canvasViewMode as CanvasViewMode)
+      }
+      if (nextDocument.colorAuditLayoutMode) {
+        setColorAuditLayoutMode(nextDocument.colorAuditLayoutMode as ColorAuditLayoutMode)
+      }
+      if (nextDocument.templateKitId) {
+        setTemplateKitId(nextDocument.templateKitId as TemplateKitId)
+      }
+      if (typeof nextDocument.autoContrastEnabled === "boolean") {
+        setAutoContrastEnabled(nextDocument.autoContrastEnabled)
+      }
+      if (Array.isArray(nextDocument.contrastRules)) {
+        setContrastRules(nextDocument.contrastRules as ContrastRule[])
+      }
+      if (nextDocument.designSystemConfig) {
+        setDesignSystemConfig(nextDocument.designSystemConfig)
+      }
+      if (nextDocument.viewNodePositions) {
+        setViewNodePositions(nextDocument.viewNodePositions)
+      }
+      if (file.document.view?.colorAuditTransform) {
+        zoomColorAuditTo(file.document.view.colorAuditTransform.scale)
+        panColorAuditTo(
+          file.document.view.colorAuditTransform.offset.x,
+          file.document.view.colorAuditTransform.offset.y
+        )
+      } else {
+        resetColorAuditZoom()
+      }
+      if (file.document.view?.systemCanvasTransform) {
+        zoomSystemCanvasTo(file.document.view.systemCanvasTransform.scale)
+        panSystemCanvasTo(
+          file.document.view.systemCanvasTransform.offset.x,
+          file.document.view.systemCanvasTransform.offset.y
+        )
+      } else {
+        resetSystemCanvasZoom()
+      }
+      const nextSurface: ColorCanvasSurface =
+        file.document.surface === "system-canvas" ? "system-canvas" : "color-audit"
+      setActiveSurfaceCanvasFiles((current) => ({
+        ...current,
+        [nextSurface]: file,
+      }))
+      setLastSavedSurfaceCanvasFileSignatures((current) => ({
+        ...current,
+        [nextSurface]: JSON.stringify({
+          document: nextDocument,
+          view: file.document.view ?? {},
+        }),
+      }))
+    },
+    [
+      panColorAuditTo,
+      panSystemCanvasTo,
+      replaceState,
+      resetColorAuditZoom,
+      resetSystemCanvasZoom,
+      setAutoContrastEnabled,
+      setCanvasMode,
+      setCanvasViewMode,
+      setColorAuditLayoutMode,
+      setContrastRules,
+      setDesignSystemConfig,
+      setTemplateKitId,
+      setViewNodePositions,
+      zoomColorAuditTo,
+      zoomSystemCanvasTo,
+    ]
+  )
+
+  const handleOpenSurfaceCanvasFile = useCallback(
+    async (filePath: string) => {
+      try {
+        const file = await openCanvasFile(filePath)
+        applySurfaceCanvasFile(file as { path: string; document: ColorCanvasWorkspaceFileDocument })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to open canvas file."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [applySurfaceCanvasFile, openCanvasFile]
+  )
+
+  const handleCreateSurfaceCanvasFile = useCallback(async () => {
+    if (!projectId) return
+    const requestedTitle =
+      typeof window === "undefined"
+        ? canvasMode === "color-audit"
+          ? "Color Audit"
+          : "System Canvas"
+        : window.prompt(
+            "New canvas file title",
+            canvasMode === "color-audit" ? "Color Audit" : "System Canvas"
+          )
+    if (requestedTitle === null) return
+    const title = requestedTitle.trim() || (canvasMode === "color-audit" ? "Color Audit" : "System Canvas")
+    try {
+      const payload = buildColorCanvasFilePayload()
+      const file = await createCanvasFile({
+        title,
+        surface: colorSurface,
+        document: payload.document,
+        view: payload.view,
+      })
+      setActiveSurfaceCanvasFiles((current) => ({
+        ...current,
+        [colorSurface]: file as { path: string; document: ColorCanvasWorkspaceFileDocument },
+      }))
+      setLastSavedSurfaceCanvasFileSignatures((current) => ({
+        ...current,
+        [colorSurface]: JSON.stringify(payload),
+      }))
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to create canvas file."
+      if (typeof window !== "undefined") {
+        window.alert(message)
+      }
+    }
+  }, [buildColorCanvasFilePayload, canvasMode, colorSurface, createCanvasFile, projectId])
+
+  const handleSaveSurfaceCanvasFile = useCallback(async () => {
+    if (!projectId) return
+    const payload = buildColorCanvasFilePayload()
+    try {
+      if (!activeSurfaceCanvasFile) {
+        const requestedTitle =
+          typeof window === "undefined"
+            ? canvasMode === "color-audit"
+              ? "Color Audit"
+              : "System Canvas"
+            : window.prompt(
+                "Save canvas as",
+                canvasMode === "color-audit" ? "Color Audit" : "System Canvas"
+              )
+        if (requestedTitle === null) return
+        const title = requestedTitle.trim() || (canvasMode === "color-audit" ? "Color Audit" : "System Canvas")
+        const created = await createCanvasFile({
+          title,
+          surface: colorSurface,
+          document: payload.document,
+          view: payload.view,
+        })
+        setActiveSurfaceCanvasFiles((current) => ({
+          ...current,
+          [colorSurface]: created as { path: string; document: ColorCanvasWorkspaceFileDocument },
+        }))
+        setLastSavedSurfaceCanvasFileSignatures((current) => ({
+          ...current,
+          [colorSurface]: JSON.stringify(payload),
+        }))
+        return
+      }
+
+      if (activeSurfaceCanvasFile.document.surface !== colorSurface) {
+        throw new Error(
+          `Open file surface mismatch. "${activeSurfaceCanvasFile.document.meta.title}" belongs to ${activeSurfaceCanvasFile.document.surface}, not ${colorSurface}.`
+        )
+      }
+
+      const saved = await saveCanvasFile(activeSurfaceCanvasFile.path, {
+        ...activeSurfaceCanvasFile.document,
+        surface: colorSurface,
+        document: payload.document,
+        view: payload.view,
+      })
+      setActiveSurfaceCanvasFiles((current) => ({
+        ...current,
+        [colorSurface]: saved as { path: string; document: ColorCanvasWorkspaceFileDocument },
+      }))
+      setLastSavedSurfaceCanvasFileSignatures((current) => ({
+        ...current,
+        [colorSurface]: JSON.stringify(payload),
+      }))
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save canvas file."
+      if (typeof window !== "undefined") {
+        window.alert(message)
+      }
+    }
+  }, [
+    activeSurfaceCanvasFile,
+    buildColorCanvasFilePayload,
+    canvasMode,
+    colorSurface,
+    createCanvasFile,
+    projectId,
+    saveCanvasFile,
+  ])
+
+  const handleToggleSurfaceCanvasFavorite = useCallback(
+    async (filePath: string) => {
+      const target = surfaceCanvasFiles.find((file) => file.path === filePath)
+      if (!target) return
+      try {
+        const updated = await updateCanvasFileMetadata(filePath, {
+          favorite: !target.favorite,
+        })
+        setActiveSurfaceCanvasFiles((current) => {
+          const nextEntries = { ...current }
+          for (const surfaceId of Object.keys(nextEntries) as ColorCanvasSurface[]) {
+            if (nextEntries[surfaceId]?.path === filePath) {
+              nextEntries[surfaceId] =
+                updated as { path: string; document: ColorCanvasWorkspaceFileDocument }
+            }
+          }
+          return nextEntries
+        })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to update canvas favorite."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [surfaceCanvasFiles, updateCanvasFileMetadata]
+  )
+
+  useEffect(() => {
+    setActiveSurfaceCanvasFiles({
+      "color-audit": null,
+      "system-canvas": null,
+    })
+    setLastSavedSurfaceCanvasFileSignatures({
+      "color-audit": null,
+      "system-canvas": null,
+    })
+  }, [projectId])
   const groupedFilteredTokens = useMemo(() => {
     const groups = new Map<string, ThemeToken[]>()
     filteredTokens.forEach((token) => {
@@ -7533,6 +7912,280 @@ export function ColorCanvasPage({
             </div>
           )}
         </div>
+
+        {projectId && (
+          <div className="border-b border-default px-4 py-3">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Canvas files
+              </h3>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void refreshCanvasFiles()
+                  }}
+                  className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+                  aria-label="Refresh canvas files"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${canvasFilesLoading ? "animate-spin" : ""}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleSaveSurfaceCanvasFile()
+                  }}
+                  className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+                  aria-label="Save canvas file"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleCreateSurfaceCanvasFile()
+                  }}
+                  className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+                  aria-label="Create canvas file"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={surfaceCanvasSearchQuery}
+                onChange={(e) => setSurfaceCanvasSearchQuery(e.target.value)}
+                placeholder={`Search ${canvasMode === "color-audit" ? "color audit" : "system"} files...`}
+                className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground"
+              />
+              <div className="rounded-md border border-default bg-surface-50 px-3 py-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Current file
+                </div>
+                <div className="mt-1 truncate text-sm font-medium text-foreground">
+                  {activeSurfaceCanvasFileTitle || "Unsaved canvas"}
+                </div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {activeSurfaceCanvasFilePath || "Create or save a real .canvas file for this surface."}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {colorCanvasFileDirty ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                      Unsaved changes
+                    </span>
+                  ) : !activeSurfaceCanvasFilePath ? (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                      Local draft
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                      Saved
+                    </span>
+                  )}
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                    {canvasMode === "color-audit" ? "Color Audit" : "System Canvas"}
+                  </span>
+                </div>
+              </div>
+              {canvasFilesError ? (
+                <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {canvasFilesError}
+                </div>
+              ) : null}
+              {colorCanvasFileBrowser.openTabs.length > 0 ? (
+                <div className="rounded-md border border-default bg-white px-2 py-2">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Open tabs
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {colorCanvasFileBrowser.openTabs.map((file) => {
+                      const isActive = activeSurfaceCanvasFilePath === file.path
+                      return (
+                        <span
+                          key={file.path}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] ${
+                            isActive
+                              ? "border-brand-300 bg-brand-50 text-brand-700"
+                              : "border-default bg-surface-50 text-foreground"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleOpenSurfaceCanvasFile(file.path)
+                            }}
+                            className="truncate"
+                          >
+                            {file.title}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => colorCanvasFileBrowser.closeOpenTab(file.path)}
+                            className="rounded-full p-0.5 text-muted-foreground hover:bg-white"
+                            aria-label={`Close ${file.title}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              {colorCanvasFileBrowser.recentFiles.length > 0 ? (
+                <div className="rounded-md border border-default bg-white px-2 py-2">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Recent
+                  </div>
+                  <div className="space-y-1">
+                    {colorCanvasFileBrowser.recentFiles.slice(0, 4).map((file) => (
+                      <button
+                        key={file.path}
+                        type="button"
+                        onClick={() => {
+                          void handleOpenSurfaceCanvasFile(file.path)
+                        }}
+                        className="flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-xs text-foreground hover:bg-surface-50"
+                      >
+                        <span className="truncate">{file.title}</span>
+                        <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">
+                          {file.path.split("/").slice(0, -1).join("/") || "root"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {colorCanvasFileBrowser.favoriteFiles.length > 0 ? (
+                <div className="rounded-md border border-default bg-white px-2 py-2">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Favorites
+                  </div>
+                  <div className="space-y-1">
+                    {colorCanvasFileBrowser.favoriteFiles.map((file) => (
+                      <button
+                        key={file.path}
+                        type="button"
+                        onClick={() => {
+                          void handleOpenSurfaceCanvasFile(file.path)
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-foreground hover:bg-surface-50"
+                      >
+                        <Star className="h-3.5 w-3.5 shrink-0 fill-current text-amber-500" />
+                        <span className="truncate">{file.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {colorCanvasFileBrowser.folderTreeEntries.length > 0 ? (
+                <div className="rounded-md border border-default bg-white px-2 py-2">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Folder tree
+                  </div>
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => colorCanvasFileBrowser.setSelectedFolder("all")}
+                      className={`flex w-full items-center justify-between rounded-md border px-2 py-1 text-left text-[11px] ${
+                        colorCanvasFileBrowser.selectedFolder === "all"
+                          ? "border-brand-300 bg-brand-50 text-brand-700"
+                          : "border-default bg-surface-50 text-foreground"
+                      }`}
+                    >
+                      <span>All files</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {surfaceCanvasFiles.length}
+                      </span>
+                    </button>
+                    {colorCanvasFileBrowser.folderTreeEntries.map((entry) => (
+                      <button
+                        key={entry.folder}
+                        type="button"
+                        onClick={() => colorCanvasFileBrowser.setSelectedFolder(entry.folder)}
+                        className={`flex w-full items-center justify-between rounded-md border px-2 py-1 text-left text-[11px] ${
+                          colorCanvasFileBrowser.selectedFolder === entry.folder
+                            ? "border-brand-300 bg-brand-50 text-brand-700"
+                            : "border-default bg-surface-50 text-foreground"
+                        }`}
+                        style={{ paddingLeft: `${8 + entry.depth * 14}px` }}
+                      >
+                        <span className="truncate">{entry.label}</span>
+                        <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">
+                          {entry.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div
+                ref={surfaceCanvasListRef}
+                onScroll={(event) => setSurfaceCanvasListScrollTop(event.currentTarget.scrollTop)}
+                className="overflow-y-auto rounded-md border border-default bg-white"
+                style={{ maxHeight: SURFACE_CANVAS_FILE_LIST_HEIGHT }}
+              >
+                {filteredSurfaceCanvasFiles.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                    {canvasFilesLoading ? "Loading canvas files…" : "No files for this surface yet"}
+                  </div>
+                ) : (
+                  <div
+                    className="relative"
+                    style={{ height: filteredSurfaceCanvasFiles.length * SURFACE_CANVAS_FILE_ROW_HEIGHT }}
+                  >
+                    {visibleSurfaceCanvasFiles.map((file, index) => {
+                      const absoluteIndex = visibleSurfaceCanvasRange.startIndex + index
+                      const folderPath = file.path.split("/").slice(0, -1).join("/")
+                      const isActive = activeSurfaceCanvasFilePath === file.path
+                      return (
+                        <div
+                          key={file.path}
+                          className={`absolute left-0 right-0 flex items-start gap-2 border-b border-default px-3 py-2 ${
+                            isActive ? "bg-brand-50" : "hover:bg-surface-50"
+                          }`}
+                          style={{ top: absoluteIndex * SURFACE_CANVAS_FILE_ROW_HEIGHT }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleOpenSurfaceCanvasFile(file.path)
+                            }}
+                            className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                          >
+                            <FileText className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? "text-brand-700" : "text-muted-foreground"}`} />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-foreground">
+                                {file.title}
+                              </span>
+                              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                                {folderPath || "root"} · {file.itemCount} nodes
+                              </span>
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleToggleSurfaceCanvasFavorite(file.path)
+                            }}
+                            className={`rounded-full p-1 ${
+                              file.favorite ? "text-amber-500" : "text-muted-foreground hover:bg-white"
+                            }`}
+                            aria-label={`${file.favorite ? "Unfavorite" : "Favorite"} ${file.title}`}
+                          >
+                            <Star className={`h-3.5 w-3.5 ${file.favorite ? "fill-current" : ""}`} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="border-b border-default px-4 py-3">
           <div className="mb-2 flex items-center justify-between">

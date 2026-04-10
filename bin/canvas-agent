@@ -7,12 +7,15 @@ import {
   buildCanvasContextSummary,
   clearCanvasAgentAttachedContext,
   captureWorkspaceScreenshot,
+  createProjectCanvasFile,
   enqueueAgentNativeWorkspaceOperation,
   enqueueCanvasAgentOperation,
   fail,
   formatCanvasAgentShellExports,
   getDefaultCanvasAgentServerUrl,
   getCanvasAgentContextFromEnv,
+  listProjectCanvasFiles,
+  openProjectCanvasFile,
   readAgentNativeWorkspaceDebug,
   readAgentNativeManifest,
   readAgentNativeWorkspaceEvents,
@@ -29,6 +32,8 @@ import {
   readCanvasAgentTranscript,
   readJsonPayload,
   resolveCanvasAgentContextFilePath,
+  saveProjectCanvasFile,
+  updateProjectCanvasFileMetadata,
   writeCanvasAgentAttachedContext,
   writeJson,
 } from './canvas-agent-runtime.mjs'
@@ -53,6 +58,11 @@ Usage:
   bin/canvas-agent workspace-events <workspace-id> [limit]
   bin/canvas-agent workspace-debug <workspace-id> [limit]
   bin/canvas-agent surface-manifest <workspace-id>
+  bin/canvas-agent canvas-files [surface]
+  bin/canvas-agent open-canvas-file <path>
+  bin/canvas-agent create-canvas-file <json|@file|->
+  bin/canvas-agent save-canvas-file <path> <json|@file|->
+  bin/canvas-agent update-canvas-file-metadata <path> <json|@file|->
   bin/canvas-agent color-audit-state
   bin/canvas-agent color-audit-export
   bin/canvas-agent node-catalog-state
@@ -298,6 +308,52 @@ async function main() {
                 ? context.nodeCatalogWorkspaceKey
                 : undefined
       writeJson(await readAgentNativeWorkspaceManifest(context, workspaceId, workspaceKey))
+      return
+    }
+    case 'canvas-files': {
+      const surface = args[0]?.trim()
+      writeJson(await listProjectCanvasFiles(context, { surface }))
+      return
+    }
+    case 'open-canvas-file': {
+      const canvasPath = args[0]?.trim()
+      if (!canvasPath) fail('open-canvas-file requires a file path.')
+      writeJson(await openProjectCanvasFile(context, canvasPath))
+      return
+    }
+    case 'create-canvas-file': {
+      const payload = await readJsonPayload(args[0])
+      if (!payload || typeof payload !== 'object') {
+        fail('create-canvas-file requires a JSON object payload.')
+      }
+      writeJson(await createProjectCanvasFile(context, payload))
+      return
+    }
+    case 'save-canvas-file': {
+      const [canvasPath, payloadRef] = args
+      if (!canvasPath?.trim()) fail('save-canvas-file requires a file path.')
+      const payload = await readJsonPayload(payloadRef)
+      if (!payload || typeof payload !== 'object' || !payload.document) {
+        fail('save-canvas-file requires a JSON payload with document.')
+      }
+      writeJson(
+        await saveProjectCanvasFile(
+          context,
+          canvasPath.trim(),
+          payload.document,
+          Array.isArray(payload.assets) ? payload.assets : undefined
+        )
+      )
+      return
+    }
+    case 'update-canvas-file-metadata': {
+      const [canvasPath, payloadRef] = args
+      if (!canvasPath?.trim()) fail('update-canvas-file-metadata requires a file path.')
+      const payload = await readJsonPayload(payloadRef)
+      if (!payload || typeof payload !== 'object') {
+        fail('update-canvas-file-metadata requires a JSON object payload.')
+      }
+      writeJson(await updateProjectCanvasFileMetadata(context, canvasPath.trim(), payload))
       return
     }
     case 'color-audit-state': {

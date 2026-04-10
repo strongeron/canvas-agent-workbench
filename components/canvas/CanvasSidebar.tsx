@@ -1,9 +1,10 @@
 import { useDraggable } from "@dnd-kit/core"
-import { ChevronDown, ChevronRight, FileText, GripVertical, Plus, RefreshCw, Save, Search } from "lucide-react"
+import { ChevronDown, ChevronRight, FileText, GripVertical, Plus, RefreshCw, Save, Search, Star, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { GalleryEntry } from "../../core/types"
 import type { CanvasFileIndexEntry } from "../../types/canvas"
+import type { CanvasFolderTreeEntry } from "../../hooks/useCanvasFileBrowserState"
 import type { PaperImportQueueItem } from "./CanvasTab"
 import { fetchLocalApps, type LocalAppEntry } from "./localAppsService"
 import { inferMediaKindFromFile } from "./mediaStorageService"
@@ -25,6 +26,9 @@ type ProjectSidebarEntry = {
     scannedFiles?: number | null
   } | null
 }
+
+const CANVAS_FILE_ROW_HEIGHT = 52
+const CANVAS_FILE_LIST_HEIGHT = 256
 
 function formatRelativeSyncTime(value?: string | null) {
   if (!value) return null
@@ -171,6 +175,14 @@ interface CanvasSidebarProps {
   onOpenCanvasFile?: (filePath: string) => void | Promise<void>
   onCreateCanvasFile?: () => void | Promise<void>
   onSaveCanvasFile?: () => void | Promise<void>
+  onToggleCanvasFavorite?: (filePath: string) => void | Promise<void>
+  openCanvasTabs?: CanvasFileIndexEntry[]
+  recentCanvasFiles?: CanvasFileIndexEntry[]
+  favoriteCanvasFiles?: CanvasFileIndexEntry[]
+  canvasFolderEntries?: CanvasFolderTreeEntry[]
+  selectedCanvasFolder?: string
+  onSelectCanvasFolder?: (folder: string) => void
+  onCloseCanvasTab?: (filePath: string) => void
 }
 
 export function CanvasSidebar({
@@ -200,6 +212,14 @@ export function CanvasSidebar({
   onOpenCanvasFile,
   onCreateCanvasFile,
   onSaveCanvasFile,
+  onToggleCanvasFavorite,
+  openCanvasTabs,
+  recentCanvasFiles,
+  favoriteCanvasFiles,
+  canvasFolderEntries,
+  selectedCanvasFolder,
+  onSelectCanvasFolder,
+  onCloseCanvasTab,
 }: CanvasSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [canvasSearchQuery, setCanvasSearchQuery] = useState("")
@@ -237,6 +257,8 @@ export function CanvasSidebar({
   })
   const mediaFileInputRef = useRef<HTMLInputElement>(null)
   const diagramFileInputRef = useRef<HTMLInputElement>(null)
+  const canvasListRef = useRef<HTMLDivElement>(null)
+  const [canvasListScrollTop, setCanvasListScrollTop] = useState(0)
 
   // Group entries by category
   const componentsByCategory = useMemo(() => {
@@ -367,6 +389,16 @@ export function CanvasSidebar({
       )
     })
   }, [canvasFiles, canvasSearchQuery])
+  const visibleCanvasRange = useMemo(() => {
+    const startIndex = Math.max(0, Math.floor(canvasListScrollTop / CANVAS_FILE_ROW_HEIGHT) - 3)
+    const visibleCount = Math.ceil(CANVAS_FILE_LIST_HEIGHT / CANVAS_FILE_ROW_HEIGHT) + 6
+    const endIndex = Math.min(filteredCanvasFiles.length, startIndex + visibleCount)
+    return { startIndex, endIndex }
+  }, [canvasListScrollTop, filteredCanvasFiles.length])
+  const visibleCanvasFiles = filteredCanvasFiles.slice(
+    visibleCanvasRange.startIndex,
+    visibleCanvasRange.endIndex
+  )
 
   return (
     <aside className="flex h-full min-h-0 w-72 shrink-0 flex-col overflow-y-auto border-r border-default bg-white">
@@ -602,27 +634,167 @@ export function CanvasSidebar({
                   {canvasFilesError}
                 </div>
               ) : null}
-              <div className="max-h-56 overflow-y-auto rounded-md border border-default">
+              {openCanvasTabs && openCanvasTabs.length > 0 ? (
+                <div className="rounded-md border border-default bg-white px-2 py-2">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Open tabs
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {openCanvasTabs.map((file) => {
+                      const isActive = activeCanvasFilePath === file.path
+                      return (
+                        <span
+                          key={file.path}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] ${
+                            isActive
+                              ? "border-brand-300 bg-brand-50 text-brand-700"
+                              : "border-default bg-surface-50 text-foreground"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void onOpenCanvasFile?.(file.path)
+                            }}
+                            className="truncate"
+                          >
+                            {file.title}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onCloseCanvasTab?.(file.path)}
+                            className="rounded-full p-0.5 text-muted-foreground hover:bg-white"
+                            aria-label={`Close ${file.title}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              {recentCanvasFiles && recentCanvasFiles.length > 0 ? (
+                <div className="rounded-md border border-default bg-white px-2 py-2">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Recent
+                  </div>
+                  <div className="space-y-1">
+                    {recentCanvasFiles.slice(0, 5).map((file) => (
+                      <button
+                        key={file.path}
+                        type="button"
+                        onClick={() => {
+                          void onOpenCanvasFile?.(file.path)
+                        }}
+                        className="flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-xs text-foreground hover:bg-surface-50"
+                      >
+                        <span className="truncate">{file.title}</span>
+                        <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">
+                          {file.path.split("/").slice(0, -1).join("/") || "root"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {favoriteCanvasFiles && favoriteCanvasFiles.length > 0 ? (
+                <div className="rounded-md border border-default bg-white px-2 py-2">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Favorites
+                  </div>
+                  <div className="space-y-1">
+                    {favoriteCanvasFiles.map((file) => (
+                      <button
+                        key={file.path}
+                        type="button"
+                        onClick={() => {
+                          void onOpenCanvasFile?.(file.path)
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-foreground hover:bg-surface-50"
+                      >
+                        <Star className="h-3.5 w-3.5 shrink-0 fill-current text-amber-500" />
+                        <span className="truncate">{file.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {canvasFolderEntries && canvasFolderEntries.length > 0 ? (
+                <div className="rounded-md border border-default bg-white px-2 py-2">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Folder tree
+                  </div>
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => onSelectCanvasFolder?.("all")}
+                      className={`flex w-full items-center justify-between rounded-md border px-2 py-1 text-left text-[11px] ${
+                        (selectedCanvasFolder || "all") === "all"
+                          ? "border-brand-300 bg-brand-50 text-brand-700"
+                          : "border-default bg-surface-50 text-foreground"
+                      }`}
+                    >
+                      <span>All canvases</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {canvasFiles?.length ?? 0}
+                      </span>
+                    </button>
+                    {canvasFolderEntries.map((entry) => (
+                      <button
+                        key={entry.folder}
+                        type="button"
+                        onClick={() => onSelectCanvasFolder?.(entry.folder)}
+                        className={`flex w-full items-center justify-between rounded-md border px-2 py-1 text-left text-[11px] ${
+                          selectedCanvasFolder === entry.folder
+                            ? "border-brand-300 bg-brand-50 text-brand-700"
+                            : "border-default bg-surface-50 text-foreground"
+                        }`}
+                        style={{ paddingLeft: `${8 + entry.depth * 14}px` }}
+                      >
+                        <span className="truncate">{entry.label}</span>
+                        <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">
+                          {entry.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div
+                ref={canvasListRef}
+                onScroll={(event) => setCanvasListScrollTop(event.currentTarget.scrollTop)}
+                className="overflow-y-auto rounded-md border border-default"
+                style={{ maxHeight: CANVAS_FILE_LIST_HEIGHT }}
+              >
                 {filteredCanvasFiles.length === 0 ? (
                   <div className="px-3 py-4 text-center text-xs text-muted-foreground">
                     {canvasFilesLoading ? "Loading canvas files…" : "No canvas files yet"}
                   </div>
                 ) : (
-                  <div className="divide-y divide-default">
-                    {filteredCanvasFiles.map((file) => {
+                  <div
+                    className="relative"
+                    style={{ height: filteredCanvasFiles.length * CANVAS_FILE_ROW_HEIGHT }}
+                  >
+                    {visibleCanvasFiles.map((file, index) => {
+                      const absoluteIndex = visibleCanvasRange.startIndex + index
                       const folderPath = file.path.split("/").slice(0, -1).join("/")
                       const isActive = activeCanvasFilePath === file.path
                       return (
-                        <button
+                        <div
                           key={file.path}
-                          type="button"
-                          onClick={() => {
-                            void onOpenCanvasFile?.(file.path)
-                          }}
-                          className={`flex w-full items-start gap-2 px-3 py-2 text-left transition-colors ${
+                          className={`absolute left-0 right-0 flex w-full items-start gap-2 border-b border-default px-3 py-2 text-left transition-colors ${
                             isActive ? "bg-brand-50" : "hover:bg-surface-50"
                           }`}
+                          style={{ top: absoluteIndex * CANVAS_FILE_ROW_HEIGHT }}
                         >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void onOpenCanvasFile?.(file.path)
+                            }}
+                            className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                          >
                           <FileText className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? "text-brand-700" : "text-muted-foreground"}`} />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium text-foreground">
@@ -632,7 +804,23 @@ export function CanvasSidebar({
                               {folderPath || "root"} · {file.itemCount} items
                             </span>
                           </span>
-                        </button>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void onToggleCanvasFavorite?.(file.path)
+                            }}
+                            className={`rounded-full p-1 ${
+                              file.favorite
+                                ? "text-amber-500"
+                                : "text-muted-foreground hover:bg-white"
+                            }`}
+                            aria-label={`${file.favorite ? "Unfavorite" : "Favorite"} ${file.title}`}
+                          >
+                            <Star className={`h-3.5 w-3.5 ${file.favorite ? "fill-current" : ""}`} />
+                          </button>
+                        </div>
                       )
                     })}
                   </div>

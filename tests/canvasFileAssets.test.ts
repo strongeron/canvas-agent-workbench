@@ -1,0 +1,113 @@
+import os from "node:os"
+import path from "node:path"
+import { promises as fs } from "node:fs"
+
+import { afterEach, describe, expect, it } from "vitest"
+
+import { buildCanvasFileDocument } from "../utils/canvasFileStore"
+import {
+  packCanvasDocumentAssets,
+  readCanvasDocumentAsset,
+} from "../utils/canvasFileAssets"
+
+const tempDirs: string[] = []
+
+async function createTempProjectsRoot() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "gallery-poc-canvas-assets-"))
+  tempDirs.push(root)
+  return root
+}
+
+afterEach(async () => {
+  await Promise.all(
+    tempDirs.splice(0, tempDirs.length).map((dir) =>
+      fs.rm(dir, { recursive: true, force: true })
+    )
+  )
+})
+
+describe("canvas file assets", () => {
+  it("packs shared media and inline payloads into document-local assets", async () => {
+    const projectsRoot = await createTempProjectsRoot()
+    const sharedMediaRoot = path.join(projectsRoot, ".canvas-media")
+    await fs.mkdir(sharedMediaRoot, { recursive: true })
+    await fs.writeFile(path.join(sharedMediaRoot, "shared.png"), Buffer.from("shared-image"))
+
+    const document = buildCanvasFileDocument({
+      projectId: "demo",
+      title: "Media Board",
+      document: {
+        items: [
+          {
+            id: "media-1",
+            type: "media",
+            src: "/api/media/file/shared.png",
+            title: "Shared Media",
+            mediaKind: "image",
+            position: { x: 0, y: 0 },
+            size: { width: 100, height: 100 },
+            rotation: 0,
+            zIndex: 1,
+          },
+          {
+            id: "media-2",
+            type: "media",
+            src: "blob:temporary-image",
+            title: "Inline Media",
+            mediaKind: "image",
+            position: { x: 120, y: 0 },
+            size: { width: 100, height: 100 },
+            rotation: 0,
+            zIndex: 2,
+          },
+        ],
+        groups: [],
+        nextZIndex: 3,
+        selectedIds: [],
+      },
+    })
+
+    const packed = await packCanvasDocumentAssets(projectsRoot, {
+      projectId: "demo",
+      path: "boards/media-board.canvas",
+      document,
+      sharedMediaRoot,
+      assets: [
+        {
+          itemId: "media-2",
+          field: "src",
+          fileName: "inline.png",
+          dataUrl: "data:image/png;base64,aW5saW5lLWltYWdl",
+        },
+      ],
+    })
+
+    const packedItems = packed.document.items.filter(
+      (item): item is (typeof packed.document.items)[number] & { type: "media"; src: string } =>
+        item.type === "media"
+    )
+    expect(packedItems[0]?.src).toContain(
+      "/api/projects/demo/canvases/assets/file?path=boards%2Fmedia-board.canvas&asset="
+    )
+    expect(packedItems[1]?.src).toContain(
+      "/api/projects/demo/canvases/assets/file?path=boards%2Fmedia-board.canvas&asset=inline.png"
+    )
+
+    const sharedAssetName = decodeURIComponent(new URL(`http://localhost${packedItems[0]?.src}`).searchParams.get("asset") || "")
+    const sharedAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "boards/media-board.canvas",
+      sharedAssetName
+    )
+    expect(sharedAsset.content.toString("utf8")).toBe("shared-image")
+
+    const inlineAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "boards/media-board.canvas",
+      "inline.png"
+    )
+    expect(inlineAsset.content.toString("utf8")).toBe("inline-image")
+  })
+})
