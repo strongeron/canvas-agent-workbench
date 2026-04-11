@@ -6,6 +6,7 @@ import {
   DESIGN_SYSTEM_ICON_LIBRARIES,
   getDesignSystemIconLibraryLabel,
 } from "./iconLibraryRegistry"
+import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "../canvas/CanvasFileDialogs"
 import { CanvasThemePanel } from "../canvas/CanvasThemePanel"
 import { ColorPickerField } from "../color-picker"
 import {
@@ -234,6 +235,18 @@ type WorkspaceCatalogSection = {
       | "excalidraw"
       | "markdown"
   }>
+}
+
+type ColorCanvasFileActionModalState = {
+  mode: "create" | "save-as" | "rename" | "duplicate"
+  targetPath: string | null
+  title: string
+  folder: string
+}
+
+type ColorCanvasFileDeleteModalState = {
+  path: string
+  title: string
 }
 
 const DEFAULT_NODE_SIZES: Record<ColorCanvasNode["type"], { width: number; height: number }> = {
@@ -2415,6 +2428,18 @@ export function ColorCanvasPage({
       "color-audit": null,
       "system-canvas": null,
     })
+  const [surfaceCanvasFileActionModal, setSurfaceCanvasFileActionModal] =
+    useState<ColorCanvasFileActionModalState | null>(null)
+  const [surfaceCanvasFileDeleteModal, setSurfaceCanvasFileDeleteModal] =
+    useState<ColorCanvasFileDeleteModalState | null>(null)
+  const [surfaceCanvasFileActionError, setSurfaceCanvasFileActionError] = useState<string | null>(
+    null
+  )
+  const [surfaceCanvasFileDeleteError, setSurfaceCanvasFileDeleteError] = useState<string | null>(
+    null
+  )
+  const [surfaceCanvasFileActionBusy, setSurfaceCanvasFileActionBusy] = useState(false)
+  const [surfaceCanvasFileDeleteBusy, setSurfaceCanvasFileDeleteBusy] = useState(false)
   const activeSurfaceCanvasFile = activeSurfaceCanvasFiles[colorSurface]
   const lastSavedSurfaceCanvasFileSignature =
     lastSavedSurfaceCanvasFileSignatures[colorSurface]
@@ -2608,72 +2633,27 @@ export function ColorCanvasPage({
 
   const handleCreateSurfaceCanvasFile = useCallback(async () => {
     if (!projectId) return
-    const requestedTitle =
-      typeof window === "undefined"
-        ? canvasMode === "color-audit"
-          ? "Color Audit"
-          : "System Canvas"
-        : window.prompt(
-            "New canvas file title",
-            canvasMode === "color-audit" ? "Color Audit" : "System Canvas"
-          )
-    if (requestedTitle === null) return
-    const title = requestedTitle.trim() || (canvasMode === "color-audit" ? "Color Audit" : "System Canvas")
-    try {
-      const payload = buildColorCanvasFilePayload()
-      const file = await createCanvasFile({
-        title,
-        surface: colorSurface,
-        document: payload.document,
-        view: payload.view,
-      })
-      setActiveSurfaceCanvasFiles((current) => ({
-        ...current,
-        [colorSurface]: file as { path: string; document: ColorCanvasWorkspaceFileDocument },
-      }))
-      setLastSavedSurfaceCanvasFileSignatures((current) => ({
-        ...current,
-        [colorSurface]: JSON.stringify(payload),
-      }))
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to create canvas file."
-      if (typeof window !== "undefined") {
-        window.alert(message)
-      }
-    }
-  }, [buildColorCanvasFilePayload, canvasMode, colorSurface, createCanvasFile, projectId])
+    setSurfaceCanvasFileActionError(null)
+    setSurfaceCanvasFileActionModal({
+      mode: "create",
+      targetPath: null,
+      title: canvasMode === "color-audit" ? "Color Audit" : "System Canvas",
+      folder: "",
+    })
+  }, [canvasMode, projectId])
 
   const handleSaveSurfaceCanvasFile = useCallback(async () => {
     if (!projectId) return
     const payload = buildColorCanvasFilePayload()
     try {
       if (!activeSurfaceCanvasFile) {
-        const requestedTitle =
-          typeof window === "undefined"
-            ? canvasMode === "color-audit"
-              ? "Color Audit"
-              : "System Canvas"
-            : window.prompt(
-                "Save canvas as",
-                canvasMode === "color-audit" ? "Color Audit" : "System Canvas"
-              )
-        if (requestedTitle === null) return
-        const title = requestedTitle.trim() || (canvasMode === "color-audit" ? "Color Audit" : "System Canvas")
-        const created = await createCanvasFile({
-          title,
-          surface: colorSurface,
-          document: payload.document,
-          view: payload.view,
+        setSurfaceCanvasFileActionError(null)
+        setSurfaceCanvasFileActionModal({
+          mode: "save-as",
+          targetPath: null,
+          title: canvasMode === "color-audit" ? "Color Audit" : "System Canvas",
+          folder: "",
         })
-        setActiveSurfaceCanvasFiles((current) => ({
-          ...current,
-          [colorSurface]: created as { path: string; document: ColorCanvasWorkspaceFileDocument },
-        }))
-        setLastSavedSurfaceCanvasFileSignatures((current) => ({
-          ...current,
-          [colorSurface]: JSON.stringify(payload),
-        }))
         return
       }
 
@@ -2709,7 +2689,6 @@ export function ColorCanvasPage({
     buildColorCanvasFilePayload,
     canvasMode,
     colorSurface,
-    createCanvasFile,
     projectId,
     saveCanvasFile,
   ])
@@ -2747,119 +2726,208 @@ export function ColorCanvasPage({
     async (filePath: string) => {
       const target = surfaceCanvasFiles.find((file) => file.path === filePath)
       if (!target) return
-      const requestedTitle =
-        typeof window === "undefined" ? target.title : window.prompt("Rename canvas file", target.title)
-      if (requestedTitle === null) return
-      const nextTitle = requestedTitle.trim()
-      if (!nextTitle || nextTitle === target.title) return
       const currentFolder = filePath.split("/").slice(0, -1).join("/")
-      const requestedFolder =
-        typeof window === "undefined"
-          ? currentFolder
-          : window.prompt("Folder (leave blank for root)", currentFolder)
-      if (requestedFolder === null) return
-      try {
-        const moved = await moveCanvasFile(filePath, {
-          title: nextTitle,
-          folder: requestedFolder.trim(),
-        })
-        setActiveSurfaceCanvasFiles((current) => {
-          const nextEntries = { ...current }
-          for (const surfaceId of Object.keys(nextEntries) as ColorCanvasSurface[]) {
-            if (nextEntries[surfaceId]?.path === filePath) {
-              nextEntries[surfaceId] =
-                moved as { path: string; document: ColorCanvasWorkspaceFileDocument }
-            }
-          }
-          return nextEntries
-        })
-        colorCanvasFileBrowser.replaceTrackedPath(filePath, moved.path)
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to rename canvas file."
-        if (typeof window !== "undefined") {
-          window.alert(message)
-        }
-      }
+      setSurfaceCanvasFileActionError(null)
+      setSurfaceCanvasFileActionModal({
+        mode: "rename",
+        targetPath: filePath,
+        title: target.title,
+        folder: currentFolder,
+      })
     },
-    [colorCanvasFileBrowser, moveCanvasFile, surfaceCanvasFiles]
+    [surfaceCanvasFiles]
   )
 
   const handleDuplicateSurfaceCanvasFile = useCallback(
     async (filePath: string) => {
       const target = surfaceCanvasFiles.find((file) => file.path === filePath)
       if (!target) return
-      const requestedTitle =
-        typeof window === "undefined"
-          ? `${target.title} Copy`
-          : window.prompt("Duplicate canvas as", `${target.title} Copy`)
-      if (requestedTitle === null) return
-      const nextTitle = requestedTitle.trim() || `${target.title} Copy`
       const currentFolder = filePath.split("/").slice(0, -1).join("/")
-      const requestedFolder =
-        typeof window === "undefined"
-          ? currentFolder
-          : window.prompt("Folder for duplicate (leave blank for root)", currentFolder)
-      if (requestedFolder === null) return
-      try {
-        const duplicated = await duplicateCanvasFile(filePath, {
-          title: nextTitle,
-          folder: requestedFolder.trim(),
-        })
-        applySurfaceCanvasFile(
-          duplicated as { path: string; document: ColorCanvasWorkspaceFileDocument }
-        )
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to duplicate canvas file."
-        if (typeof window !== "undefined") {
-          window.alert(message)
-        }
-      }
+      setSurfaceCanvasFileActionError(null)
+      setSurfaceCanvasFileActionModal({
+        mode: "duplicate",
+        targetPath: filePath,
+        title: `${target.title} Copy`,
+        folder: currentFolder,
+      })
     },
-    [applySurfaceCanvasFile, duplicateCanvasFile, surfaceCanvasFiles]
+    [surfaceCanvasFiles]
   )
 
   const handleDeleteSurfaceCanvasFile = useCallback(
     async (filePath: string) => {
       const target = surfaceCanvasFiles.find((file) => file.path === filePath)
       if (!target) return
-      const confirmed =
-        typeof window === "undefined"
-          ? true
-          : window.confirm(`Delete "${target.title}"? This removes the .canvas file and its local assets.`)
-      if (!confirmed) return
-      try {
-        await deleteCanvasFile(filePath)
-        colorCanvasFileBrowser.removeTrackedPath(filePath)
+      setSurfaceCanvasFileDeleteError(null)
+      setSurfaceCanvasFileDeleteModal({
+        path: filePath,
+        title: target.title,
+      })
+    },
+    [surfaceCanvasFiles]
+  )
+
+  const handleSubmitSurfaceCanvasFileActionModal = useCallback(async () => {
+    if (!surfaceCanvasFileActionModal || !projectId) return
+    const nextTitle =
+      surfaceCanvasFileActionModal.title.trim() ||
+      (canvasMode === "color-audit" ? "Color Audit" : "System Canvas")
+    const nextFolder = surfaceCanvasFileActionModal.folder.trim()
+
+    setSurfaceCanvasFileActionBusy(true)
+    setSurfaceCanvasFileActionError(null)
+    try {
+      if (surfaceCanvasFileActionModal.mode === "create") {
+        const payload = buildColorCanvasFilePayload()
+        const file = await createCanvasFile({
+          title: nextTitle,
+          folder: nextFolder || undefined,
+          surface: colorSurface,
+          document: payload.document,
+          view: payload.view,
+        })
+        setActiveSurfaceCanvasFiles((current) => ({
+          ...current,
+          [colorSurface]: file as { path: string; document: ColorCanvasWorkspaceFileDocument },
+        }))
+        setLastSavedSurfaceCanvasFileSignatures((current) => ({
+          ...current,
+          [colorSurface]: JSON.stringify(payload),
+        }))
+      } else if (surfaceCanvasFileActionModal.mode === "save-as") {
+        const payload = buildColorCanvasFilePayload()
+        const created = await createCanvasFile({
+          title: nextTitle,
+          folder: nextFolder || undefined,
+          surface: colorSurface,
+          document: payload.document,
+          view: payload.view,
+        })
+        setActiveSurfaceCanvasFiles((current) => ({
+          ...current,
+          [colorSurface]: created as { path: string; document: ColorCanvasWorkspaceFileDocument },
+        }))
+        setLastSavedSurfaceCanvasFileSignatures((current) => ({
+          ...current,
+          [colorSurface]: JSON.stringify(payload),
+        }))
+      } else if (
+        surfaceCanvasFileActionModal.mode === "rename" &&
+        surfaceCanvasFileActionModal.targetPath
+      ) {
+        const target = surfaceCanvasFiles.find(
+          (file) => file.path === surfaceCanvasFileActionModal.targetPath
+        )
+        if (!target) {
+          throw new Error("Canvas file no longer exists.")
+        }
+        const currentFolder =
+          surfaceCanvasFileActionModal.targetPath.split("/").slice(0, -1).join("/")
+        if (target.title === nextTitle && currentFolder === nextFolder) {
+          setSurfaceCanvasFileActionModal(null)
+          return
+        }
+        const moved = await moveCanvasFile(surfaceCanvasFileActionModal.targetPath, {
+          title: nextTitle,
+          folder: nextFolder,
+        })
         setActiveSurfaceCanvasFiles((current) => {
           const nextEntries = { ...current }
           for (const surfaceId of Object.keys(nextEntries) as ColorCanvasSurface[]) {
-            if (nextEntries[surfaceId]?.path === filePath) {
-              nextEntries[surfaceId] = null
+            if (nextEntries[surfaceId]?.path === surfaceCanvasFileActionModal.targetPath) {
+              nextEntries[surfaceId] =
+                moved as { path: string; document: ColorCanvasWorkspaceFileDocument }
             }
           }
           return nextEntries
         })
-        setLastSavedSurfaceCanvasFileSignatures((current) => {
-          const nextEntries = { ...current }
-          for (const surfaceId of Object.keys(nextEntries) as ColorCanvasSurface[]) {
-            if (activeSurfaceCanvasFiles[surfaceId]?.path === filePath) {
-              nextEntries[surfaceId] = null
-            }
-          }
-          return nextEntries
+        colorCanvasFileBrowser.replaceTrackedPath(surfaceCanvasFileActionModal.targetPath, moved.path)
+      } else if (
+        surfaceCanvasFileActionModal.mode === "duplicate" &&
+        surfaceCanvasFileActionModal.targetPath
+      ) {
+        const duplicated = await duplicateCanvasFile(surfaceCanvasFileActionModal.targetPath, {
+          title: nextTitle,
+          folder: nextFolder,
         })
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to delete canvas file."
-        if (typeof window !== "undefined") {
-          window.alert(message)
-        }
+        applySurfaceCanvasFile(
+          duplicated as { path: string; document: ColorCanvasWorkspaceFileDocument }
+        )
       }
-    },
-    [activeSurfaceCanvasFiles, colorCanvasFileBrowser, deleteCanvasFile, surfaceCanvasFiles]
-  )
+
+      setSurfaceCanvasFileActionModal(null)
+    } catch (error) {
+      setSurfaceCanvasFileActionError(
+        error instanceof Error ? error.message : "Failed to update canvas file."
+      )
+    } finally {
+      setSurfaceCanvasFileActionBusy(false)
+    }
+  }, [
+    applySurfaceCanvasFile,
+    buildColorCanvasFilePayload,
+    canvasMode,
+    colorCanvasFileBrowser,
+    colorSurface,
+    createCanvasFile,
+    duplicateCanvasFile,
+    moveCanvasFile,
+    projectId,
+    surfaceCanvasFileActionModal,
+    surfaceCanvasFiles,
+  ])
+
+  const handleConfirmSurfaceCanvasFileDelete = useCallback(async () => {
+    if (!surfaceCanvasFileDeleteModal) return
+    setSurfaceCanvasFileDeleteBusy(true)
+    setSurfaceCanvasFileDeleteError(null)
+    try {
+      await deleteCanvasFile(surfaceCanvasFileDeleteModal.path)
+      colorCanvasFileBrowser.removeTrackedPath(surfaceCanvasFileDeleteModal.path)
+      setActiveSurfaceCanvasFiles((current) => {
+        const nextEntries = { ...current }
+        for (const surfaceId of Object.keys(nextEntries) as ColorCanvasSurface[]) {
+          if (nextEntries[surfaceId]?.path === surfaceCanvasFileDeleteModal.path) {
+            nextEntries[surfaceId] = null
+          }
+        }
+        return nextEntries
+      })
+      setLastSavedSurfaceCanvasFileSignatures((current) => {
+        const nextEntries = { ...current }
+        for (const surfaceId of Object.keys(nextEntries) as ColorCanvasSurface[]) {
+          if (activeSurfaceCanvasFiles[surfaceId]?.path === surfaceCanvasFileDeleteModal.path) {
+            nextEntries[surfaceId] = null
+          }
+        }
+        return nextEntries
+      })
+      setSurfaceCanvasFileDeleteModal(null)
+    } catch (error) {
+      setSurfaceCanvasFileDeleteError(
+        error instanceof Error ? error.message : "Failed to delete canvas file."
+      )
+    } finally {
+      setSurfaceCanvasFileDeleteBusy(false)
+    }
+  }, [
+    activeSurfaceCanvasFiles,
+    colorCanvasFileBrowser,
+    deleteCanvasFile,
+    surfaceCanvasFileDeleteModal,
+  ])
+
+  const handleCloseSurfaceCanvasFileActionModal = useCallback(() => {
+    if (surfaceCanvasFileActionBusy) return
+    setSurfaceCanvasFileActionModal(null)
+    setSurfaceCanvasFileActionError(null)
+  }, [surfaceCanvasFileActionBusy])
+
+  const handleCloseSurfaceCanvasFileDeleteModal = useCallback(() => {
+    if (surfaceCanvasFileDeleteBusy) return
+    setSurfaceCanvasFileDeleteModal(null)
+    setSurfaceCanvasFileDeleteError(null)
+  }, [surfaceCanvasFileDeleteBusy])
 
   useEffect(() => {
     setActiveSurfaceCanvasFiles({
@@ -2870,6 +2938,10 @@ export function ColorCanvasPage({
       "color-audit": null,
       "system-canvas": null,
     })
+    setSurfaceCanvasFileActionModal(null)
+    setSurfaceCanvasFileDeleteModal(null)
+    setSurfaceCanvasFileActionError(null)
+    setSurfaceCanvasFileDeleteError(null)
   }, [projectId])
   const groupedFilteredTokens = useMemo(() => {
     const groups = new Map<string, ThemeToken[]>()
@@ -11139,6 +11211,38 @@ export function ColorCanvasPage({
           </div>
         )}
       </aside>
+
+      <CanvasFileActionDialog
+        open={surfaceCanvasFileActionModal !== null}
+        mode={surfaceCanvasFileActionModal?.mode ?? "create"}
+        surfaceLabel={canvasMode === "color-audit" ? "Color Audit" : "System Canvas"}
+        titleValue={surfaceCanvasFileActionModal?.title ?? ""}
+        folderValue={surfaceCanvasFileActionModal?.folder ?? ""}
+        error={surfaceCanvasFileActionError}
+        busy={surfaceCanvasFileActionBusy}
+        onTitleChange={(value) =>
+          setSurfaceCanvasFileActionModal((current) =>
+            current ? { ...current, title: value } : current
+          )
+        }
+        onFolderChange={(value) =>
+          setSurfaceCanvasFileActionModal((current) =>
+            current ? { ...current, folder: value } : current
+          )
+        }
+        onClose={handleCloseSurfaceCanvasFileActionModal}
+        onSubmit={handleSubmitSurfaceCanvasFileActionModal}
+      />
+
+      <CanvasFileDeleteDialog
+        open={surfaceCanvasFileDeleteModal !== null}
+        title={surfaceCanvasFileDeleteModal?.title ?? ""}
+        path={surfaceCanvasFileDeleteModal?.path ?? ""}
+        error={surfaceCanvasFileDeleteError}
+        busy={surfaceCanvasFileDeleteBusy}
+        onClose={handleCloseSurfaceCanvasFileDeleteModal}
+        onConfirm={handleConfirmSurfaceCanvasFileDelete}
+      />
 
       {showNodeCatalog ? (
         <div

@@ -25,6 +25,7 @@ import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
+import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "./CanvasFileDialogs"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
@@ -556,6 +557,18 @@ export interface PaperImportQueueItem {
   }
 }
 
+type CanvasFileActionModalState = {
+  mode: "create" | "save-as" | "rename" | "duplicate"
+  targetPath: string | null
+  title: string
+  folder: string
+}
+
+type CanvasFileDeleteModalState = {
+  path: string
+  title: string
+}
+
 export function CanvasTab({
   Renderer,
   getComponentById,
@@ -637,6 +650,12 @@ export function CanvasTab({
     document: CanvasFileDocument
   } | null>(null)
   const [lastSavedCanvasFileSignature, setLastSavedCanvasFileSignature] = useState<string | null>(null)
+  const [canvasFileActionModal, setCanvasFileActionModal] = useState<CanvasFileActionModalState | null>(null)
+  const [canvasFileDeleteModal, setCanvasFileDeleteModal] = useState<CanvasFileDeleteModalState | null>(null)
+  const [canvasFileActionError, setCanvasFileActionError] = useState<string | null>(null)
+  const [canvasFileDeleteError, setCanvasFileDeleteError] = useState<string | null>(null)
+  const [canvasFileActionBusy, setCanvasFileActionBusy] = useState(false)
+  const [canvasFileDeleteBusy, setCanvasFileDeleteBusy] = useState(false)
   const canvasRootRef = useRef<HTMLDivElement>(null)
   const importQueueStorageKey = storageKey
     ? `${storageKey}-imports`
@@ -820,6 +839,10 @@ export function CanvasTab({
   useEffect(() => {
     setActiveCanvasFile(null)
     setLastSavedCanvasFileSignature(null)
+    setCanvasFileActionModal(null)
+    setCanvasFileDeleteModal(null)
+    setCanvasFileActionError(null)
+    setCanvasFileDeleteError(null)
   }, [activeProjectId])
 
   useEffect(() => {
@@ -1783,24 +1806,14 @@ export function CanvasTab({
 
   const handleCreateCanvasFile = useCallback(async () => {
     if (!activeProjectId) return
-    const requestedTitle =
-      typeof window === "undefined"
-        ? "Untitled Canvas"
-        : window.prompt("New canvas file title", "Untitled Canvas")
-    if (requestedTitle === null) return
-    const title = requestedTitle.trim() || "Untitled Canvas"
-
-    try {
-      const file = await createCanvasFile({ title })
-      applyCanvasFileToWorkspace(file)
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to create canvas file."
-      if (typeof window !== "undefined") {
-        window.alert(message)
-      }
-    }
-  }, [activeProjectId, applyCanvasFileToWorkspace, createCanvasFile])
+    setCanvasFileActionError(null)
+    setCanvasFileActionModal({
+      mode: "create",
+      targetPath: null,
+      title: "Untitled Canvas",
+      folder: "",
+    })
+  }, [activeProjectId])
 
   const handleSaveCanvasFile = useCallback(async () => {
     if (!activeProjectId) return
@@ -1809,20 +1822,13 @@ export function CanvasTab({
     try {
       const assets = await buildCurrentCanvasFileAssets()
       if (!activeCanvasFile) {
-        const requestedTitle =
-          typeof window === "undefined"
-            ? "Untitled Canvas"
-            : window.prompt("Save canvas as", "Untitled Canvas")
-        if (requestedTitle === null) return
-        const title = requestedTitle.trim() || "Untitled Canvas"
-        const created = await createCanvasFile({
-          title,
-          document: payload.document,
-          view: payload.view,
-          assets,
+        setCanvasFileActionError(null)
+        setCanvasFileActionModal({
+          mode: "save-as",
+          targetPath: null,
+          title: "Untitled Canvas",
+          folder: "",
         })
-        setActiveCanvasFile(created)
-        setLastSavedCanvasFileSignature(JSON.stringify(payload))
         return
       }
 
@@ -1845,7 +1851,6 @@ export function CanvasTab({
     activeProjectId,
     buildCurrentCanvasFileAssets,
     buildCurrentCanvasFilePayload,
-    createCanvasFile,
     saveCanvasFile,
   ])
 
@@ -1875,96 +1880,153 @@ export function CanvasTab({
     async (filePath: string) => {
       const target = canvasFiles.find((file) => file.path === filePath)
       if (!target) return
-      const requestedTitle =
-        typeof window === "undefined" ? target.title : window.prompt("Rename canvas file", target.title)
-      if (requestedTitle === null) return
-      const nextTitle = requestedTitle.trim()
-      if (!nextTitle || nextTitle === target.title) return
       const currentFolder = filePath.split("/").slice(0, -1).join("/")
-      const requestedFolder =
-        typeof window === "undefined"
-          ? currentFolder
-          : window.prompt("Folder (leave blank for root)", currentFolder)
-      if (requestedFolder === null) return
-      try {
-        const moved = await moveCanvasFile(filePath, {
-          title: nextTitle,
-          folder: requestedFolder.trim(),
-        })
-        if (activeCanvasFile?.path === filePath) {
-          setActiveCanvasFile(moved)
-        }
-        canvasFileBrowser.replaceTrackedPath(filePath, moved.path)
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to rename canvas file."
-        if (typeof window !== "undefined") {
-          window.alert(message)
-        }
-      }
+      setCanvasFileActionError(null)
+      setCanvasFileActionModal({
+        mode: "rename",
+        targetPath: filePath,
+        title: target.title,
+        folder: currentFolder,
+      })
     },
-    [activeCanvasFile?.path, canvasFileBrowser, canvasFiles, moveCanvasFile]
+    [canvasFiles]
   )
 
   const handleDuplicateCanvasFile = useCallback(
     async (filePath: string) => {
       const target = canvasFiles.find((file) => file.path === filePath)
       if (!target) return
-      const requestedTitle =
-        typeof window === "undefined"
-          ? `${target.title} Copy`
-          : window.prompt("Duplicate canvas as", `${target.title} Copy`)
-      if (requestedTitle === null) return
-      const nextTitle = requestedTitle.trim() || `${target.title} Copy`
       const currentFolder = filePath.split("/").slice(0, -1).join("/")
-      const requestedFolder =
-        typeof window === "undefined"
-          ? currentFolder
-          : window.prompt("Folder for duplicate (leave blank for root)", currentFolder)
-      if (requestedFolder === null) return
-      try {
-        const duplicated = await duplicateCanvasFile(filePath, {
-          title: nextTitle,
-          folder: requestedFolder.trim(),
-        })
-        applyCanvasFileToWorkspace(duplicated)
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to duplicate canvas file."
-        if (typeof window !== "undefined") {
-          window.alert(message)
-        }
-      }
+      setCanvasFileActionError(null)
+      setCanvasFileActionModal({
+        mode: "duplicate",
+        targetPath: filePath,
+        title: `${target.title} Copy`,
+        folder: currentFolder,
+      })
     },
-    [applyCanvasFileToWorkspace, canvasFiles, duplicateCanvasFile]
+    [canvasFiles]
   )
 
   const handleDeleteCanvasFile = useCallback(
     async (filePath: string) => {
       const target = canvasFiles.find((file) => file.path === filePath)
       if (!target) return
-      const confirmed =
-        typeof window === "undefined"
-          ? true
-          : window.confirm(`Delete "${target.title}"? This removes the .canvas file and its local assets.`)
-      if (!confirmed) return
-      try {
-        await deleteCanvasFile(filePath)
-        canvasFileBrowser.removeTrackedPath(filePath)
-        if (activeCanvasFile?.path === filePath) {
-          setActiveCanvasFile(null)
-          setLastSavedCanvasFileSignature(null)
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to delete canvas file."
-        if (typeof window !== "undefined") {
-          window.alert(message)
-        }
-      }
+      setCanvasFileDeleteError(null)
+      setCanvasFileDeleteModal({
+        path: filePath,
+        title: target.title,
+      })
     },
-    [activeCanvasFile?.path, canvasFileBrowser, canvasFiles, deleteCanvasFile]
+    [canvasFiles]
   )
+
+  const handleSubmitCanvasFileActionModal = useCallback(async () => {
+    if (!canvasFileActionModal || !activeProjectId) return
+    const nextTitle = canvasFileActionModal.title.trim() || "Untitled Canvas"
+    const nextFolder = canvasFileActionModal.folder.trim()
+
+    setCanvasFileActionBusy(true)
+    setCanvasFileActionError(null)
+    try {
+      if (canvasFileActionModal.mode === "create") {
+        const file = await createCanvasFile({
+          title: nextTitle,
+          folder: nextFolder || undefined,
+        })
+        applyCanvasFileToWorkspace(file)
+      } else if (canvasFileActionModal.mode === "save-as") {
+        const payload = buildCurrentCanvasFilePayload()
+        const assets = await buildCurrentCanvasFileAssets()
+        const created = await createCanvasFile({
+          title: nextTitle,
+          folder: nextFolder || undefined,
+          document: payload.document,
+          view: payload.view,
+          assets,
+        })
+        setActiveCanvasFile(created)
+        setLastSavedCanvasFileSignature(JSON.stringify(payload))
+      } else if (canvasFileActionModal.mode === "rename" && canvasFileActionModal.targetPath) {
+        const target = canvasFiles.find((file) => file.path === canvasFileActionModal.targetPath)
+        if (!target) {
+          throw new Error("Canvas file no longer exists.")
+        }
+        const currentFolder = canvasFileActionModal.targetPath.split("/").slice(0, -1).join("/")
+        if (target.title === nextTitle && currentFolder === nextFolder) {
+          setCanvasFileActionModal(null)
+          return
+        }
+        const moved = await moveCanvasFile(canvasFileActionModal.targetPath, {
+          title: nextTitle,
+          folder: nextFolder,
+        })
+        if (activeCanvasFile?.path === canvasFileActionModal.targetPath) {
+          setActiveCanvasFile(moved)
+        }
+        canvasFileBrowser.replaceTrackedPath(canvasFileActionModal.targetPath, moved.path)
+      } else if (canvasFileActionModal.mode === "duplicate" && canvasFileActionModal.targetPath) {
+        const duplicated = await duplicateCanvasFile(canvasFileActionModal.targetPath, {
+          title: nextTitle,
+          folder: nextFolder,
+        })
+        applyCanvasFileToWorkspace(duplicated)
+      }
+
+      setCanvasFileActionModal(null)
+    } catch (error) {
+      setCanvasFileActionError(
+        error instanceof Error ? error.message : "Failed to update canvas file."
+      )
+    } finally {
+      setCanvasFileActionBusy(false)
+    }
+  }, [
+    activeCanvasFile?.path,
+    activeProjectId,
+    applyCanvasFileToWorkspace,
+    buildCurrentCanvasFileAssets,
+    buildCurrentCanvasFilePayload,
+    canvasFileActionModal,
+    canvasFileBrowser,
+    canvasFiles,
+    createCanvasFile,
+    duplicateCanvasFile,
+    moveCanvasFile,
+  ])
+
+  const handleConfirmCanvasFileDelete = useCallback(async () => {
+    if (!canvasFileDeleteModal) return
+    setCanvasFileDeleteBusy(true)
+    setCanvasFileDeleteError(null)
+    try {
+      await deleteCanvasFile(canvasFileDeleteModal.path)
+      canvasFileBrowser.removeTrackedPath(canvasFileDeleteModal.path)
+      if (activeCanvasFile?.path === canvasFileDeleteModal.path) {
+        setActiveCanvasFile(null)
+        setLastSavedCanvasFileSignature(null)
+      }
+      setCanvasFileDeleteModal(null)
+    } catch (error) {
+      setCanvasFileDeleteError(
+        error instanceof Error ? error.message : "Failed to delete canvas file."
+      )
+    } finally {
+      setCanvasFileDeleteBusy(false)
+    }
+  }, [activeCanvasFile?.path, canvasFileBrowser, canvasFileDeleteModal, deleteCanvasFile])
+
+  const handleCloseCanvasFileActionModal = useCallback(() => {
+    if (canvasFileActionBusy) return
+    setCanvasFileActionModal(null)
+    setCanvasFileActionError(null)
+  }, [canvasFileActionBusy])
+
+  const handleCloseCanvasFileDeleteModal = useCallback(() => {
+    if (canvasFileDeleteBusy) return
+    setCanvasFileDeleteModal(null)
+    setCanvasFileDeleteError(null)
+  }, [canvasFileDeleteBusy])
 
   // Scene operations
   const handleSaveScene = useCallback(
@@ -2716,6 +2778,34 @@ export function CanvasTab({
           </DragOverlay>
         </DndContext>
       </div>
+
+      <CanvasFileActionDialog
+        open={canvasFileActionModal !== null}
+        mode={canvasFileActionModal?.mode ?? "create"}
+        surfaceLabel="Canvas"
+        titleValue={canvasFileActionModal?.title ?? ""}
+        folderValue={canvasFileActionModal?.folder ?? ""}
+        error={canvasFileActionError}
+        busy={canvasFileActionBusy}
+        onTitleChange={(value) =>
+          setCanvasFileActionModal((current) => (current ? { ...current, title: value } : current))
+        }
+        onFolderChange={(value) =>
+          setCanvasFileActionModal((current) => (current ? { ...current, folder: value } : current))
+        }
+        onClose={handleCloseCanvasFileActionModal}
+        onSubmit={handleSubmitCanvasFileActionModal}
+      />
+
+      <CanvasFileDeleteDialog
+        open={canvasFileDeleteModal !== null}
+        title={canvasFileDeleteModal?.title ?? ""}
+        path={canvasFileDeleteModal?.path ?? ""}
+        error={canvasFileDeleteError}
+        busy={canvasFileDeleteBusy}
+        onClose={handleCloseCanvasFileDeleteModal}
+        onConfirm={handleConfirmCanvasFileDelete}
+      />
 
       {/* Help overlay */}
       {showHelp && <CanvasHelpOverlay shortcuts={CANVAS_SHORTCUTS} onClose={toggleHelp} />}
