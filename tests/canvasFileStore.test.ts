@@ -33,6 +33,25 @@ async function createTempProjectsRoot() {
   return root
 }
 
+async function readCanvasIndexFile(projectsRoot: string, projectId: string) {
+  const raw = await fs.readFile(
+    path.join(projectsRoot, projectId, "canvases", ".canvas-index.json"),
+    "utf8"
+  )
+  return JSON.parse(raw) as {
+    kind: string
+    schemaVersion: number
+    entries: Array<{
+      entry: {
+        path: string
+        title: string
+      }
+      fileModifiedAtMs: number
+      fileSize: number
+    }>
+  }
+}
+
 afterEach(async () => {
   await Promise.all(
     tempDirs.splice(0, tempDirs.length).map((dir) =>
@@ -144,6 +163,47 @@ describe("canvas file store", () => {
       "tokens/brand-system-2.canvas",
       "tokens/brand-system.canvas",
     ])
+  })
+
+  it("writes a metadata index and refreshes it when files change on disk", async () => {
+    const projectsRoot = await createTempProjectsRoot()
+
+    const created = await createCanvasFile(projectsRoot, {
+      projectId: "demo",
+      title: "Index Me",
+      document: {
+        items: [],
+        groups: [],
+        nextZIndex: 1,
+        selectedIds: [],
+      },
+    })
+
+    const initialList = await listCanvasFiles(projectsRoot, "demo")
+    expect(initialList.map((entry) => entry.title)).toEqual(["Index Me"])
+
+    const initialIndex = await readCanvasIndexFile(projectsRoot, "demo")
+    expect(initialIndex.entries.map((entry) => entry.entry.path)).toEqual(["index-me.canvas"])
+
+    const updatedDocument = buildCanvasFileDocument({
+      projectId: "demo",
+      title: "Index Me Updated",
+      id: created.document.meta.id,
+      createdAt: created.document.meta.createdAt,
+      updatedAt: new Date(Date.now() + 1000).toISOString(),
+      document: created.document.document,
+    })
+    await fs.writeFile(
+      path.join(projectsRoot, "demo", "canvases", created.path),
+      `${JSON.stringify(updatedDocument, null, 2)}\n`,
+      "utf8"
+    )
+
+    const refreshedList = await listCanvasFiles(projectsRoot, "demo")
+    expect(refreshedList.map((entry) => entry.title)).toEqual(["Index Me Updated"])
+
+    const refreshedIndex = await readCanvasIndexFile(projectsRoot, "demo")
+    expect(refreshedIndex.entries[0]?.entry.title).toBe("Index Me Updated")
   })
 
   it("stores color-audit and system-canvas files with metadata and counts", async () => {
@@ -359,6 +419,12 @@ describe("canvas file store", () => {
       "boards/media-board-renamed.canvas",
     ])
 
+    const indexedAfterDuplicate = await readCanvasIndexFile(projectsRoot, "demo")
+    expect(indexedAfterDuplicate.entries.map((entry) => entry.entry.path).sort()).toEqual([
+      "archive/media-board-duplicate.canvas",
+      "boards/media-board-renamed.canvas",
+    ])
+
     await expect(
       duplicateCanvasFile(projectsRoot, {
         projectId: "demo",
@@ -382,6 +448,10 @@ describe("canvas file store", () => {
 
     const afterDelete = await listCanvasFiles(projectsRoot, "demo")
     expect(afterDelete.map((entry) => entry.path)).toEqual(["boards/media-board-renamed.canvas"])
+    const indexedAfterDelete = await readCanvasIndexFile(projectsRoot, "demo")
+    expect(indexedAfterDelete.entries.map((entry) => entry.entry.path)).toEqual([
+      "boards/media-board-renamed.canvas",
+    ])
     await expect(readCanvasFile(projectsRoot, "demo", duplicated.path)).rejects.toThrow()
   })
 })

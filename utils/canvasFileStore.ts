@@ -16,10 +16,34 @@ import {
 
 export const CANVAS_FILE_KIND = "gallery-poc.canvas"
 export const CANVAS_FILE_SCHEMA_VERSION = 1
+const CANVAS_FILE_INDEX_KIND = "gallery-poc.canvas-index"
+const CANVAS_FILE_INDEX_SCHEMA_VERSION = 1
+const CANVAS_FILE_INDEX_NAME = ".canvas-index.json"
+const CANVAS_FILE_ASSETS_DIRECTORY = ".assets"
 
 const DEFAULT_TRANSFORM: CanvasTransform = {
   scale: 1,
   offset: { x: 0, y: 0 },
+}
+
+type CanvasFileScanRecord = {
+  relativePath: string
+  absolutePath: string
+  modifiedAtMs: number
+  size: number
+}
+
+type CanvasFileIndexCacheEntry = {
+  entry: CanvasFileIndexEntry
+  fileModifiedAtMs: number
+  fileSize: number
+}
+
+type CanvasFileIndexCache = {
+  kind: typeof CANVAS_FILE_INDEX_KIND
+  schemaVersion: typeof CANVAS_FILE_INDEX_SCHEMA_VERSION
+  generatedAt: string
+  entries: CanvasFileIndexCacheEntry[]
 }
 
 function slugifyCanvasLabel(input: string) {
@@ -231,6 +255,9 @@ async function walkCanvasFiles(rootDir: string, currentDir = rootDir, acc: strin
   for (const entry of entries) {
     const absolutePath = path.join(currentDir, entry.name)
     if (entry.isDirectory()) {
+      if (entry.name === CANVAS_FILE_ASSETS_DIRECTORY) {
+        continue
+      }
       await walkCanvasFiles(rootDir, absolutePath, acc)
       continue
     }
@@ -272,34 +299,206 @@ function buildCanvasFileIndexEntry(input: {
   }
 }
 
-export async function listCanvasFiles(projectsRoot: string, projectId: string) {
-  const canvasDir = await ensureProjectCanvasDir(projectsRoot, projectId)
+function buildCanvasFileIndexCacheEntry(input: {
+  scanRecord: CanvasFileScanRecord
+  document: CanvasFileDocument<unknown, unknown>
+}): CanvasFileIndexCacheEntry {
+  return {
+    entry: buildCanvasFileIndexEntry({
+      relativePath: input.scanRecord.relativePath,
+      document: input.document,
+    }),
+    fileModifiedAtMs: input.scanRecord.modifiedAtMs,
+    fileSize: input.scanRecord.size,
+  }
+}
+
+function sortCanvasFileIndexEntries(entries: CanvasFileIndexEntry[]) {
+  return [...entries].sort((left, right) => {
+    const rightTime = new Date(right.updatedAt).getTime()
+    const leftTime = new Date(left.updatedAt).getTime()
+    if (rightTime !== leftTime) return rightTime - leftTime
+    return left.title.localeCompare(right.title)
+  })
+}
+
+function sortCanvasFileIndexCacheEntries(entries: CanvasFileIndexCacheEntry[]) {
+  return [...entries].sort((left, right) => left.entry.path.localeCompare(right.entry.path))
+}
+
+function getCanvasFileIndexPath(canvasDir: string) {
+  return path.join(canvasDir, CANVAS_FILE_INDEX_NAME)
+}
+
+function isValidCanvasFileIndexCacheEntry(value: unknown): value is CanvasFileIndexCacheEntry {
+  if (!value || typeof value !== "object") return false
+  const candidate = value as Partial<CanvasFileIndexCacheEntry>
+  const entry = candidate.entry as Partial<CanvasFileIndexEntry> | undefined
+
+  return (
+    !!entry &&
+    typeof entry.id === "string" &&
+    typeof entry.projectId === "string" &&
+    typeof entry.path === "string" &&
+    typeof entry.title === "string" &&
+    typeof entry.surface === "string" &&
+    typeof entry.updatedAt === "string" &&
+    typeof entry.createdAt === "string" &&
+    Array.isArray(entry.tags) &&
+    typeof entry.favorite === "boolean" &&
+    typeof entry.archived === "boolean" &&
+    typeof entry.itemCount === "number" &&
+    typeof entry.groupCount === "number" &&
+    typeof candidate.fileModifiedAtMs === "number" &&
+    Number.isFinite(candidate.fileModifiedAtMs) &&
+    typeof candidate.fileSize === "number" &&
+    Number.isFinite(candidate.fileSize)
+  )
+}
+
+async function readCanvasFileIndexCache(canvasDir: string): Promise<CanvasFileIndexCache | null> {
+  const indexPath = getCanvasFileIndexPath(canvasDir)
+  try {
+    const raw = await fs.readFile(indexPath, "utf8")
+    const parsed = JSON.parse(raw) as Partial<CanvasFileIndexCache>
+    if (
+      parsed.kind !== CANVAS_FILE_INDEX_KIND ||
+      parsed.schemaVersion !== CANVAS_FILE_INDEX_SCHEMA_VERSION ||
+      !Array.isArray(parsed.entries)
+    ) {
+      return null
+    }
+
+    const entries = parsed.entries.filter(isValidCanvasFileIndexCacheEntry)
+    if (entries.length !== parsed.entries.length) {
+      return null
+    }
+
+    return {
+      kind: CANVAS_FILE_INDEX_KIND,
+      schemaVersion: CANVAS_FILE_INDEX_SCHEMA_VERSION,
+      generatedAt:
+        typeof parsed.generatedAt === "string" && parsed.generatedAt.trim()
+          ? parsed.generatedAt
+          : new Date().toISOString(),
+      entries,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function writeCanvasFileIndexCache(
+  canvasDir: string,
+  entries: CanvasFileIndexCacheEntry[]
+) {
+  const indexPath = getCanvasFileIndexPath(canvasDir)
+  const payload: CanvasFileIndexCache = {
+    kind: CANVAS_FILE_INDEX_KIND,
+    schemaVersion: CANVAS_FILE_INDEX_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    entries: sortCanvasFileIndexCacheEntries(entries),
+  }
+  await fs.writeFile(indexPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8")
+}
+
+async function scanCanvasFiles(canvasDir: string) {
   const filePaths = await walkCanvasFiles(canvasDir)
-  const docs = await Promise.all(
+  const stats = await Promise.all(
     filePaths.map(async (absolutePath) => {
-      try {
-        const raw = await fs.readFile(absolutePath, "utf8")
-        const relativePath = path.relative(canvasDir, absolutePath).replace(/\\/g, "/")
-        const title = path.basename(relativePath, ".canvas")
-        const document = normalizeCanvasFileDocument(JSON.parse(raw), {
-          projectId,
-          title,
-        })
-        return buildCanvasFileIndexEntry({ relativePath, document })
-      } catch {
-        return null
-      }
+      const stat = await fs.stat(absolutePath)
+      return {
+        absolutePath,
+        relativePath: path.relative(canvasDir, absolutePath).replace(/\\/g, "/"),
+        modifiedAtMs: stat.mtimeMs,
+        size: stat.size,
+      } satisfies CanvasFileScanRecord
     })
   )
 
-  return docs
-    .filter((entry): entry is CanvasFileIndexEntry => entry !== null)
-    .sort((left, right) => {
-      const rightTime = new Date(right.updatedAt).getTime()
-      const leftTime = new Date(left.updatedAt).getTime()
-      if (rightTime !== leftTime) return rightTime - leftTime
-      return left.title.localeCompare(right.title)
-    })
+  return stats.sort((left, right) => left.relativePath.localeCompare(right.relativePath))
+}
+
+async function upsertCanvasFileIndexEntry(
+  projectsRoot: string,
+  projectId: string,
+  relativePath: string,
+  document: CanvasFileDocument<unknown, unknown>
+) {
+  const { canvasDir, absolutePath, relativePath: normalizedPath } =
+    resolveCanvasFileAbsolutePath(projectsRoot, projectId, relativePath)
+  const stat = await fs.stat(absolutePath)
+  const cache = await readCanvasFileIndexCache(canvasDir)
+  const nextEntry = buildCanvasFileIndexCacheEntry({
+    scanRecord: {
+      absolutePath,
+      relativePath: normalizedPath,
+      modifiedAtMs: stat.mtimeMs,
+      size: stat.size,
+    },
+    document,
+  })
+  const nextEntries = [
+    ...(cache?.entries.filter((entry) => entry.entry.path !== normalizedPath) ?? []),
+    nextEntry,
+  ]
+  await writeCanvasFileIndexCache(canvasDir, nextEntries)
+}
+
+async function removeCanvasFileIndexEntry(
+  projectsRoot: string,
+  projectId: string,
+  relativePath: string
+) {
+  const canvasDir = await ensureProjectCanvasDir(projectsRoot, projectId)
+  const cache = await readCanvasFileIndexCache(canvasDir)
+  if (!cache) return
+
+  const normalizedPath = normalizeRelativeCanvasPath(relativePath)
+  const nextEntries = cache.entries.filter((entry) => entry.entry.path !== normalizedPath)
+  if (nextEntries.length === cache.entries.length) return
+  await writeCanvasFileIndexCache(canvasDir, nextEntries)
+}
+
+export async function listCanvasFiles(projectsRoot: string, projectId: string) {
+  const canvasDir = await ensureProjectCanvasDir(projectsRoot, projectId)
+  const scanRecords = await scanCanvasFiles(canvasDir)
+  const cache = await readCanvasFileIndexCache(canvasDir)
+  const cacheByPath = new Map(cache?.entries.map((entry) => [entry.entry.path, entry]) ?? [])
+  const nextCacheEntries: CanvasFileIndexCacheEntry[] = []
+  let didChange = !cache || cache.entries.length !== scanRecords.length
+
+  for (const scanRecord of scanRecords) {
+    const cachedEntry = cacheByPath.get(scanRecord.relativePath)
+    if (
+      cachedEntry &&
+      cachedEntry.fileModifiedAtMs === scanRecord.modifiedAtMs &&
+      cachedEntry.fileSize === scanRecord.size
+    ) {
+      nextCacheEntries.push(cachedEntry)
+      continue
+    }
+
+    didChange = true
+
+    try {
+      const raw = await fs.readFile(scanRecord.absolutePath, "utf8")
+      const title = path.basename(scanRecord.relativePath, ".canvas")
+      const document = normalizeCanvasFileDocument(JSON.parse(raw), {
+        projectId,
+        title,
+      })
+      nextCacheEntries.push(buildCanvasFileIndexCacheEntry({ scanRecord, document }))
+    } catch {
+      continue
+    }
+  }
+
+  if (didChange) {
+    await writeCanvasFileIndexCache(canvasDir, nextCacheEntries)
+  }
+
+  return sortCanvasFileIndexEntries(nextCacheEntries.map((entry) => entry.entry))
 }
 
 export async function readCanvasFile<TDocument = unknown, TView = unknown>(
@@ -451,7 +650,8 @@ export async function createCanvasFile<TDocument = unknown, TView = unknown>(
     document: input.document,
     view: input.view ?? undefined,
   })
-  await fs.writeFile(target.absolutePath, `${JSON.stringify(document, null, 2)}\n`, "utf8")
+  await writeCanvasDocumentFile(target.absolutePath, document)
+  await upsertCanvasFileIndexEntry(projectsRoot, input.projectId, target.relativePath, document)
   return {
     path: target.relativePath,
     document,
@@ -486,7 +686,8 @@ export async function saveCanvasFile<TDocument = unknown, TView = unknown>(
     view: input.document.view ?? undefined,
   })
 
-  await fs.writeFile(resolved.absolutePath, `${JSON.stringify(normalized, null, 2)}\n`, "utf8")
+  await writeCanvasDocumentFile(resolved.absolutePath, normalized)
+  await upsertCanvasFileIndexEntry(projectsRoot, input.projectId, resolved.relativePath, normalized)
   return {
     path: resolved.relativePath,
     document: normalized,
@@ -596,10 +797,12 @@ export async function moveCanvasFile<TDocument = unknown, TView = unknown>(
 
   await copyCanvasDocumentAssets(projectsRoot, input.projectId, opened.path, nextTarget.relativePath)
   await writeCanvasDocumentFile(nextTarget.absolutePath, movedDocument)
+  await upsertCanvasFileIndexEntry(projectsRoot, input.projectId, nextTarget.relativePath, movedDocument)
   await deleteCanvasDocumentAssets(projectsRoot, input.projectId, opened.path)
 
   const currentFile = resolveCanvasFileAbsolutePath(projectsRoot, input.projectId, opened.path)
   await fs.rm(currentFile.absolutePath, { force: true })
+  await removeCanvasFileIndexEntry(projectsRoot, input.projectId, opened.path)
   await pruneEmptyCanvasDirectories(currentFile.canvasDir, path.dirname(currentFile.absolutePath))
 
   return {
@@ -658,6 +861,12 @@ export async function duplicateCanvasFile<TDocument = unknown, TView = unknown>(
 
   await copyCanvasDocumentAssets(projectsRoot, input.projectId, opened.path, nextTarget.relativePath)
   await writeCanvasDocumentFile(nextTarget.absolutePath, duplicatedDocument)
+  await upsertCanvasFileIndexEntry(
+    projectsRoot,
+    input.projectId,
+    nextTarget.relativePath,
+    duplicatedDocument
+  )
 
   return {
     path: nextTarget.relativePath,
@@ -675,6 +884,7 @@ export async function deleteCanvasFile(
   const resolved = resolveCanvasFileAbsolutePath(projectsRoot, input.projectId, input.path)
   await deleteCanvasDocumentAssets(projectsRoot, input.projectId, resolved.relativePath)
   await fs.rm(resolved.absolutePath, { force: true })
+  await removeCanvasFileIndexEntry(projectsRoot, input.projectId, resolved.relativePath)
   await pruneEmptyCanvasDirectories(resolved.canvasDir, path.dirname(resolved.absolutePath))
   return {
     ok: true,
