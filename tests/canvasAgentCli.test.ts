@@ -398,6 +398,135 @@ describe("canvas-agent CLI bootstrap", () => {
     ])
   })
 
+  it("moves, duplicates, and deletes stored canvas files through the attached session context", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-file-ops-"))
+    const contextFilePath = path.join(tempDir, "attached-session.json")
+    let serverUrl = ""
+
+    server = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            bootstrap: {
+              reused: false,
+              surfaceId: "canvas",
+              session: {
+                id: "canvas-agent-session-file-ops",
+                projectId: "demo",
+                agentId: "codex",
+                agentLabel: "Codex",
+              },
+              context: {
+                serverUrl,
+                projectId: "demo",
+                sessionId: "canvas-agent-session-file-ops",
+                sessionDir: "/tmp/canvas-agent/session-file-ops",
+                canvasWorkspaceKey: "gallery-demo:canvas",
+                colorAuditWorkspaceKey: "gallery-demo:color-audit",
+                systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
+                nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
+              },
+            },
+          })
+        )
+        return
+      }
+
+      if (req.method === "POST" && req.url === "/api/projects/demo/canvases/move") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            file: {
+              path: "boards/demo-renamed.canvas",
+              document: { meta: { title: "Demo Renamed" } },
+            },
+          })
+        )
+        return
+      }
+
+      if (req.method === "POST" && req.url === "/api/projects/demo/canvases/duplicate") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            file: {
+              path: "archive/demo-copy.canvas",
+              document: { meta: { title: "Demo Copy" } },
+            },
+          })
+        )
+        return
+      }
+
+      if (req.method === "POST" && req.url === "/api/projects/demo/canvases/delete") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            path: "archive/demo-copy.canvas",
+          })
+        )
+        return
+      }
+
+      res.statusCode = 404
+      res.end()
+    })
+
+    const port = await listenOnRandomPort()
+    serverUrl = `http://127.0.0.1:${port}`
+
+    const attachResult = await runCli(
+      ["attach", "--project", "demo", "--surface", "canvas", "--server", serverUrl, "--json"],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(attachResult.exitCode).toBe(0)
+
+    const moveResult = await runCli(
+      ["move-canvas-file", "boards/demo.canvas", '{"title":"Demo Renamed"}'],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+    expect(moveResult.exitCode).toBe(0)
+    expect(JSON.parse(moveResult.stdout)).toEqual({
+      path: "boards/demo-renamed.canvas",
+      document: { meta: { title: "Demo Renamed" } },
+    })
+
+    const duplicateResult = await runCli(
+      ["duplicate-canvas-file", "boards/demo-renamed.canvas", '{"title":"Demo Copy","folder":"archive"}'],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+    expect(duplicateResult.exitCode).toBe(0)
+    expect(JSON.parse(duplicateResult.stdout)).toEqual({
+      path: "archive/demo-copy.canvas",
+      document: { meta: { title: "Demo Copy" } },
+    })
+
+    const deleteResult = await runCli(["delete-canvas-file", "archive/demo-copy.canvas"], {
+      CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+    })
+    expect(deleteResult.exitCode).toBe(0)
+    expect(JSON.parse(deleteResult.stdout)).toEqual({
+      ok: true,
+      path: "archive/demo-copy.canvas",
+    })
+  })
+
   it("reads workspace debug through the attached session context", async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-debug-"))
     const contextFilePath = path.join(tempDir, "attached-session.json")

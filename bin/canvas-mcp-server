@@ -4,6 +4,8 @@ import {
   buildCanvasContextSummary,
   captureWorkspaceScreenshot,
   createProjectCanvasFile,
+  deleteProjectCanvasFile,
+  duplicateProjectCanvasFile,
   readAgentNativeWorkspaceDebug,
   enqueueAgentNativeWorkspaceOperation,
   readAgentNativeManifest,
@@ -12,6 +14,7 @@ import {
   readColorAuditExportPreview,
   readColorAuditState,
   listProjectCanvasFiles,
+  moveProjectCanvasFile,
   readNodeCatalogState,
   openProjectCanvasFile,
   saveProjectCanvasFile,
@@ -149,6 +152,48 @@ const TOOL_DEFINITIONS = [
         },
         favorite: { type: 'boolean' },
         archived: { type: 'boolean' },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'move_canvas_file',
+    description: 'Rename or move a stored .canvas file, updating document-local asset URLs and folders as needed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        nextPath: { type: 'string' },
+        title: { type: 'string' },
+        folder: { type: 'string' },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'duplicate_canvas_file',
+    description: 'Duplicate a stored .canvas file with copied local assets and a fresh document identity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        nextPath: { type: 'string' },
+        title: { type: 'string' },
+        folder: { type: 'string' },
+      },
+      required: ['path'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_canvas_file',
+    description: 'Delete a stored .canvas file and its document-local asset bundle.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
       },
       required: ['path'],
       additionalProperties: false,
@@ -1038,6 +1083,33 @@ async function callTool(name, args) {
           archived: typeof args.archived === 'boolean' ? args.archived : undefined,
         })
       )
+    }
+    case 'move_canvas_file': {
+      const canvasPath = normalizeString(args.path)
+      if (!canvasPath) return asToolError('path is required.')
+      return asToolResult(
+        await moveProjectCanvasFile(context, canvasPath, {
+          nextPath: normalizeString(args.nextPath) || undefined,
+          title: normalizeString(args.title) || undefined,
+          folder: normalizeString(args.folder) || undefined,
+        })
+      )
+    }
+    case 'duplicate_canvas_file': {
+      const canvasPath = normalizeString(args.path)
+      if (!canvasPath) return asToolError('path is required.')
+      return asToolResult(
+        await duplicateProjectCanvasFile(context, canvasPath, {
+          nextPath: normalizeString(args.nextPath) || undefined,
+          title: normalizeString(args.title) || undefined,
+          folder: normalizeString(args.folder) || undefined,
+        })
+      )
+    }
+    case 'delete_canvas_file': {
+      const canvasPath = normalizeString(args.path)
+      if (!canvasPath) return asToolError('path is required.')
+      return asToolResult(await deleteProjectCanvasFile(context, canvasPath))
     }
     case 'get_workspace_events': {
       const workspaceId = normalizeString(args.workspaceId)

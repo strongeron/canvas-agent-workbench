@@ -258,6 +258,25 @@ describe("canvas agent runtime", () => {
           file: { path: "boards/demo.canvas", document: { meta: { favorite: true } } },
         }),
       })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          file: { path: "boards/renamed-demo.canvas", document: { meta: { title: "Renamed Demo" } } },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          file: { path: "boards/duplicate-demo.canvas", document: { meta: { title: "Duplicate Demo" } } },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          path: "boards/demo.canvas",
+        }),
+      })
 
     vi.stubGlobal("fetch", fetchMock)
 
@@ -296,6 +315,28 @@ describe("canvas agent runtime", () => {
       path: "boards/demo.canvas",
       document: { meta: { favorite: true } },
     })
+    await expect(
+      runtime.moveProjectCanvasFile(context as any, "boards/demo.canvas", {
+        title: "Renamed Demo",
+      })
+    ).resolves.toEqual({
+      path: "boards/renamed-demo.canvas",
+      document: { meta: { title: "Renamed Demo" } },
+    })
+    await expect(
+      runtime.duplicateProjectCanvasFile(context as any, "boards/demo.canvas", {
+        title: "Duplicate Demo",
+      })
+    ).resolves.toEqual({
+      path: "boards/duplicate-demo.canvas",
+      document: { meta: { title: "Duplicate Demo" } },
+    })
+    await expect(
+      runtime.deleteProjectCanvasFile(context as any, "boards/demo.canvas")
+    ).resolves.toEqual({
+      ok: true,
+      path: "boards/demo.canvas",
+    })
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://127.0.0.1:5178/api/projects/demo/canvases?surface=canvas"
@@ -306,6 +347,9 @@ describe("canvas agent runtime", () => {
     expect(fetchMock.mock.calls[2]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/create")
     expect(fetchMock.mock.calls[3]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/save")
     expect(fetchMock.mock.calls[4]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/metadata")
+    expect(fetchMock.mock.calls[5]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/move")
+    expect(fetchMock.mock.calls[6]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/duplicate")
+    expect(fetchMock.mock.calls[7]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/delete")
   })
 
   it("reads workspace debug payloads from the agent-native endpoint", async () => {

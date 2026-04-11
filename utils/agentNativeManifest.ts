@@ -118,6 +118,25 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "move_canvas_file",
+        title: "Move canvas file",
+        description: "Rename or move a stored .canvas file while keeping document-local assets aligned with the new path.",
+        status: "ready",
+      },
+      {
+        id: "duplicate_canvas_file",
+        title: "Duplicate canvas file",
+        description: "Create a copied .canvas document with a fresh identity and duplicated local assets.",
+        status: "ready",
+      },
+      {
+        id: "delete_canvas_file",
+        title: "Delete canvas file",
+        description: "Delete a stored .canvas file and its document-local asset bundle.",
+        status: "ready",
+        destructive: true,
+      },
+      {
         id: "create_item",
         title: "Create item",
         description: "Create a freeform canvas item and optionally select it.",
@@ -284,6 +303,25 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         title: "Update canvas file metadata",
         description: "Update stored file metadata such as title, tags, favorite, or archived state.",
         status: "ready",
+      },
+      {
+        id: "move_canvas_file",
+        title: "Move canvas file",
+        description: "Rename or move a stored Color Audit .canvas file while keeping document-local assets aligned with the new path.",
+        status: "ready",
+      },
+      {
+        id: "duplicate_canvas_file",
+        title: "Duplicate canvas file",
+        description: "Create a copied Color Audit .canvas document with a fresh identity and duplicated local assets.",
+        status: "ready",
+      },
+      {
+        id: "delete_canvas_file",
+        title: "Delete canvas file",
+        description: "Delete a stored Color Audit .canvas file and its document-local asset bundle.",
+        status: "ready",
+        destructive: true,
       },
       {
         id: "get_color_audit_state",
@@ -484,6 +522,25 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         title: "Update canvas file metadata",
         description: "Update stored file metadata such as title, tags, favorite, or archived state.",
         status: "ready",
+      },
+      {
+        id: "move_canvas_file",
+        title: "Move canvas file",
+        description: "Rename or move a stored System Canvas .canvas file while keeping document-local assets aligned with the new path.",
+        status: "ready",
+      },
+      {
+        id: "duplicate_canvas_file",
+        title: "Duplicate canvas file",
+        description: "Create a copied System Canvas .canvas document with a fresh identity and duplicated local assets.",
+        status: "ready",
+      },
+      {
+        id: "delete_canvas_file",
+        title: "Delete canvas file",
+        description: "Delete a stored System Canvas .canvas file and its document-local asset bundle.",
+        status: "ready",
+        destructive: true,
       },
       {
         id: "get_system_canvas_state",

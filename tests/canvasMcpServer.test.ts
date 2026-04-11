@@ -274,6 +274,38 @@ describe("canvas MCP server", () => {
                                 },
                               },
                             }
+                        : req.method === "POST" &&
+                            requestUrl.pathname === "/api/projects/demo/canvases/move"
+                          ? {
+                              ok: true,
+                              file: {
+                                path: "boards/demo-renamed.canvas",
+                                document: {
+                                  meta: {
+                                    title: "Demo Renamed",
+                                  },
+                                },
+                              },
+                            }
+                        : req.method === "POST" &&
+                            requestUrl.pathname === "/api/projects/demo/canvases/duplicate"
+                          ? {
+                              ok: true,
+                              file: {
+                                path: "archive/demo-copy.canvas",
+                                document: {
+                                  meta: {
+                                    title: "Demo Copy",
+                                  },
+                                },
+                              },
+                            }
+                        : req.method === "POST" &&
+                            requestUrl.pathname === "/api/projects/demo/canvases/delete"
+                          ? {
+                              ok: true,
+                              path: "archive/demo-copy.canvas",
+                            }
                     : { error: `Unhandled path: ${requestUrl.pathname}` }
 
       res.statusCode = "error" in payload ? 404 : 200
@@ -450,6 +482,51 @@ describe("canvas MCP server", () => {
       })) as { result?: { structuredContent?: Record<string, any> } }
 
       expect(createdCanvasFile.result?.structuredContent?.path).toBe("boards/new.canvas")
+
+      const movedCanvasFile = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5f",
+        method: "tools/call",
+        params: {
+          name: "move_canvas_file",
+          arguments: {
+            path: "boards/demo.canvas",
+            title: "Demo Renamed",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(movedCanvasFile.result?.structuredContent?.path).toBe("boards/demo-renamed.canvas")
+
+      const duplicatedCanvasFile = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5g",
+        method: "tools/call",
+        params: {
+          name: "duplicate_canvas_file",
+          arguments: {
+            path: "boards/demo-renamed.canvas",
+            title: "Demo Copy",
+            folder: "archive",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(duplicatedCanvasFile.result?.structuredContent?.path).toBe("archive/demo-copy.canvas")
+
+      const deletedCanvasFile = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5h",
+        method: "tools/call",
+        params: {
+          name: "delete_canvas_file",
+          arguments: {
+            path: "archive/demo-copy.canvas",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(deletedCanvasFile.result?.structuredContent?.ok).toBe(true)
 
       const systemState = (await sendRpc({
         jsonrpc: "2.0",

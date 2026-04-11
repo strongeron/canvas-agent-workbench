@@ -44,6 +44,9 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_item")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "list_canvas_files")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "save_canvas_file")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "move_canvas_file")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "duplicate_canvas_file")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "delete_canvas_file")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_events")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_debug")).toBe(true)
     expect(
@@ -75,6 +78,15 @@ describe("agent native manifest", () => {
     ).toBe("ready")
     expect(
       colorAuditWorkspace?.tools.find((tool) => tool.id === "save_canvas_file")?.status
+    ).toBe("ready")
+    expect(
+      colorAuditWorkspace?.tools.find((tool) => tool.id === "move_canvas_file")?.status
+    ).toBe("ready")
+    expect(
+      colorAuditWorkspace?.tools.find((tool) => tool.id === "duplicate_canvas_file")?.status
+    ).toBe("ready")
+    expect(
+      colorAuditWorkspace?.tools.find((tool) => tool.id === "delete_canvas_file")?.status
     ).toBe("ready")
     expect(
       colorAuditWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status
@@ -134,6 +146,15 @@ describe("agent native manifest", () => {
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.tools.find((tool) => tool.id === "list_canvas_files")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "move_canvas_file")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "duplicate_canvas_file")?.status
+    ).toBe("ready")
+    expect(
+      systemCanvasWorkspace?.tools.find((tool) => tool.id === "delete_canvas_file")?.status
     ).toBe("ready")
     expect(
       systemCanvasWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.status

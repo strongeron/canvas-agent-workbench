@@ -6,8 +6,11 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { buildCanvasFileDocument } from "../utils/canvasFileStore"
 import {
+  copyCanvasDocumentAssets,
+  deleteCanvasDocumentAssets,
   packCanvasDocumentAssets,
   readCanvasDocumentAsset,
+  rewriteCanvasDocumentAssetUrls,
 } from "../utils/canvasFileAssets"
 
 const tempDirs: string[] = []
@@ -109,5 +112,79 @@ describe("canvas file assets", () => {
       "inline.png"
     )
     expect(inlineAsset.content.toString("utf8")).toBe("inline-image")
+  })
+
+  it("rewrites, copies, and deletes document-local asset bundles when canvas paths change", async () => {
+    const projectsRoot = await createTempProjectsRoot()
+    const sharedMediaRoot = path.join(projectsRoot, ".canvas-media")
+    await fs.mkdir(sharedMediaRoot, { recursive: true })
+    await fs.writeFile(path.join(sharedMediaRoot, "shared.png"), Buffer.from("shared-image"))
+
+    const document = buildCanvasFileDocument({
+      projectId: "demo",
+      title: "Media Board",
+      document: {
+        items: [
+          {
+            id: "media-1",
+            type: "media",
+            src: "/api/media/file/shared.png",
+            title: "Shared Media",
+            mediaKind: "image",
+            position: { x: 0, y: 0 },
+            size: { width: 100, height: 100 },
+            rotation: 0,
+            zIndex: 1,
+          },
+        ],
+        groups: [],
+        nextZIndex: 2,
+        selectedIds: [],
+      },
+    })
+
+    const packed = await packCanvasDocumentAssets(projectsRoot, {
+      projectId: "demo",
+      path: "boards/media-board.canvas",
+      document,
+      sharedMediaRoot,
+    })
+
+    const rewritten = rewriteCanvasDocumentAssetUrls(
+      "demo",
+      "boards/media-board.canvas",
+      "archive/media-board-copy.canvas",
+      packed
+    )
+    const mediaItem = rewritten.document.items[0]
+    expect(mediaItem?.type).toBe("media")
+    expect(mediaItem?.type === "media" ? mediaItem.src : "").toContain(
+      "path=archive%2Fmedia-board-copy.canvas"
+    )
+
+    await copyCanvasDocumentAssets(
+      projectsRoot,
+      "demo",
+      "boards/media-board.canvas",
+      "archive/media-board-copy.canvas"
+    )
+
+    const assetName = decodeURIComponent(
+      new URL(
+        `http://localhost${mediaItem?.type === "media" ? mediaItem.src : ""}`
+      ).searchParams.get("asset") || ""
+    )
+    const copiedAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "archive/media-board-copy.canvas",
+      assetName
+    )
+    expect(copiedAsset.content.toString("utf8")).toBe("shared-image")
+
+    await deleteCanvasDocumentAssets(projectsRoot, "demo", "boards/media-board.canvas")
+    await expect(
+      readCanvasDocumentAsset(projectsRoot, "demo", "boards/media-board.canvas", assetName)
+    ).rejects.toThrow()
   })
 })

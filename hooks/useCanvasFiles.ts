@@ -187,6 +187,118 @@ export function useCanvasFiles<
     [projectId, refreshFiles]
   )
 
+  const moveCanvasFile = useCallback(
+    async (
+      filePath: string,
+      updates: {
+        nextPath?: string
+        title?: string
+        folder?: string
+      }
+    ) => {
+      if (!projectId) throw new Error("Select a project before moving a canvas file.")
+      setIsSaving(true)
+      setError(null)
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvases/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: filePath,
+            ...updates,
+          }),
+        })
+        const data = await response.json().catch(() => null)
+        if (!response.ok || !data?.ok || !data?.file?.document) {
+          throw new Error(data?.error || "Failed to move canvas file.")
+        }
+        await refreshFiles()
+        return data.file as { path: string; document: CanvasFileDocument<TDocument, TView> }
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error ? nextError.message : "Failed to move canvas file."
+        setError(message)
+        throw nextError
+      } finally {
+        setIsSaving(false)
+      }
+    },
+    [projectId, refreshFiles]
+  )
+
+  const duplicateCanvasFile = useCallback(
+    async (
+      filePath: string,
+      updates: {
+        nextPath?: string
+        title?: string
+        folder?: string
+      } = {}
+    ) => {
+      if (!projectId) throw new Error("Select a project before duplicating a canvas file.")
+      setIsSaving(true)
+      setError(null)
+      try {
+        const response = await fetch(
+          `/api/projects/${encodeURIComponent(projectId)}/canvases/duplicate`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              path: filePath,
+              ...updates,
+            }),
+          }
+        )
+        const data = await response.json().catch(() => null)
+        if (!response.ok || !data?.ok || !data?.file?.document) {
+          throw new Error(data?.error || "Failed to duplicate canvas file.")
+        }
+        await refreshFiles()
+        return data.file as { path: string; document: CanvasFileDocument<TDocument, TView> }
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error ? nextError.message : "Failed to duplicate canvas file."
+        setError(message)
+        throw nextError
+      } finally {
+        setIsSaving(false)
+      }
+    },
+    [projectId, refreshFiles]
+  )
+
+  const deleteCanvasFile = useCallback(
+    async (filePath: string) => {
+      if (!projectId) throw new Error("Select a project before deleting a canvas file.")
+      setIsSaving(true)
+      setError(null)
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvases/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: filePath,
+          }),
+        })
+        const data = await response.json().catch(() => null)
+        if (!response.ok || !data?.ok || typeof data?.path !== "string") {
+          throw new Error(data?.error || "Failed to delete canvas file.")
+        }
+        await refreshFiles()
+        return data as { ok: true; path: string }
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error ? nextError.message : "Failed to delete canvas file."
+        setError(message)
+        throw nextError
+      } finally {
+        setIsSaving(false)
+      }
+    },
+    [projectId, refreshFiles]
+  )
+
   return {
     files,
     isLoading,
@@ -197,5 +309,8 @@ export function useCanvasFiles<
     createCanvasFile,
     saveCanvasFile,
     updateCanvasFileMetadata,
+    moveCanvasFile,
+    duplicateCanvasFile,
+    deleteCanvasFile,
   }
 }

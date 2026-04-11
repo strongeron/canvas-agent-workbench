@@ -43,8 +43,11 @@ import {
 } from './utils/canvasWorkspaceAdapter'
 import {
   createCanvasFile,
+  deleteCanvasFile,
+  duplicateCanvasFile,
   ensureProjectCanvasDir,
   listCanvasFiles,
+  moveCanvasFile,
   readCanvasFile,
   saveCanvasFile,
   updateCanvasFileMetadata,
@@ -4798,6 +4801,69 @@ function paperImportPlugin() {
             return sendJson(res, 200, { ok: true, file })
           } catch (error) {
             return sendJson(res, 500, { error: error?.message || 'Failed to update canvas file metadata.' })
+          }
+        }
+
+        const canvasFileMoveMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/move$/)
+        if (req.method === 'POST' && canvasFileMoveMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasFileMoveMatch[1])
+            const body = await readJson(req)
+            const canvasPath = typeof body.path === 'string' ? body.path.trim() : ''
+            if (!canvasPath) {
+              return sendJson(res, 400, { error: 'path is required.' })
+            }
+            const file = await moveCanvasFile(PROJECTS_ROOT, {
+              projectId,
+              path: canvasPath,
+              nextPath: typeof body.nextPath === 'string' ? body.nextPath : undefined,
+              title: typeof body.title === 'string' ? body.title : undefined,
+              folder: typeof body.folder === 'string' ? body.folder : undefined,
+            })
+            return sendJson(res, 200, { ok: true, file })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to move canvas file.' })
+          }
+        }
+
+        const canvasFileDuplicateMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/duplicate$/)
+        if (req.method === 'POST' && canvasFileDuplicateMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasFileDuplicateMatch[1])
+            const body = await readJson(req)
+            const canvasPath = typeof body.path === 'string' ? body.path.trim() : ''
+            if (!canvasPath) {
+              return sendJson(res, 400, { error: 'path is required.' })
+            }
+            const file = await duplicateCanvasFile(PROJECTS_ROOT, {
+              projectId,
+              path: canvasPath,
+              nextPath: typeof body.nextPath === 'string' ? body.nextPath : undefined,
+              title: typeof body.title === 'string' ? body.title : undefined,
+              folder: typeof body.folder === 'string' ? body.folder : undefined,
+            })
+            return sendJson(res, 200, { ok: true, file })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to duplicate canvas file.' })
+          }
+        }
+
+        const canvasFileDeleteMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/delete$/)
+        if (req.method === 'POST' && canvasFileDeleteMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasFileDeleteMatch[1])
+            const body = await readJson(req)
+            const canvasPath = typeof body.path === 'string' ? body.path.trim() : ''
+            if (!canvasPath) {
+              return sendJson(res, 400, { error: 'path is required.' })
+            }
+            const result = await deleteCanvasFile(PROJECTS_ROOT, {
+              projectId,
+              path: canvasPath,
+            })
+            return sendJson(res, 200, { ok: true, ...result })
+          } catch (error) {
+            return sendJson(res, 500, { error: error?.message || 'Failed to delete canvas file.' })
           }
         }
 

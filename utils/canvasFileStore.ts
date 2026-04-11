@@ -8,6 +8,11 @@ import type {
   CanvasStateSnapshot,
   CanvasTransform,
 } from "../types/canvas"
+import {
+  copyCanvasDocumentAssets,
+  deleteCanvasDocumentAssets,
+  rewriteCanvasDocumentAssetUrls,
+} from "./canvasFileAssets"
 
 export const CANVAS_FILE_KIND = "gallery-poc.canvas"
 export const CANVAS_FILE_SCHEMA_VERSION = 1
@@ -346,6 +351,81 @@ async function createUniqueCanvasFilePath(
   }
 }
 
+async function createUniqueCanvasFilePathFromRelativePath(
+  projectsRoot: string,
+  projectId: string,
+  relativePath: string
+) {
+  const normalizedRelativePath = normalizeRelativeCanvasPath(relativePath)
+  const parsed = path.posix.parse(normalizedRelativePath)
+  const baseName = parsed.name || "canvas"
+  let counter = 1
+  let nextRelativePath = normalizedRelativePath
+
+  while (true) {
+    const candidate = resolveCanvasFileAbsolutePath(projectsRoot, projectId, nextRelativePath)
+    try {
+      await fs.access(candidate.absolutePath)
+      counter += 1
+      nextRelativePath = path.posix.join(parsed.dir, `${baseName}-${counter}.canvas`)
+    } catch {
+      return candidate
+    }
+  }
+}
+
+function buildCanvasRelativePathForTitle(title: string, folder?: string) {
+  const safeFolder = (folder || "").trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")
+  const baseFileName = ensureCanvasExtension(slugifyCanvasLabel(title))
+  return safeFolder ? `${safeFolder}/${baseFileName}` : baseFileName
+}
+
+async function assertCanvasFilePathAvailable(
+  projectsRoot: string,
+  projectId: string,
+  relativePath: string
+) {
+  const resolved = resolveCanvasFileAbsolutePath(projectsRoot, projectId, relativePath)
+  try {
+    await fs.access(resolved.absolutePath)
+    throw new Error(`Canvas file already exists at ${resolved.relativePath}.`)
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Canvas file already exists")) {
+      throw error
+    }
+    return resolved
+  }
+}
+
+async function pruneEmptyCanvasDirectories(canvasDir: string, startDir: string) {
+  let currentDir = path.resolve(startDir)
+  const normalizedRoot = path.resolve(canvasDir)
+
+  while (currentDir.startsWith(`${normalizedRoot}${path.sep}`)) {
+    try {
+      const entries = await fs.readdir(currentDir)
+      if (entries.length > 0) return
+      await fs.rmdir(currentDir)
+    } catch {
+      return
+    }
+    currentDir = path.dirname(currentDir)
+  }
+}
+
+function getCanvasFolder(relativePath: string) {
+  const dir = path.posix.dirname(relativePath)
+  return dir === "." ? "" : dir
+}
+
+async function writeCanvasDocumentFile<TDocument = unknown, TView = unknown>(
+  absolutePath: string,
+  document: CanvasFileDocument<TDocument, TView>
+) {
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true })
+  await fs.writeFile(absolutePath, `${JSON.stringify(document, null, 2)}\n`, "utf8")
+}
+
 export async function createCanvasFile<TDocument = unknown, TView = unknown>(
   projectsRoot: string,
   input: {
@@ -447,4 +527,157 @@ export async function updateCanvasFileMetadata(
       },
     },
   })
+}
+
+export async function moveCanvasFile<TDocument = unknown, TView = unknown>(
+  projectsRoot: string,
+  input: {
+    projectId: string
+    path: string
+    nextPath?: string
+    title?: string
+    folder?: string
+  }
+) {
+  const opened = await readCanvasFile<TDocument, TView>(projectsRoot, input.projectId, input.path)
+  const nextTitle =
+    typeof input.title === "string" && input.title.trim()
+      ? input.title.trim()
+      : opened.document.meta.title
+  const requestedRelativePath =
+    typeof input.nextPath === "string" && input.nextPath.trim()
+      ? normalizeRelativeCanvasPath(input.nextPath)
+      : buildCanvasRelativePathForTitle(
+          nextTitle,
+          typeof input.folder === "string" ? input.folder : getCanvasFolder(opened.path)
+        )
+
+  if (requestedRelativePath === opened.path) {
+    return saveCanvasFile(projectsRoot, {
+      projectId: input.projectId,
+      path: opened.path,
+      document: {
+        ...opened.document,
+        meta: {
+          ...opened.document.meta,
+          title: nextTitle,
+        },
+      },
+    })
+  }
+
+  const nextTarget =
+    typeof input.nextPath === "string" && input.nextPath.trim()
+      ? await assertCanvasFilePathAvailable(projectsRoot, input.projectId, requestedRelativePath)
+      : await createUniqueCanvasFilePathFromRelativePath(
+          projectsRoot,
+          input.projectId,
+          requestedRelativePath
+        )
+
+  const movedDocument = buildCanvasFileDocument<TDocument, TView>({
+    projectId: input.projectId,
+    title: nextTitle,
+    surface: opened.document.surface,
+    slug: path.basename(nextTarget.relativePath, ".canvas"),
+    id: opened.document.meta.id,
+    createdAt: opened.document.meta.createdAt,
+    tags: opened.document.meta.tags,
+    favorite: opened.document.meta.favorite,
+    archived: opened.document.meta.archived,
+    document: rewriteCanvasDocumentAssetUrls(
+      input.projectId,
+      opened.path,
+      nextTarget.relativePath,
+      opened.document as CanvasFileDocument
+    ).document as TDocument,
+    view: opened.document.view ?? undefined,
+  })
+
+  await copyCanvasDocumentAssets(projectsRoot, input.projectId, opened.path, nextTarget.relativePath)
+  await writeCanvasDocumentFile(nextTarget.absolutePath, movedDocument)
+  await deleteCanvasDocumentAssets(projectsRoot, input.projectId, opened.path)
+
+  const currentFile = resolveCanvasFileAbsolutePath(projectsRoot, input.projectId, opened.path)
+  await fs.rm(currentFile.absolutePath, { force: true })
+  await pruneEmptyCanvasDirectories(currentFile.canvasDir, path.dirname(currentFile.absolutePath))
+
+  return {
+    path: nextTarget.relativePath,
+    document: movedDocument,
+  }
+}
+
+export async function duplicateCanvasFile<TDocument = unknown, TView = unknown>(
+  projectsRoot: string,
+  input: {
+    projectId: string
+    path: string
+    nextPath?: string
+    title?: string
+    folder?: string
+  }
+) {
+  const opened = await readCanvasFile<TDocument, TView>(projectsRoot, input.projectId, input.path)
+  const nextTitle =
+    typeof input.title === "string" && input.title.trim()
+      ? input.title.trim()
+      : `${opened.document.meta.title} Copy`
+  const requestedRelativePath =
+    typeof input.nextPath === "string" && input.nextPath.trim()
+      ? normalizeRelativeCanvasPath(input.nextPath)
+      : buildCanvasRelativePathForTitle(
+          nextTitle,
+          typeof input.folder === "string" ? input.folder : getCanvasFolder(opened.path)
+        )
+  const nextTarget =
+    typeof input.nextPath === "string" && input.nextPath.trim()
+      ? await assertCanvasFilePathAvailable(projectsRoot, input.projectId, requestedRelativePath)
+      : await createUniqueCanvasFilePathFromRelativePath(
+          projectsRoot,
+          input.projectId,
+          requestedRelativePath
+        )
+
+  const duplicatedDocument = buildCanvasFileDocument<TDocument, TView>({
+    projectId: input.projectId,
+    title: nextTitle,
+    surface: opened.document.surface,
+    slug: path.basename(nextTarget.relativePath, ".canvas"),
+    tags: opened.document.meta.tags,
+    favorite: false,
+    archived: false,
+    document: rewriteCanvasDocumentAssetUrls(
+      input.projectId,
+      opened.path,
+      nextTarget.relativePath,
+      opened.document as CanvasFileDocument
+    ).document as TDocument,
+    view: opened.document.view ?? undefined,
+  })
+
+  await copyCanvasDocumentAssets(projectsRoot, input.projectId, opened.path, nextTarget.relativePath)
+  await writeCanvasDocumentFile(nextTarget.absolutePath, duplicatedDocument)
+
+  return {
+    path: nextTarget.relativePath,
+    document: duplicatedDocument,
+  }
+}
+
+export async function deleteCanvasFile(
+  projectsRoot: string,
+  input: {
+    projectId: string
+    path: string
+  }
+) {
+  const resolved = resolveCanvasFileAbsolutePath(projectsRoot, input.projectId, input.path)
+  await deleteCanvasDocumentAssets(projectsRoot, input.projectId, resolved.relativePath)
+  await fs.rm(resolved.absolutePath, { force: true })
+  await pruneEmptyCanvasDirectories(resolved.canvasDir, path.dirname(resolved.absolutePath))
+  return {
+    ok: true,
+    path: resolved.relativePath,
+  }
 }

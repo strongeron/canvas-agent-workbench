@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import type {
   CanvasStateSnapshot,
+  CanvasTransform,
   ColorCanvasFileDocumentData,
   ColorCanvasFileViewState,
 } from "../types/canvas"
@@ -13,12 +14,16 @@ import {
   CANVAS_FILE_KIND,
   buildCanvasFileDocument,
   createCanvasFile,
+  deleteCanvasFile,
+  duplicateCanvasFile,
   ensureProjectCanvasDir,
   listCanvasFiles,
+  moveCanvasFile,
   readCanvasFile,
   saveCanvasFile,
   updateCanvasFileMetadata,
 } from "../utils/canvasFileStore"
+import { packCanvasDocumentAssets } from "../utils/canvasFileAssets"
 
 const tempDirs: string[] = []
 
@@ -269,5 +274,114 @@ describe("canvas file store", () => {
     expect(openedSystemCanvas.document.document.canvasMode).toBe("system-canvas")
     expect(openedSystemCanvas.document.document.canvasViewMode).toBe("type")
     expect(openedSystemCanvas.document.view?.systemCanvasTransform?.scale).toBe(0.65)
+  })
+
+  it("moves, duplicates, and deletes stored files with document-local assets", async () => {
+    const projectsRoot = await createTempProjectsRoot()
+
+    const created = await createCanvasFile<
+      CanvasStateSnapshot,
+      { transform?: CanvasTransform }
+    >(projectsRoot, {
+      projectId: "demo",
+      title: "Media Board",
+      folder: "boards",
+      document: {
+        items: [
+          {
+            id: "media-1",
+            type: "media",
+            src: "blob:temporary-image",
+            title: "Packed Asset",
+            mediaKind: "image",
+            position: { x: 0, y: 0 },
+            size: { width: 120, height: 120 },
+            rotation: 0,
+            zIndex: 1,
+          },
+        ],
+        groups: [],
+        nextZIndex: 2,
+        selectedIds: [],
+      },
+    })
+
+    const packed = await packCanvasDocumentAssets(projectsRoot, {
+      projectId: "demo",
+      path: created.path,
+      document: created.document,
+      assets: [
+        {
+          itemId: "media-1",
+          field: "src",
+          fileName: "packed.png",
+          dataUrl: "data:image/png;base64,cGFja2VkLWltYWdl",
+        },
+      ],
+    })
+    await saveCanvasFile(projectsRoot, {
+      projectId: "demo",
+      path: created.path,
+      document: packed,
+    })
+
+    const moved = await moveCanvasFile<CanvasStateSnapshot>(projectsRoot, {
+      projectId: "demo",
+      path: created.path,
+      title: "Media Board Renamed",
+    })
+
+    expect(moved.path).toBe("boards/media-board-renamed.canvas")
+    const movedItem = moved.document.document.items[0]
+    expect(movedItem?.type).toBe("media")
+    expect(movedItem?.type === "media" ? movedItem.src : "").toContain(
+      "path=boards%2Fmedia-board-renamed.canvas"
+    )
+    await expect(readCanvasFile(projectsRoot, "demo", created.path)).rejects.toThrow()
+
+    const duplicated = await duplicateCanvasFile<CanvasStateSnapshot>(projectsRoot, {
+      projectId: "demo",
+      path: moved.path,
+      title: "Media Board Duplicate",
+      folder: "archive",
+    })
+
+    expect(duplicated.path).toBe("archive/media-board-duplicate.canvas")
+    expect(duplicated.document.meta.id).not.toBe(moved.document.meta.id)
+    const duplicatedItem = duplicated.document.document.items[0]
+    expect(duplicatedItem?.type === "media" ? duplicatedItem.src : "").toContain(
+      "path=archive%2Fmedia-board-duplicate.canvas"
+    )
+
+    const listed = await listCanvasFiles(projectsRoot, "demo")
+    expect(listed.map((entry) => entry.path).sort()).toEqual([
+      "archive/media-board-duplicate.canvas",
+      "boards/media-board-renamed.canvas",
+    ])
+
+    await expect(
+      duplicateCanvasFile(projectsRoot, {
+        projectId: "demo",
+        path: moved.path,
+        nextPath: duplicated.path,
+      })
+    ).rejects.toThrow(/already exists/i)
+
+    await expect(
+      moveCanvasFile(projectsRoot, {
+        projectId: "demo",
+        path: moved.path,
+        nextPath: duplicated.path,
+      })
+    ).rejects.toThrow(/already exists/i)
+
+    await deleteCanvasFile(projectsRoot, {
+      projectId: "demo",
+      path: duplicated.path,
+    })
+
+    const afterDelete = await listCanvasFiles(projectsRoot, "demo")
+    expect(afterDelete.map((entry) => entry.path)).toEqual(["boards/media-board-renamed.canvas"])
+    await expect(readCanvasFile(projectsRoot, "demo", duplicated.path)).rejects.toThrow()
   })
 })

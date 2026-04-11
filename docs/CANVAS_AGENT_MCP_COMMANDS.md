@@ -47,6 +47,35 @@ These work across surfaces:
 - `capture_workspace_screenshot`
   Captures an app-owned screenshot for `canvas`, `color-audit`, `system-canvas`, or `node-catalog`.
 
+## Project File Library Tools
+
+These are the stored `.canvas` document tools. They work against the local project file library, not only the currently open live surface.
+
+- `list_canvas_files`
+  Lists stored `.canvas` documents for the current project, optionally filtered by `surface`.
+- `open_canvas_file`
+  Opens one stored `.canvas` document by project-relative path.
+- `create_canvas_file`
+  Creates a new stored `.canvas` document.
+- `save_canvas_file`
+  Saves a stored `.canvas` document and packs local media into document-local assets when provided.
+- `update_canvas_file_metadata`
+  Updates title, tags, favorite, or archived state.
+- `move_canvas_file`
+  Renames or moves a stored `.canvas` document and rewrites document-local asset URLs to the new path.
+- `duplicate_canvas_file`
+  Duplicates a stored `.canvas` document with a fresh identity and copied local assets.
+- `delete_canvas_file`
+  Deletes a stored `.canvas` document and its local asset bundle.
+
+Use these when you want the agent to manage the file library itself:
+
+- list project files before opening one
+- open a stored file, inspect it, then save changes back
+- rename or reorganize files into folders
+- duplicate a board before experimenting
+- delete obsolete boards cleanly
+
 ## Canvas Tools
 
 - `get_canvas_context`
@@ -150,6 +179,7 @@ Use it to review:
 ### Global
 
 - `workspace://manifest`
+- `workspace://project/canvases/index`
 
 ### Canvas
 
@@ -221,10 +251,22 @@ Good steering rules:
 Use MCP only for canvas work. Start with workspace://manifest, then read the relevant surface state. Summarize what you found before making changes. Do not use Bash for scene-graph mutations unless MCP lacks a capability.
 ```
 
+### Stored File Library
+
+```text
+Use MCP only. Start with workspace://project/canvases/index and list_canvas_files. Tell me which stored Canvas, Color Audit, and System Canvas files exist. Then open the requested file with open_canvas_file, summarize it, make the requested change, save it back with save_canvas_file, and report the final path.
+```
+
 ### Canvas
 
 ```text
 Use MCP only. Read workspace://surface/canvas/state, workspace://surface/canvas/selection, and workspace://surface/canvas/primitives. Summarize the current board. Then create a new artboard with a heading, text, and button using create_artboard and create_primitive_item.
+```
+
+### Canvas File Lifecycle
+
+```text
+Use MCP only. Read workspace://project/canvases/index, open boards/demo.canvas, summarize it, then duplicate it into archive/demo-copy.canvas. Rename the original into boards/demo-renamed.canvas, save any updated metadata, and tell me which file is now the active working copy.
 ```
 
 ### Color Audit

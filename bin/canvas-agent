@@ -8,6 +8,8 @@ import {
   clearCanvasAgentAttachedContext,
   captureWorkspaceScreenshot,
   createProjectCanvasFile,
+  deleteProjectCanvasFile,
+  duplicateProjectCanvasFile,
   enqueueAgentNativeWorkspaceOperation,
   enqueueCanvasAgentOperation,
   fail,
@@ -15,6 +17,7 @@ import {
   getDefaultCanvasAgentServerUrl,
   getCanvasAgentContextFromEnv,
   listProjectCanvasFiles,
+  moveProjectCanvasFile,
   openProjectCanvasFile,
   readAgentNativeWorkspaceDebug,
   readAgentNativeManifest,
@@ -63,6 +66,9 @@ Usage:
   bin/canvas-agent create-canvas-file <json|@file|->
   bin/canvas-agent save-canvas-file <path> <json|@file|->
   bin/canvas-agent update-canvas-file-metadata <path> <json|@file|->
+  bin/canvas-agent move-canvas-file <path> <json|@file|->
+  bin/canvas-agent duplicate-canvas-file <path> <json|@file|->
+  bin/canvas-agent delete-canvas-file <path>
   bin/canvas-agent color-audit-state
   bin/canvas-agent color-audit-export
   bin/canvas-agent node-catalog-state
@@ -354,6 +360,32 @@ async function main() {
         fail('update-canvas-file-metadata requires a JSON object payload.')
       }
       writeJson(await updateProjectCanvasFileMetadata(context, canvasPath.trim(), payload))
+      return
+    }
+    case 'move-canvas-file': {
+      const [canvasPath, payloadRef] = args
+      if (!canvasPath?.trim()) fail('move-canvas-file requires a file path.')
+      const payload = await readJsonPayload(payloadRef)
+      if (!payload || typeof payload !== 'object') {
+        fail('move-canvas-file requires a JSON object payload.')
+      }
+      writeJson(await moveProjectCanvasFile(context, canvasPath.trim(), payload))
+      return
+    }
+    case 'duplicate-canvas-file': {
+      const [canvasPath, payloadRef] = args
+      if (!canvasPath?.trim()) fail('duplicate-canvas-file requires a file path.')
+      const payload = await readJsonPayload(payloadRef)
+      if (!payload || typeof payload !== 'object') {
+        fail('duplicate-canvas-file requires a JSON object payload.')
+      }
+      writeJson(await duplicateProjectCanvasFile(context, canvasPath.trim(), payload))
+      return
+    }
+    case 'delete-canvas-file': {
+      const canvasPath = args[0]?.trim()
+      if (!canvasPath) fail('delete-canvas-file requires a file path.')
+      writeJson(await deleteProjectCanvasFile(context, canvasPath))
       return
     }
     case 'color-audit-state': {

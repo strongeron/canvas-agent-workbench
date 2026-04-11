@@ -399,6 +399,41 @@ export async function updateProjectCanvasFileMetadata(context, canvasPath, updat
   return payload?.file ?? null
 }
 
+export async function moveProjectCanvasFile(context, canvasPath, updates) {
+  const payload = await postAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases/move`,
+    {
+      path: canvasPath,
+      ...updates,
+    }
+  )
+  return payload?.file ?? null
+}
+
+export async function duplicateProjectCanvasFile(context, canvasPath, updates = {}) {
+  const payload = await postAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases/duplicate`,
+    {
+      path: canvasPath,
+      ...updates,
+    }
+  )
+  return payload?.file ?? null
+}
+
+export async function deleteProjectCanvasFile(context, canvasPath) {
+  const payload = await postAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases/delete`,
+    {
+      path: canvasPath,
+    }
+  )
+  return payload ?? null
+}
+
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
   return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
 }
