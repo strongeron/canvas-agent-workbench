@@ -964,7 +964,16 @@ async function collectLocalComponentCandidates(repoPath) {
   while (queue.length > 0) {
     const current = queue.pop()
     if (!current) continue
-    const entries = await fs.readdir(current, { withFileTypes: true })
+    let entries = []
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true })
+    } catch (error) {
+      const code = typeof error?.code === 'string' ? error.code : ''
+      if (code === 'EPERM' || code === 'EACCES') {
+        continue
+      }
+      throw error
+    }
     for (const entry of entries) {
       const fullPath = path.join(current, entry.name)
       if (entry.isDirectory()) {
