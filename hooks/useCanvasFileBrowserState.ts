@@ -113,6 +113,22 @@ export function useCanvasFileBrowserState(
     setOpenTabPaths((prev) => prev.filter((entry) => entry !== path))
   }
 
+  const replaceTrackedPath = (fromPath: string, toPath: string) => {
+    if (!fromPath || !toPath || fromPath === toPath) return
+    setRecentPaths((prev) =>
+      dedupePreserveOrder(prev.map((entry) => (entry === fromPath ? toPath : entry)))
+    )
+    setOpenTabPaths((prev) =>
+      dedupePreserveOrder(prev.map((entry) => (entry === fromPath ? toPath : entry)))
+    )
+  }
+
+  const removeTrackedPath = (path: string) => {
+    if (!path) return
+    setRecentPaths((prev) => prev.filter((entry) => entry !== path))
+    setOpenTabPaths((prev) => prev.filter((entry) => entry !== path))
+  }
+
   return {
     recentFiles,
     openTabs,
@@ -123,5 +139,7 @@ export function useCanvasFileBrowserState(
     selectedFolder,
     setSelectedFolder,
     closeOpenTab,
+    replaceTrackedPath,
+    removeTrackedPath,
   }
 }

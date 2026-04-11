@@ -29,6 +29,7 @@ Those commands:
 Related files:
 
 - [CANVAS_AGENT_MCP_SETUP.md](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/docs/CANVAS_AGENT_MCP_SETUP.md)
+- [CANVAS_AGENT_STORED_FILE_SMOKE_TESTS.md](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/docs/CANVAS_AGENT_STORED_FILE_SMOKE_TESTS.md)
 - [run-claude-canvas.sh](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/scripts/run-claude-canvas.sh)
 - [run-codex-canvas.sh](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/scripts/run-codex-canvas.sh)
 

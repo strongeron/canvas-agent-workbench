@@ -1,5 +1,5 @@
 import { useDraggable } from "@dnd-kit/core"
-import { ChevronDown, ChevronRight, FileText, GripVertical, Plus, RefreshCw, Save, Search, Star, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Copy, FileText, GripVertical, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { GalleryEntry } from "../../core/types"
@@ -176,6 +176,9 @@ interface CanvasSidebarProps {
   onCreateCanvasFile?: () => void | Promise<void>
   onSaveCanvasFile?: () => void | Promise<void>
   onToggleCanvasFavorite?: (filePath: string) => void | Promise<void>
+  onRenameCanvasFile?: (filePath: string) => void | Promise<void>
+  onDuplicateCanvasFile?: (filePath: string) => void | Promise<void>
+  onDeleteCanvasFile?: (filePath: string) => void | Promise<void>
   openCanvasTabs?: CanvasFileIndexEntry[]
   recentCanvasFiles?: CanvasFileIndexEntry[]
   favoriteCanvasFiles?: CanvasFileIndexEntry[]
@@ -213,6 +216,9 @@ export function CanvasSidebar({
   onCreateCanvasFile,
   onSaveCanvasFile,
   onToggleCanvasFavorite,
+  onRenameCanvasFile,
+  onDuplicateCanvasFile,
+  onDeleteCanvasFile,
   openCanvasTabs,
   recentCanvasFiles,
   favoriteCanvasFiles,
@@ -259,6 +265,56 @@ export function CanvasSidebar({
   const diagramFileInputRef = useRef<HTMLInputElement>(null)
   const canvasListRef = useRef<HTMLDivElement>(null)
   const [canvasListScrollTop, setCanvasListScrollTop] = useState(0)
+
+  const renderCanvasFileActions = useCallback(
+    (file: CanvasFileIndexEntry, compact = false) => (
+      <div className={`flex items-center ${compact ? "gap-0.5" : "gap-1"}`}>
+        {onRenameCanvasFile ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              void onRenameCanvasFile(file.path)
+            }}
+            className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-foreground"
+            aria-label={`Rename or move ${file.title}`}
+            title="Rename or move"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        {onDuplicateCanvasFile ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              void onDuplicateCanvasFile(file.path)
+            }}
+            className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-foreground"
+            aria-label={`Duplicate ${file.title}`}
+            title="Duplicate"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        {onDeleteCanvasFile ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              void onDeleteCanvasFile(file.path)
+            }}
+            className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-rose-600"
+            aria-label={`Delete ${file.title}`}
+            title="Delete"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </div>
+    ),
+    [onDeleteCanvasFile, onDuplicateCanvasFile, onRenameCanvasFile]
+  )
 
   // Group entries by category
   const componentsByCategory = useMemo(() => {
@@ -627,6 +683,25 @@ export function CanvasSidebar({
                       Saving…
                     </span>
                   ) : null}
+                  {activeCanvasFilePath && activeCanvasFileTitle
+                    ? renderCanvasFileActions(
+                        {
+                          id: activeCanvasFilePath,
+                          projectId: activeProjectId || "active",
+                          path: activeCanvasFilePath,
+                          title: activeCanvasFileTitle,
+                          surface: "canvas",
+                          updatedAt: "",
+                          createdAt: "",
+                          tags: [],
+                          favorite: false,
+                          archived: false,
+                          itemCount: 0,
+                          groupCount: 0,
+                        },
+                        true
+                      )
+                    : null}
                 </div>
               </div>
               {canvasFilesError ? (
@@ -660,6 +735,7 @@ export function CanvasSidebar({
                           >
                             {file.title}
                           </button>
+                          {renderCanvasFileActions(file, true)}
                           <button
                             type="button"
                             onClick={() => onCloseCanvasTab?.(file.path)}
@@ -805,21 +881,24 @@ export function CanvasSidebar({
                             </span>
                           </span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void onToggleCanvasFavorite?.(file.path)
-                            }}
-                            className={`rounded-full p-1 ${
-                              file.favorite
-                                ? "text-amber-500"
-                                : "text-muted-foreground hover:bg-white"
-                            }`}
-                            aria-label={`${file.favorite ? "Unfavorite" : "Favorite"} ${file.title}`}
-                          >
-                            <Star className={`h-3.5 w-3.5 ${file.favorite ? "fill-current" : ""}`} />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void onToggleCanvasFavorite?.(file.path)
+                              }}
+                              className={`rounded-full p-1 ${
+                                file.favorite
+                                  ? "text-amber-500"
+                                  : "text-muted-foreground hover:bg-white"
+                              }`}
+                              aria-label={`${file.favorite ? "Unfavorite" : "Favorite"} ${file.title}`}
+                            >
+                              <Star className={`h-3.5 w-3.5 ${file.favorite ? "fill-current" : ""}`} />
+                            </button>
+                            {renderCanvasFileActions(file)}
+                          </div>
                         </div>
                       )
                     })}

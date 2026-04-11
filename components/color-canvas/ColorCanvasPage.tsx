@@ -2387,6 +2387,9 @@ export function ColorCanvasPage({
     createCanvasFile,
     saveCanvasFile,
     updateCanvasFileMetadata,
+    moveCanvasFile,
+    duplicateCanvasFile,
+    deleteCanvasFile,
   } = useCanvasFiles<ColorCanvasFileDocumentData, ColorCanvasFileViewState>(projectId)
   type ColorCanvasSurface = Extract<CanvasDocumentSurface, "color-audit" | "system-canvas">
   const colorSurface: ColorCanvasSurface =
@@ -2738,6 +2741,124 @@ export function ColorCanvasPage({
       }
     },
     [surfaceCanvasFiles, updateCanvasFileMetadata]
+  )
+
+  const handleRenameSurfaceCanvasFile = useCallback(
+    async (filePath: string) => {
+      const target = surfaceCanvasFiles.find((file) => file.path === filePath)
+      if (!target) return
+      const requestedTitle =
+        typeof window === "undefined" ? target.title : window.prompt("Rename canvas file", target.title)
+      if (requestedTitle === null) return
+      const nextTitle = requestedTitle.trim()
+      if (!nextTitle || nextTitle === target.title) return
+      const currentFolder = filePath.split("/").slice(0, -1).join("/")
+      const requestedFolder =
+        typeof window === "undefined"
+          ? currentFolder
+          : window.prompt("Folder (leave blank for root)", currentFolder)
+      if (requestedFolder === null) return
+      try {
+        const moved = await moveCanvasFile(filePath, {
+          title: nextTitle,
+          folder: requestedFolder.trim(),
+        })
+        setActiveSurfaceCanvasFiles((current) => {
+          const nextEntries = { ...current }
+          for (const surfaceId of Object.keys(nextEntries) as ColorCanvasSurface[]) {
+            if (nextEntries[surfaceId]?.path === filePath) {
+              nextEntries[surfaceId] =
+                moved as { path: string; document: ColorCanvasWorkspaceFileDocument }
+            }
+          }
+          return nextEntries
+        })
+        colorCanvasFileBrowser.replaceTrackedPath(filePath, moved.path)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to rename canvas file."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [colorCanvasFileBrowser, moveCanvasFile, surfaceCanvasFiles]
+  )
+
+  const handleDuplicateSurfaceCanvasFile = useCallback(
+    async (filePath: string) => {
+      const target = surfaceCanvasFiles.find((file) => file.path === filePath)
+      if (!target) return
+      const requestedTitle =
+        typeof window === "undefined"
+          ? `${target.title} Copy`
+          : window.prompt("Duplicate canvas as", `${target.title} Copy`)
+      if (requestedTitle === null) return
+      const nextTitle = requestedTitle.trim() || `${target.title} Copy`
+      const currentFolder = filePath.split("/").slice(0, -1).join("/")
+      const requestedFolder =
+        typeof window === "undefined"
+          ? currentFolder
+          : window.prompt("Folder for duplicate (leave blank for root)", currentFolder)
+      if (requestedFolder === null) return
+      try {
+        const duplicated = await duplicateCanvasFile(filePath, {
+          title: nextTitle,
+          folder: requestedFolder.trim(),
+        })
+        applySurfaceCanvasFile(
+          duplicated as { path: string; document: ColorCanvasWorkspaceFileDocument }
+        )
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to duplicate canvas file."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [applySurfaceCanvasFile, duplicateCanvasFile, surfaceCanvasFiles]
+  )
+
+  const handleDeleteSurfaceCanvasFile = useCallback(
+    async (filePath: string) => {
+      const target = surfaceCanvasFiles.find((file) => file.path === filePath)
+      if (!target) return
+      const confirmed =
+        typeof window === "undefined"
+          ? true
+          : window.confirm(`Delete "${target.title}"? This removes the .canvas file and its local assets.`)
+      if (!confirmed) return
+      try {
+        await deleteCanvasFile(filePath)
+        colorCanvasFileBrowser.removeTrackedPath(filePath)
+        setActiveSurfaceCanvasFiles((current) => {
+          const nextEntries = { ...current }
+          for (const surfaceId of Object.keys(nextEntries) as ColorCanvasSurface[]) {
+            if (nextEntries[surfaceId]?.path === filePath) {
+              nextEntries[surfaceId] = null
+            }
+          }
+          return nextEntries
+        })
+        setLastSavedSurfaceCanvasFileSignatures((current) => {
+          const nextEntries = { ...current }
+          for (const surfaceId of Object.keys(nextEntries) as ColorCanvasSurface[]) {
+            if (activeSurfaceCanvasFiles[surfaceId]?.path === filePath) {
+              nextEntries[surfaceId] = null
+            }
+          }
+          return nextEntries
+        })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to delete canvas file."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [activeSurfaceCanvasFiles, colorCanvasFileBrowser, deleteCanvasFile, surfaceCanvasFiles]
   )
 
   useEffect(() => {
@@ -7987,6 +8108,43 @@ export function ColorCanvasPage({
                   <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
                     {canvasMode === "color-audit" ? "Color Audit" : "System Canvas"}
                   </span>
+                  {activeSurfaceCanvasFilePath && activeSurfaceCanvasFileTitle ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleRenameSurfaceCanvasFile(activeSurfaceCanvasFilePath)
+                        }}
+                        className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-foreground"
+                        aria-label={`Rename or move ${activeSurfaceCanvasFileTitle}`}
+                        title="Rename or move"
+                      >
+                        <Move className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleDuplicateSurfaceCanvasFile(activeSurfaceCanvasFilePath)
+                        }}
+                        className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-foreground"
+                        aria-label={`Duplicate ${activeSurfaceCanvasFileTitle}`}
+                        title="Duplicate"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleDeleteSurfaceCanvasFile(activeSurfaceCanvasFilePath)
+                        }}
+                        className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-rose-600"
+                        aria-label={`Delete ${activeSurfaceCanvasFileTitle}`}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               {canvasFilesError ? (
@@ -8019,6 +8177,28 @@ export function ColorCanvasPage({
                             className="truncate"
                           >
                             {file.title}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleRenameSurfaceCanvasFile(file.path)
+                            }}
+                            className="rounded-full p-0.5 text-muted-foreground hover:bg-white hover:text-foreground"
+                            aria-label={`Rename or move ${file.title}`}
+                            title="Rename or move"
+                          >
+                            <Move className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleDuplicateSurfaceCanvasFile(file.path)
+                            }}
+                            className="rounded-full p-0.5 text-muted-foreground hover:bg-white hover:text-foreground"
+                            aria-label={`Duplicate ${file.title}`}
+                            title="Duplicate"
+                          >
+                            <Copy className="h-3 w-3" />
                           </button>
                           <button
                             type="button"
@@ -8165,18 +8345,53 @@ export function ColorCanvasPage({
                               </span>
                             </span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void handleToggleSurfaceCanvasFavorite(file.path)
-                            }}
-                            className={`rounded-full p-1 ${
-                              file.favorite ? "text-amber-500" : "text-muted-foreground hover:bg-white"
-                            }`}
-                            aria-label={`${file.favorite ? "Unfavorite" : "Favorite"} ${file.title}`}
-                          >
-                            <Star className={`h-3.5 w-3.5 ${file.favorite ? "fill-current" : ""}`} />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleToggleSurfaceCanvasFavorite(file.path)
+                              }}
+                              className={`rounded-full p-1 ${
+                                file.favorite ? "text-amber-500" : "text-muted-foreground hover:bg-white"
+                              }`}
+                              aria-label={`${file.favorite ? "Unfavorite" : "Favorite"} ${file.title}`}
+                            >
+                              <Star className={`h-3.5 w-3.5 ${file.favorite ? "fill-current" : ""}`} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleRenameSurfaceCanvasFile(file.path)
+                              }}
+                              className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-foreground"
+                              aria-label={`Rename or move ${file.title}`}
+                              title="Rename or move"
+                            >
+                              <Move className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleDuplicateSurfaceCanvasFile(file.path)
+                              }}
+                              className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-foreground"
+                              aria-label={`Duplicate ${file.title}`}
+                              title="Duplicate"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleDeleteSurfaceCanvasFile(file.path)
+                              }}
+                              className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-rose-600"
+                              aria-label={`Delete ${file.title}`}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                       )
                     })}
