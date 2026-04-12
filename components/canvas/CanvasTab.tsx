@@ -1270,22 +1270,18 @@ export function CanvasTab({
       position?: { x: number; y: number }
     }) => {
       if (!activeProjectId) {
-        if (typeof window !== "undefined") {
-          window.alert("Select a project before importing an HTML bundle.")
-        }
-        return
+        throw new Error("Select a project before importing an HTML bundle.")
       }
 
       if (!activeCanvasFilePath) {
-        if (typeof window !== "undefined") {
-          window.alert("Save this board to a real .canvas file before importing an HTML bundle.")
-        }
-        return
+        throw new Error("Save this board to a real .canvas file before importing an HTML bundle.")
       }
 
       const hasFiles = Array.isArray(input.files) && input.files.length > 0
       const hasFileEntries = Array.isArray(input.fileEntries) && input.fileEntries.length > 0
-      if (!hasFiles && !hasFileEntries) return
+      if (!hasFiles && !hasFileEntries) {
+        throw new Error("Choose an HTML file or folder before importing.")
+      }
 
       try {
         const serializedFiles = hasFileEntries
@@ -1322,12 +1318,16 @@ export function CanvasTab({
           rotation: 0,
         })
         setPropsPanelVisible(true)
+        if (typeof window !== "undefined" && window.innerWidth < 1100) {
+          setSidebarVisible(false)
+        }
         await refreshCanvasFiles()
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to import HTML bundle."
         if (typeof window !== "undefined") {
           window.alert(message)
         }
+        throw error instanceof Error ? error : new Error(message)
       }
     },
     [
@@ -1352,20 +1352,16 @@ export function CanvasTab({
       position?: { x: number; y: number }
     }) => {
       if (!activeProjectId) {
-        if (typeof window !== "undefined") {
-          window.alert("Select a project before importing an HTML bundle.")
-        }
-        return
+        throw new Error("Select a project before importing an HTML bundle.")
       }
 
       if (!activeCanvasFilePath) {
-        if (typeof window !== "undefined") {
-          window.alert("Save this board to a real .canvas file before importing an HTML bundle.")
-        }
-        return
+        throw new Error("Save this board to a real .canvas file before importing an HTML bundle.")
       }
 
-      if (!input.directoryPath.trim()) return
+      if (!input.directoryPath.trim()) {
+        throw new Error("Choose an HTML bundle directory before importing.")
+      }
 
       try {
         const imported = await importCanvasHtmlBundle(activeCanvasFilePath, {
@@ -1401,12 +1397,16 @@ export function CanvasTab({
           rotation: 0,
         })
         setPropsPanelVisible(true)
+        if (typeof window !== "undefined" && window.innerWidth < 1100) {
+          setSidebarVisible(false)
+        }
         await refreshCanvasFiles()
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to import HTML bundle."
         if (typeof window !== "undefined") {
           window.alert(message)
         }
+        throw error instanceof Error ? error : new Error(message)
       }
     },
     [
