@@ -15,6 +15,10 @@
     "lint": "eslint",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
     "test": "vitest run --root .",
+    "test:health:storage": "npm test -- tests/canvasFileStore.test.ts tests/canvasFileApi.test.ts tests/canvasFileAssets.test.ts",
+    "test:health:agent": "npm test -- tests/agentNativeManifest.test.ts tests/canvasAgentRuntime.test.ts tests/canvasAgentCli.test.ts tests/canvasMcpServer.test.ts",
+    "test:health:ui": "npm test -- tests/canvasFileDialogs.test.tsx tests/colorCanvasReview.test.tsx tests/systemCanvas.test.tsx tests/canvasDeleteActions.test.tsx",
+    "check:health": "npm run typecheck && npm run test:health:storage && npm run test:health:agent && npm run test:health:ui",
     "test:visual": "node scripts/agentNativeVisualCheck.mjs",
     "test:visual:update": "node scripts/agentNativeVisualCheck.mjs --update",
     "check": "npm run lint && npm run typecheck && npm run test"
