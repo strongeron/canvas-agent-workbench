@@ -67,6 +67,8 @@ The demo shows how to integrate the gallery with example components (Button, Bad
 - [Canvas Health Checks](./docs/CANVAS_HEALTH_CHECKS.md) — the focused CI/local release gate for storage, agent-native runtime, UI flows, and the Node Catalog visual baseline
 - [Relative Color Canvas](./docs/RELATIVE_COLOR_CANVAS.md) — focused guide for manual OKLCH relative-color authoring in `Color Audit`
 
+Freeform `Canvas` now also supports local HTML/CSS/JS bundle nodes. Those bundles are packed into document-local assets, can be resized like other items, and become clickable in interact mode.
+
 ## Use in Your Project
 
 ```tsx

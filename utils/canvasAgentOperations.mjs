@@ -9,6 +9,7 @@ export const DEFAULT_ARTBOARD_LAYOUT = {
 
 export const DEFAULT_ARTBOARD_SIZE = { width: 1440, height: 900 }
 export const DEFAULT_ARTBOARD_POSITION = { x: 120, y: 120 }
+export const DEFAULT_HTML_ITEM_SIZE = { width: 720, height: 480 }
 export const DEFAULT_EXPORT_FORMAT = 'react-tailwind'
 export const EXPORT_FORMATS = new Set(['react-tailwind', 'react-css-vars'])
 
@@ -192,6 +193,32 @@ export function createArtboardItem(state, args = {}) {
     background: normalizeString(args.background) || undefined,
     themeId: normalizeString(args.themeId) || undefined,
     layout: normalizeArtboardLayout(args.layout),
+  }
+}
+
+export function createHtmlCanvasItem(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const src = normalizeString(args.src)
+  if (!src) {
+    throw new Error('HTML item src is required.')
+  }
+
+  return {
+    id: createCanvasItemId('html'),
+    type: 'html',
+    src,
+    title: normalizeString(args.title) || 'HTML bundle',
+    sandbox:
+      normalizeString(args.sandbox) || 'allow-scripts allow-same-origin allow-forms allow-modals',
+    background: normalizeString(args.background) || undefined,
+    entryAsset: normalizeString(args.entryAsset) || undefined,
+    sourcePath: normalizeString(args.sourcePath) || undefined,
+    sourceImportedAt: normalizeString(args.sourceImportedAt) || undefined,
+    position: normalizePosition(args.position, DEFAULT_ARTBOARD_POSITION),
+    size: normalizeSize(args.size, DEFAULT_HTML_ITEM_SIZE),
+    rotation: 0,
+    zIndex: current.nextZIndex,
+    parentId: normalizeString(args.parentId) || undefined,
   }
 }
 

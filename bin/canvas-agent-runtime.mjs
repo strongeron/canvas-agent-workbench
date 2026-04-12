@@ -434,6 +434,18 @@ export async function deleteProjectCanvasFile(context, canvasPath) {
   return payload ?? null
 }
 
+export async function importProjectCanvasHtmlBundle(context, canvasPath, bundle) {
+  const payload = await postAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases/html-bundle/import`,
+    {
+      path: canvasPath,
+      bundle,
+    }
+  )
+  return payload?.htmlBundle ?? null
+}
+
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
   return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
 }
@@ -670,6 +682,15 @@ export function buildCanvasContextSummary(state, primitives) {
         title: item.title || null,
         url: item.url,
         previewMode: item.embedPreviewMode || null,
+      }
+    }
+
+    if (item.type === 'html') {
+      return {
+        ...base,
+        title: item.title || null,
+        src: item.src,
+        entryAsset: item.entryAsset || null,
       }
     }
 

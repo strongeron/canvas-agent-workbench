@@ -277,6 +277,18 @@ describe("canvas agent runtime", () => {
           path: "boards/demo.canvas",
         }),
       })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          htmlBundle: {
+            entryAsset: "html/landing/index.html",
+            entryUrl:
+              "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Flanding%2Findex.html",
+            assetCount: 3,
+            importedAt: "2026-04-12T12:00:00.000Z",
+          },
+        }),
+      })
 
     vi.stubGlobal("fetch", fetchMock)
 
@@ -337,6 +349,18 @@ describe("canvas agent runtime", () => {
       ok: true,
       path: "boards/demo.canvas",
     })
+    await expect(
+      runtime.importProjectCanvasHtmlBundle(context as any, "boards/demo.canvas", {
+        title: "Landing",
+        directoryPath: "/tmp/landing",
+      })
+    ).resolves.toEqual({
+      entryAsset: "html/landing/index.html",
+      entryUrl:
+        "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Flanding%2Findex.html",
+      assetCount: 3,
+      importedAt: "2026-04-12T12:00:00.000Z",
+    })
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://127.0.0.1:5178/api/projects/demo/canvases?surface=canvas"
@@ -350,6 +374,9 @@ describe("canvas agent runtime", () => {
     expect(fetchMock.mock.calls[5]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/move")
     expect(fetchMock.mock.calls[6]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/duplicate")
     expect(fetchMock.mock.calls[7]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/delete")
+    expect(fetchMock.mock.calls[8]?.[0]).toBe(
+      "http://127.0.0.1:5178/api/projects/demo/canvases/html-bundle/import"
+    )
   })
 
   it("reads workspace debug payloads from the agent-native endpoint", async () => {

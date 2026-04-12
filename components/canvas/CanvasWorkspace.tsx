@@ -7,6 +7,7 @@ import type {
   CanvasItemUpdate,
   CanvasComponentItem,
   CanvasEmbedItem as CanvasEmbedItemType,
+  CanvasHtmlItem as CanvasHtmlItemType,
   CanvasMermaidItem as CanvasMermaidItemType,
   CanvasExcalidrawItem as CanvasExcalidrawItemType,
   CanvasMarkdownItem as CanvasMarkdownItemType,
@@ -18,9 +19,11 @@ import type {
 import type { GalleryEntry, ComponentVariant } from "../../core/types"
 import { CanvasArtboardItem as CanvasArtboardItemComponent } from "./CanvasArtboardItem"
 import { CanvasEmbedItem as CanvasEmbedItemComponent } from "./CanvasEmbedItem"
+import { CanvasHtmlItem as CanvasHtmlItemComponent } from "./CanvasHtmlItem"
 import { CanvasLayoutComponentItem } from "./CanvasLayoutComponentItem"
 import { CanvasLayoutExcalidrawItem } from "./CanvasLayoutExcalidrawItem"
 import { CanvasLayoutEmbedItem } from "./CanvasLayoutEmbedItem"
+import { CanvasLayoutHtmlItem } from "./CanvasLayoutHtmlItem"
 import { CanvasLayoutMediaItem } from "./CanvasLayoutMediaItem"
 import { CanvasLayoutMermaidItem } from "./CanvasLayoutMermaidItem"
 import { CanvasLayoutMarkdownItem } from "./CanvasLayoutMarkdownItem"
@@ -184,6 +187,7 @@ export function CanvasWorkspace({
           ): item is
             | CanvasComponentItem
             | CanvasEmbedItemType
+            | CanvasHtmlItemType
             | CanvasMediaItemType
             | CanvasMermaidItemType
             | CanvasExcalidrawItemType
@@ -200,6 +204,7 @@ export function CanvasWorkspace({
       child:
         | CanvasComponentItem
         | CanvasEmbedItemType
+        | CanvasHtmlItemType
         | CanvasMediaItemType
         | CanvasMermaidItemType
         | CanvasExcalidrawItemType
@@ -236,6 +241,26 @@ export function CanvasWorkspace({
             data-artboard-child="true"
           >
             <CanvasLayoutMediaItem
+              item={child}
+              isSelected={isSelected}
+              onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
+              onUpdate={(updates) => onUpdateItem(child.id, updates)}
+              scale={transform.scale}
+              interactMode={interactMode}
+            />
+          </div>
+        )
+      }
+
+      if (child.type === "html") {
+        return (
+          <div
+            key={child.id}
+            className="relative"
+            style={{ width: child.size.width, height: child.size.height }}
+            data-artboard-child="true"
+          >
+            <CanvasLayoutHtmlItem
               item={child}
               isSelected={isSelected}
               onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
@@ -687,6 +712,19 @@ export function CanvasWorkspace({
                 {...commonProps}
                 item={item as CanvasEmbedItemType}
                 onUpdate={(updates: Partial<Omit<CanvasEmbedItemType, "id">>) =>
+                  onUpdateItem(item.id, updates)
+                }
+              />
+            )
+          }
+
+          if (item.type === "html") {
+            return (
+              <CanvasHtmlItemComponent
+                key={item.id}
+                {...commonProps}
+                item={item as CanvasHtmlItemType}
+                onUpdate={(updates: Partial<Omit<CanvasHtmlItemType, "id">>) =>
                   onUpdateItem(item.id, updates)
                 }
               />

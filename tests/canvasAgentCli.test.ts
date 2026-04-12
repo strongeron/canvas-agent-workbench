@@ -723,4 +723,122 @@ describe("canvas-agent CLI bootstrap", () => {
       cursor: 5,
     })
   })
+
+  it("imports a local HTML bundle into a stored canvas file through the attached session context", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-html-bundle-"))
+    const contextFilePath = path.join(tempDir, "attached-session.json")
+    let serverUrl = ""
+
+    server = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            bootstrap: {
+              reused: false,
+              surfaceId: "canvas",
+              session: {
+                id: "canvas-agent-session-html-bundle",
+                projectId: "demo",
+                agentId: "codex",
+                agentLabel: "Codex",
+              },
+              context: {
+                serverUrl,
+                projectId: "demo",
+                sessionId: "canvas-agent-session-html-bundle",
+                sessionDir: "/tmp/canvas-agent/session-html-bundle",
+                canvasWorkspaceKey: "gallery-demo:canvas",
+                colorAuditWorkspaceKey: "gallery-demo:color-audit",
+                systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
+                nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
+              },
+            },
+          })
+        )
+        return
+      }
+
+      if (req.method === "POST" && req.url === "/api/projects/demo/canvases/html-bundle/import") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            htmlBundle: {
+              assetRoot: "html/marketing-card",
+              entryAsset: "html/marketing-card/index.html",
+              entryUrl:
+                "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Fmarketing-card%2Findex.html",
+              assetCount: 3,
+              importedAt: "2026-04-12T15:00:00.000Z",
+            },
+          })
+        )
+        return
+      }
+
+      res.statusCode = 404
+      res.end()
+    })
+
+    const port = await listenOnRandomPort()
+    serverUrl = `http://127.0.0.1:${port}`
+
+    const attachResult = await runCli(
+      ["attach", "--project", "demo", "--surface", "canvas", "--server", serverUrl, "--json"],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(attachResult.exitCode).toBe(0)
+
+    const importResult = await runCli(
+      [
+        "import-html-bundle",
+        "boards/demo.canvas",
+        JSON.stringify({
+          createItem: false,
+          bundle: {
+            title: "Marketing Card",
+            files: [
+              {
+                path: "index.html",
+                content:
+                  "<!doctype html><html><head><link rel='stylesheet' href='styles/site.css'></head><body><div class='card'>Hello</div><script src='scripts/app.js'></script></body></html>",
+              },
+              {
+                path: "styles/site.css",
+                content: ".card { color: #0f172a; }",
+              },
+              {
+                path: "scripts/app.js",
+                content: "document.body.dataset.ready = 'true'",
+              },
+            ],
+          },
+        }),
+      ],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(importResult.exitCode).toBe(0)
+    expect(importResult.stderr).toBe("")
+    expect(JSON.parse(importResult.stdout)).toEqual({
+      ok: true,
+      htmlBundle: {
+        assetRoot: "html/marketing-card",
+        entryAsset: "html/marketing-card/index.html",
+        entryUrl:
+          "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Fmarketing-card%2Findex.html",
+        assetCount: 3,
+        importedAt: "2026-04-12T15:00:00.000Z",
+      },
+    })
+  })
 })

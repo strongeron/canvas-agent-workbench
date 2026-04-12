@@ -4,6 +4,8 @@ import type {
   CanvasDocumentSurface,
   CanvasFileAssetInput,
   CanvasFileDocument,
+  CanvasHtmlBundleImportInput,
+  CanvasHtmlBundleImportResult,
   CanvasFileIndexEntry,
   CanvasStateSnapshot,
   CanvasTransform,
@@ -299,6 +301,40 @@ export function useCanvasFiles<
     [projectId, refreshFiles]
   )
 
+  const importCanvasHtmlBundle = useCallback(
+    async (filePath: string, bundle: CanvasHtmlBundleImportInput) => {
+      if (!projectId) throw new Error("Select a project before importing an HTML bundle.")
+      setIsSaving(true)
+      setError(null)
+      try {
+        const response = await fetch(
+          `/api/projects/${encodeURIComponent(projectId)}/canvases/html-bundle/import`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              path: filePath,
+              bundle,
+            }),
+          }
+        )
+        const data = await response.json().catch(() => null)
+        if (!response.ok || !data?.ok || !data?.htmlBundle) {
+          throw new Error(data?.error || "Failed to import HTML bundle.")
+        }
+        return data.htmlBundle as CanvasHtmlBundleImportResult
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error ? nextError.message : "Failed to import HTML bundle."
+        setError(message)
+        throw nextError
+      } finally {
+        setIsSaving(false)
+      }
+    },
+    [projectId]
+  )
+
   return {
     files,
     isLoading,
@@ -312,5 +348,6 @@ export function useCanvasFiles<
     moveCanvasFile,
     duplicateCanvasFile,
     deleteCanvasFile,
+    importCanvasHtmlBundle,
   }
 }

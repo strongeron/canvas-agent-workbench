@@ -9,6 +9,7 @@ import { buildCanvasFileDocument } from "../utils/canvasFileStore"
 import {
   copyCanvasDocumentAssets,
   deleteCanvasDocumentAssets,
+  importCanvasHtmlBundle,
   packCanvasDocumentAssets,
   readCanvasDocumentAsset,
   rewriteCanvasDocumentAssetUrls,
@@ -189,5 +190,85 @@ describe("canvas file assets", () => {
     await expect(
       readCanvasDocumentAsset(projectsRoot, "demo", "boards/media-board.canvas", assetName)
     ).rejects.toThrow()
+  })
+
+  it("imports nested HTML bundles and rewrites html item URLs when the canvas path changes", async () => {
+    const projectsRoot = await createTempProjectsRoot()
+    const imported = await importCanvasHtmlBundle(projectsRoot, {
+      projectId: "demo",
+      path: "boards/site.canvas",
+      bundle: {
+        title: "Landing Preview",
+        files: [
+          {
+            relativePath: "index.html",
+            dataUrl: "data:text/html;base64,PGh0bWw+PGJvZHk+SGVsbG88L2JvZHk+PC9odG1sPg==",
+          },
+          {
+            relativePath: "styles/site.css",
+            dataUrl: "data:text/css;base64,Ym9keSB7IGJhY2tncm91bmQ6ICNmZmY7IH0=",
+          },
+          {
+            relativePath: "scripts/app.js",
+            dataUrl: "data:text/javascript;base64,Y29uc29sZS5sb2coJ2hlbGxvJyk7",
+          },
+        ],
+      },
+    })
+
+    expect(imported.entryAsset).toMatch(/^html\//)
+    expect(imported.entryUrl).toContain("path=boards%2Fsite.canvas")
+    expect(imported.assetCount).toBe(3)
+
+    const entryAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "boards/site.canvas",
+      imported.entryAsset
+    )
+    expect(entryAsset.content.toString("utf8")).toContain("<body>Hello</body>")
+
+    const nestedCssAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "boards/site.canvas",
+      `${imported.assetRoot}/styles/site.css`
+    )
+    expect(nestedCssAsset.content.toString("utf8")).toContain("background")
+
+    const document = buildCanvasFileDocument({
+      projectId: "demo",
+      title: "Landing Preview",
+      document: {
+        items: [
+          {
+            id: "html-1",
+            type: "html",
+            src: imported.entryUrl,
+            title: "Landing Preview",
+            entryAsset: imported.entryAsset,
+            position: { x: 0, y: 0 },
+            size: { width: 640, height: 400 },
+            rotation: 0,
+            zIndex: 1,
+          },
+        ],
+        groups: [],
+        nextZIndex: 2,
+        selectedIds: [],
+      },
+    })
+
+    const rewritten = rewriteCanvasDocumentAssetUrls(
+      "demo",
+      "boards/site.canvas",
+      "archive/site-copy.canvas",
+      document
+    )
+    const rewrittenItem = (rewritten.document as CanvasStateSnapshot).items[0]
+    expect(rewrittenItem?.type).toBe("html")
+    expect(rewrittenItem?.type === "html" ? rewrittenItem.src : "").toContain(
+      "path=archive%2Fsite-copy.canvas"
+    )
   })
 })

@@ -6,6 +6,7 @@ import {
   createProjectCanvasFile,
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
+  importProjectCanvasHtmlBundle,
   readAgentNativeWorkspaceDebug,
   enqueueAgentNativeWorkspaceOperation,
   readAgentNativeManifest,
@@ -33,6 +34,7 @@ import {
   createClearCanvasOperation,
   createCreateItemOperation,
   createDeleteItemsOperation,
+  createHtmlCanvasItem,
   createPrimitiveCanvasItem,
   createSelectItemsOperation,
   createUpdateItemOperation,
@@ -196,6 +198,34 @@ const TOOL_DEFINITIONS = [
         path: { type: 'string' },
       },
       required: ['path'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'import_html_bundle',
+    description:
+      'Import a local HTML/CSS/JS bundle into a stored canvas file and optionally create a live html node from the bundled entry asset.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        bundle: { type: 'object' },
+        createItem: { type: 'boolean' },
+        select: { type: 'boolean' },
+        item: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            sandbox: { type: 'string' },
+            background: { type: 'string' },
+            parentId: { type: 'string' },
+            position: positionSchema(),
+            size: sizeSchema(),
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['path', 'bundle'],
       additionalProperties: false,
     },
   },
@@ -1110,6 +1140,56 @@ async function callTool(name, args) {
       const canvasPath = normalizeString(args.path)
       if (!canvasPath) return asToolError('path is required.')
       return asToolResult(await deleteProjectCanvasFile(context, canvasPath))
+    }
+    case 'import_html_bundle': {
+      const canvasPath = normalizeString(args.path)
+      if (!canvasPath) return asToolError('path is required.')
+      const bundle = args.bundle && typeof args.bundle === 'object' ? args.bundle : null
+      if (!bundle) return asToolError('bundle is required.')
+
+      const htmlBundle = await importProjectCanvasHtmlBundle(context, canvasPath, bundle)
+      if (args.createItem === false) {
+        return asToolResult({ htmlBundle })
+      }
+
+      try {
+        const state = await readCanvasAgentState(context)
+        const itemArgs = args.item && typeof args.item === 'object' ? args.item : {}
+        const item = createHtmlCanvasItem(state, {
+          src: htmlBundle?.entryUrl,
+          title: normalizeString(itemArgs.title) || normalizeString(bundle.title) || undefined,
+          sandbox: normalizeString(itemArgs.sandbox) || undefined,
+          background: normalizeString(itemArgs.background) || undefined,
+          parentId: normalizeString(itemArgs.parentId) || undefined,
+          position: itemArgs.position,
+          size: itemArgs.size,
+          entryAsset: htmlBundle?.entryAsset,
+          sourcePath: normalizeString(bundle.directoryPath) || undefined,
+          sourceImportedAt: htmlBundle?.importedAt,
+        })
+        const result = await enqueueCanvasAgentOperation(
+          context,
+          'import_html_bundle',
+          createCreateItemOperation(item, args.select !== false),
+          {
+            source: 'canvas-agent-mcp',
+          }
+        )
+        if (!result.ok) {
+          return asToolError(result.error || 'Failed to create html item.')
+        }
+        return asToolResult({
+          htmlBundle,
+          item,
+          result: {
+            ...result,
+            canvasPath,
+            entryAsset: htmlBundle?.entryAsset || null,
+          },
+        })
+      } catch (error) {
+        return asToolError(error instanceof Error ? error.message : 'Failed to create html item.')
+      }
     }
     case 'get_workspace_events': {
       const workspaceId = normalizeString(args.workspaceId)

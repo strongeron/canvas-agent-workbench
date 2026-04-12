@@ -8,6 +8,7 @@ import type { ColorCanvasState } from "./colorCanvas"
 export type CanvasItem =
   | CanvasComponentItem
   | CanvasEmbedItem
+  | CanvasHtmlItem
   | CanvasMediaItem
   | CanvasMermaidItem
   | CanvasExcalidrawItem
@@ -17,6 +18,7 @@ export type CanvasItem =
 export type CanvasItemInput =
   | Omit<CanvasComponentItem, "id" | "zIndex">
   | Omit<CanvasEmbedItem, "id" | "zIndex">
+  | Omit<CanvasHtmlItem, "id" | "zIndex">
   | Omit<CanvasMediaItem, "id" | "zIndex">
   | Omit<CanvasMermaidItem, "id" | "zIndex">
   | Omit<CanvasExcalidrawItem, "id" | "zIndex">
@@ -26,6 +28,7 @@ export type CanvasItemInput =
 export type CanvasItemUpdate =
   | Partial<Omit<CanvasComponentItem, "id">>
   | Partial<Omit<CanvasEmbedItem, "id">>
+  | Partial<Omit<CanvasHtmlItem, "id">>
   | Partial<Omit<CanvasMediaItem, "id">>
   | Partial<Omit<CanvasMermaidItem, "id">>
   | Partial<Omit<CanvasExcalidrawItem, "id">>
@@ -140,6 +143,17 @@ export interface CanvasMediaItem extends CanvasItemBase {
   sourceCapturedAt?: string
 }
 
+export interface CanvasHtmlItem extends CanvasItemBase {
+  type: "html"
+  src: string
+  title?: string
+  sandbox?: string
+  background?: string
+  entryAsset?: string
+  sourcePath?: string
+  sourceImportedAt?: string
+}
+
 export type CanvasMermaidTheme = "default" | "neutral" | "dark" | "forest" | "base"
 
 export interface CanvasMermaidItem extends CanvasItemBase {
@@ -228,6 +242,27 @@ export interface CanvasFileAssetInput {
   fileName?: string
   dataUrl?: string
   filePath?: string
+}
+
+export interface CanvasHtmlBundleFileInput {
+  relativePath: string
+  dataUrl?: string
+  filePath?: string
+}
+
+export interface CanvasHtmlBundleImportInput {
+  entryFile?: string
+  title?: string
+  directoryPath?: string
+  files?: CanvasHtmlBundleFileInput[]
+}
+
+export interface CanvasHtmlBundleImportResult {
+  assetRoot: string
+  entryAsset: string
+  entryUrl: string
+  assetCount: number
+  importedAt: string
 }
 
 export interface ColorCanvasFileDocumentData {

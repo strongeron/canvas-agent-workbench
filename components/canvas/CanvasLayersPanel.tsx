@@ -34,6 +34,13 @@ function getMediaLabel(item: CanvasItem) {
   }
 }
 
+function getHtmlLabel(item: CanvasItem) {
+  if (item.type !== "html") return ""
+  if (item.title?.trim()) return item.title
+  if (item.entryAsset?.trim()) return item.entryAsset.split("/").filter(Boolean).pop() || "HTML bundle"
+  return "HTML bundle"
+}
+
 export function CanvasLayersPanel({
   items,
   selectedIds,
@@ -58,6 +65,7 @@ export function CanvasLayersPanel({
   const getItemLabel = (item: CanvasItem) => {
     if (item.type === "artboard") return item.name
     if (item.type === "embed") return getEmbedLabel(item)
+    if (item.type === "html") return getHtmlLabel(item)
     if (item.type === "media") return getMediaLabel(item)
     if (item.type === "mermaid") return item.title || "Mermaid diagram"
     if (item.type === "excalidraw") return item.title || "Excalidraw sketch"

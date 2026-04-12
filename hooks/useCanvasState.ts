@@ -24,6 +24,9 @@ function normalizeItem(item: CanvasItem | any): CanvasItem {
   if (item?.type === "embed") {
     return { ...item, type: "embed" }
   }
+  if (item?.type === "html") {
+    return { ...item, type: "html" }
+  }
   if (item?.type === "media") {
     return { ...item, type: "media" }
   }

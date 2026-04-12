@@ -16,6 +16,7 @@ import type {
   CanvasFileAssetField,
   CanvasFileAssetInput,
   CanvasFileDocument,
+  CanvasHtmlBundleFileInput,
   CanvasMediaItem,
   CanvasScene,
   CanvasMermaidItem,
@@ -26,6 +27,7 @@ import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } fro
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
 import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "./CanvasFileDialogs"
+import { CanvasHtmlPropsPanel } from "./CanvasHtmlPropsPanel"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
@@ -126,6 +128,16 @@ async function blobToDataUrl(blob: Blob) {
     }
     reader.readAsDataURL(blob)
   })
+}
+
+async function serializeHtmlBundleFiles(files: File[]): Promise<CanvasHtmlBundleFileInput[]> {
+  const serialized = await Promise.all(
+    files.map(async (file) => ({
+      relativePath: file.webkitRelativePath?.trim() || file.name,
+      dataUrl: await blobToDataUrl(file),
+    }))
+  )
+  return serialized.filter((file) => file.relativePath.trim())
 }
 
 function isEditablePasteTarget(target: EventTarget | null) {
@@ -694,6 +706,7 @@ export function CanvasTab({
     moveCanvasFile,
     duplicateCanvasFile,
     deleteCanvasFile,
+    importCanvasHtmlBundle,
   } = useCanvasFiles(activeProjectId)
   const canvasFileBrowser = useCanvasFileBrowserState(
     activeProjectId ? `gallery-${activeProjectId}` : "gallery-canvas",
@@ -708,6 +721,7 @@ export function CanvasTab({
     : null
   const selectedComponentItem = selectedItem?.type === "component" ? selectedItem : null
   const selectedEmbedItem = selectedItem?.type === "embed" ? selectedItem : null
+  const selectedHtmlItem = selectedItem?.type === "html" ? selectedItem : null
   const selectedMediaItem = selectedItem?.type === "media" ? selectedItem : null
   const selectedMarkdownItem = selectedItem?.type === "markdown" ? selectedItem : null
   const selectedMermaidItem = selectedItem?.type === "mermaid" ? selectedItem : null
@@ -1233,6 +1247,83 @@ export function CanvasTab({
       setPropsPanelVisible(true)
     },
     [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+  )
+
+  const handleAddHtmlBundle = useCallback(
+    async (input: {
+      files: File[]
+      title?: string
+      position?: { x: number; y: number }
+    }) => {
+      if (!activeProjectId) {
+        if (typeof window !== "undefined") {
+          window.alert("Select a project before importing an HTML bundle.")
+        }
+        return
+      }
+
+      if (!activeCanvasFilePath) {
+        if (typeof window !== "undefined") {
+          window.alert("Save this board to a real .canvas file before importing an HTML bundle.")
+        }
+        return
+      }
+
+      if (!Array.isArray(input.files) || input.files.length === 0) return
+
+      try {
+        const serializedFiles = await serializeHtmlBundleFiles(input.files)
+        const imported = await importCanvasHtmlBundle(activeCanvasFilePath, {
+          title: input.title?.trim() || undefined,
+          files: serializedFiles,
+        })
+
+        const htmlWidth = 720
+        const htmlHeight = 480
+        const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+        const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+        const targetX = input.position ? input.position.x : centerX
+        const targetY = input.position ? input.position.y : centerY
+        const nextTitle =
+          input.title?.trim() ||
+          imported.entryAsset.split("/").filter(Boolean).pop()?.replace(/\.html?$/i, "") ||
+          "HTML bundle"
+
+        addItem({
+          type: "html",
+          src: imported.entryUrl,
+          title: nextTitle,
+          sandbox: "allow-scripts allow-same-origin allow-forms allow-modals",
+          entryAsset: imported.entryAsset,
+          sourceImportedAt: imported.importedAt,
+          position: {
+            x: Math.max(0, targetX - htmlWidth / 2),
+            y: Math.max(0, targetY - htmlHeight / 2),
+          },
+          size: { width: htmlWidth, height: htmlHeight },
+          rotation: 0,
+        })
+        setPropsPanelVisible(true)
+        await refreshCanvasFiles()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to import HTML bundle."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [
+      activeCanvasFilePath,
+      activeProjectId,
+      addItem,
+      importCanvasHtmlBundle,
+      refreshCanvasFiles,
+      transform.offset.x,
+      transform.offset.y,
+      transform.scale,
+      workspaceSize.height,
+      workspaceSize.width,
+    ]
   )
 
   const handleAddMedia = useCallback(
@@ -2106,6 +2197,26 @@ export function CanvasTab({
           return
         }
 
+        if (item.type === "html") {
+          const newId = addItem({
+            type: "html",
+            src: item.src,
+            title: item.title,
+            sandbox: item.sandbox,
+            background: item.background,
+            entryAsset: item.entryAsset,
+            sourcePath: item.sourcePath,
+            sourceImportedAt: item.sourceImportedAt,
+            position: { ...item.position },
+            size: { ...item.size },
+            rotation: item.rotation,
+            parentId,
+            order: item.order,
+          })
+          idMap.set(item.id, newId)
+          return
+        }
+
         if (item.type === "media") {
           const newId = addItem({
             type: "media",
@@ -2372,6 +2483,7 @@ export function CanvasTab({
               <CanvasSidebar
                 entries={entries}
                 onAddEmbed={handleAddEmbed}
+                onAddHtmlBundle={handleAddHtmlBundle}
                 onAddMedia={handleAddMedia}
                 onAddMarkdown={handleAddMarkdown}
                 onAddMermaid={handleAddMermaid}
@@ -2589,6 +2701,21 @@ export function CanvasTab({
 
                 updateItem(selectedEmbedItem.id, updates)
               }}
+              onDelete={handleDeleteSelected}
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedHtmlItem && (
+            <CanvasHtmlPropsPanel
+              src={selectedHtmlItem.src}
+              title={selectedHtmlItem.title}
+              sandbox={selectedHtmlItem.sandbox}
+              background={selectedHtmlItem.background}
+              entryAsset={selectedHtmlItem.entryAsset}
+              sourcePath={selectedHtmlItem.sourcePath}
+              sourceImportedAt={selectedHtmlItem.sourceImportedAt}
+              onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />

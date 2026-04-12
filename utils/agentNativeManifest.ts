@@ -14,10 +14,10 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
     label: "Canvas Workspace",
     route: "/canvas",
     description:
-      "Freeform board with artboards, components, embeds, media, Mermaid diagrams, Excalidraw sketches, and markdown notes.",
+      "Freeform board with artboards, components, embeds, local HTML bundles, media, Mermaid diagrams, Excalidraw sketches, and markdown notes.",
     syncMode: "live-bridge",
     mutationMode: "event-log",
-    entities: ["artboard", "component", "embed", "media", "mermaid", "excalidraw", "markdown"],
+    entities: ["artboard", "component", "embed", "html", "media", "mermaid", "excalidraw", "markdown"],
     capabilities: [
       "read-state",
       "read-selection",
@@ -108,7 +108,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "save_canvas_file",
         title: "Save canvas file",
-        description: "Save a stored .canvas document, including document-local asset packing for media.",
+        description: "Save a stored .canvas document, including document-local asset packing for media and local bundle-backed nodes.",
+        status: "ready",
+      },
+      {
+        id: "import_html_bundle",
+        title: "Import HTML bundle",
+        description: "Pack a local HTML/CSS/JS bundle into a stored .canvas document and optionally create a live html node from it.",
         status: "ready",
       },
       {

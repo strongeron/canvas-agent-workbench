@@ -68,6 +68,8 @@ These are the stored `.canvas` document tools. They work against the local proje
   Duplicates a stored `.canvas` document with a fresh identity and copied local assets.
 - `delete_canvas_file`
   Deletes a stored `.canvas` document and its local asset bundle.
+- `import_html_bundle`
+  Packs a local HTML/CSS/JS bundle into a stored `.canvas` document and can optionally create a live `html` node from it.
 
 Use these when you want the agent to manage the file library itself:
 
@@ -105,11 +107,19 @@ Current writable entity types:
 
 - artboards
 - component items
+- local HTML bundle nodes
 - embeds
 - media
 - Mermaid diagrams
 - Excalidraw sketches
 - markdown notes
+
+HTML bundle notes:
+
+- this is for local HTML/CSS/JS bundles, not arbitrary remote websites
+- the imported bundle is stored under the document-local `.assets` folder
+- the live node renders in an iframe, so resize and interact mode work as expected
+- if you are importing from the UI, save the board to a real `.canvas` file first
 
 ## Color Audit Tools
 
@@ -256,6 +266,12 @@ Use MCP only for canvas work. Start with workspace://manifest, then read the rel
 
 ```text
 Use MCP only. Start with workspace://project/canvases/index and list_canvas_files. Tell me which stored Canvas, Color Audit, and System Canvas files exist. Then open the requested file with open_canvas_file, summarize it, make the requested change, save it back with save_canvas_file, and report the final path.
+```
+
+### Local HTML Bundle Node
+
+```text
+Use MCP only. Open the target stored Canvas file first, then call import_html_bundle with that file path and a local HTML/CSS/JS bundle. If the board should show it immediately, create the live html node as part of the same tool call. After that, read the Canvas state, summarize the imported html node, and capture a screenshot.
 ```
 
 ### Canvas

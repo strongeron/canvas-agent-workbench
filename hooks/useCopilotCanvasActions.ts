@@ -320,6 +320,15 @@ function sanitizeCanvasItem(item: CanvasItem) {
     }
   }
 
+  if (item.type === "html") {
+    return {
+      ...base,
+      title: item.title || "HTML bundle",
+      src: item.src,
+      entryAsset: item.entryAsset || null,
+    }
+  }
+
   return {
     ...base,
     src: item.src,

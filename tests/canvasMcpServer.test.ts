@@ -262,6 +262,19 @@ describe("canvas MCP server", () => {
                             },
                           }
                         : req.method === "POST" &&
+                            requestUrl.pathname === "/api/projects/demo/canvases/html-bundle/import"
+                          ? {
+                              ok: true,
+                              htmlBundle: {
+                                assetRoot: "html/marketing-card",
+                                entryAsset: "html/marketing-card/index.html",
+                                entryUrl:
+                                  "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Fmarketing-card%2Findex.html",
+                                assetCount: 3,
+                                importedAt: "2026-04-12T15:00:00.000Z",
+                              },
+                            }
+                        : req.method === "POST" &&
                             requestUrl.pathname === "/api/projects/demo/canvases/create"
                           ? {
                               ok: true,
@@ -482,6 +495,42 @@ describe("canvas MCP server", () => {
       })) as { result?: { structuredContent?: Record<string, any> } }
 
       expect(createdCanvasFile.result?.structuredContent?.path).toBe("boards/new.canvas")
+
+      const importedHtmlBundle = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-html",
+        method: "tools/call",
+        params: {
+          name: "import_html_bundle",
+          arguments: {
+            path: "boards/demo.canvas",
+            createItem: false,
+            bundle: {
+              title: "Marketing Card",
+              files: [
+                {
+                  path: "index.html",
+                  content:
+                    "<!doctype html><html><head><link rel='stylesheet' href='styles/site.css'></head><body><div class='card'>Hello</div><script src='scripts/app.js'></script></body></html>",
+                },
+                {
+                  path: "styles/site.css",
+                  content: ".card { color: #0f172a; }",
+                },
+                {
+                  path: "scripts/app.js",
+                  content: "document.body.dataset.ready = 'true'",
+                },
+              ],
+            },
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(importedHtmlBundle.result?.structuredContent?.htmlBundle?.entryAsset).toBe(
+        "html/marketing-card/index.html"
+      )
+      expect(importedHtmlBundle.result?.structuredContent?.htmlBundle?.assetCount).toBe(3)
 
       const movedCanvasFile = (await sendRpc({
         jsonrpc: "2.0",

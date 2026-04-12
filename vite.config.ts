@@ -46,6 +46,7 @@ import {
   createProjectCanvasFile,
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
+  importProjectCanvasHtmlBundle,
   listProjectCanvasFiles,
   moveProjectCanvasFile,
   openProjectCanvasFile,
@@ -4796,6 +4797,23 @@ function paperImportPlugin() {
           } catch (error) {
             const status = error?.message === 'path is required.' ? 400 : 500
             return sendJson(res, status, { error: error?.message || 'Failed to delete canvas file.' })
+          }
+        }
+
+        const canvasHtmlBundleImportMatch = pathname.match(
+          /^\/api\/projects\/([^/]+)\/canvases\/html-bundle\/import$/
+        )
+        if (req.method === 'POST' && canvasHtmlBundleImportMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasHtmlBundleImportMatch[1])
+            const body = await readJson(req)
+            const htmlBundle = await importProjectCanvasHtmlBundle(PROJECTS_ROOT, projectId, body)
+            return sendJson(res, 200, { ok: true, htmlBundle })
+          } catch (error) {
+            const status = error?.message === 'path is required.' ? 400 : 500
+            return sendJson(res, status, {
+              error: error?.message || 'Failed to import HTML bundle.',
+            })
           }
         }
 

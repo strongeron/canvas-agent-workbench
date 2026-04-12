@@ -2,6 +2,7 @@ import type {
   CanvasDocumentSurface,
   CanvasFileAssetInput,
   CanvasFileDocument,
+  CanvasHtmlBundleImportInput,
 } from "../types/canvas"
 import {
   createCanvasFile,
@@ -14,6 +15,7 @@ import {
   updateCanvasFileMetadata,
 } from "./canvasFileStore"
 import { packCanvasDocumentAssets } from "./canvasFileAssets"
+import { importCanvasHtmlBundle } from "./canvasFileAssets"
 
 export async function listProjectCanvasFiles(
   projectsRoot: string,
@@ -206,5 +208,25 @@ export async function deleteProjectCanvasFile(
   return deleteCanvasFile(projectsRoot, {
     projectId,
     path: canvasPath,
+  })
+}
+
+export async function importProjectCanvasHtmlBundle(
+  projectsRoot: string,
+  projectId: string,
+  body: {
+    path?: string
+    bundle?: CanvasHtmlBundleImportInput
+  }
+) {
+  const canvasPath = typeof body.path === "string" ? body.path.trim() : ""
+  if (!canvasPath) {
+    throw new Error("path is required.")
+  }
+
+  return importCanvasHtmlBundle(projectsRoot, {
+    projectId,
+    path: canvasPath,
+    bundle: body.bundle && typeof body.bundle === "object" ? body.bundle : {},
   })
 }

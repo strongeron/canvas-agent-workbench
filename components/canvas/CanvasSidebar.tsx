@@ -131,6 +131,11 @@ interface CanvasSidebarProps {
   entries: GalleryEntry[]
   /** Add an iframe/embed item to the canvas */
   onAddEmbed: (url: string) => void
+  /** Import a local HTML/CSS/JS bundle into the active canvas file and place it on the board */
+  onAddHtmlBundle?: (input: {
+    files: File[]
+    title?: string
+  }) => void | Promise<void>
   /** Add a media node (image/video/gif URL) */
   onAddMedia: (input: {
     src?: string
@@ -191,6 +196,7 @@ interface CanvasSidebarProps {
 export function CanvasSidebar({
   entries,
   onAddEmbed,
+  onAddHtmlBundle,
   onAddMedia,
   onAddMermaid,
   onAddExcalidraw,
@@ -238,6 +244,8 @@ export function CanvasSidebar({
   const [localAppsScannedPorts, setLocalAppsScannedPorts] = useState<number | null>(null)
   const [localAppsError, setLocalAppsError] = useState<string | null>(null)
   const [selectedLocalAppUrl, setSelectedLocalAppUrl] = useState("")
+  const [htmlBundleTitle, setHtmlBundleTitle] = useState("")
+  const [htmlBundleFiles, setHtmlBundleFiles] = useState<File[]>([])
   const [mediaUrl, setMediaUrl] = useState("")
   const [mediaKind, setMediaKind] = useState<"image" | "video" | "gif">("image")
   const [mediaFile, setMediaFile] = useState<File | null>(null)
@@ -262,9 +270,14 @@ export function CanvasSidebar({
     imports: false,
   })
   const mediaFileInputRef = useRef<HTMLInputElement>(null)
+  const htmlBundleInputRef = useRef<HTMLInputElement>(null)
   const diagramFileInputRef = useRef<HTMLInputElement>(null)
   const canvasListRef = useRef<HTMLDivElement>(null)
   const [canvasListScrollTop, setCanvasListScrollTop] = useState(0)
+  const htmlDirectoryInputProps = {
+    webkitdirectory: "",
+    directory: "",
+  } as Record<string, string>
 
   const renderCanvasFileActions = useCallback(
     (file: CanvasFileIndexEntry, compact = false) => (
@@ -1207,6 +1220,54 @@ export function CanvasSidebar({
                 )}
               </div>
             </div>
+            {onAddHtmlBundle ? (
+              <div className="rounded-md border border-default bg-surface-50 p-2">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Local HTML bundle
+                </div>
+                <input
+                  type="text"
+                  value={htmlBundleTitle}
+                  onChange={(event) => setHtmlBundleTitle(event.target.value)}
+                  placeholder="Optional node title"
+                  className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <input
+                  ref={htmlBundleInputRef}
+                  type="file"
+                  multiple
+                  onChange={(event) => {
+                    setHtmlBundleFiles(Array.from(event.target.files || []))
+                  }}
+                  className="mt-2 w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground file:mr-2 file:rounded file:border file:border-default file:bg-surface-50 file:px-2 file:py-1 file:text-[11px] file:font-semibold"
+                  {...htmlDirectoryInputProps}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (htmlBundleFiles.length === 0) return
+                    void onAddHtmlBundle({
+                      files: htmlBundleFiles,
+                      title: htmlBundleTitle.trim() || undefined,
+                    })
+                    setHtmlBundleTitle("")
+                    setHtmlBundleFiles([])
+                    if (htmlBundleInputRef.current) {
+                      htmlBundleInputRef.current.value = ""
+                    }
+                  }}
+                  disabled={!activeCanvasFilePath || htmlBundleFiles.length === 0}
+                  className="mt-2 w-full rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Import HTML bundle
+                </button>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Select a folder that contains an HTML entry file and its local CSS/JS/assets. Save this board to a real
+                  <code className="mx-1 font-mono">.canvas</code>
+                  file first so the bundle can live under document-local assets.
+                </p>
+              </div>
+            ) : null}
             <p className="text-[11px] text-muted-foreground">
               Interactive iframes work best in Interact mode.
             </p>

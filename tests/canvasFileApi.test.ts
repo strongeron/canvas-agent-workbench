@@ -10,6 +10,7 @@ import {
   createProjectCanvasFile,
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
+  importProjectCanvasHtmlBundle,
   listProjectCanvasFiles,
   moveProjectCanvasFile,
   openProjectCanvasFile,
@@ -81,6 +82,27 @@ describe("canvas file api", () => {
 
     const opened = await openProjectCanvasFile(projectsRoot, "demo", "boards/media-board.canvas")
     expect(opened.document.meta.title).toBe("Media Board")
+
+    const importedHtmlBundle = await importProjectCanvasHtmlBundle(projectsRoot, "demo", {
+      path: "boards/media-board.canvas",
+      bundle: {
+        title: "Landing Preview",
+        files: [
+          {
+            relativePath: "index.html",
+            dataUrl: "data:text/html;base64,PGgxPkhlbGxvPC9oMT4=",
+          },
+          {
+            relativePath: "styles/site.css",
+            dataUrl: "data:text/css;base64,aDEgeyBjb2xvcjogcmVkOyB9",
+          },
+        ],
+      },
+    })
+    expect(importedHtmlBundle.entryUrl).toContain(
+      "/api/projects/demo/canvases/assets/file?path=boards%2Fmedia-board.canvas"
+    )
+    expect(importedHtmlBundle.assetCount).toBe(2)
 
     const saved = await saveProjectCanvasFile(projectsRoot, mediaRoot, "demo", {
       path: "boards/media-board.canvas",
