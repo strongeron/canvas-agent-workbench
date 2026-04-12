@@ -383,7 +383,7 @@ export function rewriteCanvasDocumentAssetUrls(
   projectId: string,
   fromCanvasPath: string,
   toCanvasPath: string,
-  document: CanvasFileDocument
+  document: CanvasFileDocument<unknown, unknown>
 ) {
   if (!isCanvasStateSnapshot(document.surface, document.document) || fromCanvasPath === toCanvasPath) {
     return document
@@ -404,7 +404,7 @@ export async function packCanvasDocumentAssets(
   input: {
     projectId: string
     path: string
-    document: CanvasFileDocument
+    document: CanvasFileDocument<unknown, unknown>
     assets?: CanvasFileAssetInput[]
     sharedMediaRoot?: string
   }

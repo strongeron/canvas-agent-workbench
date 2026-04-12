@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs"
 
 import { afterEach, describe, expect, it } from "vitest"
 
+import type { CanvasStateSnapshot } from "../types/canvas"
 import { buildCanvasFileDocument } from "../utils/canvasFileStore"
 import {
   copyCanvasDocumentAssets,
@@ -85,8 +86,9 @@ describe("canvas file assets", () => {
       ],
     })
 
-    const packedItems = packed.document.items.filter(
-      (item): item is (typeof packed.document.items)[number] & { type: "media"; src: string } =>
+    const packedState = packed.document as CanvasStateSnapshot
+    const packedItems = packedState.items.filter(
+      (item): item is (typeof packedState.items)[number] & { type: "media"; src: string } =>
         item.type === "media"
     )
     expect(packedItems[0]?.src).toContain(
@@ -156,7 +158,8 @@ describe("canvas file assets", () => {
       "archive/media-board-copy.canvas",
       packed
     )
-    const mediaItem = rewritten.document.items[0]
+    const rewrittenState = rewritten.document as CanvasStateSnapshot
+    const mediaItem = rewrittenState.items[0]
     expect(mediaItem?.type).toBe("media")
     expect(mediaItem?.type === "media" ? mediaItem.src : "").toContain(
       "path=archive%2Fmedia-board-copy.canvas"

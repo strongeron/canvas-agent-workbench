@@ -73,7 +73,7 @@ async function pressWindowKey(key: string) {
   })
 }
 
-async function renderColorCanvas() {
+async function renderColorCanvas(options?: { projectId?: string }) {
   const host = document.createElement("div")
   host.style.width = `${DEFAULT_VIEWPORT.width}px`
   host.style.height = `${DEFAULT_VIEWPORT.height}px`
@@ -86,7 +86,11 @@ async function renderColorCanvas() {
   await act(async () => {
     root.render(
       <div style={{ width: "100%", height: "100%" }}>
-        <ColorCanvasPage tokens={TEST_TOKENS} themeStorageKeyPrefix={storageKeyPrefix} />
+        <ColorCanvasPage
+          tokens={TEST_TOKENS}
+          themeStorageKeyPrefix={storageKeyPrefix}
+          projectId={options?.projectId}
+        />
       </div>
     )
   })
@@ -149,6 +153,14 @@ function findButton(container: HTMLElement, label: string) {
   return button as HTMLButtonElement
 }
 
+function findButtonByAriaLabel(container: HTMLElement, label: string) {
+  const button = container.querySelector(`button[aria-label="${label}"]`)
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`Button with aria-label "${label}" not found`)
+  }
+  return button
+}
+
 function findCanvasNode(container: HTMLElement, label: string) {
   const node = Array.from(container.querySelectorAll('[data-color-node="true"]')).find((candidate) =>
     candidate.textContent?.includes(label)
@@ -168,6 +180,7 @@ let originalReleasePointerCapture: typeof HTMLElement.prototype.releasePointerCa
 let originalCssDescriptor: PropertyDescriptor | undefined
 let originalActEnvironmentDescriptor: PropertyDescriptor | undefined
 let originalClipboardDescriptor: PropertyDescriptor | undefined
+let originalFetchDescriptor: PropertyDescriptor | undefined
 let copiedClipboardText = ""
 
 beforeAll(() => {
@@ -179,6 +192,7 @@ beforeAll(() => {
   originalReleasePointerCapture = HTMLElement.prototype.releasePointerCapture
   originalCssDescriptor = Object.getOwnPropertyDescriptor(globalThis, "CSS")
   originalClipboardDescriptor = Object.getOwnPropertyDescriptor(globalThis.navigator, "clipboard")
+  originalFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch")
   originalActEnvironmentDescriptor = Object.getOwnPropertyDescriptor(
     globalThis,
     "IS_REACT_ACT_ENVIRONMENT"
@@ -308,6 +322,12 @@ afterAll(() => {
     Reflect.deleteProperty(globalThis.navigator as object, "clipboard")
   }
 
+  if (originalFetchDescriptor) {
+    Object.defineProperty(globalThis, "fetch", originalFetchDescriptor)
+  } else {
+    Reflect.deleteProperty(globalThis as object, "fetch")
+  }
+
   if (originalActEnvironmentDescriptor) {
     Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", originalActEnvironmentDescriptor)
   } else {
@@ -321,6 +341,11 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  if (originalFetchDescriptor) {
+    Object.defineProperty(globalThis, "fetch", originalFetchDescriptor)
+  } else {
+    Reflect.deleteProperty(globalThis as object, "fetch")
+  }
   document.body.innerHTML = ""
 })
 
@@ -369,6 +394,97 @@ describe("color canvas review flow", () => {
     expect(container.textContent).toContain("Quick preview edit")
     expect(container.textContent).toContain("rgb(17 34 51)")
     expect(container.textContent).toContain("Advanced color expression")
+
+    await cleanup()
+  })
+
+  it("opens the canvas file modal and creates a color-audit file through the page UI", async () => {
+    const files: Array<Record<string, unknown>> = []
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(typeof input === "string" ? input : input.toString(), "http://localhost")
+      if (url.pathname === "/api/projects/demo/canvases" && (!init || init.method === undefined)) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            files,
+          }),
+        } satisfies Partial<Response>
+      }
+
+      if (url.pathname === "/api/projects/demo/canvases/create" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body || "{}")) as Record<string, unknown>
+        const created = {
+          path: "audits/brand-audit.canvas",
+          title: String(body.title || "Brand Audit"),
+          surface: String(body.surface || "color-audit"),
+          updatedAt: "2026-04-12T10:00:00.000Z",
+          createdAt: "2026-04-12T10:00:00.000Z",
+          id: "canvas-test-1",
+          projectId: "demo",
+          tags: [],
+          favorite: false,
+          archived: false,
+          itemCount: 0,
+          groupCount: 0,
+        }
+        files.splice(0, files.length, created)
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            file: {
+              path: created.path,
+              document: {
+                kind: "gallery-poc.canvas",
+                schemaVersion: 1,
+                surface: created.surface,
+                meta: {
+                  id: created.id,
+                  title: created.title,
+                  slug: "brand-audit",
+                  projectId: "demo",
+                  createdAt: created.createdAt,
+                  updatedAt: created.updatedAt,
+                  tags: [],
+                  favorite: false,
+                  archived: false,
+                },
+                document: body.document || {},
+                view: body.view || {},
+              },
+            },
+          }),
+        } satisfies Partial<Response>
+      }
+
+      throw new Error(`Unhandled fetch ${init?.method || "GET"} ${url.pathname}`)
+    }
+
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: fetchMock,
+    })
+
+    const { container, cleanup } = await renderColorCanvas({ projectId: "demo" })
+
+    await click(findButtonByAriaLabel(container, "Create canvas file"))
+    await flushFrames()
+
+    expect(container.textContent).toContain("Create Color Audit file")
+
+    const dialog = container.querySelector('[aria-label="Create Color Audit file"]')
+    expect(dialog).not.toBeNull()
+    const inputs = Array.from(dialog?.querySelectorAll("input") || []) as HTMLInputElement[]
+    expect(inputs).toHaveLength(2)
+
+    await changeValue(inputs[0], "Brand Audit")
+    await changeValue(inputs[1], "audits")
+    await click(findButton(container, "Create file"))
+    await flushFrames(4)
+
+    expect(container.textContent).toContain("audits/brand-audit.canvas")
+    expect(container.textContent).toContain("Saved")
 
     await cleanup()
   })
