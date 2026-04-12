@@ -446,6 +446,17 @@ export async function importProjectCanvasHtmlBundle(context, canvasPath, bundle)
   return payload?.htmlBundle ?? null
 }
 
+export async function scanProjectCanvasHtmlBundles(context, rootPath) {
+  const payload = await readAgentNativeJson(
+    context,
+    `/api/projects/${encodeURIComponent(context.projectId)}/canvases/html-bundles`,
+    {
+      rootPath: typeof rootPath === 'string' ? rootPath : '',
+    }
+  )
+  return payload?.result ?? null
+}
+
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
   return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
 }

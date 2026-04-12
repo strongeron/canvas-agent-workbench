@@ -14,6 +14,7 @@ import {
   listProjectCanvasFiles,
   moveProjectCanvasFile,
   openProjectCanvasFile,
+  scanProjectCanvasHtmlBundles,
   saveProjectCanvasFile,
   updateProjectCanvasFileMetadata,
 } from "../utils/canvasFileApi"
@@ -183,5 +184,24 @@ describe("canvas file api", () => {
         path: "boards/demo.canvas",
       })
     ).rejects.toThrow("document is required.")
+
+    await expect(
+      scanProjectCanvasHtmlBundles(projectsRoot, "demo", "")
+    ).rejects.toThrow("rootPath is required.")
+  })
+
+  it("scans a local HTML bundle library through the project api helper", async () => {
+    const projectsRoot = await createTempDir("gallery-poc-canvas-api-projects-")
+    const libraryRoot = await createTempDir("gallery-poc-html-library-")
+    await fs.mkdir(path.join(libraryRoot, "marketing", "hero"), { recursive: true })
+    await fs.writeFile(path.join(libraryRoot, "marketing", "hero", "index.html"), "<html>hero</html>")
+
+    const result = await scanProjectCanvasHtmlBundles(projectsRoot, "demo", libraryRoot)
+    expect(result.rootPath).toBe(libraryRoot)
+    expect(result.entries).toHaveLength(1)
+    expect(result.entries[0]).toMatchObject({
+      relativeDirectory: "marketing/hero",
+      defaultEntryFile: "index.html",
+    })
   })
 })

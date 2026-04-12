@@ -7,6 +7,7 @@ import {
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
   importProjectCanvasHtmlBundle,
+  scanProjectCanvasHtmlBundles,
   readAgentNativeWorkspaceDebug,
   enqueueAgentNativeWorkspaceOperation,
   readAgentNativeManifest,
@@ -198,6 +199,19 @@ const TOOL_DEFINITIONS = [
         path: { type: 'string' },
       },
       required: ['path'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'scan_html_bundles',
+    description:
+      'Scan a local HTML source library root and return bundle directories with available HTML entry files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootPath: { type: 'string' },
+      },
+      required: ['rootPath'],
       additionalProperties: false,
     },
   },
@@ -1140,6 +1154,11 @@ async function callTool(name, args) {
       const canvasPath = normalizeString(args.path)
       if (!canvasPath) return asToolError('path is required.')
       return asToolResult(await deleteProjectCanvasFile(context, canvasPath))
+    }
+    case 'scan_html_bundles': {
+      const rootPath = normalizeString(args.rootPath)
+      if (!rootPath) return asToolError('rootPath is required.')
+      return asToolResult(await scanProjectCanvasHtmlBundles(context, rootPath))
     }
     case 'import_html_bundle': {
       const canvasPath = normalizeString(args.path)

@@ -7,11 +7,23 @@ import type {
   CanvasFileAssetInput,
   CanvasFileDocument,
   CanvasHtmlBundleImportInput,
+  CanvasHtmlBundleLibraryScanResult,
   CanvasHtmlBundleImportResult,
   CanvasStateSnapshot,
 } from "../types/canvas"
 
 const DOCUMENT_ASSETS_FOLDER = ".assets"
+const HTML_BUNDLE_SCAN_IGNORE_DIRECTORIES = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".turbo",
+  "coverage",
+])
 
 function normalizeRelativeCanvasPath(relativePath: string) {
   const normalized = (relativePath || "")
@@ -338,6 +350,62 @@ async function collectDirectoryFiles(directoryPath: string) {
 
   await walk(absoluteRoot, "")
   return entries.sort((left, right) => left.relativePath.localeCompare(right.relativePath))
+}
+
+function isHtmlEntryFile(fileName: string) {
+  return /\.html?$/i.test(fileName)
+}
+
+export async function scanCanvasHtmlBundleLibrary(
+  rootPath: string
+): Promise<CanvasHtmlBundleLibraryScanResult> {
+  const absoluteRoot = path.resolve(rootPath || "")
+  const rootStat = await fs.stat(absoluteRoot)
+  if (!rootStat.isDirectory()) {
+    throw new Error(`HTML bundle root is not a directory: ${rootPath}`)
+  }
+
+  const entries: CanvasHtmlBundleLibraryScanResult["entries"] = []
+  const queue = [absoluteRoot]
+
+  while (queue.length > 0) {
+    const directoryPath = queue.shift()
+    if (!directoryPath) continue
+
+    const directoryEntries = await fs.readdir(directoryPath, { withFileTypes: true })
+    const htmlFiles = directoryEntries
+      .filter((entry) => entry.isFile() && isHtmlEntryFile(entry.name))
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right))
+
+    if (htmlFiles.length > 0) {
+      const relativeDirectory = path.relative(absoluteRoot, directoryPath).replace(/\\/g, "/") || "."
+      const defaultEntryFile =
+        htmlFiles.find((fileName) => /^index\.html?$/i.test(fileName)) || htmlFiles[0]
+
+      entries.push({
+        id: relativeDirectory,
+        directoryPath,
+        relativeDirectory,
+        entryFiles: htmlFiles,
+        defaultEntryFile,
+      })
+    }
+
+    for (const entry of directoryEntries) {
+      if (!entry.isDirectory()) continue
+      if (HTML_BUNDLE_SCAN_IGNORE_DIRECTORIES.has(entry.name)) continue
+      queue.push(path.join(directoryPath, entry.name))
+    }
+  }
+
+  entries.sort((left, right) => left.relativeDirectory.localeCompare(right.relativeDirectory))
+
+  return {
+    rootPath: absoluteRoot,
+    scannedAt: new Date().toISOString(),
+    entries,
+  }
 }
 
 function resolveHtmlBundleEntryFile(entryFile: string | undefined, assetPaths: string[]) {

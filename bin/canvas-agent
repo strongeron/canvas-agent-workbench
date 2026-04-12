@@ -20,6 +20,7 @@ import {
   moveProjectCanvasFile,
   openProjectCanvasFile,
   importProjectCanvasHtmlBundle,
+  scanProjectCanvasHtmlBundles,
   readAgentNativeWorkspaceDebug,
   readAgentNativeManifest,
   readAgentNativeWorkspaceEvents,
@@ -71,6 +72,7 @@ Usage:
   bin/canvas-agent move-canvas-file <path> <json|@file|->
   bin/canvas-agent duplicate-canvas-file <path> <json|@file|->
   bin/canvas-agent delete-canvas-file <path>
+  bin/canvas-agent scan-html-bundles <root-path>
   bin/canvas-agent import-html-bundle <canvas-path> <json|@file|->
   bin/canvas-agent color-audit-state
   bin/canvas-agent color-audit-export
@@ -389,6 +391,12 @@ async function main() {
       const canvasPath = args[0]?.trim()
       if (!canvasPath) fail('delete-canvas-file requires a file path.')
       writeJson(await deleteProjectCanvasFile(context, canvasPath))
+      return
+    }
+    case 'scan-html-bundles': {
+      const rootPath = args.join(' ').trim()
+      if (!rootPath) fail('scan-html-bundles requires a root path.')
+      writeJson(await scanProjectCanvasHtmlBundles(context, rootPath))
       return
     }
     case 'import-html-bundle': {

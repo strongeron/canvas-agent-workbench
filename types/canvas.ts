@@ -265,6 +265,20 @@ export interface CanvasHtmlBundleImportResult {
   importedAt: string
 }
 
+export interface CanvasHtmlBundleLibraryEntry {
+  id: string
+  directoryPath: string
+  relativeDirectory: string
+  entryFiles: string[]
+  defaultEntryFile: string
+}
+
+export interface CanvasHtmlBundleLibraryScanResult {
+  rootPath: string
+  scannedAt: string
+  entries: CanvasHtmlBundleLibraryEntry[]
+}
+
 export interface ColorCanvasFileDocumentData {
   state: ColorCanvasState
   canvasMode: "color-audit" | "system-canvas"

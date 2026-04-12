@@ -3,6 +3,7 @@ import type {
   CanvasFileAssetInput,
   CanvasFileDocument,
   CanvasHtmlBundleImportInput,
+  CanvasHtmlBundleLibraryScanResult,
 } from "../types/canvas"
 import {
   createCanvasFile,
@@ -15,7 +16,7 @@ import {
   updateCanvasFileMetadata,
 } from "./canvasFileStore"
 import { packCanvasDocumentAssets } from "./canvasFileAssets"
-import { importCanvasHtmlBundle } from "./canvasFileAssets"
+import { importCanvasHtmlBundle, scanCanvasHtmlBundleLibrary } from "./canvasFileAssets"
 
 export async function listProjectCanvasFiles(
   projectsRoot: string,
@@ -229,4 +230,17 @@ export async function importProjectCanvasHtmlBundle(
     path: canvasPath,
     bundle: body.bundle && typeof body.bundle === "object" ? body.bundle : {},
   })
+}
+
+export async function scanProjectCanvasHtmlBundles(
+  _projectsRoot: string,
+  _projectId: string,
+  rootPath: string
+): Promise<CanvasHtmlBundleLibraryScanResult> {
+  const normalizedRootPath = typeof rootPath === "string" ? rootPath.trim() : ""
+  if (!normalizedRootPath) {
+    throw new Error("rootPath is required.")
+  }
+
+  return scanCanvasHtmlBundleLibrary(normalizedRootPath)
 }

@@ -238,7 +238,7 @@ describe("canvas MCP server", () => {
                           mediaUrl: "/api/media/file/color-audit.png",
                         },
                       }
-                    : requestUrl.pathname === "/api/projects/demo/canvases"
+                  : requestUrl.pathname === "/api/projects/demo/canvases"
                       ? {
                           ok: true,
                           files: [
@@ -261,6 +261,24 @@ describe("canvas MCP server", () => {
                               },
                             },
                           }
+                        : requestUrl.pathname === "/api/projects/demo/canvases/html-bundles"
+                          ? {
+                              ok: true,
+                              result: {
+                                rootPath: "/Users/strongeron/Evil Martians/Claude Code/playground",
+                                scannedAt: "2026-04-12T16:00:00.000Z",
+                                entries: [
+                                  {
+                                    id: "landing",
+                                    directoryPath:
+                                      "/Users/strongeron/Evil Martians/Claude Code/playground/landing",
+                                    relativeDirectory: "landing",
+                                    entryFiles: ["index.html", "preview.html"],
+                                    defaultEntryFile: "index.html",
+                                  },
+                                ],
+                              },
+                            }
                         : req.method === "POST" &&
                             requestUrl.pathname === "/api/projects/demo/canvases/html-bundle/import"
                           ? {
@@ -480,6 +498,25 @@ describe("canvas MCP server", () => {
       })) as { result?: { structuredContent?: Record<string, any> } }
 
       expect(openedCanvasFile.result?.structuredContent?.document?.meta?.title).toBe("Demo")
+
+      const scannedHtmlBundles = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5d-html-scan",
+        method: "tools/call",
+        params: {
+          name: "scan_html_bundles",
+          arguments: {
+            rootPath: "/Users/strongeron/Evil Martians/Claude Code/playground",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(scannedHtmlBundles.result?.structuredContent?.rootPath).toBe(
+        "/Users/strongeron/Evil Martians/Claude Code/playground"
+      )
+      expect(scannedHtmlBundles.result?.structuredContent?.entries?.[0]?.defaultEntryFile).toBe(
+        "index.html"
+      )
 
       const createdCanvasFile = (await sendRpc({
         jsonrpc: "2.0",

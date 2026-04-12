@@ -12,6 +12,7 @@ import {
   importCanvasHtmlBundle,
   packCanvasDocumentAssets,
   readCanvasDocumentAsset,
+  scanCanvasHtmlBundleLibrary,
   rewriteCanvasDocumentAssetUrls,
 } from "../utils/canvasFileAssets"
 
@@ -270,5 +271,36 @@ describe("canvas file assets", () => {
     expect(rewrittenItem?.type === "html" ? rewrittenItem.src : "").toContain(
       "path=archive%2Fsite-copy.canvas"
     )
+  })
+
+  it("scans a local HTML bundle library and returns bundle directories with entry files", async () => {
+    const projectsRoot = await createTempProjectsRoot()
+    const libraryRoot = path.join(projectsRoot, "playground")
+    await fs.mkdir(path.join(libraryRoot, "landing"), { recursive: true })
+    await fs.mkdir(path.join(libraryRoot, "cards", "pricing"), { recursive: true })
+    await fs.mkdir(path.join(libraryRoot, "node_modules", "ignored"), { recursive: true })
+
+    await fs.writeFile(path.join(libraryRoot, "landing", "index.html"), "<html>landing</html>")
+    await fs.writeFile(path.join(libraryRoot, "landing", "preview.html"), "<html>preview</html>")
+    await fs.writeFile(path.join(libraryRoot, "cards", "pricing", "demo.html"), "<html>pricing</html>")
+    await fs.writeFile(path.join(libraryRoot, "node_modules", "ignored", "index.html"), "<html>ignore</html>")
+
+    const scanned = await scanCanvasHtmlBundleLibrary(libraryRoot)
+
+    expect(scanned.rootPath).toBe(libraryRoot)
+    expect(scanned.entries.map((entry) => entry.relativeDirectory)).toEqual([
+      "cards/pricing",
+      "landing",
+    ])
+    expect(scanned.entries[0]).toMatchObject({
+      relativeDirectory: "cards/pricing",
+      entryFiles: ["demo.html"],
+      defaultEntryFile: "demo.html",
+    })
+    expect(scanned.entries[1]).toMatchObject({
+      relativeDirectory: "landing",
+      entryFiles: ["index.html", "preview.html"],
+      defaultEntryFile: "index.html",
+    })
   })
 })

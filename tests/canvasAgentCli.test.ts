@@ -398,6 +398,111 @@ describe("canvas-agent CLI bootstrap", () => {
     ])
   })
 
+  it("scans local HTML bundle libraries through the attached session context", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-html-scan-"))
+    const contextFilePath = path.join(tempDir, "attached-session.json")
+    let serverUrl = ""
+
+    server = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/api/canvas-agent/bootstrap") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            bootstrap: {
+              reused: false,
+              surfaceId: "canvas",
+              session: {
+                id: "canvas-agent-session-html-scan",
+                projectId: "demo",
+                agentId: "codex",
+                agentLabel: "Codex",
+              },
+              context: {
+                serverUrl,
+                projectId: "demo",
+                sessionId: "canvas-agent-session-html-scan",
+                sessionDir: "/tmp/canvas-agent/session-html-scan",
+                canvasWorkspaceKey: "gallery-demo:canvas",
+                colorAuditWorkspaceKey: "gallery-demo:color-audit",
+                systemCanvasWorkspaceKey: "gallery-demo:system-canvas",
+                nodeCatalogWorkspaceKey: "gallery-demo-node-catalog",
+              },
+            },
+          })
+        )
+        return
+      }
+
+      if (
+        req.method === "GET" &&
+        req.url ===
+          "/api/projects/demo/canvases/html-bundles?rootPath=%2FUsers%2Fstrongeron%2FEvil+Martians%2FClaude+Code%2Fplayground"
+      ) {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            result: {
+              rootPath: "/Users/strongeron/Evil Martians/Claude Code/playground",
+              scannedAt: "2026-04-12T16:00:00.000Z",
+              entries: [
+                {
+                  id: "landing",
+                  directoryPath: "/Users/strongeron/Evil Martians/Claude Code/playground/landing",
+                  relativeDirectory: "landing",
+                  entryFiles: ["index.html", "preview.html"],
+                  defaultEntryFile: "index.html",
+                },
+              ],
+            },
+          })
+        )
+        return
+      }
+
+      res.statusCode = 404
+      res.end()
+    })
+
+    const port = await listenOnRandomPort()
+    serverUrl = `http://127.0.0.1:${port}`
+
+    const attachResult = await runCli(
+      ["attach", "--project", "demo", "--surface", "canvas", "--server", serverUrl, "--json"],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(attachResult.exitCode).toBe(0)
+
+    const scanResult = await runCli(
+      ["scan-html-bundles", "/Users/strongeron/Evil Martians/Claude Code/playground"],
+      {
+        CANVAS_AGENT_CONTEXT_FILE: contextFilePath,
+      }
+    )
+
+    expect(scanResult.exitCode).toBe(0)
+    expect(scanResult.stderr).toBe("")
+    expect(JSON.parse(scanResult.stdout)).toEqual({
+      rootPath: "/Users/strongeron/Evil Martians/Claude Code/playground",
+      scannedAt: "2026-04-12T16:00:00.000Z",
+      entries: [
+        {
+          id: "landing",
+          directoryPath: "/Users/strongeron/Evil Martians/Claude Code/playground/landing",
+          relativeDirectory: "landing",
+          entryFiles: ["index.html", "preview.html"],
+          defaultEntryFile: "index.html",
+        },
+      ],
+    })
+  })
+
   it("moves, duplicates, and deletes stored canvas files through the attached session context", async () => {
     tempDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-cli-file-ops-"))
     const contextFilePath = path.join(tempDir, "attached-session.json")

@@ -728,4 +728,56 @@ describe("canvas agent runtime", () => {
     await expect(readFile(contextFilePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
     await rm(tempDir, { recursive: true, force: true })
   })
+
+  it("scans local HTML bundle libraries through project file endpoints", async () => {
+    const runtime = await loadRuntime()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        result: {
+          rootPath: "/Users/strongeron/Evil Martians/Claude Code/playground",
+          scannedAt: "2026-04-12T16:00:00.000Z",
+          entries: [
+            {
+              id: "landing",
+              directoryPath: "/Users/strongeron/Evil Martians/Claude Code/playground/landing",
+              relativeDirectory: "landing",
+              entryFiles: ["index.html", "preview.html"],
+              defaultEntryFile: "index.html",
+            },
+          ],
+        },
+      }),
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = {
+      serverUrl: "http://127.0.0.1:5178",
+      projectId: "demo",
+    }
+
+    await expect(
+      runtime.scanProjectCanvasHtmlBundles(
+        context as any,
+        "/Users/strongeron/Evil Martians/Claude Code/playground"
+      )
+    ).resolves.toEqual({
+      rootPath: "/Users/strongeron/Evil Martians/Claude Code/playground",
+      scannedAt: "2026-04-12T16:00:00.000Z",
+      entries: [
+        {
+          id: "landing",
+          directoryPath: "/Users/strongeron/Evil Martians/Claude Code/playground/landing",
+          relativeDirectory: "landing",
+          entryFiles: ["index.html", "preview.html"],
+          defaultEntryFile: "index.html",
+        },
+      ],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:5178/api/projects/demo/canvases/html-bundles?rootPath=%2FUsers%2Fstrongeron%2FEvil+Martians%2FClaude+Code%2Fplayground"
+    )
+  })
 })

@@ -112,6 +112,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "scan_html_bundles",
+        title: "Scan HTML bundle library",
+        description: "Scan a local HTML source folder, list discovered bundle directories, and expose available entry HTML files before importing one into Canvas.",
+        status: "ready",
+      },
+      {
         id: "import_html_bundle",
         title: "Import HTML bundle",
         description: "Pack a local HTML/CSS/JS bundle into a stored .canvas document and optionally create a live html node from it.",

@@ -50,6 +50,7 @@ import {
   listProjectCanvasFiles,
   moveProjectCanvasFile,
   openProjectCanvasFile,
+  scanProjectCanvasHtmlBundles,
   saveProjectCanvasFile,
   updateProjectCanvasFileMetadata,
 } from './utils/canvasFileApi'
@@ -4813,6 +4814,23 @@ function paperImportPlugin() {
             const status = error?.message === 'path is required.' ? 400 : 500
             return sendJson(res, status, {
               error: error?.message || 'Failed to import HTML bundle.',
+            })
+          }
+        }
+
+        const canvasHtmlBundleScanMatch = pathname.match(
+          /^\/api\/projects\/([^/]+)\/canvases\/html-bundles$/
+        )
+        if (req.method === 'GET' && canvasHtmlBundleScanMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasHtmlBundleScanMatch[1])
+            const rootPath = url.searchParams.get('rootPath') || ''
+            const result = await scanProjectCanvasHtmlBundles(PROJECTS_ROOT, projectId, rootPath)
+            return sendJson(res, 200, { ok: true, result })
+          } catch (error) {
+            const status = error?.message === 'rootPath is required.' ? 400 : 500
+            return sendJson(res, status, {
+              error: error?.message || 'Failed to scan HTML bundle library.',
             })
           }
         }

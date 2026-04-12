@@ -68,6 +68,8 @@ These are the stored `.canvas` document tools. They work against the local proje
   Duplicates a stored `.canvas` document with a fresh identity and copied local assets.
 - `delete_canvas_file`
   Deletes a stored `.canvas` document and its local asset bundle.
+- `scan_html_bundles`
+  Scans a local HTML source root and returns bundle directories plus available HTML entry files before import.
 - `import_html_bundle`
   Packs a local HTML/CSS/JS bundle into a stored `.canvas` document and can optionally create a live `html` node from it.
 
@@ -119,6 +121,7 @@ HTML bundle notes:
 - this is for local HTML/CSS/JS bundles, not arbitrary remote websites
 - the imported bundle is stored under the document-local `.assets` folder
 - the live node renders in an iframe, so resize and interact mode work as expected
+- if you have a large external library, scan it first and choose the exact folder + entry file to import
 - if you are importing from the UI, save the board to a real `.canvas` file first
 
 ## Color Audit Tools
@@ -271,7 +274,7 @@ Use MCP only. Start with workspace://project/canvases/index and list_canvas_file
 ### Local HTML Bundle Node
 
 ```text
-Use MCP only. Open the target stored Canvas file first, then call import_html_bundle with that file path and a local HTML/CSS/JS bundle. If the board should show it immediately, create the live html node as part of the same tool call. After that, read the Canvas state, summarize the imported html node, and capture a screenshot.
+Use MCP only. First call scan_html_bundles on the local source root to discover bundle folders and entry files. Open or create the target stored Canvas file, then call import_html_bundle with that file path, the chosen directoryPath, and the chosen entryFile. If the board should show it immediately, create the live html node as part of the same tool call. After that, read the Canvas state, summarize the imported html node, and capture a screenshot.
 ```
 
 ### Canvas

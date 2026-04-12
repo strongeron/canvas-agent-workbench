@@ -140,6 +140,18 @@ async function serializeHtmlBundleFiles(files: File[]): Promise<CanvasHtmlBundle
   return serialized.filter((file) => file.relativePath.trim())
 }
 
+async function serializeHtmlBundleFileEntries(
+  entries: Array<{ file: File; relativePath: string }>
+): Promise<CanvasHtmlBundleFileInput[]> {
+  const serialized = await Promise.all(
+    entries.map(async (entry) => ({
+      relativePath: entry.relativePath.trim(),
+      dataUrl: await blobToDataUrl(entry.file),
+    }))
+  )
+  return serialized.filter((file) => file.relativePath.trim())
+}
+
 function isEditablePasteTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
@@ -707,6 +719,7 @@ export function CanvasTab({
     duplicateCanvasFile,
     deleteCanvasFile,
     importCanvasHtmlBundle,
+    scanCanvasHtmlBundleLibrary,
   } = useCanvasFiles(activeProjectId)
   const canvasFileBrowser = useCanvasFileBrowserState(
     activeProjectId ? `gallery-${activeProjectId}` : "gallery-canvas",
@@ -1251,7 +1264,8 @@ export function CanvasTab({
 
   const handleAddHtmlBundle = useCallback(
     async (input: {
-      files: File[]
+      files?: File[]
+      fileEntries?: Array<{ file: File; relativePath: string }>
       title?: string
       position?: { x: number; y: number }
     }) => {
@@ -1269,10 +1283,14 @@ export function CanvasTab({
         return
       }
 
-      if (!Array.isArray(input.files) || input.files.length === 0) return
+      const hasFiles = Array.isArray(input.files) && input.files.length > 0
+      const hasFileEntries = Array.isArray(input.fileEntries) && input.fileEntries.length > 0
+      if (!hasFiles && !hasFileEntries) return
 
       try {
-        const serializedFiles = await serializeHtmlBundleFiles(input.files)
+        const serializedFiles = hasFileEntries
+          ? await serializeHtmlBundleFileEntries(input.fileEntries || [])
+          : await serializeHtmlBundleFiles(input.files || [])
         const imported = await importCanvasHtmlBundle(activeCanvasFilePath, {
           title: input.title?.trim() || undefined,
           files: serializedFiles,
@@ -1295,6 +1313,85 @@ export function CanvasTab({
           title: nextTitle,
           sandbox: "allow-scripts allow-same-origin allow-forms allow-modals",
           entryAsset: imported.entryAsset,
+          sourceImportedAt: imported.importedAt,
+          position: {
+            x: Math.max(0, targetX - htmlWidth / 2),
+            y: Math.max(0, targetY - htmlHeight / 2),
+          },
+          size: { width: htmlWidth, height: htmlHeight },
+          rotation: 0,
+        })
+        setPropsPanelVisible(true)
+        await refreshCanvasFiles()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to import HTML bundle."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [
+      activeCanvasFilePath,
+      activeProjectId,
+      addItem,
+      importCanvasHtmlBundle,
+      refreshCanvasFiles,
+      transform.offset.x,
+      transform.offset.y,
+      transform.scale,
+      workspaceSize.height,
+      workspaceSize.width,
+    ]
+  )
+
+  const handleAddHtmlBundleFromDirectory = useCallback(
+    async (input: {
+      directoryPath: string
+      entryFile?: string
+      title?: string
+      position?: { x: number; y: number }
+    }) => {
+      if (!activeProjectId) {
+        if (typeof window !== "undefined") {
+          window.alert("Select a project before importing an HTML bundle.")
+        }
+        return
+      }
+
+      if (!activeCanvasFilePath) {
+        if (typeof window !== "undefined") {
+          window.alert("Save this board to a real .canvas file before importing an HTML bundle.")
+        }
+        return
+      }
+
+      if (!input.directoryPath.trim()) return
+
+      try {
+        const imported = await importCanvasHtmlBundle(activeCanvasFilePath, {
+          title: input.title?.trim() || undefined,
+          directoryPath: input.directoryPath,
+          entryFile: input.entryFile?.trim() || undefined,
+        })
+
+        const htmlWidth = 720
+        const htmlHeight = 480
+        const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+        const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+        const targetX = input.position ? input.position.x : centerX
+        const targetY = input.position ? input.position.y : centerY
+        const nextTitle =
+          input.title?.trim() ||
+          imported.entryAsset.split("/").filter(Boolean).pop()?.replace(/\.html?$/i, "") ||
+          "HTML bundle"
+
+        addItem({
+          type: "html",
+          src: imported.entryUrl,
+          title: nextTitle,
+          sandbox: "allow-scripts allow-same-origin allow-forms allow-modals",
+          entryAsset: imported.entryAsset,
+          sourcePath: input.directoryPath,
           sourceImportedAt: imported.importedAt,
           position: {
             x: Math.max(0, targetX - htmlWidth / 2),
@@ -2484,6 +2581,8 @@ export function CanvasTab({
                 entries={entries}
                 onAddEmbed={handleAddEmbed}
                 onAddHtmlBundle={handleAddHtmlBundle}
+                onAddHtmlBundleFromDirectory={handleAddHtmlBundleFromDirectory}
+                onScanHtmlBundleLibrary={scanCanvasHtmlBundleLibrary}
                 onAddMedia={handleAddMedia}
                 onAddMarkdown={handleAddMarkdown}
                 onAddMermaid={handleAddMermaid}
