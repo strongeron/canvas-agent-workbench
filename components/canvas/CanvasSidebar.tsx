@@ -1071,6 +1071,11 @@ export function CanvasSidebar({
           </div>
           {!collapsedPanels.canvases && (
             <div className="space-y-2">
+              <div className="rounded-md border border-default bg-surface-50/50 px-3 py-2 text-[11px] text-muted-foreground">
+                Projects are workspaces. Canvases are local
+                <code className="mx-1 font-mono">.canvas</code>
+                documents inside the active project.
+              </div>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                 <input
@@ -1089,20 +1094,20 @@ export function CanvasSidebar({
                   {activeCanvasFileTitle || "Unsaved canvas"}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {activeCanvasFilePath || "Create or save a real .canvas file for this board."}
+                  {activeCanvasFilePath || "Auto-saved browser draft. Open or create a real .canvas file to enable document-backed assets like HTML bundles."}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {canvasFileDirty ? (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                      Unsaved changes
+                      Autosave pending
                     </span>
                   ) : !activeCanvasFilePath ? (
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                      Local draft
+                      Browser draft
                     </span>
                   ) : (
                     <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                      Saved
+                      Autosaved locally
                     </span>
                   )}
                   {canvasFilesSaving ? (

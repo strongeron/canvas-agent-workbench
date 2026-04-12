@@ -674,6 +674,7 @@ export function CanvasTab({
     document: CanvasFileDocument
   } | null>(null)
   const [lastSavedCanvasFileSignature, setLastSavedCanvasFileSignature] = useState<string | null>(null)
+  const [hasRestoredCanvasFile, setHasRestoredCanvasFile] = useState(false)
   const [canvasFileActionModal, setCanvasFileActionModal] = useState<CanvasFileActionModalState | null>(null)
   const [canvasFileDeleteModal, setCanvasFileDeleteModal] = useState<CanvasFileDeleteModalState | null>(null)
   const [canvasFileActionError, setCanvasFileActionError] = useState<string | null>(null)
@@ -866,11 +867,67 @@ export function CanvasTab({
   useEffect(() => {
     setActiveCanvasFile(null)
     setLastSavedCanvasFileSignature(null)
+    setHasRestoredCanvasFile(false)
     setCanvasFileActionModal(null)
     setCanvasFileDeleteModal(null)
     setCanvasFileActionError(null)
     setCanvasFileDeleteError(null)
   }, [activeProjectId])
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !activeCanvasFile ||
+      !canvasFileDirty ||
+      canvasFilesSaving ||
+      canvasFileActionBusy ||
+      canvasFileDeleteBusy
+    ) {
+      return
+    }
+
+    let cancelled = false
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const payload = buildCurrentCanvasFilePayload()
+          const assets = await buildCurrentCanvasFileAssets()
+          const saved = await saveCanvasFile(
+            activeCanvasFile.path,
+            {
+              ...activeCanvasFile.document,
+              document: payload.document,
+              view: payload.view,
+            },
+            assets
+          )
+          if (cancelled) return
+          setActiveCanvasFile(saved)
+          setLastSavedCanvasFileSignature(JSON.stringify(payload))
+        } catch (error) {
+          if (cancelled) return
+          window.console.warn(
+            "[Canvas] Failed to autosave active canvas file:",
+            error instanceof Error ? error.message : error
+          )
+        }
+      })()
+    }, 900)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [
+    activeCanvasFile,
+    buildCurrentCanvasFileAssets,
+    buildCurrentCanvasFilePayload,
+    canvasFileActionBusy,
+    canvasFileDeleteBusy,
+    canvasFileDirty,
+    canvasFilesSaving,
+    saveCanvasFile,
+  ])
 
   useEffect(() => {
     if (!selectedArtboardItem) {
@@ -1991,6 +2048,28 @@ export function CanvasTab({
     },
     [applyCanvasFileToWorkspace, openCanvasFile]
   )
+
+  useEffect(() => {
+    if (!activeProjectId || canvasFilesLoading || hasRestoredCanvasFile || activeCanvasFile) return
+
+    const preferredPath = canvasFileBrowser.lastActivePath
+    const nextPath =
+      (preferredPath && canvasFiles.some((file) => file.path === preferredPath) ? preferredPath : null) ||
+      (canvasFiles.length === 1 ? canvasFiles[0]?.path : null)
+
+    setHasRestoredCanvasFile(true)
+    if (!nextPath) return
+
+    void handleOpenCanvasFile(nextPath)
+  }, [
+    activeCanvasFile,
+    activeProjectId,
+    canvasFileBrowser.lastActivePath,
+    canvasFiles,
+    canvasFilesLoading,
+    handleOpenCanvasFile,
+    hasRestoredCanvasFile,
+  ])
 
   const handleCreateCanvasFile = useCallback(async () => {
     if (!activeProjectId) return

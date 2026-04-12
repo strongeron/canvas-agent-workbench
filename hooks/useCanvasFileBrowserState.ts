@@ -37,12 +37,17 @@ export function useCanvasFileBrowserState(
     `${storageKeyPrefix}-canvas-files-folder-${scope}`,
     "all"
   )
+  const [lastActivePath, setLastActivePath] = useLocalStorage<string | null>(
+    `${storageKeyPrefix}-canvas-files-active-${scope}`,
+    null
+  )
 
   useEffect(() => {
     if (!activePath) return
     setRecentPaths((prev) => dedupePreserveOrder([activePath, ...prev]).slice(0, 20))
     setOpenTabPaths((prev) => dedupePreserveOrder([...prev, activePath]).slice(0, 12))
-  }, [activePath, setOpenTabPaths, setRecentPaths])
+    setLastActivePath(activePath)
+  }, [activePath, setLastActivePath, setOpenTabPaths, setRecentPaths])
 
   useEffect(() => {
     if (selectedFolder === "all") return
@@ -121,12 +126,14 @@ export function useCanvasFileBrowserState(
     setOpenTabPaths((prev) =>
       dedupePreserveOrder(prev.map((entry) => (entry === fromPath ? toPath : entry)))
     )
+    setLastActivePath((prev) => (prev === fromPath ? toPath : prev))
   }
 
   const removeTrackedPath = (path: string) => {
     if (!path) return
     setRecentPaths((prev) => prev.filter((entry) => entry !== path))
     setOpenTabPaths((prev) => prev.filter((entry) => entry !== path))
+    setLastActivePath((prev) => (prev === path ? null : prev))
   }
 
   return {
@@ -141,5 +148,6 @@ export function useCanvasFileBrowserState(
     closeOpenTab,
     replaceTrackedPath,
     removeTrackedPath,
+    lastActivePath,
   }
 }
