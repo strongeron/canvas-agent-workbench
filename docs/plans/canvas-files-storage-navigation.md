@@ -19,7 +19,7 @@ This document defines the next storage/navigation model.
 
 ## Current state review
 
-Today we have:
+Original baseline:
 
 - `hooks/useCanvasScenes.ts`
   - stores `CanvasScene[]` in IndexedDB with `localStorage` fallback
@@ -38,6 +38,26 @@ It is not good enough for:
 - versioned canvas documents
 - browsing many files across projects
 - agent-native `list/open/save/create` flows
+
+Status as of `2026-04-19`:
+
+- canonical `.canvas` documents are now live for:
+  - `surface: "canvas"`
+  - `surface: "color-audit"`
+  - `surface: "system-canvas"`
+- project file browsing exists with:
+  - open tabs
+  - recent files
+  - favorites
+  - folder tree
+  - metadata index cache
+- stored file lifecycle exists in UI, CLI, and MCP:
+  - list/open/create/save
+  - move/rename
+  - duplicate
+  - delete
+- freeform Canvas now packs local HTML/media assets into document-local `.assets`
+- agents can import local HTML bundles, replace existing HTML nodes atomically, and manage stored files directly
 
 ## Decision summary
 
@@ -331,22 +351,26 @@ Practical approach:
 
 ### Phase 1
 
-- keep current browser scenes unchanged
-- add file-backed canvas documents for `surface: "canvas"`
-- add project `Canvases` navigation
-- add file index and search
+- [x] keep current browser scenes unchanged
+- [x] add file-backed canvas documents for `surface: "canvas"`
+- [x] add project `Canvases` navigation
+- [x] add file index and search
 
 ### Phase 2
 
-- rename/reposition `Scenes` to `Templates`
-- add `Save current file as template`
-- add `Insert from template`
+- [x] rename/reposition `Scenes` to `Templates`
+- [ ] add `Save current file as template`
+- [ ] add `Insert from template`
 
 ### Phase 3
 
-- support file-backed `Color Audit`
-- support file-backed `System Canvas`
-- add file-level agent operations across all writable surfaces
+- [x] support file-backed `Color Audit`
+- [x] support file-backed `System Canvas`
+- [x] add file-level agent operations across all writable surfaces
+- [x] add local HTML bundle import for freeform Canvas
+- [x] asset GC on HTML bundle replace
+- [x] serialize `.canvas` saves, HTML bundle imports, and file mutations through one persistence queue
+- [x] viewport control and item-focused screenshot agent tools, including DOM-cropped item capture when rendered bounds are available
 
 ## Recommended first implementation
 

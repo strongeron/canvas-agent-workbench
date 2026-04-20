@@ -213,6 +213,22 @@ export async function readCanvasAgentState(context) {
   return envelope?.state ?? null
 }
 
+export async function readCanvasAgentThemes(context) {
+  const envelope = await readCanvasAgentStateEnvelope(context)
+  const snapshot = envelope?.themeSnapshot
+  return {
+    themes: Array.isArray(snapshot?.themes) ? snapshot.themes : [],
+    activeThemeId:
+      typeof snapshot?.activeThemeId === 'string' && snapshot.activeThemeId.trim()
+        ? snapshot.activeThemeId.trim()
+        : null,
+    tokenValues:
+      snapshot?.tokenValues && typeof snapshot.tokenValues === 'object'
+        ? snapshot.tokenValues
+        : {},
+  }
+}
+
 export async function readCanvasAgentSelection(context) {
   const state = await readCanvasAgentState(context)
   return Array.isArray(state?.selectedIds) ? state.selectedIds : []
@@ -509,16 +525,22 @@ export async function enqueueAgentNativeWorkspaceOperation(
   )
 }
 
-async function buildWorkspaceScreenshotPayload(context, workspaceId, target) {
+async function buildWorkspaceScreenshotPayload(context, workspaceId, target, options = {}) {
   const normalizedTarget = target === 'mobile' ? 'mobile' : 'desktop'
 
   switch (workspaceId) {
-    case 'canvas':
+    case 'canvas': {
+      const snapshot = context.sessionDir
+        ? await readCanvasAgentState(context)
+        : await readAgentNativeWorkspaceState(context, 'canvas', context.canvasWorkspaceKey)
       return {
         projectId: context.projectId,
         target: normalizedTarget,
-        snapshot: await readCanvasAgentState(context),
+        snapshot,
+        focusItemIds: Array.isArray(options.itemIds) ? options.itemIds : undefined,
+        focusPadding: Number.isFinite(options.padding) ? Number(options.padding) : undefined,
       }
+    }
     case 'color-audit':
       return {
         projectId: context.projectId,
@@ -548,6 +570,19 @@ export async function captureWorkspaceScreenshot(context, workspaceId, target = 
   const response = await postAgentNativeJson(
     context,
     `/api/agent-native/workspaces/${encodeURIComponent(workspaceId)}/screenshot`,
+    payload
+  )
+  return response?.capture ?? null
+}
+
+export async function captureCanvasItemsScreenshot(context, itemIds, target = 'desktop', padding) {
+  const payload = await buildWorkspaceScreenshotPayload(context, 'canvas', target, {
+    itemIds,
+    padding,
+  })
+  const response = await postAgentNativeJson(
+    context,
+    '/api/agent-native/workspaces/canvas/screenshot',
     payload
   )
   return response?.capture ?? null
@@ -618,7 +653,7 @@ export async function waitForJsonFile(filePath, timeoutMs = DEFAULT_TIMEOUT_MS) 
   fail(`Timed out waiting for canvas result at ${filePath}`)
 }
 
-export function buildCanvasContextSummary(state, primitives) {
+export function buildCanvasContextSummary(state, primitives, themeSnapshot) {
   const safeState = state && typeof state === 'object' ? state : { items: [], groups: [], selectedIds: [] }
   const items = Array.isArray(safeState.items) ? safeState.items : []
   const groups = Array.isArray(safeState.groups) ? safeState.groups : []
@@ -751,6 +786,15 @@ export function buildCanvasContextSummary(state, primitives) {
     groupCount: groups.length,
     selectedIds,
     itemCountsByType,
+    themeSummary: {
+      activeThemeId:
+        typeof themeSnapshot?.activeThemeId === 'string' ? themeSnapshot.activeThemeId : null,
+      themeCount: Array.isArray(themeSnapshot?.themes) ? themeSnapshot.themes.length : 0,
+      tokenCount:
+        themeSnapshot?.tokenValues && typeof themeSnapshot.tokenValues === 'object'
+          ? Object.keys(themeSnapshot.tokenValues).length
+          : 0,
+    },
     artboards,
     looseItems,
   }

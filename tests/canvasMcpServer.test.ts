@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { mkdtemp, mkdir, rm } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -60,6 +60,33 @@ function createRpcReader(target: NodeJS.ReadableStream) {
     })
 }
 
+async function waitForQueuedCanvasOperation(sessionDir: string, timeoutMs = 10000) {
+  const startedAt = Date.now()
+  const queueDir = path.join(sessionDir, "queue")
+  const resultsDir = path.join(sessionDir, "results")
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const entries = await readdir(queueDir).catch(() => [])
+    const nextEntry = entries.find((entry) => entry.endsWith(".json"))
+    if (nextEntry) {
+      const requestPath = path.join(queueDir, nextEntry)
+      const resultPath = path.join(resultsDir, nextEntry)
+      const request = JSON.parse(await readFile(requestPath, "utf8"))
+      await rm(requestPath, { force: true })
+      return {
+        request,
+        async respond(payload: unknown) {
+          await writeFile(resultPath, JSON.stringify(payload, null, 2))
+        },
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+
+  throw new Error(`Timed out waiting for queued canvas operation in ${sessionDir}`)
+}
+
 describe("canvas MCP server", () => {
   let tempDir = ""
   let server: ReturnType<typeof createServer> | null = null
@@ -85,8 +112,68 @@ describe("canvas MCP server", () => {
     tempDir = await mkdtemp(path.join(tmpdir(), "canvas-mcp-test-"))
     await mkdir(path.join(tempDir, "queue"), { recursive: true })
     await mkdir(path.join(tempDir, "results"), { recursive: true })
+    await writeFile(
+      path.join(tempDir, "state.json"),
+      JSON.stringify(
+        {
+          state: {
+            items: [
+              {
+                id: "html-node-1",
+                type: "html",
+                src: "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Fold-bundle%2Findex.html",
+                title: "Old Bundle",
+                entryAsset: "html/old-bundle/index.html",
+                position: { x: 40, y: 40 },
+                size: { width: 480, height: 320 },
+                rotation: 0,
+                zIndex: 0,
+              },
+              {
+                id: "item-1",
+                type: "component",
+                componentId: "button",
+                variantIndex: 0,
+                position: { x: 100, y: 80 },
+                size: { width: 120, height: 48 },
+                rotation: 0,
+                zIndex: 1,
+              },
+              {
+                id: "item-2",
+                type: "component",
+                componentId: "card",
+                variantIndex: 0,
+                position: { x: 280, y: 120 },
+                size: { width: 180, height: 96 },
+                rotation: 0,
+                zIndex: 2,
+              },
+            ],
+            groups: [],
+            nextZIndex: 4,
+            selectedIds: [],
+          },
+          themeSnapshot: {
+            themes: [
+              {
+                id: "default",
+                label: "Default",
+                vars: { "--color-brand-600": "#2563eb" },
+              },
+            ],
+            activeThemeId: "default",
+            tokenValues: { "--color-brand-600": "#2563eb" },
+          },
+        },
+        null,
+        2
+      )
+    )
 
     const queuedOperations: unknown[] = []
+    let importedHtmlBundleRequestBody: Record<string, any> | null = null
+    let canvasScreenshotRequestBody: Record<string, any> | null = null
 
     server = createServer((req, res) => {
       const requestUrl = new URL(req.url || "/", "http://127.0.0.1")
@@ -104,6 +191,34 @@ describe("canvas MCP server", () => {
           res.statusCode = 200
           res.setHeader("content-type", "application/json")
           res.end(JSON.stringify({ ok: true, operationId: "color-audit-operation-1", cursor: 1 }))
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/agent-native/workspaces/canvas/screenshot") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          canvasScreenshotRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              capture: {
+                workspaceId: "canvas",
+                target: "desktop",
+                mediaUrl: "/api/media/file/canvas-item.png",
+                cropRect: {
+                  x: 128,
+                  y: 96,
+                  width: 640,
+                  height: 512,
+                },
+              },
+            })
+          )
         })
         return
       }
@@ -281,17 +396,7 @@ describe("canvas MCP server", () => {
                             }
                         : req.method === "POST" &&
                             requestUrl.pathname === "/api/projects/demo/canvases/html-bundle/import"
-                          ? {
-                              ok: true,
-                              htmlBundle: {
-                                assetRoot: "html/marketing-card",
-                                entryAsset: "html/marketing-card/index.html",
-                                entryUrl:
-                                  "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Fmarketing-card%2Findex.html",
-                                assetCount: 3,
-                                importedAt: "2026-04-12T15:00:00.000Z",
-                              },
-                            }
+                          ? null
                         : req.method === "POST" &&
                             requestUrl.pathname === "/api/projects/demo/canvases/create"
                           ? {
@@ -339,7 +444,33 @@ describe("canvas MCP server", () => {
                             }
                     : { error: `Unhandled path: ${requestUrl.pathname}` }
 
-      res.statusCode = "error" in payload ? 404 : 200
+      if (req.method === "POST" && requestUrl.pathname === "/api/projects/demo/canvases/html-bundle/import") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          importedHtmlBundleRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              htmlBundle: {
+                assetRoot: "html/marketing-card",
+                entryAsset: "html/marketing-card/index.html",
+                entryUrl:
+                  "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Fmarketing-card%2Findex.html",
+                assetCount: 3,
+                importedAt: "2026-04-12T15:00:00.000Z",
+              },
+            })
+          )
+        })
+        return
+      }
+
+      res.statusCode = payload && "error" in payload ? 404 : 200
       res.setHeader("content-type", "application/json")
       res.end(JSON.stringify(payload))
     })
@@ -400,6 +531,9 @@ describe("canvas MCP server", () => {
         "workspace://surface/canvas/debug"
       )
       expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
+        "workspace://surface/canvas/themes"
+      )
+      expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
         "workspace://surface/color-audit/state"
       )
       expect(resourcesList.result?.resources?.map((resource) => resource.uri)).toContain(
@@ -430,6 +564,9 @@ describe("canvas MCP server", () => {
       expect(promptsList.result?.prompts?.map((prompt) => prompt.name)).toContain(
         "review-node-system"
       )
+      expect(promptsList.result?.prompts?.map((prompt) => prompt.name)).toContain(
+        "replace-html-bundle"
+      )
 
       const colorAuditState = (await sendRpc({
         jsonrpc: "2.0",
@@ -443,6 +580,22 @@ describe("canvas MCP server", () => {
 
       expect(colorAuditState.result?.structuredContent?.surface).toBe("color-audit")
       expect(colorAuditState.result?.structuredContent?.nodes?.[0]?.label).toBe("Brand Seed")
+
+      const canvasThemes = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4a",
+        method: "tools/call",
+        params: {
+          name: "get_canvas_themes",
+          arguments: {},
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(canvasThemes.result?.structuredContent?.activeThemeId).toBe("default")
+      expect(canvasThemes.result?.structuredContent?.themes?.[0]?.label).toBe("Default")
+      expect(canvasThemes.result?.structuredContent?.tokenValues?.["--color-brand-600"]).toBe(
+        "#2563eb"
+      )
 
       const exportResource = (await sendRpc({
         jsonrpc: "2.0",
@@ -569,6 +722,299 @@ describe("canvas MCP server", () => {
       )
       expect(importedHtmlBundle.result?.structuredContent?.htmlBundle?.assetCount).toBe(3)
 
+      const replacedHtmlBundlePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-html-replace",
+        method: "tools/call",
+        params: {
+          name: "import_html_bundle",
+          arguments: {
+            path: "boards/demo.canvas",
+            targetItemId: "html-node-1",
+            bundle: {
+              title: "Marketing Card",
+              files: [
+                {
+                  relativePath: "index.html",
+                  textContent:
+                    "<!doctype html><html><body><main class='card'>Updated</main></body></html>",
+                },
+                {
+                  relativePath: "styles/site.css",
+                  textContent: ".card { color: #111827; }",
+                },
+              ],
+            },
+            item: {
+              title: "Marketing Card",
+              background: "#ffffff",
+            },
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedCanvasReplace = await waitForQueuedCanvasOperation(tempDir)
+      expect(importedHtmlBundleRequestBody).toMatchObject({
+        path: "boards/demo.canvas",
+        bundle: {
+          replaceEntryAsset: "html/old-bundle/index.html",
+        },
+      })
+      expect(queuedCanvasReplace.request).toMatchObject({
+        toolName: "replace_html_bundle",
+        operation: {
+          type: "update_item",
+          id: "html-node-1",
+          updates: {
+            entryAsset: "html/marketing-card/index.html",
+            title: "Marketing Card",
+            background: "#ffffff",
+          },
+        },
+      })
+
+      await queuedCanvasReplace.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:00:01.000Z",
+        state: {
+          items: [],
+          groups: [],
+          nextZIndex: 1,
+          selectedIds: [],
+        },
+      })
+
+      const replacedHtmlBundle = await replacedHtmlBundlePromise
+      expect(replacedHtmlBundle.result?.structuredContent?.targetItemId).toBe("html-node-1")
+      expect(replacedHtmlBundle.result?.structuredContent?.htmlBundle?.entryAsset).toBe(
+        "html/marketing-card/index.html"
+      )
+      expect(replacedHtmlBundle.result?.structuredContent?.result?.ok).toBe(true)
+
+      const createGroupPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-group-create",
+        method: "tools/call",
+        params: {
+          name: "create_group",
+          arguments: {
+            itemIds: ["item-1", "item-2"],
+            name: "Hero Cluster",
+            select: true,
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedCreateGroup = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedCreateGroup.request).toMatchObject({
+        toolName: "create_group",
+        operation: {
+          type: "create_group",
+          itemIds: ["item-1", "item-2"],
+          select: true,
+          group: {
+            name: "Hero Cluster",
+          },
+        },
+      })
+      const createdGroupId = queuedCreateGroup.request.operation.group.id
+      await queuedCreateGroup.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:00.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const createGroupResult = await createGroupPromise
+      expect(createGroupResult.result?.structuredContent?.group?.id).toBe(createdGroupId)
+      expect(createGroupResult.result?.structuredContent?.ok).toBe(true)
+
+      const batchCreatePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-items-create",
+        method: "tools/call",
+        params: {
+          name: "create_items",
+          arguments: {
+            items: [
+              {
+                id: "batch-item-1",
+                type: "markdown",
+                title: "Brief",
+                source: "# Brief",
+                position: { x: 80, y: 420 },
+                size: { width: 280, height: 180 },
+                rotation: 0,
+                zIndex: 3,
+              },
+              {
+                id: "batch-item-2",
+                type: "markdown",
+                title: "Notes",
+                source: "## Notes",
+                position: { x: 400, y: 420 },
+                size: { width: 280, height: 180 },
+                rotation: 0,
+                zIndex: 4,
+              },
+            ],
+            select: true,
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedBatchCreate = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedBatchCreate.request).toMatchObject({
+        toolName: "create_items",
+        operation: {
+          type: "create_items",
+          select: true,
+          items: [
+            { id: "batch-item-1", type: "markdown", title: "Brief" },
+            { id: "batch-item-2", type: "markdown", title: "Notes" },
+          ],
+        },
+      })
+      await queuedBatchCreate.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:00.500Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: ["batch-item-1", "batch-item-2"] },
+      })
+      const batchCreateResult = await batchCreatePromise
+      expect(batchCreateResult.result?.structuredContent?.ok).toBe(true)
+
+      const updateGroupPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-group-update",
+        method: "tools/call",
+        params: {
+          name: "update_group",
+          arguments: {
+            id: createdGroupId,
+            updates: {
+              name: "Hero Cluster Updated",
+              isLocked: true,
+            },
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedUpdateGroup = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedUpdateGroup.request).toMatchObject({
+        toolName: "update_group",
+        operation: {
+          type: "update_group",
+          id: createdGroupId,
+          updates: {
+            name: "Hero Cluster Updated",
+            isLocked: true,
+          },
+        },
+      })
+      await queuedUpdateGroup.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:01.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const updateGroupResult = await updateGroupPromise
+      expect(updateGroupResult.result?.structuredContent?.ok).toBe(true)
+
+      const deleteGroupPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-group-delete",
+        method: "tools/call",
+        params: {
+          name: "delete_group",
+          arguments: {
+            id: createdGroupId,
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedDeleteGroup = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedDeleteGroup.request).toMatchObject({
+        toolName: "delete_group",
+        operation: {
+          type: "delete_group",
+          id: createdGroupId,
+        },
+      })
+      await queuedDeleteGroup.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:02.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const deleteGroupResult = await deleteGroupPromise
+      expect(deleteGroupResult.result?.structuredContent?.ok).toBe(true)
+
+      const setViewportPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-viewport-set",
+        method: "tools/call",
+        params: {
+          name: "set_canvas_viewport",
+          arguments: {
+            viewport: {
+              scale: 1.25,
+              offset: { x: -180, y: 96 },
+            },
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedSetViewport = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedSetViewport.request).toMatchObject({
+        toolName: "set_canvas_viewport",
+        operation: {
+          type: "set_viewport",
+          viewport: {
+            scale: 1.25,
+            offset: { x: -180, y: 96 },
+          },
+        },
+      })
+      await queuedSetViewport.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:03.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const setViewportResult = await setViewportPromise
+      expect(setViewportResult.result?.structuredContent?.viewport).toMatchObject({
+        scale: 1.25,
+        offset: { x: -180, y: 96 },
+      })
+
+      const focusItemsPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-focus-items",
+        method: "tools/call",
+        params: {
+          name: "focus_canvas_items",
+          arguments: {
+            ids: ["item-1", "item-2"],
+            padding: 88,
+            select: true,
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedFocusItems = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedFocusItems.request).toMatchObject({
+        toolName: "focus_canvas_items",
+        operation: {
+          type: "focus_items",
+          ids: ["item-1", "item-2"],
+          padding: 88,
+          select: true,
+        },
+      })
+      await queuedFocusItems.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:04.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const focusItemsResult = await focusItemsPromise
+      expect(focusItemsResult.result?.structuredContent?.ids).toEqual(["item-1", "item-2"])
+      expect(focusItemsResult.result?.structuredContent?.padding).toBe(88)
+
       const movedCanvasFile = (await sendRpc({
         jsonrpc: "2.0",
         id: "5f",
@@ -640,6 +1086,42 @@ describe("canvas MCP server", () => {
       })) as { result?: { structuredContent?: Record<string, any> } }
 
       expect(screenshot.result?.structuredContent?.mediaUrl).toBe("/api/media/file/color-audit.png")
+
+      const focusedCanvasScreenshot = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "7-canvas-focused",
+        method: "tools/call",
+        params: {
+          name: "capture_canvas_items_screenshot",
+          arguments: {
+            ids: ["html-node-1"],
+            padding: 88,
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(focusedCanvasScreenshot.result?.structuredContent?.mediaUrl).toBe(
+        "/api/media/file/canvas-item.png"
+      )
+      expect(focusedCanvasScreenshot.result?.structuredContent?.cropRect).toEqual({
+        x: 128,
+        y: 96,
+        width: 640,
+        height: 512,
+      })
+      expect(canvasScreenshotRequestBody).toEqual(
+        expect.objectContaining({
+          projectId: "demo",
+          target: "desktop",
+          focusItemIds: ["html-node-1"],
+          focusPadding: 88,
+          snapshot: expect.objectContaining({
+            items: expect.arrayContaining([
+              expect.objectContaining({ id: "html-node-1" }),
+            ]),
+          }),
+        })
+      )
 
       const nodeCatalogState = (await sendRpc({
         jsonrpc: "2.0",
@@ -813,6 +1295,24 @@ describe("canvas MCP server", () => {
       expect(nodePrompt.result?.messages?.[0]?.content?.text).toContain(
         "workspace://surface/node-catalog/sections"
       )
+
+      const replaceHtmlPrompt = (await sendRpc({
+        jsonrpc: "2.0",
+        id: 16.5,
+        method: "prompts/get",
+        params: {
+          name: "replace-html-bundle",
+          arguments: {},
+        },
+      })) as { result?: { messages?: Array<{ content?: { text?: string } }> } }
+
+      expect(replaceHtmlPrompt.result?.messages?.[0]?.content?.text).toContain("targetItemId")
+      expect(replaceHtmlPrompt.result?.messages?.[0]?.content?.text).toContain(
+        "capture_canvas_items_screenshot"
+      )
+      expect(
+        promptsList.result?.prompts?.map((prompt) => prompt.name)
+      ).toContain("canvas-layout-review")
 
       const canvasDebugResource = (await sendRpc({
         jsonrpc: "2.0",

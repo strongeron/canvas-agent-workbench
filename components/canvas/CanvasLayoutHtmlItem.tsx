@@ -69,6 +69,8 @@ export function CanvasLayoutHtmlItem({
   return (
     <div
       className={`relative h-full w-full ${isSelected ? "ring-4 ring-brand-500/20" : ""}`}
+      data-canvas-item-id={item.id}
+      data-canvas-item-type={item.type}
       onClick={(event) => {
         if (interactMode) return
         event.stopPropagation()

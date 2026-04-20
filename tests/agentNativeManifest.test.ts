@@ -33,6 +33,7 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.entities).toContain("mermaid")
     expect(canvasWorkspace?.entities).toContain("excalidraw")
     expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-state")).toBe(true)
+    expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-themes")).toBe(true)
     expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-events")).toBe(true)
     expect(canvasWorkspace?.resources.some((resource) => resource.id === "canvas-debug")).toBe(true)
     expect(
@@ -42,11 +43,17 @@ describe("agent native manifest", () => {
       canvasWorkspace?.resources.find((resource) => resource.id === "canvas-viewport-screenshot")?.status
     ).toBe("ready")
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_item")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_items")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_group")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "list_canvas_files")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "save_canvas_file")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "move_canvas_file")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "duplicate_canvas_file")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "delete_canvas_file")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_canvas_themes")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "set_canvas_viewport")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "focus_canvas_items")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "capture_canvas_items_screenshot")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_events")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_debug")).toBe(true)
     expect(

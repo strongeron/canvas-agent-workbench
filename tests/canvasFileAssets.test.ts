@@ -303,4 +303,110 @@ describe("canvas file assets", () => {
       defaultEntryFile: "index.html",
     })
   })
+
+  it("imports inline html bundles from plain text content without base64 payloads", async () => {
+    const projectsRoot = await createTempProjectsRoot()
+    const imported = await importCanvasHtmlBundle(projectsRoot, {
+      projectId: "demo",
+      path: "boards/text-only.canvas",
+      bundle: {
+        title: "Text Authored Bundle",
+        files: [
+          {
+            relativePath: "index.html",
+            textContent:
+              '<!doctype html><html><head><link rel="stylesheet" href="./styles.css"></head><body><h1>Hello</h1><script type="module" src="./app.js"></script></body></html>',
+          },
+          {
+            relativePath: "styles.css",
+            textContent: "body { background: #fff; color: #111; }",
+          },
+          {
+            relativePath: "app.js",
+            textContent: 'document.body.dataset.ready = "true";',
+          },
+        ],
+      },
+    })
+
+    expect(imported.entryUrl).toContain("path=boards%2Ftext-only.canvas")
+    expect(imported.assetCount).toBe(3)
+
+    const htmlAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "boards/text-only.canvas",
+      imported.entryAsset
+    )
+    expect(htmlAsset.content.toString("utf8")).toContain("<h1>Hello</h1>")
+    expect(htmlAsset.mimeType).toContain("text/html")
+
+    const scriptAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "boards/text-only.canvas",
+      `${imported.assetRoot}/app.js`
+    )
+    expect(scriptAsset.content.toString("utf8")).toContain('dataset.ready = "true"')
+    expect(scriptAsset.mimeType).toContain("text/javascript")
+  })
+
+  it("deletes the previous html bundle asset root when replacing an imported bundle", async () => {
+    const projectsRoot = await createTempProjectsRoot()
+    const firstImport = await importCanvasHtmlBundle(projectsRoot, {
+      projectId: "demo",
+      path: "boards/replaceable.canvas",
+      bundle: {
+        title: "Original Bundle",
+        files: [
+          {
+            relativePath: "index.html",
+            textContent: "<!doctype html><html><body><h1>Original</h1></body></html>",
+          },
+          {
+            relativePath: "styles.css",
+            textContent: "body { color: red; }",
+          },
+        ],
+      },
+    })
+
+    const secondImport = await importCanvasHtmlBundle(projectsRoot, {
+      projectId: "demo",
+      path: "boards/replaceable.canvas",
+      bundle: {
+        title: "Updated Bundle",
+        replaceEntryAsset: firstImport.entryAsset,
+        files: [
+          {
+            relativePath: "index.html",
+            textContent: "<!doctype html><html><body><h1>Updated</h1></body></html>",
+          },
+          {
+            relativePath: "styles.css",
+            textContent: "body { color: green; }",
+          },
+        ],
+      },
+    })
+
+    expect(secondImport.entryAsset).not.toBe(firstImport.entryAsset)
+
+    await expect(
+      readCanvasDocumentAsset(
+        projectsRoot,
+        "demo",
+        "boards/replaceable.canvas",
+        firstImport.entryAsset
+      )
+    ).rejects.toThrow()
+
+    const replacementAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "boards/replaceable.canvas",
+      secondImport.entryAsset
+    )
+    expect(replacementAsset.content.toString("utf8")).toContain("<h1>Updated</h1>")
+  })
 })

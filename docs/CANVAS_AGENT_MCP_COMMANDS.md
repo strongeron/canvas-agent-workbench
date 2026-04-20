@@ -72,6 +72,8 @@ These are the stored `.canvas` document tools. They work against the local proje
   Scans a local HTML source root and returns bundle directories plus available HTML entry files before import.
 - `import_html_bundle`
   Packs a local HTML/CSS/JS bundle into a stored `.canvas` document and can optionally create a live `html` node from it.
+  When `targetItemId` is provided, it replaces an existing live HTML node in place instead of creating a second node.
+  Replace mode also removes the previous bundled asset directory for that node so stored files do not accumulate stale HTML bundles forever.
 
 Use these when you want the agent to manage the file library itself:
 
@@ -86,14 +88,22 @@ Use these when you want the agent to manage the file library itself:
 - `get_canvas_context`
 - `get_canvas_state`
 - `get_canvas_selection`
+- `get_canvas_themes`
 - `list_primitives`
 - `get_primitive`
 - `create_artboard`
 - `create_primitive_item`
 - `create_item`
+- `create_items`
+- `create_group`
 - `update_item`
+- `update_group`
 - `delete_items`
+- `delete_group`
 - `select_items`
+- `set_canvas_viewport`
+- `focus_canvas_items`
+- `capture_canvas_items_screenshot`
 - `clear_canvas`
 - `export_board`
 
@@ -101,9 +111,25 @@ What this surface supports:
 
 - read current board
 - inspect selection
+- inspect available canvas themes and current resolved theme tokens
 - inspect registered primitives and their metadata
 - create/update/delete board items
+- create several board items atomically in one queued operation
+- create/update/delete item groups
+
+Batch create note:
+
+- prefer `create_items` over repeated `create_item` calls when the agent is laying out a cluster, row, stack, or multi-node starter board
+- it produces one queued mutation and one state transition instead of N small ones
+- move the live camera without mutating document contents
+- focus a board region before screenshots or follow-up edits
+- capture a screenshot cropped around specific rendered canvas items
 - export primitive-only artboards as React
+
+Screenshot note:
+
+- `capture_canvas_items_screenshot` crops the rendered board to the requested item ids when those nodes are visible; it falls back to the focused viewport capture path if direct crop bounds are unavailable
+- it is not yet a DOM-cropped single-node export
 
 Current writable entity types:
 
@@ -123,6 +149,7 @@ HTML bundle notes:
 - the live node renders in an iframe, so resize and interact mode work as expected
 - if you have a large external library, scan it first and choose the exact folder + entry file to import
 - if you are importing from the UI, save the board to a real `.canvas` file first
+- agents can also author bundles inline by passing `bundle.files[].textContent` for HTML, CSS, or JS files instead of base64 payloads
 
 ## Color Audit Tools
 
@@ -244,6 +271,8 @@ These are built into the MCP server:
   Review generated `System Canvas` scale output.
 - `review-node-system`
   Review node-card design across surfaces.
+- `replace-html-bundle`
+  Replace an existing live HTML iframe node atomically by passing `targetItemId` to `import_html_bundle`.
 
 ## How To Make Agents Use MCP
 
@@ -274,13 +303,19 @@ Use MCP only. Start with workspace://project/canvases/index and list_canvas_file
 ### Local HTML Bundle Node
 
 ```text
-Use MCP only. First call scan_html_bundles on the local source root to discover bundle folders and entry files. Open or create the target stored Canvas file, then call import_html_bundle with that file path, the chosen directoryPath, and the chosen entryFile. If the board should show it immediately, create the live html node as part of the same tool call. After that, read the Canvas state, summarize the imported html node, and capture a screenshot.
+Use MCP only. First call scan_html_bundles on the local source root to discover bundle folders and entry files. Open or create the target stored Canvas file, then call import_html_bundle with that file path, the chosen directoryPath, and the chosen entryFile. If the board should show it immediately, either create the live html node as part of the same tool call or pass `targetItemId` to replace an existing html node atomically. After that, read the Canvas state, summarize the imported html node, and capture a screenshot.
+```
+
+### Replace Existing HTML Node In Place
+
+```text
+Use MCP only. Read workspace://surface/canvas/state first and identify the existing html node id you want to keep on the board. Then call import_html_bundle with the stored Canvas file path, the new bundle payload, and targetItemId set to that html node id. Do not create a second html node. After the call, read workspace://surface/canvas/state again, inspect workspace://surface/canvas/debug if needed, and call capture_canvas_items_screenshot for that html node id to verify the iframe updated in place.
 ```
 
 ### Canvas
 
 ```text
-Use MCP only. Read workspace://surface/canvas/state, workspace://surface/canvas/selection, and workspace://surface/canvas/primitives. Summarize the current board. Then create a new artboard with a heading, text, and button using create_artboard and create_primitive_item.
+Use MCP only. Read workspace://surface/canvas/state, workspace://surface/canvas/selection, and workspace://surface/canvas/primitives. Summarize the current board. Then create a new artboard with a heading, text, and button using create_artboard and create_primitive_item. If you need to inspect the result closely, use focus_canvas_items or set_canvas_viewport before capture_workspace_screenshot, or call capture_canvas_items_screenshot directly for the target item ids.
 ```
 
 ### Canvas File Lifecycle

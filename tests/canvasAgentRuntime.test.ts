@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -27,6 +27,54 @@ describe("canvas agent runtime", () => {
     expect(runtime.buildDefaultNodeCatalogWorkspaceKey("  thicket  ")).toBe(
       "gallery-thicket-node-catalog"
     )
+  })
+
+  it("reads the canvas theme snapshot from the local session state envelope", async () => {
+    const runtime = await loadRuntime()
+    const sessionDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-runtime-theme-"))
+
+    try {
+      await writeFile(
+        path.join(sessionDir, "state.json"),
+        JSON.stringify(
+          {
+            state: {
+              items: [],
+              groups: [],
+              nextZIndex: 1,
+              selectedIds: [],
+            },
+            themeSnapshot: {
+              themes: [
+                {
+                  id: "default",
+                  label: "Default",
+                  vars: { "--color-brand-600": "#2563eb" },
+                },
+              ],
+              activeThemeId: "default",
+              tokenValues: { "--color-brand-600": "#2563eb" },
+            },
+          },
+          null,
+          2
+        )
+      )
+
+      await expect(runtime.readCanvasAgentThemes({ sessionDir } as any)).resolves.toEqual({
+        themes: [
+          {
+            id: "default",
+            label: "Default",
+            vars: { "--color-brand-600": "#2563eb" },
+          },
+        ],
+        activeThemeId: "default",
+        tokenValues: { "--color-brand-600": "#2563eb" },
+      })
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true })
+    }
   })
 
   it("reads manifest, surface manifests, workspace state, export preview, and screenshot payloads from agent-native endpoints", async () => {
@@ -615,6 +663,94 @@ describe("canvas agent runtime", () => {
       snapshot: {
         surface: "system-canvas",
         viewMode: "layout",
+      },
+    })
+  })
+
+  it("captures a focused Canvas screenshot using item ids and padding", async () => {
+    const runtime = await loadRuntime()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          state: {
+            surface: "canvas",
+            state: {
+              items: [
+                {
+                  id: "item-1",
+                  type: "html",
+                  position: { x: 120, y: 160 },
+                  size: { width: 480, height: 320 },
+                },
+              ],
+              groups: [],
+              nextZIndex: 2,
+              selectedIds: [],
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          capture: {
+            workspaceId: "canvas",
+            target: "desktop",
+            mediaUrl: "/api/media/file/canvas-item.png",
+            cropRect: {
+              x: 128,
+              y: 96,
+              width: 640,
+              height: 512,
+            },
+          },
+        }),
+      })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = {
+      serverUrl: "http://127.0.0.1:5178",
+      projectId: "demo",
+      canvasWorkspaceKey: "gallery-demo:canvas",
+    }
+
+    await expect(
+      runtime.captureCanvasItemsScreenshot(context as any, ["item-1"], "desktop", 88)
+    ).resolves.toEqual({
+      workspaceId: "canvas",
+      target: "desktop",
+      mediaUrl: "/api/media/file/canvas-item.png",
+      cropRect: {
+        x: 128,
+        y: 96,
+        width: 640,
+        height: 512,
+      },
+    })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://127.0.0.1:5178/api/agent-native/workspaces/canvas/state?workspaceKey=gallery-demo%3Acanvas"
+    )
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "http://127.0.0.1:5178/api/agent-native/workspaces/canvas/screenshot"
+    )
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body || "{}"))).toMatchObject({
+      projectId: "demo",
+      target: "desktop",
+      focusItemIds: ["item-1"],
+      focusPadding: 88,
+      snapshot: {
+        surface: "canvas",
+        state: {
+          items: [
+            {
+              id: "item-1",
+            },
+          ],
+        },
       },
     })
   })

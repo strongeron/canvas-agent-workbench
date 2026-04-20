@@ -4,6 +4,7 @@ import type {
 } from "./agentNative"
 import type { DesignSystemScaleConfig } from "../projects/design-system-foundation/designSystemApi"
 import type { ColorCanvasState } from "./colorCanvas"
+import type { ThemeOption } from "./theme"
 
 export type CanvasItem =
   | CanvasComponentItem
@@ -248,12 +249,14 @@ export interface CanvasHtmlBundleFileInput {
   relativePath: string
   dataUrl?: string
   filePath?: string
+  textContent?: string
 }
 
 export interface CanvasHtmlBundleImportInput {
   entryFile?: string
   title?: string
   directoryPath?: string
+  replaceEntryAsset?: string
   files?: CanvasHtmlBundleFileInput[]
 }
 
@@ -351,6 +354,11 @@ export type CanvasRemoteOperation =
       select?: boolean
     }
   | {
+      type: "create_items"
+      items: CanvasItem[]
+      select?: boolean
+    }
+  | {
       type: "update_item"
       id: string
       updates: CanvasItemUpdate
@@ -365,6 +373,31 @@ export type CanvasRemoteOperation =
     }
   | {
       type: "clear_canvas"
+    }
+  | {
+      type: "create_group"
+      group: CanvasGroup
+      itemIds: string[]
+      select?: boolean
+    }
+  | {
+      type: "update_group"
+      id: string
+      updates: Partial<Omit<CanvasGroup, "id">>
+    }
+  | {
+      type: "delete_group"
+      id: string
+    }
+  | {
+      type: "set_viewport"
+      viewport: CanvasTransform
+    }
+  | {
+      type: "focus_items"
+      ids: string[]
+      padding?: number
+      select?: boolean
     }
 
 export interface CanvasAgentDefinition {
@@ -490,6 +523,12 @@ export interface CanvasAgentSessionDebug {
   workspaceEvents?: AgentWorkspaceEvent<CanvasRemoteOperation>[]
   toolCommand: string
   toolExamples: string[]
+}
+
+export interface CanvasThemeSnapshot {
+  themes: ThemeOption[]
+  activeThemeId: string | null
+  tokenValues: Record<string, string>
 }
 
 export interface CanvasTransform {

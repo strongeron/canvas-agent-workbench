@@ -6,6 +6,7 @@ import type {
   CanvasAgentPrimitive,
   CanvasAgentSessionDebug,
   CanvasAgentSession,
+  CanvasThemeSnapshot,
   CanvasAgentTranscriptEntry,
   CanvasRemoteOperation,
   CanvasStateSnapshot,
@@ -15,8 +16,10 @@ interface UseCanvasAgentBridgeOptions {
   projectId?: string
   entries: GalleryEntry[]
   snapshot: CanvasStateSnapshot
+  themeSnapshot?: CanvasThemeSnapshot
   replaceState: (state: CanvasStateSnapshot) => void
   applyRemoteOperation: (operation: CanvasRemoteOperation) => void
+  hasActiveCanvasFile?: boolean
 }
 
 export interface CanvasAgentBridgeStatus {
@@ -139,10 +142,21 @@ export function useCanvasAgentBridge({
   projectId,
   entries,
   snapshot,
+  themeSnapshot,
   replaceState,
   applyRemoteOperation,
+  hasActiveCanvasFile = false,
 }: UseCanvasAgentBridgeOptions): UseCanvasAgentBridgeResult {
   const clientIdRef = useRef(`canvas-client-${Math.random().toString(36).slice(2, 10)}`)
+  const snapshotRef = useRef(snapshot)
+  const hasActiveCanvasFileRef = useRef(hasActiveCanvasFile)
+  const didHydrateProjectRef = useRef<string | null>(null)
+  useEffect(() => {
+    snapshotRef.current = snapshot
+  }, [snapshot])
+  useEffect(() => {
+    hasActiveCanvasFileRef.current = hasActiveCanvasFile
+  }, [hasActiveCanvasFile])
   const canvasWorkspaceKey = projectId ? `gallery-${projectId}:canvas` : null
   const [agents, setAgents] = useState<CanvasAgentDefinition[]>([])
   const [sessions, setSessions] = useState<CanvasAgentSession[]>([])
@@ -354,10 +368,18 @@ export function useCanvasAgentBridge({
       setSessions([])
       setDebugBySession({})
       setOutputBySession({})
+      didHydrateProjectRef.current = null
       return () => {
         cancelled = true
       }
     }
+
+    if (didHydrateProjectRef.current === projectId) {
+      return () => {
+        cancelled = true
+      }
+    }
+    didHydrateProjectRef.current = projectId
 
     setBridgeReady(false)
     setError(null)
@@ -380,8 +402,14 @@ export function useCanvasAgentBridge({
             if (cancelled) return
 
             const remoteState = (data.state?.state ?? null) as CanvasStateSnapshot | null | undefined
-            const hasLocalState = snapshot.items.length > 0 || snapshot.groups.length > 0
-            if (remoteState && !hasLocalState) {
+            const localSnapshot = snapshotRef.current
+            const hasLocalState =
+              localSnapshot.items.length > 0 || localSnapshot.groups.length > 0
+            if (
+              remoteState &&
+              !hasLocalState &&
+              !hasActiveCanvasFileRef.current
+            ) {
               replaceState(remoteState)
             }
 
@@ -410,8 +438,6 @@ export function useCanvasAgentBridge({
     projectId,
     refreshSessions,
     replaceState,
-    snapshot.groups.length,
-    snapshot.items.length,
   ])
 
   useEffect(() => {
@@ -533,6 +559,11 @@ export function useCanvasAgentBridge({
                 state: snapshot,
                 selection: snapshot.selectedIds,
                 primitives: primitiveSnapshot,
+                themeSnapshot: themeSnapshot ?? {
+                  themes: [],
+                  activeThemeId: null,
+                  tokenValues: {},
+                },
                 stateSummary: {
                   itemCount: snapshot.items.length,
                   groupCount: snapshot.groups.length,
@@ -559,7 +590,7 @@ export function useCanvasAgentBridge({
     }, 350)
 
     return () => window.clearTimeout(timeoutId)
-  }, [bridgeReady, canvasWorkspaceKey, primitiveSnapshot, projectId, snapshot])
+  }, [bridgeReady, canvasWorkspaceKey, primitiveSnapshot, projectId, snapshot, themeSnapshot])
 
   const status = useMemo<CanvasAgentBridgeStatus>(
     () => ({

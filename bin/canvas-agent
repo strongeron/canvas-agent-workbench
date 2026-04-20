@@ -6,6 +6,7 @@ import {
   bootstrapCanvasAgentSession,
   buildCanvasContextSummary,
   clearCanvasAgentAttachedContext,
+  captureCanvasItemsScreenshot,
   captureWorkspaceScreenshot,
   createProjectCanvasFile,
   deleteProjectCanvasFile,
@@ -34,6 +35,7 @@ import {
   readCanvasAgentPrimitives,
   readCanvasAgentSelection,
   readCanvasAgentState,
+  readCanvasAgentThemes,
   readCanvasAgentTranscript,
   readJsonPayload,
   resolveCanvasAgentContextFilePath,
@@ -45,11 +47,18 @@ import {
 import {
   createArtboardItem,
   createClearCanvasOperation,
+  createCanvasGroup,
+  createFocusItemsOperation,
+  createCreateGroupOperation,
   createCreateItemOperation,
+  createCreateItemsOperation,
+  createDeleteGroupOperation,
   createDeleteItemsOperation,
   createHtmlCanvasItem,
   createPrimitiveCanvasItem,
+  createSetViewportOperation,
   createSelectItemsOperation,
+  createUpdateGroupOperation,
   createUpdateItemOperation,
   exportCanvasBoard,
 } from '../utils/canvasAgentOperations.mjs'
@@ -96,17 +105,25 @@ Usage:
   bin/canvas-agent update-system-edge <edge-id> <json|@file|->
   bin/canvas-agent delete-system-edge <edge-id>
   bin/canvas-agent screenshot <workspace-id> [desktop|mobile]
+  bin/canvas-agent screenshot-canvas-items <id[,id...]> [desktop|mobile] [padding]
   bin/canvas-agent state
   bin/canvas-agent context
   bin/canvas-agent selection
+  bin/canvas-agent themes
   bin/canvas-agent primitives
   bin/canvas-agent primitive <primitive-id>
   bin/canvas-agent create-artboard <json|@file|->
   bin/canvas-agent create-primitive-item <json|@file|->
   bin/canvas-agent create-item <json|@file|->
+  bin/canvas-agent create-items <json|@file|->
+  bin/canvas-agent create-group <json|@file|->
   bin/canvas-agent update-item <item-id> <json|@file|->
+  bin/canvas-agent update-group <group-id> <json|@file|->
   bin/canvas-agent delete-items <id[,id...]>
+  bin/canvas-agent delete-group <group-id>
   bin/canvas-agent select-items <id[,id...]>
+  bin/canvas-agent set-canvas-viewport <json|@file|->
+  bin/canvas-agent focus-canvas-items <json|@file|->
   bin/canvas-agent clear-canvas
   bin/canvas-agent export-board <artboard-id> [format] [component-name]
   bin/canvas-agent transcript
@@ -407,14 +424,87 @@ async function main() {
         fail('import-html-bundle requires a JSON payload.')
       }
 
+      const targetItemId =
+        payload.targetItemId && typeof payload.targetItemId === 'string'
+          ? payload.targetItemId.trim()
+          : ''
+      const importBundle = payload.bundle && typeof payload.bundle === 'object' ? payload.bundle : payload
+      let existingHtmlEntryAsset
+      if (targetItemId) {
+        const state = await readCanvasAgentState(context)
+        const existingItem = state?.items?.find(
+          (item) => item?.id === targetItemId && item?.type === 'html'
+        )
+        existingHtmlEntryAsset =
+          existingItem && typeof existingItem.entryAsset === 'string'
+            ? existingItem.entryAsset
+            : undefined
+      }
       const htmlBundle = await importProjectCanvasHtmlBundle(
         context,
         canvasPath.trim(),
-        payload.bundle && typeof payload.bundle === 'object' ? payload.bundle : payload
+        existingHtmlEntryAsset
+          ? { ...importBundle, replaceEntryAsset: existingHtmlEntryAsset }
+          : importBundle
       )
 
-      if (payload.createItem === false) {
+      if (!targetItemId && payload.createItem === false) {
         writeJson({ ok: true, htmlBundle })
+        return
+      }
+
+      const itemInput = payload.item && typeof payload.item === 'object' ? payload.item : {}
+      if (targetItemId) {
+        const updates = {
+          src: htmlBundle?.entryUrl,
+          entryAsset: htmlBundle?.entryAsset,
+          sourcePath:
+            payload.bundle && typeof payload.bundle === 'object'
+              ? payload.bundle.directoryPath
+              : undefined,
+          sourceImportedAt: htmlBundle?.importedAt,
+          ...((itemInput.title && typeof itemInput.title === 'string') ||
+          (payload.bundle &&
+            typeof payload.bundle === 'object' &&
+            payload.bundle.title &&
+            typeof payload.bundle.title === 'string')
+            ? {
+                title:
+                  (itemInput.title && typeof itemInput.title === 'string'
+                    ? itemInput.title
+                    : undefined) ||
+                  payload.bundle.title,
+              }
+            : {}),
+          ...(itemInput.sandbox && typeof itemInput.sandbox === 'string'
+            ? { sandbox: itemInput.sandbox }
+            : {}),
+          ...(itemInput.background && typeof itemInput.background === 'string'
+            ? { background: itemInput.background }
+            : {}),
+          ...(itemInput.position && typeof itemInput.position === 'object'
+            ? { position: itemInput.position }
+            : {}),
+          ...(itemInput.size && typeof itemInput.size === 'object' ? { size: itemInput.size } : {}),
+          ...(itemInput.parentId && typeof itemInput.parentId === 'string'
+            ? { parentId: itemInput.parentId }
+            : {}),
+        }
+
+        const result = await enqueueCanvasAgentOperation(
+          context,
+          'replace_html_bundle',
+          createUpdateItemOperation(targetItemId, updates),
+          { source: 'canvas-agent-cli' }
+        )
+
+        writeJson({
+          ok: true,
+          htmlBundle,
+          targetItemId,
+          updates,
+          result,
+        })
         return
       }
 
@@ -422,7 +512,7 @@ async function main() {
       const item = createHtmlCanvasItem(state, {
         src: htmlBundle?.entryUrl,
         title:
-          (payload.item && typeof payload.item === 'object' ? payload.item.title : undefined) ||
+          (itemInput.title && typeof itemInput.title === 'string' ? itemInput.title : undefined) ||
           (payload.bundle && typeof payload.bundle === 'object' ? payload.bundle.title : undefined),
         entryAsset: htmlBundle?.entryAsset,
         sourcePath:
@@ -430,15 +520,15 @@ async function main() {
             ? payload.bundle.directoryPath
             : undefined,
         sourceImportedAt: htmlBundle?.importedAt,
-        sandbox:
-          payload.item && typeof payload.item === 'object' ? payload.item.sandbox : undefined,
+        sandbox: itemInput.sandbox && typeof itemInput.sandbox === 'string' ? itemInput.sandbox : undefined,
         background:
-          payload.item && typeof payload.item === 'object' ? payload.item.background : undefined,
-        position:
-          payload.item && typeof payload.item === 'object' ? payload.item.position : undefined,
-        size: payload.item && typeof payload.item === 'object' ? payload.item.size : undefined,
+          itemInput.background && typeof itemInput.background === 'string'
+            ? itemInput.background
+            : undefined,
+        position: itemInput.position && typeof itemInput.position === 'object' ? itemInput.position : undefined,
+        size: itemInput.size && typeof itemInput.size === 'object' ? itemInput.size : undefined,
         parentId:
-          payload.item && typeof payload.item === 'object' ? payload.item.parentId : undefined,
+          itemInput.parentId && typeof itemInput.parentId === 'string' ? itemInput.parentId : undefined,
       })
 
       const result = await enqueueCanvasAgentOperation(
@@ -780,20 +870,33 @@ async function main() {
       writeJson(await captureWorkspaceScreenshot(context, workspaceId, args[1]?.trim() || 'desktop'))
       return
     }
+    case 'screenshot-canvas-items': {
+      const ids = parseCanvasAgentIds(args[0])
+      if (ids.length === 0) fail('screenshot-canvas-items requires at least one item id.')
+      const target = args[1]?.trim() || 'desktop'
+      const padding = args[2] ? Number.parseFloat(args[2]) : undefined
+      writeJson(await captureCanvasItemsScreenshot(context, ids, target, padding))
+      return
+    }
     case 'state': {
       writeJson(await readCanvasAgentState(context))
       return
     }
     case 'context': {
-      const [state, primitives] = await Promise.all([
+      const [state, primitives, themeSnapshot] = await Promise.all([
         readCanvasAgentState(context),
         readCanvasAgentPrimitives(context),
+        readCanvasAgentThemes(context),
       ])
-      writeJson(buildCanvasContextSummary(state, primitives))
+      writeJson(buildCanvasContextSummary(state, primitives, themeSnapshot))
       return
     }
     case 'selection': {
       writeJson(await readCanvasAgentSelection(context))
+      return
+    }
+    case 'themes': {
+      writeJson(await readCanvasAgentThemes(context))
       return
     }
     case 'primitives': {
@@ -860,6 +963,35 @@ async function main() {
       )
       return
     }
+    case 'create-items': {
+      const payload = await readJsonPayload(args[0])
+      const items = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : null
+      if (!items || items.length === 0) fail('create-items requires a non-empty items array.')
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'create-items',
+          createCreateItemsOperation(items, payload?.select !== false),
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'create-group': {
+      const payload = await readJsonPayload(args[0])
+      if (!payload || typeof payload !== 'object') fail('create-group requires a JSON object payload.')
+      const state = await readCanvasAgentState(context)
+      const group = createCanvasGroup(state, payload)
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'create-group',
+          createCreateGroupOperation(group, payload.itemIds, payload.select === true),
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
     case 'update-item': {
       const [itemId, payloadRef] = args
       if (!itemId) fail('update-item requires an item id.')
@@ -869,6 +1001,21 @@ async function main() {
           context,
           'update-item',
           createUpdateItemOperation(itemId, updates),
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'update-group': {
+      const [groupId, payloadRef] = args
+      if (!groupId) fail('update-group requires a group id.')
+      const updates = await readJsonPayload(payloadRef)
+      if (!updates || typeof updates !== 'object') fail('update-group requires a JSON object patch.')
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'update-group',
+          createUpdateGroupOperation(groupId, updates),
           { source: 'canvas-agent-cli' }
         )
       )
@@ -886,6 +1033,19 @@ async function main() {
       )
       return
     }
+    case 'delete-group': {
+      const groupId = args[0]?.trim()
+      if (!groupId) fail('delete-group requires a group id.')
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'delete-group',
+          createDeleteGroupOperation(groupId),
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
     case 'select-items': {
       const ids = parseCanvasAgentIds(args[0])
       writeJson(
@@ -893,6 +1053,32 @@ async function main() {
           context,
           'select-items',
           createSelectItemsOperation(ids),
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'set-canvas-viewport': {
+      const payload = await readJsonPayload(args[0])
+      if (!payload || typeof payload !== 'object') fail('set-canvas-viewport requires a JSON object payload.')
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'set-canvas-viewport',
+          createSetViewportOperation(payload.viewport ?? payload),
+          { source: 'canvas-agent-cli' }
+        )
+      )
+      return
+    }
+    case 'focus-canvas-items': {
+      const payload = await readJsonPayload(args[0])
+      if (!payload || typeof payload !== 'object') fail('focus-canvas-items requires a JSON object payload.')
+      writeJson(
+        await enqueueCanvasAgentOperation(
+          context,
+          'focus-canvas-items',
+          createFocusItemsOperation(payload.ids, payload.padding, payload.select === true),
           { source: 'canvas-agent-cli' }
         )
       )

@@ -191,4 +191,14 @@ describe("canvas html import flow", () => {
 
     await rendered.cleanup()
   })
+
+  it("shows a queued save badge for the active canvas file", async () => {
+    const rendered = await renderSidebar({
+      canvasSaveQueued: true,
+    })
+
+    expect(rendered.host.textContent).toContain("Save queued")
+
+    await rendered.cleanup()
+  })
 })

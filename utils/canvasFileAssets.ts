@@ -281,6 +281,12 @@ function mimeTypeFromExtension(extension: string) {
       return "image/gif"
     case ".webp":
       return "image/webp"
+    case ".avif":
+      return "image/avif"
+    case ".bmp":
+      return "image/bmp"
+    case ".ico":
+      return "image/x-icon"
     case ".svg":
       return "image/svg+xml"
     case ".mp4":
@@ -293,6 +299,35 @@ function mimeTypeFromExtension(extension: string) {
       return "video/x-m4v"
     case ".ogg":
       return "video/ogg"
+    case ".html":
+    case ".htm":
+      return "text/html; charset=utf-8"
+    case ".css":
+      return "text/css; charset=utf-8"
+    case ".js":
+    case ".mjs":
+    case ".cjs":
+      return "text/javascript; charset=utf-8"
+    case ".json":
+    case ".map":
+      return "application/json; charset=utf-8"
+    case ".xml":
+      return "application/xml; charset=utf-8"
+    case ".txt":
+    case ".md":
+      return "text/plain; charset=utf-8"
+    case ".wasm":
+      return "application/wasm"
+    case ".woff":
+      return "font/woff"
+    case ".woff2":
+      return "font/woff2"
+    case ".ttf":
+      return "font/ttf"
+    case ".otf":
+      return "font/otf"
+    case ".eot":
+      return "application/vnd.ms-fontobject"
     default:
       return "application/octet-stream"
   }
@@ -430,6 +465,15 @@ function createHtmlBundleAssetRoot(title: string | undefined, entryFile: string)
   const seed = sanitizeAssetSegment(title || path.basename(entryFile, path.extname(entryFile)) || "html")
   const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
   return `html/${seed}-${suffix}`
+}
+
+function getHtmlBundleAssetRoot(entryAsset: string | undefined) {
+  const normalizedEntryAsset = typeof entryAsset === "string" ? entryAsset.trim() : ""
+  if (!normalizedEntryAsset) return null
+  const safeEntryAsset = normalizeRelativeAssetPath(normalizedEntryAsset)
+  const assetRoot = path.posix.dirname(safeEntryAsset)
+  if (!assetRoot || assetRoot === ".") return null
+  return normalizeRelativeAssetPath(assetRoot)
 }
 
 async function resolvePackedAssetUrl(input: {
@@ -670,8 +714,9 @@ export async function importCanvasHtmlBundle(
           relativePath: normalizeRelativeAssetPath(file.relativePath),
           dataUrl: typeof file.dataUrl === "string" ? file.dataUrl : undefined,
           filePath: typeof file.filePath === "string" ? file.filePath : undefined,
+          textContent: typeof file.textContent === "string" ? file.textContent : undefined,
         }))
-        .filter((file) => file.dataUrl || file.filePath)
+        .filter((file) => file.dataUrl || file.filePath || typeof file.textContent === "string")
     : []
   const directoryFiles = bundle.directoryPath ? await collectDirectoryFiles(bundle.directoryPath) : []
 
@@ -686,6 +731,7 @@ export async function importCanvasHtmlBundle(
   const entryFile = resolveHtmlBundleEntryFile(bundle.entryFile, assetPaths)
   const importedAt = new Date().toISOString()
   const assetRoot = createHtmlBundleAssetRoot(bundle.title, entryFile)
+  const replacedAssetRoot = getHtmlBundleAssetRoot(bundle.replaceEntryAsset)
 
   for (const file of directoryFiles) {
     const content = await fs.readFile(file.absolutePath)
@@ -716,6 +762,18 @@ export async function importCanvasHtmlBundle(
       continue
     }
 
+    if (typeof file.textContent === "string") {
+      await writeCanvasAssetBufferAtPath(
+        projectsRoot,
+        input.projectId,
+        input.path,
+        `${assetRoot}/${file.relativePath}`,
+        mimeTypeFromFileName(file.relativePath),
+        Buffer.from(file.textContent, "utf8")
+      )
+      continue
+    }
+
     if (!file.filePath) continue
     const absoluteSourcePath = path.resolve(file.filePath)
     const stat = await fs.stat(absoluteSourcePath)
@@ -734,6 +792,15 @@ export async function importCanvasHtmlBundle(
   }
 
   const entryAsset = `${assetRoot}/${entryFile}`
+  if (replacedAssetRoot && replacedAssetRoot !== assetRoot) {
+    const resolved = resolveCanvasDocumentAssetPath(
+      projectsRoot,
+      input.projectId,
+      input.path,
+      replacedAssetRoot
+    )
+    await fs.rm(resolved.absolutePath, { recursive: true, force: true })
+  }
   return {
     assetRoot,
     entryAsset,

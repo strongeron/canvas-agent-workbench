@@ -435,6 +435,25 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
               selectedIds: operation.select ? [nextItem.id] : prev.selectedIds,
             }
           }
+          case "create_items": {
+            const nextBatch = Array.isArray(operation.items)
+              ? operation.items
+                  .filter((item) => item && typeof item === "object" && item.id)
+                  .map((item) => normalizeItem(item))
+              : []
+            if (nextBatch.length === 0) return prev
+
+            const incomingIds = new Set(nextBatch.map((item) => item.id))
+            const preserved = prev.items.filter((item) => !incomingIds.has(item.id))
+            const nextItems = [...preserved, ...nextBatch]
+
+            return {
+              ...prev,
+              items: nextItems,
+              nextZIndex: Math.max(prev.nextZIndex, deriveNextZIndex(nextItems)),
+              selectedIds: operation.select ? nextBatch.map((item) => item.id) : prev.selectedIds,
+            }
+          }
           case "update_item":
             return {
               ...prev,
@@ -456,6 +475,42 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
             return { ...prev, selectedIds: [...operation.ids] }
           case "clear_canvas":
             return DEFAULT_STATE
+          case "create_group": {
+            const nextGroup = operation.group
+            if (!nextGroup || typeof nextGroup !== "object" || !nextGroup.id) return prev
+            const itemIds = Array.isArray(operation.itemIds) ? operation.itemIds : []
+            const existingIndex = prev.groups.findIndex((group) => group.id === nextGroup.id)
+            const nextGroups =
+              existingIndex >= 0
+                ? prev.groups.map((group, index) => (index === existingIndex ? nextGroup : group))
+                : [...prev.groups, nextGroup]
+            return {
+              ...prev,
+              items: prev.items.map((item) =>
+                itemIds.includes(item.id) ? { ...item, groupId: nextGroup.id } : item
+              ),
+              groups: nextGroups,
+              selectedIds: operation.select ? [...itemIds] : prev.selectedIds,
+            }
+          }
+          case "update_group":
+            return {
+              ...prev,
+              groups: prev.groups.map((group) =>
+                group.id === operation.id ? { ...group, ...operation.updates } : group
+              ),
+            }
+          case "delete_group":
+            return {
+              ...prev,
+              items: prev.items.map((item) =>
+                item.groupId === operation.id ? { ...item, groupId: undefined } : item
+              ),
+              groups: prev.groups.filter((group) => group.id !== operation.id),
+            }
+          case "set_viewport":
+          case "focus_items":
+            return prev
           default:
             return prev
         }

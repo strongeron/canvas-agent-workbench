@@ -392,6 +392,7 @@ interface CanvasSidebarProps {
   canvasFilesSaving?: boolean
   canvasFilesError?: string | null
   canvasFileDirty?: boolean
+  canvasSaveQueued?: boolean
   onRefreshCanvasFiles?: () => void | Promise<void>
   onOpenCanvasFile?: (filePath: string) => void | Promise<void>
   onCreateCanvasFile?: () => void | Promise<void>
@@ -435,6 +436,7 @@ export function CanvasSidebar({
   canvasFilesSaving,
   canvasFilesError,
   canvasFileDirty,
+  canvasSaveQueued,
   onRefreshCanvasFiles,
   onOpenCanvasFile,
   onCreateCanvasFile,
@@ -1113,6 +1115,11 @@ export function CanvasSidebar({
                   {canvasFilesSaving ? (
                     <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
                       Saving…
+                    </span>
+                  ) : null}
+                  {canvasSaveQueued ? (
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                      Save queued
                     </span>
                   ) : null}
                   {activeCanvasFilePath && activeCanvasFileTitle
