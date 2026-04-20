@@ -71,6 +71,8 @@ That writes:
 
 The MCP server and CLI read that file automatically.
 
+`demo` is the default project id used by the launch scripts and runtime helpers. The project directory is created on demand, but stored `.canvas` files are not automatically seeded there.
+
 ## One Command For Claude
 
 You can now run the full Claude flow with one command:

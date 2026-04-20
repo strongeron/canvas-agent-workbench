@@ -321,7 +321,7 @@ Use MCP only. Read workspace://surface/canvas/state, workspace://surface/canvas/
 ### Canvas File Lifecycle
 
 ```text
-Use MCP only. Read workspace://project/canvases/index, open boards/demo.canvas, summarize it, then duplicate it into archive/demo-copy.canvas. Rename the original into boards/demo-renamed.canvas, save any updated metadata, and tell me which file is now the active working copy.
+Use MCP only. Read workspace://project/canvases/index and choose an existing Canvas file. If none exists yet, create one first. Open that file, summarize it, then duplicate it into archive/demo-copy.canvas. Rename the original into boards/demo-renamed.canvas, save any updated metadata, and tell me which file is now the active working copy.
 ```
 
 ### Color Audit

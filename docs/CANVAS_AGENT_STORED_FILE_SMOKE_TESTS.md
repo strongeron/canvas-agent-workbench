@@ -67,7 +67,7 @@ Use MCP only. Start with workspace://project/canvases/index and list_canvas_file
 Prompt:
 
 ```text
-Use MCP only. Read workspace://project/canvases/index and list all stored Canvas files. Open boards/demo.canvas. Summarize the board. Add one markdown note titled "Agent QA" with a short checklist. Save the file. Reopen the same file and confirm the markdown note is still there.
+Use MCP only. Read workspace://project/canvases/index and list all stored Canvas files. If no Canvas file exists yet, create one first. Then open the first Canvas file, summarize the board, add one markdown note titled "Agent QA" with a short checklist, save the file, reopen the same file, and confirm the markdown note is still there.
 ```
 
 Expected result:
@@ -84,7 +84,7 @@ Expected result:
 Prompt:
 
 ```text
-Use MCP only. Open boards/demo.canvas. Duplicate it into archive/demo-copy.canvas. Rename or move the original to boards/demo-renamed.canvas. Then delete archive/demo-copy.canvas. Report the final remaining file paths.
+Use MCP only. Read workspace://project/canvases/index and choose an existing Canvas file. If no Canvas file exists yet, create one first. Duplicate that file into archive/demo-copy.canvas. Rename or move the original to boards/demo-renamed.canvas. Then delete archive/demo-copy.canvas. Report the final remaining file paths.
 ```
 
 Expected result:
@@ -99,7 +99,7 @@ Expected result:
 Prompt:
 
 ```text
-Use MCP only. List stored Color Audit files. Open the main Color Audit file. Summarize palette inputs, functional aliases, semantic roles, and export readiness. Add one new functional alias node, save the file, reopen it, and confirm the node still exists.
+Use MCP only. List stored Color Audit files. If none exist yet, create one first. Open the first Color Audit file. Summarize palette inputs, functional aliases, semantic roles, and export readiness. Add one new functional alias node, save the file, reopen it, and confirm the node still exists.
 ```
 
 Expected result:
@@ -115,7 +115,7 @@ Expected result:
 Prompt:
 
 ```text
-Use MCP only. List stored System Canvas files. Open the main System Canvas file. Summarize the current scale config and authored nodes. Add one explainer node, save the file, reopen it, and confirm the node still exists.
+Use MCP only. List stored System Canvas files. If none exist yet, create one first. Open the first System Canvas file. Summarize the current scale config and authored nodes. Add one explainer node, save the file, reopen it, and confirm the node still exists.
 ```
 
 Expected result:
@@ -131,7 +131,7 @@ Expected result:
 Prompt:
 
 ```text
-Use MCP only. Open boards/demo-renamed.canvas, save any current changes, then capture a workspace screenshot and tell me whether the screenshot reflects the same latest state you just saved.
+Use MCP only. Choose an existing Canvas file, save any current changes, then capture a workspace screenshot and tell me whether the screenshot reflects the same latest state you just saved.
 ```
 
 Expected result:
