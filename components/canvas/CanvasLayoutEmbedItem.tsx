@@ -346,6 +346,8 @@ export function CanvasLayoutEmbedItem({
   return (
     <div
       className="relative h-full w-full"
+      data-canvas-item-id={item.id}
+      data-canvas-item-type={item.type}
       onMouseDown={(e) => {
         if (interactMode) return
         if (e.button !== 0) return

@@ -2,10 +2,13 @@
 
 import {
   buildCanvasContextSummary,
+  captureCanvasItemsScreenshot,
   captureWorkspaceScreenshot,
   createProjectCanvasFile,
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
+  importProjectCanvasHtmlBundle,
+  scanProjectCanvasHtmlBundles,
   readAgentNativeWorkspaceDebug,
   enqueueAgentNativeWorkspaceOperation,
   readAgentNativeManifest,
@@ -25,16 +28,25 @@ import {
   readCanvasAgentPrimitives,
   readCanvasAgentSelection,
   readCanvasAgentState,
+  readCanvasAgentThemes,
 } from './canvas-agent-runtime.mjs'
 import {
   DEFAULT_EXPORT_FORMAT,
   EXPORT_FORMATS,
   createArtboardItem,
+  createCanvasGroup,
   createClearCanvasOperation,
+  createFocusItemsOperation,
+  createCreateGroupOperation,
   createCreateItemOperation,
+  createCreateItemsOperation,
+  createDeleteGroupOperation,
   createDeleteItemsOperation,
+  createHtmlCanvasItem,
   createPrimitiveCanvasItem,
+  createSetViewportOperation,
   createSelectItemsOperation,
+  createUpdateGroupOperation,
   createUpdateItemOperation,
   exportCanvasBoard,
   normalizeIdList,
@@ -196,6 +208,48 @@ const TOOL_DEFINITIONS = [
         path: { type: 'string' },
       },
       required: ['path'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'scan_html_bundles',
+    description:
+      'Scan a local HTML source library root and return bundle directories with available HTML entry files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootPath: { type: 'string' },
+      },
+      required: ['rootPath'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'import_html_bundle',
+    description:
+      'Import a local HTML/CSS/JS bundle into a stored canvas file and optionally create a live html node from the bundled entry asset.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        bundle: { type: 'object' },
+        targetItemId: { type: 'string' },
+        createItem: { type: 'boolean' },
+        select: { type: 'boolean' },
+        item: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            sandbox: { type: 'string' },
+            background: { type: 'string' },
+            parentId: { type: 'string' },
+            position: positionSchema(),
+            size: sizeSchema(),
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['path', 'bundle'],
       additionalProperties: false,
     },
   },
@@ -505,6 +559,29 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'capture_canvas_items_screenshot',
+    description: 'Capture a Canvas screenshot cropped around specific rendered item ids using the app-owned renderer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+        },
+        target: {
+          type: 'string',
+          enum: ['desktop', 'mobile'],
+        },
+        padding: {
+          type: 'number',
+        },
+      },
+      required: ['ids'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'get_canvas_context',
     description:
       'Return an LLM-friendly summary of the current canvas, grouped by artboards and loose items.',
@@ -526,6 +603,15 @@ const TOOL_DEFINITIONS = [
   {
     name: 'get_canvas_selection',
     description: 'Return the current selection and summaries for selected items.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_canvas_themes',
+    description: 'Return the current Canvas theme registry, active theme id, and resolved token values.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -628,6 +714,45 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'create_items',
+    description: 'Create multiple canvas items in one queued operation and optionally select them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          items: { type: 'object' },
+          minItems: 1,
+        },
+        select: { type: 'boolean' },
+      },
+      required: ['items'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_group',
+    description: 'Create a canvas group from existing item ids.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        itemIds: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+        },
+        name: { type: 'string' },
+        color: { type: 'string' },
+        isLocked: { type: 'boolean' },
+        position: positionSchema(),
+        select: { type: 'boolean' },
+      },
+      required: ['itemIds'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'update_item',
     description: 'Update an existing canvas item by id.',
     inputSchema: {
@@ -635,6 +760,28 @@ const TOOL_DEFINITIONS = [
       properties: {
         id: { type: 'string' },
         updates: { type: 'object' },
+      },
+      required: ['id', 'updates'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_group',
+    description: 'Update an existing canvas group by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        updates: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            color: { type: 'string' },
+            isLocked: { type: 'boolean' },
+            position: positionSchema(),
+          },
+          additionalProperties: false,
+        },
       },
       required: ['id', 'updates'],
       additionalProperties: false,
@@ -657,6 +804,18 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'delete_group',
+    description: 'Delete a canvas group and ungroup its member items.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'select_items',
     description: 'Replace the current selection with the provided item ids.',
     inputSchema: {
@@ -666,6 +825,44 @@ const TOOL_DEFINITIONS = [
           type: 'array',
           items: { type: 'string' },
         },
+      },
+      required: ['ids'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_canvas_viewport',
+    description: 'Set the live canvas viewport scale and offset without mutating the document contents.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        viewport: {
+          type: 'object',
+          properties: {
+            scale: { type: 'number' },
+            offset: positionSchema(),
+          },
+          required: ['scale', 'offset'],
+          additionalProperties: false,
+        },
+      },
+      required: ['viewport'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'focus_canvas_items',
+    description: 'Fit the live canvas viewport around specific item ids and optionally select them first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+        },
+        padding: { type: 'number' },
+        select: { type: 'boolean' },
       },
       required: ['ids'],
       additionalProperties: false,
@@ -726,6 +923,12 @@ const RESOURCE_DEFINITIONS = [
     uri: 'workspace://surface/canvas/primitives',
     name: 'Canvas primitives',
     description: 'Primitive registry for the current canvas project.',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'workspace://surface/canvas/themes',
+    name: 'Canvas themes',
+    description: 'Canvas theme registry, active theme id, and resolved token values.',
     mimeType: 'application/json',
   },
   {
@@ -875,6 +1078,11 @@ const PROMPT_DEFINITIONS = [
     name: 'review-node-system',
     description:
       'Guide the agent through reviewing node-card titles, pills, ports, spacing, and overflow states across all workspace surfaces.',
+  },
+  {
+    name: 'replace-html-bundle',
+    description:
+      'Guide the agent through atomically replacing an existing HTML node bundle in Canvas without creating duplicate nodes.',
   },
 ]
 
@@ -1111,6 +1319,126 @@ async function callTool(name, args) {
       if (!canvasPath) return asToolError('path is required.')
       return asToolResult(await deleteProjectCanvasFile(context, canvasPath))
     }
+    case 'scan_html_bundles': {
+      const rootPath = normalizeString(args.rootPath)
+      if (!rootPath) return asToolError('rootPath is required.')
+      return asToolResult(await scanProjectCanvasHtmlBundles(context, rootPath))
+    }
+    case 'import_html_bundle': {
+      const canvasPath = normalizeString(args.path)
+      if (!canvasPath) return asToolError('path is required.')
+      const bundle = args.bundle && typeof args.bundle === 'object' ? args.bundle : null
+      if (!bundle) return asToolError('bundle is required.')
+      const targetItemId = normalizeString(args.targetItemId)
+      let existingHtmlEntryAsset
+      if (targetItemId) {
+        const state = await readCanvasAgentState(context)
+        const existingItem = state?.items?.find(
+          (item) => item?.id === targetItemId && item?.type === 'html'
+        )
+        existingHtmlEntryAsset =
+          existingItem && typeof existingItem.entryAsset === 'string'
+            ? existingItem.entryAsset
+            : undefined
+      }
+      const htmlBundle = await importProjectCanvasHtmlBundle(
+        context,
+        canvasPath,
+        existingHtmlEntryAsset
+          ? { ...bundle, replaceEntryAsset: existingHtmlEntryAsset }
+          : bundle
+      )
+      if (!targetItemId && args.createItem === false) {
+        return asToolResult({ htmlBundle })
+      }
+
+      try {
+        const itemArgs = args.item && typeof args.item === 'object' ? args.item : {}
+        if (targetItemId) {
+          const updates = {
+            src: htmlBundle?.entryUrl,
+            entryAsset: htmlBundle?.entryAsset,
+            sourcePath: normalizeString(bundle.directoryPath) || undefined,
+            sourceImportedAt: htmlBundle?.importedAt,
+            ...(normalizeString(itemArgs.title) || normalizeString(bundle.title)
+              ? { title: normalizeString(itemArgs.title) || normalizeString(bundle.title) }
+              : {}),
+            ...(normalizeString(itemArgs.sandbox)
+              ? { sandbox: normalizeString(itemArgs.sandbox) }
+              : {}),
+            ...(normalizeString(itemArgs.background)
+              ? { background: normalizeString(itemArgs.background) }
+              : {}),
+            ...(normalizeString(itemArgs.parentId)
+              ? { parentId: normalizeString(itemArgs.parentId) }
+              : {}),
+            ...(itemArgs.position && typeof itemArgs.position === 'object'
+              ? { position: itemArgs.position }
+              : {}),
+            ...(itemArgs.size && typeof itemArgs.size === 'object'
+              ? { size: itemArgs.size }
+              : {}),
+          }
+          const result = await enqueueCanvasAgentOperation(
+            context,
+            'replace_html_bundle',
+            createUpdateItemOperation(targetItemId, updates),
+            {
+              source: 'canvas-agent-mcp',
+            }
+          )
+          if (!result.ok) {
+            return asToolError(result.error || 'Failed to replace html item.')
+          }
+          return asToolResult({
+            htmlBundle,
+            targetItemId,
+            updates,
+            result: {
+              ...result,
+              canvasPath,
+              entryAsset: htmlBundle?.entryAsset || null,
+            },
+          })
+        }
+
+        const state = await readCanvasAgentState(context)
+        const item = createHtmlCanvasItem(state, {
+          src: htmlBundle?.entryUrl,
+          title: normalizeString(itemArgs.title) || normalizeString(bundle.title) || undefined,
+          sandbox: normalizeString(itemArgs.sandbox) || undefined,
+          background: normalizeString(itemArgs.background) || undefined,
+          parentId: normalizeString(itemArgs.parentId) || undefined,
+          position: itemArgs.position,
+          size: itemArgs.size,
+          entryAsset: htmlBundle?.entryAsset,
+          sourcePath: normalizeString(bundle.directoryPath) || undefined,
+          sourceImportedAt: htmlBundle?.importedAt,
+        })
+        const result = await enqueueCanvasAgentOperation(
+          context,
+          'import_html_bundle',
+          createCreateItemOperation(item, args.select !== false),
+          {
+            source: 'canvas-agent-mcp',
+          }
+        )
+        if (!result.ok) {
+          return asToolError(result.error || 'Failed to create html item.')
+        }
+        return asToolResult({
+          htmlBundle,
+          item,
+          result: {
+            ...result,
+            canvasPath,
+            entryAsset: htmlBundle?.entryAsset || null,
+          },
+        })
+      } catch (error) {
+        return asToolError(error instanceof Error ? error.message : 'Failed to create html item.')
+      }
+    }
     case 'get_workspace_events': {
       const workspaceId = normalizeString(args.workspaceId)
       if (!workspaceId) return asToolError('workspaceId is required.')
@@ -1196,12 +1524,20 @@ async function callTool(name, args) {
       if (!workspaceId) return asToolError('workspaceId is required.')
       return asToolResult(await captureWorkspaceScreenshot(context, workspaceId, normalizeString(args.target) || 'desktop'))
     }
+    case 'capture_canvas_items_screenshot': {
+      const ids = normalizeIdList(args.ids)
+      if (ids.length === 0) return asToolError('ids is required.')
+      const target = normalizeString(args.target) || 'desktop'
+      const padding = Number.isFinite(args.padding) ? Number(args.padding) : undefined
+      return asToolResult(await captureCanvasItemsScreenshot(context, ids, target, padding))
+    }
     case 'get_canvas_context': {
-      const [state, primitives] = await Promise.all([
+      const [state, primitives, themeSnapshot] = await Promise.all([
         readCanvasAgentState(context),
         readCanvasAgentPrimitives(context),
+        readCanvasAgentThemes(context),
       ])
-      return asToolResult(buildCanvasContextSummary(state, primitives))
+      return asToolResult(buildCanvasContextSummary(state, primitives, themeSnapshot))
     }
     case 'get_canvas_state':
       return asToolResult(await readCanvasAgentState(context))
@@ -1218,6 +1554,8 @@ async function callTool(name, args) {
         items: selectedIds.map((id) => itemMap.get(id)).filter(Boolean),
       })
     }
+    case 'get_canvas_themes':
+      return asToolResult(await readCanvasAgentThemes(context))
     case 'list_primitives': {
       const primitives = await readCanvasAgentPrimitives(context)
       const family = normalizeString(args.family)
@@ -1243,12 +1581,24 @@ async function callTool(name, args) {
       return runCreatePrimitiveItem(args)
     case 'create_item':
       return runCreateItem(args)
+    case 'create_items':
+      return runCreateItems(args)
+    case 'create_group':
+      return runCreateGroup(args)
     case 'update_item':
       return runUpdateItem(args)
+    case 'update_group':
+      return runUpdateGroup(args)
     case 'delete_items':
       return runDeleteItems(args)
+    case 'delete_group':
+      return runDeleteGroup(args)
     case 'select_items':
       return runSelectItems(args)
+    case 'set_canvas_viewport':
+      return runSetCanvasViewport(args)
+    case 'focus_canvas_items':
+      return runFocusCanvasItems(args)
     case 'clear_canvas':
       return runClearCanvas()
     case 'export_board':
@@ -1270,6 +1620,8 @@ async function readResource(uri) {
       return asResourceResult(uri, await readCanvasAgentSelection(context))
     case 'workspace://surface/canvas/primitives':
       return asResourceResult(uri, await readCanvasAgentPrimitives(context))
+    case 'workspace://surface/canvas/themes':
+      return asResourceResult(uri, await readCanvasAgentThemes(context))
     case 'workspace://surface/canvas/events':
       return asResourceResult(
         uri,
@@ -1355,7 +1707,7 @@ function buildPrompt(name) {
             content: {
               type: 'text',
               text:
-                'Start with workspace://manifest, then inspect workspace://surface/canvas/state, workspace://surface/canvas/selection, and workspace://surface/canvas/primitives. Capture workspace://surface/canvas/viewport/screenshot when visual confirmation matters. Summarize the current board briefly before calling any write tools. Prefer create_artboard, create_primitive_item, update_item, select_items, and export_board over shell edits when the task is scene-graph related.',
+                'Start with workspace://manifest, then inspect workspace://surface/canvas/state, workspace://surface/canvas/selection, workspace://surface/canvas/themes, and workspace://surface/canvas/primitives. Summarize the current board briefly before calling any write tools. Prefer create_artboard, create_primitive_item, create_item, create_items, create_group, update_item, update_group, select_items, set_canvas_viewport, focus_canvas_items, and export_board over shell edits when the task is scene-graph related. Use create_items when several new nodes should land in one atomic batch. Capture workspace://surface/canvas/viewport/screenshot after focusing the relevant board area when visual confirmation matters.',
             },
           },
         ],
@@ -1416,6 +1768,20 @@ function buildPrompt(name) {
           },
         ],
       }
+    case 'replace-html-bundle':
+      return {
+        description: 'Replace an existing Canvas HTML node bundle atomically and verify the result.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                'Use MCP only. Start with workspace://surface/canvas/state and identify the target html node id. If the source is on disk, first call scan_html_bundles to discover entry files. Then call import_html_bundle with the stored Canvas file path, the chosen bundle payload, and targetItemId set to the existing html node id so the node is replaced in place instead of duplicated. After the mutation, read workspace://surface/canvas/state again, inspect workspace://surface/canvas/debug if needed, and call capture_canvas_items_screenshot for the updated html node id to confirm the iframe render.',
+            },
+          },
+        ],
+      }
     default:
       throw new Error(`Unknown prompt: ${name}`)
   }
@@ -1458,6 +1824,30 @@ async function runCreateItem(args) {
   return applyOperation('create_item', createCreateItemOperation(args.item, args.select !== false))
 }
 
+async function runCreateItems(args) {
+  const items = Array.isArray(args.items) ? args.items.filter((item) => item && typeof item === 'object') : []
+  if (items.length === 0) {
+    return asToolError('items is required.')
+  }
+  return applyOperation('create_items', createCreateItemsOperation(items, args.select !== false))
+}
+
+async function runCreateGroup(args) {
+  const itemIds = normalizeIdList(args.itemIds)
+  if (itemIds.length === 0) return asToolError('itemIds is required.')
+  try {
+    const state = await readCanvasAgentState(context)
+    const group = createCanvasGroup(state, args)
+    return applyOperation(
+      'create_group',
+      createCreateGroupOperation(group, itemIds, args.select === true),
+      { group }
+    )
+  } catch (error) {
+    return asToolError(error instanceof Error ? error.message : 'Failed to create group.')
+  }
+}
+
 async function runUpdateItem(args) {
   const id = normalizeString(args.id)
   if (!id) return asToolError('id is required.')
@@ -1467,15 +1857,52 @@ async function runUpdateItem(args) {
   return applyOperation('update_item', createUpdateItemOperation(id, args.updates))
 }
 
+async function runUpdateGroup(args) {
+  const id = normalizeString(args.id)
+  if (!id) return asToolError('id is required.')
+  if (!args.updates || typeof args.updates !== 'object') {
+    return asToolError('updates is required.')
+  }
+  return applyOperation('update_group', createUpdateGroupOperation(id, args.updates))
+}
+
 async function runDeleteItems(args) {
   const ids = normalizeIdList(args.ids)
   if (ids.length === 0) return asToolError('ids is required.')
   return applyOperation('delete_items', createDeleteItemsOperation(ids))
 }
 
+async function runDeleteGroup(args) {
+  const id = normalizeString(args.id)
+  if (!id) return asToolError('id is required.')
+  return applyOperation('delete_group', createDeleteGroupOperation(id))
+}
+
 async function runSelectItems(args) {
   const ids = normalizeIdList(args.ids)
   return applyOperation('select_items', createSelectItemsOperation(ids))
+}
+
+async function runSetCanvasViewport(args) {
+  if (!args.viewport || typeof args.viewport !== 'object') {
+    return asToolError('viewport is required.')
+  }
+  const viewport = createSetViewportOperation(args.viewport).viewport
+  return applyOperation('set_canvas_viewport', createSetViewportOperation(viewport), {
+    viewport,
+  })
+}
+
+async function runFocusCanvasItems(args) {
+  const ids = normalizeIdList(args.ids)
+  if (ids.length === 0) return asToolError('ids is required.')
+  const padding = Number.isFinite(args.padding) ? Number(args.padding) : undefined
+  const select = args.select === true
+  return applyOperation('focus_canvas_items', createFocusItemsOperation(ids, padding, select), {
+    ids,
+    padding,
+    select,
+  })
 }
 
 async function runClearCanvas() {

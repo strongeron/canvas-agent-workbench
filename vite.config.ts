@@ -35,6 +35,9 @@ import {
 import { createAgentNativeRuntimeSessionManager } from './utils/agentNativeRuntimeSessions'
 import {
   buildAgentNativeWorkspaceScreenshotConfig,
+  buildFocusedCanvasScreenshotSnapshot,
+  cropAgentNativeWorkspaceScreenshotPng,
+  normalizeAgentNativeWorkspaceScreenshotCropRect,
 } from './utils/agentNativeWorkspaceScreenshots'
 import { resolveAgentNativeBrowserExecutable } from './utils/agentNativeBrowser'
 import {
@@ -46,9 +49,11 @@ import {
   createProjectCanvasFile,
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
+  importProjectCanvasHtmlBundle,
   listProjectCanvasFiles,
   moveProjectCanvasFile,
   openProjectCanvasFile,
+  scanProjectCanvasHtmlBundles,
   saveProjectCanvasFile,
   updateProjectCanvasFileMetadata,
 } from './utils/canvasFileApi'
@@ -310,6 +315,50 @@ function normalizeCanvasAgentPrimitiveRecord(input) {
 function normalizeCanvasAgentPrimitiveList(input) {
   if (!Array.isArray(input)) return []
   return input.map((entry) => normalizeCanvasAgentPrimitiveRecord(entry)).filter(Boolean)
+}
+
+function normalizeCanvasThemeSnapshot(input) {
+  const themes = Array.isArray(input?.themes)
+    ? input.themes
+        .filter((theme) => theme && typeof theme === 'object')
+        .map((theme) => ({
+          id: typeof theme.id === 'string' && theme.id.trim() ? theme.id.trim() : 'theme',
+          label:
+            typeof theme.label === 'string' && theme.label.trim() ? theme.label.trim() : 'Theme',
+          description:
+            typeof theme.description === 'string' && theme.description.trim()
+              ? theme.description.trim()
+              : undefined,
+          vars:
+            theme.vars && typeof theme.vars === 'object'
+              ? Object.fromEntries(
+                  Object.entries(theme.vars)
+                    .filter(([key, value]) => typeof key === 'string' && typeof value === 'string')
+                    .map(([key, value]) => [key.trim(), value.trim()])
+                )
+              : undefined,
+          groupId:
+            typeof theme.groupId === 'string' && theme.groupId.trim() ? theme.groupId.trim() : undefined,
+        }))
+    : []
+
+  const tokenValues =
+    input?.tokenValues && typeof input.tokenValues === 'object'
+      ? Object.fromEntries(
+          Object.entries(input.tokenValues)
+            .filter(([key, value]) => typeof key === 'string' && typeof value === 'string')
+            .map(([key, value]) => [key.trim(), value.trim()])
+        )
+      : {}
+
+  return {
+    themes,
+    activeThemeId:
+      typeof input?.activeThemeId === 'string' && input.activeThemeId.trim()
+        ? input.activeThemeId.trim()
+        : null,
+    tokenValues,
+  }
 }
 
 function writeSseEvent(res, eventName, payload) {
@@ -2798,6 +2847,75 @@ async function resolvePlaywrightChromium() {
   return cachedPlaywrightChromiumPromise
 }
 
+const AGENT_NATIVE_SCREENSHOT_DEVICE_SCALE_FACTOR = 2
+
+async function measureCanvasItemScreenshotCropRect(page, itemIds, padding = 24) {
+  const normalizedIds = Array.isArray(itemIds)
+    ? itemIds.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim())
+    : []
+  if (normalizedIds.length === 0) return null
+
+  await page
+    .waitForFunction(
+      (expectedIds) => {
+        const idSet = new Set(expectedIds)
+        const nodes = Array.from(document.querySelectorAll('[data-canvas-item-id]'))
+        return expectedIds.every((id) =>
+          nodes.some((node) => idSet.has(node.getAttribute('data-canvas-item-id') || ''))
+        )
+      },
+      normalizedIds,
+      { timeout: 3000 }
+    )
+    .catch(() => {})
+
+  const rawRect = await page.evaluate(
+    ({ itemIds: expectedIds, padding: requestedPadding }) => {
+      const idSet = new Set(
+        Array.isArray(expectedIds)
+          ? expectedIds.filter((id) => typeof id === 'string' && id.trim())
+          : []
+      )
+      if (idSet.size === 0) return null
+
+      const nodes = Array.from(document.querySelectorAll('[data-canvas-item-id]')).filter((node) =>
+        idSet.has(node.getAttribute('data-canvas-item-id') || '')
+      )
+
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+
+      for (const node of nodes) {
+        const rect = node.getBoundingClientRect()
+        if (rect.width <= 0 || rect.height <= 0) continue
+        minX = Math.min(minX, rect.left)
+        minY = Math.min(minY, rect.top)
+        maxX = Math.max(maxX, rect.right)
+        maxY = Math.max(maxY, rect.bottom)
+      }
+
+      if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null
+
+      const safePadding = Number.isFinite(requestedPadding)
+        ? Math.max(0, Number(requestedPadding))
+        : 24
+
+      return {
+        x: minX - safePadding,
+        y: minY - safePadding,
+        width: maxX - minX + safePadding * 2,
+        height: maxY - minY + safePadding * 2,
+      }
+    },
+    { itemIds: normalizedIds, padding }
+  )
+
+  const viewportSize = page.viewportSize() || { width: 0, height: 0 }
+  return normalizeAgentNativeWorkspaceScreenshotCropRect(rawRect, viewportSize)
+}
+
 async function captureSnapshotWithPlaywright(url, target, options = {}) {
   const chromium = await resolvePlaywrightChromium()
   if (!chromium) {
@@ -2818,7 +2936,7 @@ async function captureSnapshotWithPlaywright(url, target, options = {}) {
     })
     const context = await browser.newContext({
       viewport,
-      deviceScaleFactor: 2,
+      deviceScaleFactor: AGENT_NATIVE_SCREENSHOT_DEVICE_SCALE_FACTOR,
       colorScheme: 'light',
     })
     if (Array.isArray(options.storageEntries) && options.storageEntries.length > 0) {
@@ -2850,18 +2968,30 @@ async function captureSnapshotWithPlaywright(url, target, options = {}) {
         .catch(() => {})
     }
     await page.waitForTimeout(Number.isFinite(options.settleMs) ? options.settleMs : 300)
+    const cropRect =
+      Array.isArray(options.cropItemIds) && options.cropItemIds.length > 0
+        ? await measureCanvasItemScreenshotCropRect(page, options.cropItemIds, options.cropPadding)
+        : null
     const screenshot = await page.screenshot({
       type: 'png',
       fullPage: false,
       animations: 'disabled',
     })
+    const outputBuffer = cropRect
+      ? cropAgentNativeWorkspaceScreenshotPng(
+          screenshot,
+          cropRect,
+          AGENT_NATIVE_SCREENSHOT_DEVICE_SCALE_FACTOR
+        )
+      : screenshot
     await context.close()
     return {
       status: 'ready',
-      buffer: screenshot,
+      buffer: outputBuffer,
       mimeType: 'image/png',
       viewport,
       provider: 'playwright-local',
+      cropRect,
     }
   } catch (error) {
     return {
@@ -3001,6 +3131,10 @@ async function captureEmbedSnapshotTarget(url, target, provider, force = false) 
 }
 
 async function captureAgentNativeWorkspaceScreenshot(input) {
+  const focusItemIds =
+    input.workspaceId === 'canvas' && Array.isArray(input.focusItemIds)
+      ? input.focusItemIds.filter((id) => typeof id === 'string' && id.trim())
+      : []
   const config = buildAgentNativeWorkspaceScreenshotConfig(
     input.workspaceId,
     input.projectId,
@@ -3018,6 +3152,8 @@ async function captureAgentNativeWorkspaceScreenshot(input) {
   const capture = await captureSnapshotWithPlaywright(pageUrl, input.target, {
     storageEntries: config.storageEntries,
     waitForText: config.waitForText,
+    cropItemIds: focusItemIds,
+    cropPadding: Number.isFinite(input.cropPadding) ? Number(input.cropPadding) : undefined,
   })
 
   if (capture.status !== 'ready') {
@@ -3041,6 +3177,7 @@ async function captureAgentNativeWorkspaceScreenshot(input) {
     provider: capture.provider,
     capturedAt: stored.storedAt,
     viewport: capture.viewport,
+    cropRect: capture.cropRect || null,
     route: config.route,
   }
 }
@@ -3509,6 +3646,7 @@ function paperImportPlugin() {
             JSON.stringify(
               {
                 state: stateRecord?.state || null,
+                themeSnapshot: stateRecord?.themeSnapshot || null,
                 updatedAt: stateRecord?.updatedAt || null,
               },
               null,
@@ -3567,10 +3705,12 @@ function paperImportPlugin() {
           Array.isArray(meta.primitives) || (meta.primitives && typeof meta.primitives === 'object')
             ? normalizeCanvasAgentPrimitiveList(meta.primitives)
             : canvasAgentPrimitivesByProject.get(projectId) || []
+        const normalizedThemeSnapshot = normalizeCanvasThemeSnapshot(meta.themeSnapshot)
         const record = {
           projectId,
           state: normalizedState,
           primitives: normalizedPrimitives,
+          themeSnapshot: normalizedThemeSnapshot,
           updatedAt: new Date().toISOString(),
           sourceClientId: sourceClientId || null,
         }
@@ -3584,6 +3724,7 @@ function paperImportPlugin() {
             state: normalizedState,
             selection: normalizedState.selectedIds,
             primitives: normalizedPrimitives,
+            themeSnapshot: normalizedThemeSnapshot,
             stateSummary: buildCanvasStateSummary(normalizedState),
           }),
           sourceClientId,
@@ -3990,7 +4131,27 @@ function paperImportPlugin() {
                 projectId,
                 target,
                 origin,
-                snapshot: body.snapshot ?? null,
+                focusItemIds:
+                  workspaceId === 'canvas' && Array.isArray(body.focusItemIds)
+                    ? body.focusItemIds
+                    : undefined,
+                cropPadding:
+                  workspaceId === 'canvas'
+                    ? Number.isFinite(body.cropPadding)
+                      ? Number(body.cropPadding)
+                      : Number.isFinite(body.focusPadding)
+                        ? Number(body.focusPadding)
+                        : undefined
+                    : undefined,
+                snapshot:
+                  workspaceId === 'canvas'
+                    ? buildFocusedCanvasScreenshotSnapshot(
+                        body.snapshot ?? null,
+                        Array.isArray(body.focusItemIds) ? body.focusItemIds : [],
+                        Number.isFinite(body.focusPadding) ? Number(body.focusPadding) : undefined,
+                        target
+                      )
+                    : body.snapshot ?? null,
               })
 
               return sendJson(res, capture.status === 'ready' ? 200 : 501, {
@@ -4179,6 +4340,7 @@ function paperImportPlugin() {
                       state: canvasState.state,
                       selection: canvasState.state.selectedIds,
                       primitives: canvasState.primitives,
+                      themeSnapshot: canvasState.themeSnapshot,
                       stateSummary: buildCanvasStateSummary(canvasState.state),
                     })
                   : null,
@@ -4514,6 +4676,7 @@ function paperImportPlugin() {
                   state: stateRecord.state,
                   selection: stateRecord.state.selectedIds,
                   primitives: stateRecord.primitives,
+                  themeSnapshot: stateRecord.themeSnapshot,
                   stateSummary: buildCanvasStateSummary(stateRecord.state),
                 })
               : null,
@@ -4539,6 +4702,10 @@ function paperImportPlugin() {
               body.payload && typeof body.payload === 'object' && Array.isArray(body.payload.primitives)
                 ? body.payload.primitives
                 : body.primitives
+            const nextThemeSnapshot =
+              body.payload && typeof body.payload === 'object' && body.payload.themeSnapshot
+                ? body.payload.themeSnapshot
+                : body.themeSnapshot
 
             const stateRecord = upsertCanvasAgentState(projectId, nextState, body.clientId, {
               source:
@@ -4546,6 +4713,7 @@ function paperImportPlugin() {
                   ? body.source.trim()
                   : 'canvas-ui',
               primitives: nextPrimitives,
+              themeSnapshot: nextThemeSnapshot,
               sessionId:
                 typeof body.sessionId === 'string' && body.sessionId.trim()
                   ? body.sessionId.trim()
@@ -4796,6 +4964,40 @@ function paperImportPlugin() {
           } catch (error) {
             const status = error?.message === 'path is required.' ? 400 : 500
             return sendJson(res, status, { error: error?.message || 'Failed to delete canvas file.' })
+          }
+        }
+
+        const canvasHtmlBundleImportMatch = pathname.match(
+          /^\/api\/projects\/([^/]+)\/canvases\/html-bundle\/import$/
+        )
+        if (req.method === 'POST' && canvasHtmlBundleImportMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasHtmlBundleImportMatch[1])
+            const body = await readJson(req)
+            const htmlBundle = await importProjectCanvasHtmlBundle(PROJECTS_ROOT, projectId, body)
+            return sendJson(res, 200, { ok: true, htmlBundle })
+          } catch (error) {
+            const status = error?.message === 'path is required.' ? 400 : 500
+            return sendJson(res, status, {
+              error: error?.message || 'Failed to import HTML bundle.',
+            })
+          }
+        }
+
+        const canvasHtmlBundleScanMatch = pathname.match(
+          /^\/api\/projects\/([^/]+)\/canvases\/html-bundles$/
+        )
+        if (req.method === 'GET' && canvasHtmlBundleScanMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasHtmlBundleScanMatch[1])
+            const rootPath = url.searchParams.get('rootPath') || ''
+            const result = await scanProjectCanvasHtmlBundles(PROJECTS_ROOT, projectId, rootPath)
+            return sendJson(res, 200, { ok: true, result })
+          } catch (error) {
+            const status = error?.message === 'rootPath is required.' ? 400 : 500
+            return sendJson(res, status, {
+              error: error?.message || 'Failed to scan HTML bundle library.',
+            })
           }
         }
 
@@ -5537,6 +5739,12 @@ export default defineConfig({
   server: {
     fs: {
       allow: Array.from(new Set(LOCAL_SCAN_ALLOWED_ROOTS)),
+    },
+    watch: {
+      ignored: [
+        '**/projects/**/canvases/.assets/**',
+        '**/projects/**/canvases/.canvas-index.json',
+      ],
     },
   },
   root: 'demo',

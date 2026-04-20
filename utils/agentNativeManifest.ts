@@ -14,10 +14,10 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
     label: "Canvas Workspace",
     route: "/canvas",
     description:
-      "Freeform board with artboards, components, embeds, media, Mermaid diagrams, Excalidraw sketches, and markdown notes.",
+      "Freeform board with artboards, components, embeds, local HTML bundles, media, Mermaid diagrams, Excalidraw sketches, and markdown notes.",
     syncMode: "live-bridge",
     mutationMode: "event-log",
-    entities: ["artboard", "component", "embed", "media", "mermaid", "excalidraw", "markdown"],
+    entities: ["artboard", "component", "embed", "html", "media", "mermaid", "excalidraw", "markdown"],
     capabilities: [
       "read-state",
       "read-selection",
@@ -65,6 +65,13 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "canvas-themes",
+        uri: "workspace://surface/canvas/themes",
+        title: "Canvas themes",
+        description: "Active Canvas theme registry, current theme id, and resolved token values.",
+        status: "ready",
+      },
+      {
         id: "canvas-events",
         uri: "workspace://surface/canvas/events",
         title: "Canvas event log",
@@ -108,7 +115,19 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "save_canvas_file",
         title: "Save canvas file",
-        description: "Save a stored .canvas document, including document-local asset packing for media.",
+        description: "Save a stored .canvas document, including document-local asset packing for media and local bundle-backed nodes.",
+        status: "ready",
+      },
+      {
+        id: "scan_html_bundles",
+        title: "Scan HTML bundle library",
+        description: "Scan a local HTML source folder, list discovered bundle directories, and expose available entry HTML files before importing one into Canvas.",
+        status: "ready",
+      },
+      {
+        id: "import_html_bundle",
+        title: "Import HTML bundle",
+        description: "Pack a local HTML/CSS/JS bundle into a stored .canvas document and optionally create a live html node from it.",
         status: "ready",
       },
       {
@@ -143,9 +162,27 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "create_items",
+        title: "Create items",
+        description: "Create multiple freeform canvas items in one queued operation and optionally select them.",
+        status: "ready",
+      },
+      {
+        id: "create_group",
+        title: "Create group",
+        description: "Group existing canvas items under a named freeform canvas group.",
+        status: "ready",
+      },
+      {
         id: "update_item",
         title: "Update item",
         description: "Patch an existing item by id.",
+        status: "ready",
+      },
+      {
+        id: "update_group",
+        title: "Update group",
+        description: "Patch an existing canvas group by id.",
         status: "ready",
       },
       {
@@ -156,9 +193,40 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         destructive: true,
       },
       {
+        id: "delete_group",
+        title: "Delete group",
+        description: "Delete a canvas group without deleting the grouped items.",
+        status: "ready",
+        destructive: true,
+      },
+      {
         id: "select_items",
         title: "Select items",
         description: "Replace the current selection with the provided item ids.",
+        status: "ready",
+      },
+      {
+        id: "get_canvas_themes",
+        title: "Get canvas themes",
+        description: "Read the current Canvas theme registry, active theme id, and resolved token values.",
+        status: "ready",
+      },
+      {
+        id: "set_canvas_viewport",
+        title: "Set canvas viewport",
+        description: "Set the live canvas viewport scale and offset without mutating the document contents.",
+        status: "ready",
+      },
+      {
+        id: "focus_canvas_items",
+        title: "Focus canvas items",
+        description: "Fit the live canvas viewport around specific item ids and optionally select them first.",
+        status: "ready",
+      },
+      {
+        id: "capture_canvas_items_screenshot",
+        title: "Capture canvas items screenshot",
+        description: "Capture a canvas screenshot focused around specific item ids using the app-owned renderer.",
         status: "ready",
       },
       {

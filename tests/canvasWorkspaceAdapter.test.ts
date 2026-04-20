@@ -28,6 +28,17 @@ describe("canvas workspace adapter", () => {
           variants: [],
         },
       ],
+      themeSnapshot: {
+        themes: [
+          {
+            id: "default",
+            label: "Default",
+            vars: { "--color-brand-600": "#2563eb" },
+          },
+        ],
+        activeThemeId: "default",
+        tokenValues: { "--color-brand-600": "#2563eb" },
+      },
       stateSummary: {
         itemCount: 1,
         groupCount: 0,
@@ -39,6 +50,9 @@ describe("canvas workspace adapter", () => {
       surface: "canvas",
       workspaceKey: "gallery-demo:canvas",
       selection: ["item-1"],
+      themeSnapshot: {
+        activeThemeId: "default",
+      },
       stateSummary: {
         itemCount: 1,
       },

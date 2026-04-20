@@ -6,10 +6,24 @@ import type {
   CanvasFileAssetField,
   CanvasFileAssetInput,
   CanvasFileDocument,
+  CanvasHtmlBundleImportInput,
+  CanvasHtmlBundleLibraryScanResult,
+  CanvasHtmlBundleImportResult,
   CanvasStateSnapshot,
 } from "../types/canvas"
 
 const DOCUMENT_ASSETS_FOLDER = ".assets"
+const HTML_BUNDLE_SCAN_IGNORE_DIRECTORIES = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".turbo",
+  "coverage",
+])
 
 function normalizeRelativeCanvasPath(relativePath: string) {
   const normalized = (relativePath || "")
@@ -21,6 +35,22 @@ function normalizeRelativeCanvasPath(relativePath: string) {
     throw new Error("Canvas file path is required.")
   }
   return normalized
+}
+
+function normalizeRelativeAssetPath(relativePath: string) {
+  const normalized = (relativePath || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/{2,}/g, "/")
+  if (!normalized) {
+    throw new Error("Asset path is required.")
+  }
+  const segments = normalized.split("/")
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+    throw new Error("Asset path must stay within the document asset directory.")
+  }
+  return segments.join("/")
 }
 
 function assertWithinDirectory(directory: string, absolutePath: string) {
@@ -160,7 +190,7 @@ export function resolveCanvasDocumentAssetPath(
     projectId,
     canvasPath
   )
-  const safeAssetName = path.basename(assetName)
+  const safeAssetName = normalizeRelativeAssetPath(assetName)
   const absolutePath = path.resolve(assetDir, safeAssetName)
   assertWithinDirectory(assetDir, absolutePath)
   return {
@@ -184,13 +214,31 @@ async function writeCanvasAssetBuffer(
   buffer: Buffer
 ) {
   const normalizedFileName = inferFileName(itemId, field, fileName, mimeType)
+  return writeCanvasAssetBufferAtPath(
+    projectsRoot,
+    projectId,
+    canvasPath,
+    normalizedFileName,
+    mimeType,
+    buffer
+  )
+}
+
+async function writeCanvasAssetBufferAtPath(
+  projectsRoot: string,
+  projectId: string,
+  canvasPath: string,
+  assetPath: string,
+  mimeType: string,
+  buffer: Buffer
+) {
   const resolved = resolveCanvasDocumentAssetPath(
     projectsRoot,
     projectId,
     canvasPath,
-    normalizedFileName
+    assetPath
   )
-  await fs.mkdir(resolved.assetDir, { recursive: true })
+  await fs.mkdir(path.dirname(resolved.absolutePath), { recursive: true })
   await fs.writeFile(resolved.absolutePath, buffer)
   return buildCanvasDocumentAssetUrl(projectId, canvasPath, resolved.assetName)
 }
@@ -233,6 +281,12 @@ function mimeTypeFromExtension(extension: string) {
       return "image/gif"
     case ".webp":
       return "image/webp"
+    case ".avif":
+      return "image/avif"
+    case ".bmp":
+      return "image/bmp"
+    case ".ico":
+      return "image/x-icon"
     case ".svg":
       return "image/svg+xml"
     case ".mp4":
@@ -245,9 +299,42 @@ function mimeTypeFromExtension(extension: string) {
       return "video/x-m4v"
     case ".ogg":
       return "video/ogg"
+    case ".html":
+    case ".htm":
+      return "text/html; charset=utf-8"
+    case ".css":
+      return "text/css; charset=utf-8"
+    case ".js":
+    case ".mjs":
+    case ".cjs":
+      return "text/javascript; charset=utf-8"
+    case ".json":
+    case ".map":
+      return "application/json; charset=utf-8"
+    case ".xml":
+      return "application/xml; charset=utf-8"
+    case ".txt":
+    case ".md":
+      return "text/plain; charset=utf-8"
+    case ".wasm":
+      return "application/wasm"
+    case ".woff":
+      return "font/woff"
+    case ".woff2":
+      return "font/woff2"
+    case ".ttf":
+      return "font/ttf"
+    case ".otf":
+      return "font/otf"
+    case ".eot":
+      return "application/vnd.ms-fontobject"
     default:
       return "application/octet-stream"
   }
+}
+
+function mimeTypeFromFileName(fileName: string) {
+  return mimeTypeFromExtension(path.extname(fileName))
 }
 
 function parseSharedMediaFileName(sourceUrl: string) {
@@ -267,6 +354,126 @@ function buildAssetInputMap(inputs: CanvasFileAssetInput[]) {
       input,
     ])
   )
+}
+
+async function collectDirectoryFiles(directoryPath: string) {
+  const absoluteRoot = path.resolve(directoryPath)
+  const rootStat = await fs.stat(absoluteRoot)
+  if (!rootStat.isDirectory()) {
+    throw new Error(`HTML bundle directory is not a directory: ${directoryPath}`)
+  }
+
+  const entries: Array<{ absolutePath: string; relativePath: string }> = []
+
+  async function walk(currentPath: string, relativeRoot: string) {
+    const children = await fs.readdir(currentPath, { withFileTypes: true })
+    for (const child of children) {
+      const absoluteChildPath = path.join(currentPath, child.name)
+      const nextRelativePath = relativeRoot ? `${relativeRoot}/${child.name}` : child.name
+      if (child.isDirectory()) {
+        await walk(absoluteChildPath, nextRelativePath)
+        continue
+      }
+      if (child.isFile()) {
+        entries.push({
+          absolutePath: absoluteChildPath,
+          relativePath: normalizeRelativeAssetPath(nextRelativePath),
+        })
+      }
+    }
+  }
+
+  await walk(absoluteRoot, "")
+  return entries.sort((left, right) => left.relativePath.localeCompare(right.relativePath))
+}
+
+function isHtmlEntryFile(fileName: string) {
+  return /\.html?$/i.test(fileName)
+}
+
+export async function scanCanvasHtmlBundleLibrary(
+  rootPath: string
+): Promise<CanvasHtmlBundleLibraryScanResult> {
+  const absoluteRoot = path.resolve(rootPath || "")
+  const rootStat = await fs.stat(absoluteRoot)
+  if (!rootStat.isDirectory()) {
+    throw new Error(`HTML bundle root is not a directory: ${rootPath}`)
+  }
+
+  const entries: CanvasHtmlBundleLibraryScanResult["entries"] = []
+  const queue = [absoluteRoot]
+
+  while (queue.length > 0) {
+    const directoryPath = queue.shift()
+    if (!directoryPath) continue
+
+    const directoryEntries = await fs.readdir(directoryPath, { withFileTypes: true })
+    const htmlFiles = directoryEntries
+      .filter((entry) => entry.isFile() && isHtmlEntryFile(entry.name))
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right))
+
+    if (htmlFiles.length > 0) {
+      const relativeDirectory = path.relative(absoluteRoot, directoryPath).replace(/\\/g, "/") || "."
+      const defaultEntryFile =
+        htmlFiles.find((fileName) => /^index\.html?$/i.test(fileName)) || htmlFiles[0]
+
+      entries.push({
+        id: relativeDirectory,
+        directoryPath,
+        relativeDirectory,
+        entryFiles: htmlFiles,
+        defaultEntryFile,
+      })
+    }
+
+    for (const entry of directoryEntries) {
+      if (!entry.isDirectory()) continue
+      if (HTML_BUNDLE_SCAN_IGNORE_DIRECTORIES.has(entry.name)) continue
+      queue.push(path.join(directoryPath, entry.name))
+    }
+  }
+
+  entries.sort((left, right) => left.relativeDirectory.localeCompare(right.relativeDirectory))
+
+  return {
+    rootPath: absoluteRoot,
+    scannedAt: new Date().toISOString(),
+    entries,
+  }
+}
+
+function resolveHtmlBundleEntryFile(entryFile: string | undefined, assetPaths: string[]) {
+  const normalizedEntryFile = entryFile ? normalizeRelativeAssetPath(entryFile) : ""
+  if (normalizedEntryFile) {
+    if (!assetPaths.includes(normalizedEntryFile)) {
+      throw new Error(`HTML bundle entry file not found: ${normalizedEntryFile}`)
+    }
+    return normalizedEntryFile
+  }
+
+  const preferred = assetPaths.find((assetPath) => /(^|\/)index\.html?$/i.test(assetPath))
+  if (preferred) return preferred
+
+  const firstHtml = assetPaths.find((assetPath) => /\.html?$/i.test(assetPath))
+  if (firstHtml) return firstHtml
+
+  throw new Error("HTML bundle must include an .html entry file.")
+}
+
+function createHtmlBundleAssetRoot(title: string | undefined, entryFile: string) {
+  const seed = sanitizeAssetSegment(title || path.basename(entryFile, path.extname(entryFile)) || "html")
+  const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+  return `html/${seed}-${suffix}`
+}
+
+function getHtmlBundleAssetRoot(entryAsset: string | undefined) {
+  const normalizedEntryAsset = typeof entryAsset === "string" ? entryAsset.trim() : ""
+  if (!normalizedEntryAsset) return null
+  const safeEntryAsset = normalizeRelativeAssetPath(normalizedEntryAsset)
+  const assetRoot = path.posix.dirname(safeEntryAsset)
+  if (!assetRoot || assetRoot === ".") return null
+  return normalizeRelativeAssetPath(assetRoot)
 }
 
 async function resolvePackedAssetUrl(input: {
@@ -355,6 +562,14 @@ function rewriteCanvasItemAssetUrls(
   toCanvasPath: string,
   item: CanvasStateSnapshot["items"][number]
 ) {
+  if (item.type === "html" && typeof item.src === "string") {
+    const assetName = getDocumentAssetNameFromUrl(projectId, fromCanvasPath, item.src)
+    if (assetName) {
+      item.src = buildCanvasDocumentAssetUrl(projectId, toCanvasPath, assetName)
+    }
+    return
+  }
+
   if (item.type === "media") {
     if (typeof item.src === "string") {
       const assetName = getDocumentAssetNameFromUrl(projectId, fromCanvasPath, item.src)
@@ -481,6 +696,117 @@ export async function readCanvasDocumentAsset(
   return {
     content,
     mimeType: mimeTypeFromExtension(path.extname(resolved.absolutePath)),
+  }
+}
+
+export async function importCanvasHtmlBundle(
+  projectsRoot: string,
+  input: {
+    projectId: string
+    path: string
+    bundle: CanvasHtmlBundleImportInput
+  }
+): Promise<CanvasHtmlBundleImportResult> {
+  const bundle = input.bundle && typeof input.bundle === "object" ? input.bundle : {}
+  const inlineFiles = Array.isArray(bundle.files)
+    ? bundle.files
+        .map((file) => ({
+          relativePath: normalizeRelativeAssetPath(file.relativePath),
+          dataUrl: typeof file.dataUrl === "string" ? file.dataUrl : undefined,
+          filePath: typeof file.filePath === "string" ? file.filePath : undefined,
+          textContent: typeof file.textContent === "string" ? file.textContent : undefined,
+        }))
+        .filter((file) => file.dataUrl || file.filePath || typeof file.textContent === "string")
+    : []
+  const directoryFiles = bundle.directoryPath ? await collectDirectoryFiles(bundle.directoryPath) : []
+
+  if (inlineFiles.length === 0 && directoryFiles.length === 0) {
+    throw new Error("HTML bundle import requires files or directoryPath.")
+  }
+
+  const assetPaths = [
+    ...directoryFiles.map((file) => file.relativePath),
+    ...inlineFiles.map((file) => file.relativePath),
+  ]
+  const entryFile = resolveHtmlBundleEntryFile(bundle.entryFile, assetPaths)
+  const importedAt = new Date().toISOString()
+  const assetRoot = createHtmlBundleAssetRoot(bundle.title, entryFile)
+  const replacedAssetRoot = getHtmlBundleAssetRoot(bundle.replaceEntryAsset)
+
+  for (const file of directoryFiles) {
+    const content = await fs.readFile(file.absolutePath)
+    await writeCanvasAssetBufferAtPath(
+      projectsRoot,
+      input.projectId,
+      input.path,
+      `${assetRoot}/${file.relativePath}`,
+      mimeTypeFromFileName(file.relativePath),
+      content
+    )
+  }
+
+  for (const file of inlineFiles) {
+    if (file.dataUrl) {
+      const parsed = parseDataUrlPayload(file.dataUrl)
+      if (!parsed) {
+        throw new Error(`Invalid HTML bundle data payload for ${file.relativePath}.`)
+      }
+      await writeCanvasAssetBufferAtPath(
+        projectsRoot,
+        input.projectId,
+        input.path,
+        `${assetRoot}/${file.relativePath}`,
+        parsed.mime,
+        parsed.buffer
+      )
+      continue
+    }
+
+    if (typeof file.textContent === "string") {
+      await writeCanvasAssetBufferAtPath(
+        projectsRoot,
+        input.projectId,
+        input.path,
+        `${assetRoot}/${file.relativePath}`,
+        mimeTypeFromFileName(file.relativePath),
+        Buffer.from(file.textContent, "utf8")
+      )
+      continue
+    }
+
+    if (!file.filePath) continue
+    const absoluteSourcePath = path.resolve(file.filePath)
+    const stat = await fs.stat(absoluteSourcePath)
+    if (!stat.isFile()) {
+      throw new Error(`HTML bundle asset is not a file: ${file.filePath}`)
+    }
+    const content = await fs.readFile(absoluteSourcePath)
+    await writeCanvasAssetBufferAtPath(
+      projectsRoot,
+      input.projectId,
+      input.path,
+      `${assetRoot}/${file.relativePath}`,
+      mimeTypeFromFileName(file.relativePath),
+      content
+    )
+  }
+
+  const entryAsset = `${assetRoot}/${entryFile}`
+  if (replacedAssetRoot && replacedAssetRoot !== assetRoot) {
+    const resolved = resolveCanvasDocumentAssetPath(
+      projectsRoot,
+      input.projectId,
+      input.path,
+      replacedAssetRoot
+    )
+    await fs.rm(resolved.absolutePath, { recursive: true, force: true })
+  }
+  return {
+    assetRoot,
+    entryAsset,
+    entryUrl: buildCanvasDocumentAssetUrl(input.projectId, input.path, entryAsset),
+    assetCount: assetPaths.length,
+    importedAt,
   }
 }
 

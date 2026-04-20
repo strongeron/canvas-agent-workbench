@@ -16,8 +16,12 @@ import type {
   CanvasFileAssetField,
   CanvasFileAssetInput,
   CanvasFileDocument,
+  CanvasHtmlBundleFileInput,
+  CanvasHtmlBundleImportInput,
   CanvasMediaItem,
+  CanvasRemoteOperation,
   CanvasScene,
+  CanvasTransform,
   CanvasMermaidItem,
   CanvasExcalidrawItem,
 } from "../../types/canvas"
@@ -26,6 +30,7 @@ import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } fro
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
 import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "./CanvasFileDialogs"
+import { CanvasHtmlPropsPanel } from "./CanvasHtmlPropsPanel"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
@@ -61,6 +66,7 @@ import {
   getApcaStatus,
   parseColor,
 } from "../../utils/apca"
+import { SerialTaskQueue } from "../../utils/serialTaskQueue"
 
 /** Props for injected Renderer component */
 interface RendererComponentProps {
@@ -126,6 +132,28 @@ async function blobToDataUrl(blob: Blob) {
     }
     reader.readAsDataURL(blob)
   })
+}
+
+async function serializeHtmlBundleFiles(files: File[]): Promise<CanvasHtmlBundleFileInput[]> {
+  const serialized = await Promise.all(
+    files.map(async (file) => ({
+      relativePath: file.webkitRelativePath?.trim() || file.name,
+      dataUrl: await blobToDataUrl(file),
+    }))
+  )
+  return serialized.filter((file) => file.relativePath.trim())
+}
+
+async function serializeHtmlBundleFileEntries(
+  entries: Array<{ file: File; relativePath: string }>
+): Promise<CanvasHtmlBundleFileInput[]> {
+  const serialized = await Promise.all(
+    entries.map(async (entry) => ({
+      relativePath: entry.relativePath.trim(),
+      dataUrl: await blobToDataUrl(entry.file),
+    }))
+  )
+  return serialized.filter((file) => file.relativePath.trim())
 }
 
 function isEditablePasteTarget(target: EventTarget | null) {
@@ -625,9 +653,8 @@ export function CanvasTab({
     zoomIn,
     zoomOut,
     resetZoom,
-    zoomTo,
     pan,
-    panTo,
+    setViewport,
     handleWheel,
     fitToView,
     setWorkspaceDimensions,
@@ -650,12 +677,23 @@ export function CanvasTab({
     document: CanvasFileDocument
   } | null>(null)
   const [lastSavedCanvasFileSignature, setLastSavedCanvasFileSignature] = useState<string | null>(null)
+  const [hasRestoredCanvasFile, setHasRestoredCanvasFile] = useState(false)
   const [canvasFileActionModal, setCanvasFileActionModal] = useState<CanvasFileActionModalState | null>(null)
   const [canvasFileDeleteModal, setCanvasFileDeleteModal] = useState<CanvasFileDeleteModalState | null>(null)
   const [canvasFileActionError, setCanvasFileActionError] = useState<string | null>(null)
   const [canvasFileDeleteError, setCanvasFileDeleteError] = useState<string | null>(null)
   const [canvasFileActionBusy, setCanvasFileActionBusy] = useState(false)
   const [canvasFileDeleteBusy, setCanvasFileDeleteBusy] = useState(false)
+  const [canvasSaveQueued, setCanvasSaveQueued] = useState(false)
+  const [canvasPersistencePendingCount, setCanvasPersistencePendingCount] = useState(0)
+  const [canvasViewportOverride, setCanvasViewportOverride] = useLocalStorage<CanvasTransform | null>(
+    storageKey ? `${storageKey}-viewport-override` : "gallery-canvas-viewport-override",
+    null
+  )
+  const canvasPersistenceQueueRef = useRef<SerialTaskQueue | null>(null)
+  if (!canvasPersistenceQueueRef.current) {
+    canvasPersistenceQueueRef.current = new SerialTaskQueue()
+  }
   const canvasRootRef = useRef<HTMLDivElement>(null)
   const importQueueStorageKey = storageKey
     ? `${storageKey}-imports`
@@ -694,6 +732,8 @@ export function CanvasTab({
     moveCanvasFile,
     duplicateCanvasFile,
     deleteCanvasFile,
+    importCanvasHtmlBundle,
+    scanCanvasHtmlBundleLibrary,
   } = useCanvasFiles(activeProjectId)
   const canvasFileBrowser = useCanvasFileBrowserState(
     activeProjectId ? `gallery-${activeProjectId}` : "gallery-canvas",
@@ -708,6 +748,7 @@ export function CanvasTab({
     : null
   const selectedComponentItem = selectedItem?.type === "component" ? selectedItem : null
   const selectedEmbedItem = selectedItem?.type === "embed" ? selectedItem : null
+  const selectedHtmlItem = selectedItem?.type === "html" ? selectedItem : null
   const selectedMediaItem = selectedItem?.type === "media" ? selectedItem : null
   const selectedMarkdownItem = selectedItem?.type === "markdown" ? selectedItem : null
   const selectedMermaidItem = selectedItem?.type === "mermaid" ? selectedItem : null
@@ -725,17 +766,54 @@ export function CanvasTab({
   const artboardThemeId = selectedArtboardItem?.themeId || activeThemeId
   const [artboardTokenValues, setArtboardTokenValues] = useState<Record<string, string>>(tokenValues)
   const [liveAuditPairs, setLiveAuditPairs] = useState<LiveAuditPair[]>([])
+  const bridgeSnapshot = useMemo(
+    () => ({ items, groups, selectedIds, nextZIndex }),
+    [items, groups, selectedIds, nextZIndex]
+  )
+  const applyCanvasAgentOperation = useCallback(
+    (operation: CanvasRemoteOperation) => {
+      if (!operation || typeof operation !== "object") return
+
+      if (operation.type === "set_viewport") {
+        setViewport(operation.viewport)
+        return
+      }
+
+      if (operation.type === "focus_items") {
+        const ids = Array.isArray(operation.ids)
+          ? operation.ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+          : []
+
+        if (operation.select) {
+          selectItems(ids)
+        }
+
+        const targetItems = items
+          .filter((item) => ids.includes(item.id))
+          .map((item) => ({ position: item.position, size: item.size }))
+
+        if (targetItems.length > 0) {
+          fitToView(targetItems, Number.isFinite(operation.padding) ? Number(operation.padding) : undefined)
+        }
+        return
+      }
+
+      applyRemoteOperation(operation)
+    },
+    [applyRemoteOperation, fitToView, items, selectItems, setViewport]
+  )
   const agentBridge = useCanvasAgentBridge({
     projectId: activeProjectId,
     entries,
-    snapshot: {
-      items,
-      groups,
-      selectedIds,
-      nextZIndex,
+    snapshot: bridgeSnapshot,
+    themeSnapshot: {
+      themes,
+      activeThemeId,
+      tokenValues,
     },
     replaceState,
-    applyRemoteOperation,
+    applyRemoteOperation: applyCanvasAgentOperation,
+    hasActiveCanvasFile: Boolean(activeCanvasFile),
   })
 
   const buildCurrentCanvasFilePayload = useCallback(() => {
@@ -806,8 +884,23 @@ export function CanvasTab({
     () => JSON.stringify(buildCurrentCanvasFilePayload()),
     [buildCurrentCanvasFilePayload]
   )
+  const runCanvasPersistenceTask: <T>(task: () => Promise<T>) => Promise<T> = useCallback(
+    (task) => {
+      setCanvasPersistencePendingCount((count) => count + 1)
+      const scheduled = canvasPersistenceQueueRef.current!.enqueue(task)
+      return scheduled.finally(() => {
+        setCanvasPersistencePendingCount((count) => (count > 0 ? count - 1 : 0))
+      })
+    },
+    []
+  )
   const activeCanvasFilePath = activeCanvasFile?.path ?? null
   const activeCanvasFileTitle = activeCanvasFile?.document.meta.title ?? null
+  const canvasFilePersistenceBusy =
+    canvasFilesSaving ||
+    canvasFileActionBusy ||
+    canvasFileDeleteBusy ||
+    canvasPersistencePendingCount > 0
   const canvasFileDirty =
     activeCanvasFile !== null && lastSavedCanvasFileSignature !== currentCanvasFileSignature
 
@@ -827,23 +920,139 @@ export function CanvasTab({
 
       const nextTransform = file.document.view?.transform
       if (nextTransform) {
-        zoomTo(nextTransform.scale)
-        panTo(nextTransform.offset.x, nextTransform.offset.y)
+        setViewport(nextTransform)
       } else {
         resetZoom()
       }
     },
-    [panTo, replaceState, resetZoom, zoomTo]
+    [replaceState, resetZoom, setViewport]
   )
 
   useEffect(() => {
     setActiveCanvasFile(null)
     setLastSavedCanvasFileSignature(null)
+    setHasRestoredCanvasFile(false)
     setCanvasFileActionModal(null)
     setCanvasFileDeleteModal(null)
     setCanvasFileActionError(null)
     setCanvasFileDeleteError(null)
+    setCanvasSaveQueued(false)
   }, [activeProjectId])
+
+  useEffect(() => {
+    if (!hasRestoredCanvasFile || !canvasViewportOverride) return
+    setViewport(canvasViewportOverride)
+    setCanvasViewportOverride(null)
+  }, [canvasViewportOverride, hasRestoredCanvasFile, setCanvasViewportOverride, setViewport])
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !activeCanvasFile ||
+      !canvasFileDirty ||
+      canvasFilePersistenceBusy
+    ) {
+      return
+    }
+
+    let cancelled = false
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const payload = buildCurrentCanvasFilePayload()
+          const assets = await buildCurrentCanvasFileAssets()
+          const saved = await runCanvasPersistenceTask(() =>
+            saveCanvasFile(
+              activeCanvasFile.path,
+              {
+                ...activeCanvasFile.document,
+                document: payload.document,
+                view: payload.view,
+              },
+              assets
+            )
+          )
+          if (cancelled) return
+          setActiveCanvasFile(saved)
+          setLastSavedCanvasFileSignature(JSON.stringify(payload))
+        } catch (error) {
+          if (cancelled) return
+          window.console.warn(
+            "[Canvas] Failed to autosave active canvas file:",
+            error instanceof Error ? error.message : error
+          )
+        }
+      })()
+    }, 900)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [
+    activeCanvasFile,
+    buildCurrentCanvasFileAssets,
+    buildCurrentCanvasFilePayload,
+    canvasFileDirty,
+    canvasFilePersistenceBusy,
+    runCanvasPersistenceTask,
+    saveCanvasFile,
+  ])
+
+  const performSaveCanvasFile = useCallback(async () => {
+    if (!activeProjectId) return
+    const payload = buildCurrentCanvasFilePayload()
+
+    try {
+      const assets = await buildCurrentCanvasFileAssets()
+      if (!activeCanvasFile) {
+        setCanvasFileActionError(null)
+        setCanvasFileActionModal({
+          mode: "save-as",
+          targetPath: null,
+          title: "Untitled Canvas",
+          folder: "",
+        })
+        return
+      }
+
+      const saved = await runCanvasPersistenceTask(() =>
+        saveCanvasFile(
+          activeCanvasFile.path,
+          {
+            ...activeCanvasFile.document,
+            document: payload.document,
+            view: payload.view,
+          },
+          assets
+        )
+      )
+      setActiveCanvasFile(saved)
+      setLastSavedCanvasFileSignature(JSON.stringify(payload))
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save canvas file."
+      if (typeof window !== "undefined") {
+        window.alert(message)
+      }
+    }
+  }, [
+    activeCanvasFile,
+    activeProjectId,
+    buildCurrentCanvasFileAssets,
+    buildCurrentCanvasFilePayload,
+    runCanvasPersistenceTask,
+    saveCanvasFile,
+  ])
+
+  useEffect(() => {
+    if (!canvasSaveQueued || !activeProjectId || canvasFilePersistenceBusy) {
+      return
+    }
+
+    setCanvasSaveQueued(false)
+    void performSaveCanvasFile()
+  }, [activeProjectId, canvasFilePersistenceBusy, canvasSaveQueued, performSaveCanvasFile])
 
   useEffect(() => {
     if (!selectedArtboardItem) {
@@ -1233,6 +1442,239 @@ export function CanvasTab({
       setPropsPanelVisible(true)
     },
     [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+  )
+
+  const handleAddHtmlBundle = useCallback(
+    async (input: {
+      files?: File[]
+      fileEntries?: Array<{ file: File; relativePath: string }>
+      title?: string
+      position?: { x: number; y: number }
+    }) => {
+      if (!activeProjectId) {
+        throw new Error("Select a project before importing an HTML bundle.")
+      }
+
+      if (!activeCanvasFilePath) {
+        throw new Error("Save this board to a real .canvas file before importing an HTML bundle.")
+      }
+
+      const hasFiles = Array.isArray(input.files) && input.files.length > 0
+      const hasFileEntries = Array.isArray(input.fileEntries) && input.fileEntries.length > 0
+      if (!hasFiles && !hasFileEntries) {
+        throw new Error("Choose an HTML file or folder before importing.")
+      }
+
+      try {
+        const serializedFiles = hasFileEntries
+          ? await serializeHtmlBundleFileEntries(input.fileEntries || [])
+          : await serializeHtmlBundleFiles(input.files || [])
+        await runCanvasPersistenceTask(async () => {
+          const imported = await importCanvasHtmlBundle(activeCanvasFilePath, {
+            title: input.title?.trim() || undefined,
+            files: serializedFiles,
+          })
+
+          const htmlWidth = 720
+          const htmlHeight = 480
+          const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+          const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+          const targetX = input.position ? input.position.x : centerX
+          const targetY = input.position ? input.position.y : centerY
+          const nextTitle =
+            input.title?.trim() ||
+            imported.entryAsset.split("/").filter(Boolean).pop()?.replace(/\.html?$/i, "") ||
+            "HTML bundle"
+
+          addItem({
+            type: "html",
+            src: imported.entryUrl,
+            title: nextTitle,
+            sandbox: "allow-scripts allow-same-origin allow-forms allow-modals",
+            entryAsset: imported.entryAsset,
+            sourceImportedAt: imported.importedAt,
+            position: {
+              x: Math.max(0, targetX - htmlWidth / 2),
+              y: Math.max(0, targetY - htmlHeight / 2),
+            },
+            size: { width: htmlWidth, height: htmlHeight },
+            rotation: 0,
+          })
+          setPropsPanelVisible(true)
+          if (typeof window !== "undefined" && window.innerWidth < 1100) {
+            setSidebarVisible(false)
+          }
+          await refreshCanvasFiles()
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to import HTML bundle."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [
+      activeCanvasFilePath,
+      activeProjectId,
+      addItem,
+      importCanvasHtmlBundle,
+      refreshCanvasFiles,
+      runCanvasPersistenceTask,
+      transform.offset.x,
+      transform.offset.y,
+      transform.scale,
+      workspaceSize.height,
+      workspaceSize.width,
+    ]
+  )
+
+  const handleAddHtmlBundleFromDirectory = useCallback(
+    async (input: {
+      directoryPath: string
+      entryFile?: string
+      title?: string
+      position?: { x: number; y: number }
+    }) => {
+      if (!activeProjectId) {
+        throw new Error("Select a project before importing an HTML bundle.")
+      }
+
+      if (!activeCanvasFilePath) {
+        throw new Error("Save this board to a real .canvas file before importing an HTML bundle.")
+      }
+
+      if (!input.directoryPath.trim()) {
+        throw new Error("Choose an HTML bundle directory before importing.")
+      }
+
+      try {
+        await runCanvasPersistenceTask(async () => {
+          const imported = await importCanvasHtmlBundle(activeCanvasFilePath, {
+            title: input.title?.trim() || undefined,
+            directoryPath: input.directoryPath,
+            entryFile: input.entryFile?.trim() || undefined,
+          })
+
+          const htmlWidth = 720
+          const htmlHeight = 480
+          const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+          const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+          const targetX = input.position ? input.position.x : centerX
+          const targetY = input.position ? input.position.y : centerY
+          const nextTitle =
+            input.title?.trim() ||
+            imported.entryAsset.split("/").filter(Boolean).pop()?.replace(/\.html?$/i, "") ||
+            "HTML bundle"
+
+          addItem({
+            type: "html",
+            src: imported.entryUrl,
+            title: nextTitle,
+            sandbox: "allow-scripts allow-same-origin allow-forms allow-modals",
+            entryAsset: imported.entryAsset,
+            sourcePath: input.directoryPath,
+            sourceImportedAt: imported.importedAt,
+            position: {
+              x: Math.max(0, targetX - htmlWidth / 2),
+              y: Math.max(0, targetY - htmlHeight / 2),
+            },
+            size: { width: htmlWidth, height: htmlHeight },
+            rotation: 0,
+          })
+          setPropsPanelVisible(true)
+          if (typeof window !== "undefined" && window.innerWidth < 1100) {
+            setSidebarVisible(false)
+          }
+          await refreshCanvasFiles()
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to import HTML bundle."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [
+      activeCanvasFilePath,
+      activeProjectId,
+      addItem,
+      importCanvasHtmlBundle,
+      refreshCanvasFiles,
+      runCanvasPersistenceTask,
+      transform.offset.x,
+      transform.offset.y,
+      transform.scale,
+      workspaceSize.height,
+      workspaceSize.width,
+    ]
+  )
+
+  const handleReplaceHtmlBundle = useCallback(
+    async (
+      itemId: string,
+      input: {
+        files?: File[]
+        fileEntries?: Array<{ file: File; relativePath: string }>
+        directoryPath?: string
+        entryFile?: string
+      }
+    ) => {
+      if (!activeProjectId) {
+        throw new Error("Select a project before replacing an HTML bundle.")
+      }
+      if (!activeCanvasFilePath) {
+        throw new Error("Save this board to a real .canvas file before replacing an HTML bundle.")
+      }
+
+      const hasFileEntries = Array.isArray(input.fileEntries) && input.fileEntries.length > 0
+      const hasFiles = Array.isArray(input.files) && input.files.length > 0
+      const hasDirectory = Boolean(input.directoryPath?.trim())
+
+      if (!hasFileEntries && !hasFiles && !hasDirectory) {
+        throw new Error("Choose files or a folder before replacing.")
+      }
+
+      const existingItem = items.find(
+        (item): item is typeof item & { type: "html"; entryAsset?: string } =>
+          item.id === itemId && item.type === "html"
+      )
+      const bundle: CanvasHtmlBundleImportInput = hasDirectory
+        ? {
+            directoryPath: input.directoryPath,
+            entryFile: input.entryFile?.trim() || undefined,
+            replaceEntryAsset: existingItem?.entryAsset,
+          }
+        : {
+            files: hasFileEntries
+              ? await serializeHtmlBundleFileEntries(input.fileEntries || [])
+              : await serializeHtmlBundleFiles(input.files || []),
+            replaceEntryAsset: existingItem?.entryAsset,
+          }
+
+      await runCanvasPersistenceTask(async () => {
+        const imported = await importCanvasHtmlBundle(activeCanvasFilePath, bundle)
+
+        updateItem(itemId, {
+          src: `${imported.entryUrl}${imported.entryUrl.includes("?") ? "&" : "?"}v=${Date.now()}`,
+          entryAsset: imported.entryAsset,
+          sourcePath: input.directoryPath || undefined,
+          sourceImportedAt: imported.importedAt,
+        })
+
+        await refreshCanvasFiles()
+      })
+    },
+    [
+      activeCanvasFilePath,
+      activeProjectId,
+      importCanvasHtmlBundle,
+      items,
+      refreshCanvasFiles,
+      runCanvasPersistenceTask,
+      updateItem,
+    ]
   )
 
   const handleAddMedia = useCallback(
@@ -1804,6 +2246,31 @@ export function CanvasTab({
     [applyCanvasFileToWorkspace, openCanvasFile]
   )
 
+  useEffect(() => {
+    if (!activeProjectId || canvasFilesLoading || hasRestoredCanvasFile || activeCanvasFile) return
+    if (canvasFiles.length === 0) return
+
+    const preferredPath = canvasFileBrowser.lastActivePath
+    const nextPath =
+      (preferredPath && canvasFiles.some((file) => file.path === preferredPath) ? preferredPath : null) ||
+      (canvasFiles.length === 1 ? canvasFiles[0]?.path : null)
+
+    if (!nextPath) {
+      setHasRestoredCanvasFile(true)
+      return
+    }
+
+    void handleOpenCanvasFile(nextPath).finally(() => setHasRestoredCanvasFile(true))
+  }, [
+    activeCanvasFile,
+    activeProjectId,
+    canvasFileBrowser.lastActivePath,
+    canvasFiles,
+    canvasFilesLoading,
+    handleOpenCanvasFile,
+    hasRestoredCanvasFile,
+  ])
+
   const handleCreateCanvasFile = useCallback(async () => {
     if (!activeProjectId) return
     setCanvasFileActionError(null)
@@ -1817,51 +2284,23 @@ export function CanvasTab({
 
   const handleSaveCanvasFile = useCallback(async () => {
     if (!activeProjectId) return
-    const payload = buildCurrentCanvasFilePayload()
-
-    try {
-      const assets = await buildCurrentCanvasFileAssets()
-      if (!activeCanvasFile) {
-        setCanvasFileActionError(null)
-        setCanvasFileActionModal({
-          mode: "save-as",
-          targetPath: null,
-          title: "Untitled Canvas",
-          folder: "",
-        })
-        return
-      }
-
-      const saved = await saveCanvasFile(activeCanvasFile.path, {
-        ...activeCanvasFile.document,
-        document: payload.document,
-        view: payload.view,
-      }, assets)
-      setActiveCanvasFile(saved)
-      setLastSavedCanvasFileSignature(JSON.stringify(payload))
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to save canvas file."
-      if (typeof window !== "undefined") {
-        window.alert(message)
-      }
+    if (canvasFilePersistenceBusy) {
+      setCanvasSaveQueued(true)
+      return
     }
-  }, [
-    activeCanvasFile,
-    activeProjectId,
-    buildCurrentCanvasFileAssets,
-    buildCurrentCanvasFilePayload,
-    saveCanvasFile,
-  ])
+    await performSaveCanvasFile()
+  }, [activeProjectId, canvasFilePersistenceBusy, performSaveCanvasFile])
 
   const handleToggleCanvasFavorite = useCallback(
     async (filePath: string) => {
       const target = canvasFiles.find((file) => file.path === filePath)
       if (!target) return
       try {
-        const updated = await updateCanvasFileMetadata(filePath, {
-          favorite: !target.favorite,
-        })
+        const updated = await runCanvasPersistenceTask(() =>
+          updateCanvasFileMetadata(filePath, {
+            favorite: !target.favorite,
+          })
+        )
         if (activeCanvasFile?.path === filePath) {
           setActiveCanvasFile(updated)
         }
@@ -1873,7 +2312,7 @@ export function CanvasTab({
         }
       }
     },
-    [activeCanvasFile?.path, canvasFiles, updateCanvasFileMetadata]
+    [activeCanvasFile?.path, canvasFiles, runCanvasPersistenceTask, updateCanvasFileMetadata]
   )
 
   const handleRenameCanvasFile = useCallback(
@@ -1930,46 +2369,56 @@ export function CanvasTab({
     setCanvasFileActionError(null)
     try {
       if (canvasFileActionModal.mode === "create") {
-        const file = await createCanvasFile({
-          title: nextTitle,
-          folder: nextFolder || undefined,
-        })
+        const file = await runCanvasPersistenceTask(() =>
+          createCanvasFile({
+            title: nextTitle,
+            folder: nextFolder || undefined,
+          })
+        )
         applyCanvasFileToWorkspace(file)
       } else if (canvasFileActionModal.mode === "save-as") {
         const payload = buildCurrentCanvasFilePayload()
         const assets = await buildCurrentCanvasFileAssets()
-        const created = await createCanvasFile({
-          title: nextTitle,
-          folder: nextFolder || undefined,
-          document: payload.document,
-          view: payload.view,
-          assets,
-        })
+        const created = await runCanvasPersistenceTask(() =>
+          createCanvasFile({
+            title: nextTitle,
+            folder: nextFolder || undefined,
+            document: payload.document,
+            view: payload.view,
+            assets,
+          })
+        )
         setActiveCanvasFile(created)
         setLastSavedCanvasFileSignature(JSON.stringify(payload))
       } else if (canvasFileActionModal.mode === "rename" && canvasFileActionModal.targetPath) {
+        const targetPath = canvasFileActionModal.targetPath
         const target = canvasFiles.find((file) => file.path === canvasFileActionModal.targetPath)
         if (!target) {
           throw new Error("Canvas file no longer exists.")
         }
-        const currentFolder = canvasFileActionModal.targetPath.split("/").slice(0, -1).join("/")
+        const currentFolder = targetPath.split("/").slice(0, -1).join("/")
         if (target.title === nextTitle && currentFolder === nextFolder) {
           setCanvasFileActionModal(null)
           return
         }
-        const moved = await moveCanvasFile(canvasFileActionModal.targetPath, {
-          title: nextTitle,
-          folder: nextFolder,
-        })
-        if (activeCanvasFile?.path === canvasFileActionModal.targetPath) {
+        const moved = await runCanvasPersistenceTask(() =>
+          moveCanvasFile(targetPath, {
+            title: nextTitle,
+            folder: nextFolder,
+          })
+        )
+        if (activeCanvasFile?.path === targetPath) {
           setActiveCanvasFile(moved)
         }
-        canvasFileBrowser.replaceTrackedPath(canvasFileActionModal.targetPath, moved.path)
+        canvasFileBrowser.replaceTrackedPath(targetPath, moved.path)
       } else if (canvasFileActionModal.mode === "duplicate" && canvasFileActionModal.targetPath) {
-        const duplicated = await duplicateCanvasFile(canvasFileActionModal.targetPath, {
-          title: nextTitle,
-          folder: nextFolder,
-        })
+        const targetPath = canvasFileActionModal.targetPath
+        const duplicated = await runCanvasPersistenceTask(() =>
+          duplicateCanvasFile(targetPath, {
+            title: nextTitle,
+            folder: nextFolder,
+          })
+        )
         applyCanvasFileToWorkspace(duplicated)
       }
 
@@ -1993,6 +2442,7 @@ export function CanvasTab({
     createCanvasFile,
     duplicateCanvasFile,
     moveCanvasFile,
+    runCanvasPersistenceTask,
   ])
 
   const handleConfirmCanvasFileDelete = useCallback(async () => {
@@ -2000,7 +2450,7 @@ export function CanvasTab({
     setCanvasFileDeleteBusy(true)
     setCanvasFileDeleteError(null)
     try {
-      await deleteCanvasFile(canvasFileDeleteModal.path)
+      await runCanvasPersistenceTask(() => deleteCanvasFile(canvasFileDeleteModal.path))
       canvasFileBrowser.removeTrackedPath(canvasFileDeleteModal.path)
       if (activeCanvasFile?.path === canvasFileDeleteModal.path) {
         setActiveCanvasFile(null)
@@ -2014,7 +2464,13 @@ export function CanvasTab({
     } finally {
       setCanvasFileDeleteBusy(false)
     }
-  }, [activeCanvasFile?.path, canvasFileBrowser, canvasFileDeleteModal, deleteCanvasFile])
+  }, [
+    activeCanvasFile?.path,
+    canvasFileBrowser,
+    canvasFileDeleteModal,
+    deleteCanvasFile,
+    runCanvasPersistenceTask,
+  ])
 
   const handleCloseCanvasFileActionModal = useCallback(() => {
     if (canvasFileActionBusy) return
@@ -2096,6 +2552,26 @@ export function CanvasTab({
             embedState: item.embedState,
             embedOrigin: item.embedOrigin,
             embedStateVersion: item.embedStateVersion,
+            position: { ...item.position },
+            size: { ...item.size },
+            rotation: item.rotation,
+            parentId,
+            order: item.order,
+          })
+          idMap.set(item.id, newId)
+          return
+        }
+
+        if (item.type === "html") {
+          const newId = addItem({
+            type: "html",
+            src: item.src,
+            title: item.title,
+            sandbox: item.sandbox,
+            background: item.background,
+            entryAsset: item.entryAsset,
+            sourcePath: item.sourcePath,
+            sourceImportedAt: item.sourceImportedAt,
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
@@ -2372,6 +2848,9 @@ export function CanvasTab({
               <CanvasSidebar
                 entries={entries}
                 onAddEmbed={handleAddEmbed}
+                onAddHtmlBundle={handleAddHtmlBundle}
+                onAddHtmlBundleFromDirectory={handleAddHtmlBundleFromDirectory}
+                onScanHtmlBundleLibrary={scanCanvasHtmlBundleLibrary}
                 onAddMedia={handleAddMedia}
                 onAddMarkdown={handleAddMarkdown}
                 onAddMermaid={handleAddMermaid}
@@ -2394,6 +2873,7 @@ export function CanvasTab({
                 canvasFilesSaving={canvasFilesSaving}
                 canvasFilesError={canvasFilesError}
                 canvasFileDirty={canvasFileDirty}
+                canvasSaveQueued={canvasSaveQueued}
                 onRefreshCanvasFiles={refreshCanvasFiles}
                 onOpenCanvasFile={handleOpenCanvasFile}
                 onCreateCanvasFile={handleCreateCanvasFile}
@@ -2464,6 +2944,7 @@ export function CanvasTab({
               title={selectedEmbedItem.title}
               allow={selectedEmbedItem.allow}
               sandbox={selectedEmbedItem.sandbox}
+              size={selectedEmbedItem.size}
               embedPreviewMode={selectedEmbedItem.embedPreviewMode}
               resolvedEmbedPreviewMode={selectedEmbedRenderMode}
               embedFrameStatus={selectedEmbedItem.embedFrameStatus}
@@ -2589,6 +3070,33 @@ export function CanvasTab({
 
                 updateItem(selectedEmbedItem.id, updates)
               }}
+              onResize={(size) => updateItem(selectedEmbedItem.id, { size })}
+              onDelete={handleDeleteSelected}
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedHtmlItem && (
+            <CanvasHtmlPropsPanel
+              src={selectedHtmlItem.src}
+              title={selectedHtmlItem.title}
+              sandbox={selectedHtmlItem.sandbox}
+              background={selectedHtmlItem.background}
+              entryAsset={selectedHtmlItem.entryAsset}
+              sourcePath={selectedHtmlItem.sourcePath}
+              sourceImportedAt={selectedHtmlItem.sourceImportedAt}
+              size={selectedHtmlItem.size}
+              onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
+              onResize={(size) => updateItem(selectedHtmlItem.id, { size })}
+              onReplaceBundle={(input) =>
+                handleReplaceHtmlBundle(selectedHtmlItem.id, input)
+              }
+              onReplaceBundleFromDirectory={(input) =>
+                handleReplaceHtmlBundle(selectedHtmlItem.id, {
+                  directoryPath: input.directoryPath,
+                  entryFile: input.entryFile,
+                })
+              }
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />

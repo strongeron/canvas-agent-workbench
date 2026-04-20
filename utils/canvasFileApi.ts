@@ -2,6 +2,8 @@ import type {
   CanvasDocumentSurface,
   CanvasFileAssetInput,
   CanvasFileDocument,
+  CanvasHtmlBundleImportInput,
+  CanvasHtmlBundleLibraryScanResult,
 } from "../types/canvas"
 import {
   createCanvasFile,
@@ -14,6 +16,7 @@ import {
   updateCanvasFileMetadata,
 } from "./canvasFileStore"
 import { packCanvasDocumentAssets } from "./canvasFileAssets"
+import { importCanvasHtmlBundle, scanCanvasHtmlBundleLibrary } from "./canvasFileAssets"
 
 export async function listProjectCanvasFiles(
   projectsRoot: string,
@@ -207,4 +210,37 @@ export async function deleteProjectCanvasFile(
     projectId,
     path: canvasPath,
   })
+}
+
+export async function importProjectCanvasHtmlBundle(
+  projectsRoot: string,
+  projectId: string,
+  body: {
+    path?: string
+    bundle?: CanvasHtmlBundleImportInput
+  }
+) {
+  const canvasPath = typeof body.path === "string" ? body.path.trim() : ""
+  if (!canvasPath) {
+    throw new Error("path is required.")
+  }
+
+  return importCanvasHtmlBundle(projectsRoot, {
+    projectId,
+    path: canvasPath,
+    bundle: body.bundle && typeof body.bundle === "object" ? body.bundle : {},
+  })
+}
+
+export async function scanProjectCanvasHtmlBundles(
+  _projectsRoot: string,
+  _projectId: string,
+  rootPath: string
+): Promise<CanvasHtmlBundleLibraryScanResult> {
+  const normalizedRootPath = typeof rootPath === "string" ? rootPath.trim() : ""
+  if (!normalizedRootPath) {
+    throw new Error("rootPath is required.")
+  }
+
+  return scanCanvasHtmlBundleLibrary(normalizedRootPath)
 }

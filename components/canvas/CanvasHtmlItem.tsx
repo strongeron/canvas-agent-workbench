@@ -1,20 +1,20 @@
 import { RotateCw } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
-import type { CanvasExcalidrawItem as CanvasExcalidrawItemType } from "../../types/canvas"
+import type { CanvasHtmlItem as CanvasHtmlItemType } from "../../types/canvas"
 import { CanvasContextMenu } from "./CanvasContextMenu"
-import { CanvasExcalidrawViewport } from "./CanvasExcalidrawViewport"
+import { CanvasHtmlFrame } from "./CanvasHtmlFrame"
 import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"
 
-interface CanvasExcalidrawItemProps {
-  item: CanvasExcalidrawItemType
+interface CanvasHtmlItemProps {
+  item: CanvasHtmlItemType
   isSelected: boolean
   isMultiSelected?: boolean
   groupColor?: string
   onSelect: (addToSelection?: boolean) => void
-  onUpdate: (updates: Partial<Omit<CanvasExcalidrawItemType, "id">>) => void
+  onUpdate: (updates: Partial<Omit<CanvasHtmlItemType, "id">>) => void
   onRemove: () => void
   onDuplicate: () => void
   onBringToFront: () => void
@@ -22,8 +22,8 @@ interface CanvasExcalidrawItemProps {
   interactMode: boolean
 }
 
-const MIN_WIDTH = 320
-const MIN_HEIGHT = 220
+const MIN_WIDTH = 280
+const MIN_HEIGHT = 180
 
 const HANDLE_POSITIONS: Record<ResizeHandle, { className: string; cursor: string }> = {
   n: { className: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2", cursor: "ns-resize" },
@@ -36,7 +36,7 @@ const HANDLE_POSITIONS: Record<ResizeHandle, { className: string; cursor: string
   nw: { className: "left-0 top-0 -translate-x-1/2 -translate-y-1/2", cursor: "nwse-resize" },
 }
 
-export function CanvasExcalidrawItem({
+export function CanvasHtmlItem({
   item,
   isSelected,
   isMultiSelected = false,
@@ -48,7 +48,7 @@ export function CanvasExcalidrawItem({
   onBringToFront,
   scale,
   interactMode,
-}: CanvasExcalidrawItemProps) {
+}: CanvasHtmlItemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
@@ -63,17 +63,15 @@ export function CanvasExcalidrawItem({
   })
 
   const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+    (event: React.MouseEvent) => {
       if (interactMode) return
-      if (e.button !== 0) return
-      e.stopPropagation()
-
-      if (!e.shiftKey) {
+      if (event.button !== 0) return
+      event.stopPropagation()
+      if (!event.shiftKey) {
         onSelect(false)
       }
-
       setIsDragging(true)
-      setDragStart({ x: e.clientX, y: e.clientY })
+      setDragStart({ x: event.clientX, y: event.clientY })
       setInitialState({
         x: item.position.x,
         y: item.position.y,
@@ -82,19 +80,18 @@ export function CanvasExcalidrawItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onSelect]
   )
 
   const handleResizeStart = useCallback(
-    (e: React.MouseEvent, handle: ResizeHandle) => {
+    (event: React.MouseEvent, handle: ResizeHandle) => {
       if (interactMode) return
-      e.stopPropagation()
-      e.preventDefault()
+      event.stopPropagation()
+      event.preventDefault()
       onSelect()
-
       setIsResizing(true)
       setResizeHandle(handle)
-      setDragStart({ x: e.clientX, y: e.clientY })
+      setDragStart({ x: event.clientX, y: event.clientY })
       setInitialState({
         x: item.position.x,
         y: item.position.y,
@@ -103,16 +100,15 @@ export function CanvasExcalidrawItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onSelect]
   )
 
   const handleRotateStart = useCallback(
-    (e: React.MouseEvent) => {
+    (event: React.MouseEvent) => {
       if (interactMode) return
-      e.stopPropagation()
-      e.preventDefault()
+      event.stopPropagation()
+      event.preventDefault()
       onSelect()
-
       setIsRotating(true)
       setInitialState({
         x: item.position.x,
@@ -122,25 +118,28 @@ export function CanvasExcalidrawItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onSelect]
   )
 
   useEffect(() => {
     if (!isDragging && !isResizing && !isRotating) return
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMouseMove = (event: MouseEvent) => {
       if (isDragging) {
-        const dx = (e.clientX - dragStart.x) / scale
-        const dy = (e.clientY - dragStart.y) / scale
+        const dx = (event.clientX - dragStart.x) / scale
+        const dy = (event.clientY - dragStart.y) / scale
         onUpdate({
           position: {
             x: initialState.x + dx,
             y: initialState.y + dy,
           },
         })
-      } else if (isResizing && resizeHandle) {
-        const dx = (e.clientX - dragStart.x) / scale
-        const dy = (e.clientY - dragStart.y) / scale
+        return
+      }
+
+      if (isResizing && resizeHandle) {
+        const dx = (event.clientX - dragStart.x) / scale
+        const dy = (event.clientY - dragStart.y) / scale
 
         let newWidth = initialState.width
         let newHeight = initialState.height
@@ -168,17 +167,18 @@ export function CanvasExcalidrawItem({
           position: { x: newX, y: newY },
           size: { width: newWidth, height: newHeight },
         })
-      } else if (isRotating && containerRef.current) {
+        return
+      }
+
+      if (isRotating && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect()
         const centerX = rect.left + rect.width / 2
         const centerY = rect.top + rect.height / 2
-        const angle = Math.atan2(e.clientY - centerY, e.clientX - centerX)
+        const angle = Math.atan2(event.clientY - centerY, event.clientX - centerX)
         let degrees = (angle * 180) / Math.PI + 90
-
-        if (e.shiftKey) {
+        if (event.shiftKey) {
           degrees = Math.round(degrees / 15) * 15
         }
-
         onUpdate({ rotation: degrees })
       }
     }
@@ -198,11 +198,11 @@ export function CanvasExcalidrawItem({
     }
   }, [dragStart, initialState, isDragging, isResizing, isRotating, onUpdate, resizeHandle, scale])
 
-  const borderClass = isMultiSelected
-    ? "border-2 border-violet-500 ring-4 ring-violet-500/20"
+  const borderStyle = isMultiSelected
+    ? "ring-4 ring-violet-500/20"
     : isSelected
-      ? "border-2 border-brand-500 ring-4 ring-brand-500/20"
-      : "border border-default hover:shadow-md"
+      ? "ring-4 ring-brand-500/20"
+      : ""
 
   return (
     <div
@@ -220,31 +220,27 @@ export function CanvasExcalidrawItem({
         transformOrigin: "center center",
       }}
       onMouseDown={handleMouseDown}
-      onContextMenu={handleContextMenu}
-      onClick={(e) => {
+      onClick={(event) => {
         if (interactMode) return
-        e.stopPropagation()
-        if (e.shiftKey) onSelect(true)
+        event.stopPropagation()
+        if (event.shiftKey) {
+          onSelect(true)
+        }
       }}
+      onContextMenu={handleContextMenu}
     >
-      {groupColor && (
+      {groupColor ? (
         <div
           className="absolute -left-1 top-0 h-full w-1 rounded-l"
           style={{ backgroundColor: groupColor }}
         />
-      )}
-      <div
-        className={`relative h-full w-full overflow-hidden rounded-xl bg-white shadow-card transition-shadow ${borderClass}`}
-      >
-        <CanvasExcalidrawViewport
-          title={item.title}
-          scene={item.scene}
-          interactMode={interactMode}
-          onSceneChange={(nextScene) => onUpdate({ scene: nextScene })}
-        />
+      ) : null}
+
+      <div className={`h-full w-full rounded-xl shadow-card transition-shadow ${borderStyle}`}>
+        <CanvasHtmlFrame item={item} interactMode={interactMode} />
       </div>
 
-      {isSelected && !interactMode && (
+      {isSelected && !interactMode ? (
         <>
           <div
             onMouseDown={handleRotateStart}
@@ -253,21 +249,26 @@ export function CanvasExcalidrawItem({
             <RotateCw className="h-3.5 w-3.5 text-brand-600" />
           </div>
           <div className="absolute -top-6 left-1/2 h-4 w-px -translate-x-1/2 bg-brand-300" />
-          {(Object.entries(HANDLE_POSITIONS) as [
-            ResizeHandle,
-            { className: string; cursor: string }
-          ][]).map(([handle, { className, cursor }]) => (
+          {(Object.entries(HANDLE_POSITIONS) as Array<
+            [ResizeHandle, { className: string; cursor: string }]
+          >).map(([handle, config]) => (
             <div
               key={handle}
-              onMouseDown={(e) => handleResizeStart(e, handle)}
-              className={`absolute h-3 w-3 rounded-full border border-brand-400 bg-white shadow-sm hover:bg-brand-100 ${className}`}
-              style={{ cursor }}
+              onMouseDown={(event) => handleResizeStart(event, handle)}
+              className={`absolute h-3 w-3 rounded-full border border-brand-400 bg-white shadow-sm hover:bg-brand-100 ${config.className}`}
+              style={{ cursor: config.cursor }}
             />
           ))}
         </>
-      )}
+      ) : null}
 
-      {contextMenu && (
+      {isSelected && !interactMode ? (
+        <div className="absolute -bottom-6 left-0 whitespace-nowrap rounded bg-surface-800 px-2 py-0.5 text-xs text-white">
+          {Math.round(item.size.width)} × {Math.round(item.size.height)} · {Math.round(item.rotation)}°
+        </div>
+      ) : null}
+
+      {contextMenu ? (
         <CanvasContextMenu
           position={contextMenu}
           onClose={closeContextMenu}
@@ -275,7 +276,7 @@ export function CanvasExcalidrawItem({
           onDuplicate={onDuplicate}
           onDelete={onRemove}
         />
-      )}
+      ) : null}
     </div>
   )
 }

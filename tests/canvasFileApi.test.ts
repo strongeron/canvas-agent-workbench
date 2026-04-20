@@ -10,9 +10,11 @@ import {
   createProjectCanvasFile,
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
+  importProjectCanvasHtmlBundle,
   listProjectCanvasFiles,
   moveProjectCanvasFile,
   openProjectCanvasFile,
+  scanProjectCanvasHtmlBundles,
   saveProjectCanvasFile,
   updateProjectCanvasFileMetadata,
 } from "../utils/canvasFileApi"
@@ -81,6 +83,27 @@ describe("canvas file api", () => {
 
     const opened = await openProjectCanvasFile(projectsRoot, "demo", "boards/media-board.canvas")
     expect(opened.document.meta.title).toBe("Media Board")
+
+    const importedHtmlBundle = await importProjectCanvasHtmlBundle(projectsRoot, "demo", {
+      path: "boards/media-board.canvas",
+      bundle: {
+        title: "Landing Preview",
+        files: [
+          {
+            relativePath: "index.html",
+            dataUrl: "data:text/html;base64,PGgxPkhlbGxvPC9oMT4=",
+          },
+          {
+            relativePath: "styles/site.css",
+            dataUrl: "data:text/css;base64,aDEgeyBjb2xvcjogcmVkOyB9",
+          },
+        ],
+      },
+    })
+    expect(importedHtmlBundle.entryUrl).toContain(
+      "/api/projects/demo/canvases/assets/file?path=boards%2Fmedia-board.canvas"
+    )
+    expect(importedHtmlBundle.assetCount).toBe(2)
 
     const saved = await saveProjectCanvasFile(projectsRoot, mediaRoot, "demo", {
       path: "boards/media-board.canvas",
@@ -161,5 +184,24 @@ describe("canvas file api", () => {
         path: "boards/demo.canvas",
       })
     ).rejects.toThrow("document is required.")
+
+    await expect(
+      scanProjectCanvasHtmlBundles(projectsRoot, "demo", "")
+    ).rejects.toThrow("rootPath is required.")
+  })
+
+  it("scans a local HTML bundle library through the project api helper", async () => {
+    const projectsRoot = await createTempDir("gallery-poc-canvas-api-projects-")
+    const libraryRoot = await createTempDir("gallery-poc-html-library-")
+    await fs.mkdir(path.join(libraryRoot, "marketing", "hero"), { recursive: true })
+    await fs.writeFile(path.join(libraryRoot, "marketing", "hero", "index.html"), "<html>hero</html>")
+
+    const result = await scanProjectCanvasHtmlBundles(projectsRoot, "demo", libraryRoot)
+    expect(result.rootPath).toBe(libraryRoot)
+    expect(result.entries).toHaveLength(1)
+    expect(result.entries[0]).toMatchObject({
+      relativeDirectory: "marketing/hero",
+      defaultEntryFile: "index.html",
+    })
   })
 })

@@ -2,8 +2,9 @@ import { useDraggable } from "@dnd-kit/core"
 import { ChevronDown, ChevronRight, Copy, FileText, GripVertical, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
+import { useLocalStorage } from "../../hooks/useLocalStorage"
 import type { GalleryEntry } from "../../core/types"
-import type { CanvasFileIndexEntry } from "../../types/canvas"
+import type { CanvasFileIndexEntry, CanvasHtmlBundleLibraryScanResult } from "../../types/canvas"
 import type { CanvasFolderTreeEntry } from "../../hooks/useCanvasFileBrowserState"
 import type { PaperImportQueueItem } from "./CanvasTab"
 import { fetchLocalApps, type LocalAppEntry } from "./localAppsService"
@@ -25,6 +26,214 @@ type ProjectSidebarEntry = {
     createdEntries?: number | null
     scannedFiles?: number | null
   } | null
+}
+
+type PickedHtmlBundleEntry = {
+  id: string
+  relativeDirectory: string
+  entryFiles: string[]
+  defaultEntryFile: string
+}
+
+type PickedHtmlBundleFile = {
+  file: File
+  relativePath: string
+}
+
+type FileSystemFileHandleLike = {
+  kind: "file"
+  name: string
+  getFile(): Promise<File>
+}
+
+type FileSystemDirectoryHandleLike = {
+  kind: "directory"
+  name: string
+  values(): AsyncIterable<FileSystemDirectoryHandleLike | FileSystemFileHandleLike>
+}
+
+function normalizePickedFileRelativePath(file: File) {
+  const rawPath =
+    typeof file.webkitRelativePath === "string" && file.webkitRelativePath.trim()
+      ? file.webkitRelativePath.trim()
+      : file.name
+  const normalized = rawPath.replace(/\\/g, "/").replace(/^\/+/, "")
+  const segments = normalized.split("/").filter(Boolean)
+  if (segments.length <= 1) return segments[0] || file.name
+  return segments.slice(1).join("/")
+}
+
+function normalizeRelativeBrowserPath(value: string) {
+  const parts = value.replace(/\\/g, "/").split("/")
+  const stack: string[] = []
+  for (const part of parts) {
+    if (!part || part === ".") continue
+    if (part === "..") {
+      stack.pop()
+      continue
+    }
+    stack.push(part)
+  }
+  return stack.join("/")
+}
+
+function isLocalBundleReference(value: string) {
+  const normalized = value.trim()
+  if (!normalized) return false
+  if (normalized.startsWith("#")) return false
+  if (normalized.startsWith("/")) return false
+  if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(normalized)) return false
+  if (/^(?:data|mailto|tel|javascript):/i.test(normalized)) return false
+  return true
+}
+
+function stripQueryAndHash(value: string) {
+  return value.replace(/[?#].*$/, "")
+}
+
+function resolvePickedBundleReference(currentRelativePath: string, reference: string) {
+  const normalizedRef = stripQueryAndHash(reference.trim())
+  if (!isLocalBundleReference(normalizedRef)) return null
+  const currentSegments = currentRelativePath.split("/").filter(Boolean)
+  currentSegments.pop()
+  return normalizeRelativeBrowserPath([...currentSegments, normalizedRef].join("/"))
+}
+
+function extractHtmlReferences(source: string) {
+  const references: string[] = []
+  const attrPattern = /\b(?:src|href)=["']([^"']+)["']/gi
+  let match = attrPattern.exec(source)
+  while (match) {
+    references.push(match[1] || "")
+    match = attrPattern.exec(source)
+  }
+  return references
+}
+
+function extractCssReferences(source: string) {
+  const references: string[] = []
+  const urlPattern = /url\(\s*['"]?([^"')]+)['"]?\s*\)/gi
+  let match = urlPattern.exec(source)
+  while (match) {
+    references.push(match[1] || "")
+    match = urlPattern.exec(source)
+  }
+  const importPattern = /@import\s+(?:url\()?['"]?([^"')\s]+)['"]?\)?/gi
+  match = importPattern.exec(source)
+  while (match) {
+    references.push(match[1] || "")
+    match = importPattern.exec(source)
+  }
+  return references
+}
+
+function extractJsReferences(source: string) {
+  const references: string[] = []
+  const importPattern = /\bimport\s+(?:[^"'()]+?\s+from\s+)?["']([^"']+)["']/gi
+  let match = importPattern.exec(source)
+  while (match) {
+    references.push(match[1] || "")
+    match = importPattern.exec(source)
+  }
+  const dynamicImportPattern = /\bimport\(\s*["']([^"']+)["']\s*\)/gi
+  match = dynamicImportPattern.exec(source)
+  while (match) {
+    references.push(match[1] || "")
+    match = dynamicImportPattern.exec(source)
+  }
+  return references
+}
+
+function buildPickedHtmlBundleEntries(files: PickedHtmlBundleFile[]) {
+  const groups = new Map<string, Set<string>>()
+  for (const file of files) {
+    const relativePath = file.relativePath
+    if (!/\.html?$/i.test(relativePath)) continue
+    const segments = relativePath.split("/").filter(Boolean)
+    const fileName = segments.pop() || relativePath
+    const directory = segments.join("/") || "."
+    if (!groups.has(directory)) {
+      groups.set(directory, new Set())
+    }
+    groups.get(directory)?.add(fileName)
+  }
+
+  return Array.from(groups.entries())
+    .map(([relativeDirectory, entryFiles]) => {
+      const sortedEntryFiles = Array.from(entryFiles).sort((left, right) => left.localeCompare(right))
+      return {
+        id: relativeDirectory,
+        relativeDirectory,
+        entryFiles: sortedEntryFiles,
+        defaultEntryFile:
+          sortedEntryFiles.find((fileName) => /^index\.html?$/i.test(fileName)) || sortedEntryFiles[0],
+      } satisfies PickedHtmlBundleEntry
+    })
+    .sort((left, right) => left.relativeDirectory.localeCompare(right.relativeDirectory))
+}
+
+async function collectPickedHtmlBundleFilesForEntry(
+  files: PickedHtmlBundleFile[],
+  entryRelativePath: string
+) {
+  const fileMap = new Map(
+    files.map((file) => [file.relativePath, file] as const)
+  )
+  const pending = [normalizeRelativeBrowserPath(entryRelativePath)]
+  const included = new Set<string>()
+
+  while (pending.length > 0) {
+    const currentPath = pending.pop()
+    if (!currentPath || included.has(currentPath)) continue
+    const file = fileMap.get(currentPath)
+    if (!file) continue
+    included.add(currentPath)
+
+    const lowerPath = currentPath.toLowerCase()
+    if (!/\.(html?|css|mjs|js)$/i.test(lowerPath)) continue
+
+    const source = await file.file.text()
+    const references = lowerPath.endsWith(".css")
+      ? extractCssReferences(source)
+      : lowerPath.endsWith(".js") || lowerPath.endsWith(".mjs")
+        ? extractJsReferences(source)
+        : extractHtmlReferences(source)
+
+    for (const reference of references) {
+      const resolved = resolvePickedBundleReference(currentPath, reference)
+      if (!resolved || included.has(resolved) || !fileMap.has(resolved)) continue
+      pending.push(resolved)
+    }
+  }
+
+  return Array.from(included)
+    .sort((left, right) => left.localeCompare(right))
+    .map((relativePath) => fileMap.get(relativePath))
+    .filter((file): file is PickedHtmlBundleFile => Boolean(file))
+}
+
+async function collectDirectoryHandleFiles(
+  directoryHandle: FileSystemDirectoryHandleLike,
+  prefix = ""
+): Promise<PickedHtmlBundleFile[]> {
+  const files: PickedHtmlBundleFile[] = []
+  for await (const entry of directoryHandle.values()) {
+    if (entry.kind === "directory") {
+      const nested = await collectDirectoryHandleFiles(
+        entry,
+        prefix ? `${prefix}/${entry.name}` : entry.name
+      )
+      files.push(...nested)
+      continue
+    }
+
+    const file = await entry.getFile()
+    const relativePath = normalizeRelativeBrowserPath(
+      prefix ? `${prefix}/${entry.name}` : entry.name
+    )
+    files.push({ file, relativePath })
+  }
+  return files
 }
 
 const CANVAS_FILE_ROW_HEIGHT = 52
@@ -131,6 +340,18 @@ interface CanvasSidebarProps {
   entries: GalleryEntry[]
   /** Add an iframe/embed item to the canvas */
   onAddEmbed: (url: string) => void
+  /** Import a local HTML/CSS/JS bundle into the active canvas file and place it on the board */
+  onAddHtmlBundle?: (input: {
+    files?: File[]
+    fileEntries?: Array<{ file: File; relativePath: string }>
+    title?: string
+  }) => void | Promise<void>
+  onAddHtmlBundleFromDirectory?: (input: {
+    directoryPath: string
+    entryFile?: string
+    title?: string
+  }) => void | Promise<void>
+  onScanHtmlBundleLibrary?: (rootPath: string) => Promise<CanvasHtmlBundleLibraryScanResult>
   /** Add a media node (image/video/gif URL) */
   onAddMedia: (input: {
     src?: string
@@ -171,6 +392,7 @@ interface CanvasSidebarProps {
   canvasFilesSaving?: boolean
   canvasFilesError?: string | null
   canvasFileDirty?: boolean
+  canvasSaveQueued?: boolean
   onRefreshCanvasFiles?: () => void | Promise<void>
   onOpenCanvasFile?: (filePath: string) => void | Promise<void>
   onCreateCanvasFile?: () => void | Promise<void>
@@ -191,6 +413,9 @@ interface CanvasSidebarProps {
 export function CanvasSidebar({
   entries,
   onAddEmbed,
+  onAddHtmlBundle,
+  onAddHtmlBundleFromDirectory,
+  onScanHtmlBundleLibrary,
   onAddMedia,
   onAddMermaid,
   onAddExcalidraw,
@@ -211,6 +436,7 @@ export function CanvasSidebar({
   canvasFilesSaving,
   canvasFilesError,
   canvasFileDirty,
+  canvasSaveQueued,
   onRefreshCanvasFiles,
   onOpenCanvasFile,
   onCreateCanvasFile,
@@ -238,6 +464,29 @@ export function CanvasSidebar({
   const [localAppsScannedPorts, setLocalAppsScannedPorts] = useState<number | null>(null)
   const [localAppsError, setLocalAppsError] = useState<string | null>(null)
   const [selectedLocalAppUrl, setSelectedLocalAppUrl] = useState("")
+  const [htmlBundleTitle, setHtmlBundleTitle] = useState("")
+  const [htmlBundleFiles, setHtmlBundleFiles] = useState<PickedHtmlBundleFile[]>([])
+  const htmlBundleRootStorageKey = activeProjectId
+    ? `gallery-${activeProjectId}-html-bundle-root`
+    : "gallery-html-bundle-root"
+  const [htmlBundleRootPath, setHtmlBundleRootPath] = useLocalStorage<string>(
+    htmlBundleRootStorageKey,
+    ""
+  )
+  const [htmlBundleLibrarySearch, setHtmlBundleLibrarySearch] = useState("")
+  const [htmlBundleLibraryStatus, setHtmlBundleLibraryStatus] =
+    useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [htmlBundleLibraryError, setHtmlBundleLibraryError] = useState<string | null>(null)
+  const [htmlBundleLibraryResult, setHtmlBundleLibraryResult] =
+    useState<CanvasHtmlBundleLibraryScanResult | null>(null)
+  const [htmlBundleSourceLabel, setHtmlBundleSourceLabel] = useState("")
+  const [htmlBundleImportBusy, setHtmlBundleImportBusy] = useState(false)
+  const [htmlBundleImportError, setHtmlBundleImportError] = useState<string | null>(null)
+  const [htmlBundleImportStatus, setHtmlBundleImportStatus] = useState<string | null>(null)
+  const pickedHtmlBundleEntries = useMemo(
+    () => buildPickedHtmlBundleEntries(htmlBundleFiles),
+    [htmlBundleFiles]
+  )
   const [mediaUrl, setMediaUrl] = useState("")
   const [mediaKind, setMediaKind] = useState<"image" | "video" | "gif">("image")
   const [mediaFile, setMediaFile] = useState<File | null>(null)
@@ -262,9 +511,19 @@ export function CanvasSidebar({
     imports: false,
   })
   const mediaFileInputRef = useRef<HTMLInputElement>(null)
+  const htmlBundleInputRef = useRef<HTMLInputElement>(null)
+  const htmlEntryFileInputRef = useRef<HTMLInputElement>(null)
   const diagramFileInputRef = useRef<HTMLInputElement>(null)
   const canvasListRef = useRef<HTMLDivElement>(null)
   const [canvasListScrollTop, setCanvasListScrollTop] = useState(0)
+  const htmlDirectoryInputProps = {
+    webkitdirectory: "",
+    directory: "",
+  } as Record<string, string>
+  const supportsDirectoryPicker =
+    typeof window !== "undefined" && "showDirectoryPicker" in window
+  const supportsOpenFilePicker =
+    typeof window !== "undefined" && "showOpenFilePicker" in window
 
   const renderCanvasFileActions = useCallback(
     (file: CanvasFileIndexEntry, compact = false) => (
@@ -422,6 +681,166 @@ export function CanvasSidebar({
     void handleDiscoverLocalApps(false)
   }, [handleDiscoverLocalApps, localAppsStatus])
 
+  const handleScanHtmlBundleLibrary = useCallback(async () => {
+    const rootPath = htmlBundleRootPath.trim()
+    if (!rootPath || !onScanHtmlBundleLibrary) return
+    setHtmlBundleLibraryStatus("loading")
+    setHtmlBundleLibraryError(null)
+    try {
+      const result = await onScanHtmlBundleLibrary(rootPath)
+      setHtmlBundleLibraryResult(result)
+      setHtmlBundleLibraryStatus("ready")
+    } catch (error) {
+      setHtmlBundleLibraryStatus("error")
+      setHtmlBundleLibraryError(
+        error instanceof Error ? error.message : "Failed to scan HTML bundle library."
+      )
+    }
+  }, [htmlBundleRootPath, onScanHtmlBundleLibrary])
+
+  const handleHtmlBundleFolderSelection = useCallback((files: FileList | File[] | null) => {
+    const nextFiles = Array.from(files || []).map((file) => ({
+      file,
+      relativePath: normalizePickedFileRelativePath(file),
+    }))
+    setHtmlBundleFiles(nextFiles)
+    const firstRelativePath = nextFiles[0]?.relativePath || ""
+    const firstRootSegment = firstRelativePath.split("/").filter(Boolean)[0] || ""
+    setHtmlBundleSourceLabel(firstRootSegment || "selected folder")
+    setHtmlBundleImportError(null)
+    setHtmlBundleImportStatus(null)
+  }, [])
+
+  const resetPickedHtmlBundleState = useCallback(() => {
+    setHtmlBundleTitle("")
+    setHtmlBundleFiles([])
+    setHtmlBundleSourceLabel("")
+    if (htmlEntryFileInputRef.current) {
+      htmlEntryFileInputRef.current.value = ""
+    }
+  }, [])
+
+  const runHtmlBundleImport = useCallback(
+    async (action: () => Promise<void>, successMessage: string) => {
+      setHtmlBundleImportBusy(true)
+      setHtmlBundleImportError(null)
+      setHtmlBundleImportStatus(null)
+      try {
+        await action()
+        setHtmlBundleImportStatus(successMessage)
+      } catch (error) {
+        setHtmlBundleImportError(
+          error instanceof Error ? error.message : "Failed to import HTML bundle."
+        )
+      } finally {
+        setHtmlBundleImportBusy(false)
+      }
+    },
+    []
+  )
+
+  const handleHtmlFileSelection = useCallback(async (files: FileList | File[] | null) => {
+    const nextFiles = Array.from(files || [])
+      .filter((file) => /\.html?$/i.test(file.name))
+      .map((file) => ({
+        file,
+        relativePath: file.name,
+      }))
+    setHtmlBundleFiles(nextFiles)
+    setHtmlBundleSourceLabel(nextFiles[0]?.file.name || "selected html file")
+    setHtmlBundleImportError(null)
+    setHtmlBundleImportStatus(null)
+
+    if (!nextFiles.length || !onAddHtmlBundle) return
+
+    await runHtmlBundleImport(async () => {
+      await onAddHtmlBundle({
+        fileEntries: nextFiles,
+        title: htmlBundleTitle.trim() || undefined,
+      })
+      resetPickedHtmlBundleState()
+    }, `Imported ${nextFiles[0]?.file.name || "HTML file"} as an HTML node.`)
+  }, [htmlBundleTitle, onAddHtmlBundle, resetPickedHtmlBundleState, runHtmlBundleImport])
+
+  const handlePickHtmlBundleFolder = useCallback(async () => {
+    if (!supportsDirectoryPicker) {
+      setHtmlBundleImportError(
+        "Native folder picking is not supported in this browser. Use the advanced filesystem root scan below or a Chromium browser."
+      )
+      return
+    }
+    try {
+      const pickerWindow = window as typeof window & {
+        showDirectoryPicker?: () => Promise<FileSystemDirectoryHandleLike>
+      }
+      const directoryHandle = await pickerWindow.showDirectoryPicker?.()
+      if (!directoryHandle) return
+      const nextFiles = await collectDirectoryHandleFiles(directoryHandle)
+      setHtmlBundleFiles(nextFiles)
+      setHtmlBundleSourceLabel(directoryHandle.name || "selected folder")
+      setHtmlBundleImportError(null)
+      setHtmlBundleImportStatus(
+        nextFiles.length > 0
+          ? `Loaded ${nextFiles.length} files from ${directoryHandle.name}.`
+          : `No files found in ${directoryHandle.name}.`
+      )
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return
+      setHtmlBundleImportError(
+        error instanceof Error ? error.message : "Failed to read selected folder."
+      )
+    }
+  }, [supportsDirectoryPicker])
+
+  const handlePickHtmlEntryFile = useCallback(async () => {
+    if (supportsOpenFilePicker) {
+      try {
+        const pickerWindow = window as typeof window & {
+          showOpenFilePicker?: (options?: unknown) => Promise<FileSystemFileHandleLike[]>
+        }
+        const handles = await pickerWindow.showOpenFilePicker?.({
+          multiple: false,
+          types: [
+            {
+              description: "HTML files",
+              accept: {
+                "text/html": [".html", ".htm"],
+              },
+            },
+          ],
+        })
+        const nextFiles = await Promise.all(
+          Array.from(handles || []).map(async (handle) => ({
+            file: await handle.getFile(),
+            relativePath: handle.name,
+          }))
+        )
+        setHtmlBundleFiles(nextFiles)
+        setHtmlBundleSourceLabel(nextFiles[0]?.file.name || "selected html file")
+        setHtmlBundleImportError(null)
+        setHtmlBundleImportStatus(null)
+
+        if (!nextFiles.length || !onAddHtmlBundle) return
+
+        await runHtmlBundleImport(async () => {
+          await onAddHtmlBundle({
+            fileEntries: nextFiles,
+            title: htmlBundleTitle.trim() || undefined,
+          })
+          resetPickedHtmlBundleState()
+        }, `Imported ${nextFiles[0]?.file.name || "HTML file"} as an HTML node.`)
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return
+        setHtmlBundleImportError(
+          error instanceof Error ? error.message : "Failed to read selected HTML file."
+        )
+      }
+      return
+    }
+
+    htmlEntryFileInputRef.current?.click()
+  }, [htmlBundleTitle, onAddHtmlBundle, resetPickedHtmlBundleState, runHtmlBundleImport, supportsOpenFilePicker])
+
   const togglePanel = useCallback((panelId: SidebarPanelId) => {
     setCollapsedPanels((prev) => ({
       ...prev,
@@ -432,6 +851,16 @@ export function CanvasSidebar({
   const activeProject = projects?.find((project) => project.id === activeProjectId) || null
   const activeLocalScan = activeProject?.localScan || null
   const activeLocalScanSyncedLabel = formatRelativeSyncTime(activeLocalScan?.scannedAt)
+  const filteredHtmlBundleEntries = useMemo(() => {
+    const entries = htmlBundleLibraryResult?.entries || []
+    const query = htmlBundleLibrarySearch.trim().toLowerCase()
+    if (!query) return entries
+    return entries.filter(
+      (entry) =>
+        entry.relativeDirectory.toLowerCase().includes(query) ||
+        entry.entryFiles.some((fileName) => fileName.toLowerCase().includes(query))
+    )
+  }, [htmlBundleLibraryResult, htmlBundleLibrarySearch])
   const filteredCanvasFiles = useMemo(() => {
     if (!canvasFiles) return []
     if (!canvasSearchQuery.trim()) return canvasFiles
@@ -644,6 +1073,11 @@ export function CanvasSidebar({
           </div>
           {!collapsedPanels.canvases && (
             <div className="space-y-2">
+              <div className="rounded-md border border-default bg-surface-50/50 px-3 py-2 text-[11px] text-muted-foreground">
+                Projects are workspaces. Canvases are local
+                <code className="mx-1 font-mono">.canvas</code>
+                documents inside the active project.
+              </div>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                 <input
@@ -662,25 +1096,30 @@ export function CanvasSidebar({
                   {activeCanvasFileTitle || "Unsaved canvas"}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {activeCanvasFilePath || "Create or save a real .canvas file for this board."}
+                  {activeCanvasFilePath || "Auto-saved browser draft. Open or create a real .canvas file to enable document-backed assets like HTML bundles."}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {canvasFileDirty ? (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                      Unsaved changes
+                      Autosave pending
                     </span>
                   ) : !activeCanvasFilePath ? (
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                      Local draft
+                      Browser draft
                     </span>
                   ) : (
                     <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                      Saved
+                      Autosaved locally
                     </span>
                   )}
                   {canvasFilesSaving ? (
                     <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
                       Saving…
+                    </span>
+                  ) : null}
+                  {canvasSaveQueued ? (
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                      Save queued
                     </span>
                   ) : null}
                   {activeCanvasFilePath && activeCanvasFileTitle
@@ -1207,6 +1646,254 @@ export function CanvasSidebar({
                 )}
               </div>
             </div>
+            {onAddHtmlBundle ? (
+              <div className="rounded-md border border-default bg-surface-50 p-2">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Local HTML bundle
+                </div>
+                <input
+                  type="text"
+                  value={htmlBundleTitle}
+                  onChange={(event) => setHtmlBundleTitle(event.target.value)}
+                  placeholder="Optional node title"
+                  className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handlePickHtmlBundleFolder()
+                    }}
+                    className="flex-1 rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+                  >
+                    Choose folder
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handlePickHtmlEntryFile()
+                    }}
+                    className="flex-1 rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+                  >
+                    Choose HTML file
+                  </button>
+                </div>
+                <input
+                  ref={htmlEntryFileInputRef}
+                  type="file"
+                  accept=".html,.htm,text/html"
+                  onChange={(event) => {
+                    void handleHtmlFileSelection(event.target.files)
+                    if (htmlEntryFileInputRef.current) {
+                      htmlEntryFileInputRef.current.value = ""
+                    }
+                  }}
+                  className="sr-only"
+                />
+                {onScanHtmlBundleLibrary && onAddHtmlBundleFromDirectory ? (
+                  <div className="mt-2 rounded-md border border-default bg-white p-2">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Filesystem root (advanced)
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={htmlBundleRootPath}
+                        onChange={(event) => setHtmlBundleRootPath(event.target.value)}
+                        placeholder="Absolute root path, e.g. /Users/.../playground"
+                        className="min-w-0 flex-1 rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleScanHtmlBundleLibrary()
+                        }}
+                        disabled={!htmlBundleRootPath.trim() || htmlBundleLibraryStatus === "loading"}
+                        className="rounded-md border border-default bg-surface-50 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {htmlBundleLibraryStatus === "loading" ? "Scanning..." : "Scan"}
+                      </button>
+                    </div>
+                    {htmlBundleLibraryResult ? (
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        Root: {htmlBundleLibraryResult.rootPath} · found {htmlBundleLibraryResult.entries.length} bundles
+                        {htmlBundleLibraryResult.scannedAt
+                          ? ` · ${formatRelativeSyncTime(htmlBundleLibraryResult.scannedAt) || "just now"}`
+                          : ""}
+                      </p>
+                    ) : null}
+                    {htmlBundleLibraryError ? (
+                      <p className="mt-2 text-[11px] text-red-600">{htmlBundleLibraryError}</p>
+                    ) : null}
+                    {htmlBundleLibraryResult ? (
+                      <>
+                        <input
+                          type="text"
+                          value={htmlBundleLibrarySearch}
+                          onChange={(event) => setHtmlBundleLibrarySearch(event.target.value)}
+                          placeholder="Search folders or entry files"
+                          className="mt-2 w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        />
+                        <div className="mt-2 max-h-56 space-y-2 overflow-y-auto pr-1">
+                          {filteredHtmlBundleEntries.length === 0 ? (
+                            <div className="rounded-md border border-dashed border-default bg-surface-50 px-2 py-3 text-[11px] text-muted-foreground">
+                              No HTML bundles found for this filter.
+                            </div>
+                          ) : (
+                            filteredHtmlBundleEntries.map((entry) => (
+                              <div
+                                key={`${entry.directoryPath}-${entry.defaultEntryFile}`}
+                                className="rounded-md border border-default bg-surface-50 p-2"
+                              >
+                                <div className="text-xs font-semibold text-foreground">
+                                  {entry.relativeDirectory === "." ? "(root)" : entry.relativeDirectory}
+                                </div>
+                                <div className="truncate text-[10px] text-muted-foreground">
+                                  {entry.directoryPath}
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {entry.entryFiles.map((entryFile) => (
+                                    <button
+                                      key={`${entry.directoryPath}-${entryFile}`}
+                                      type="button"
+                                      onClick={() => {
+                                        void onAddHtmlBundleFromDirectory({
+                                          directoryPath: entry.directoryPath,
+                                          entryFile,
+                                          title: htmlBundleTitle.trim() || undefined,
+                                        })
+                                      }}
+                                      disabled={!activeCanvasFilePath}
+                                      className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
+                                        entryFile === entry.defaultEntryFile
+                                          ? "border-brand-300 bg-brand-50 text-brand-700"
+                                          : "border-default bg-white text-foreground hover:bg-surface-100"
+                                      } disabled:cursor-not-allowed disabled:opacity-60`}
+                                      title={`Import ${entryFile}`}
+                                    >
+                                      {entryFile}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+                <input
+                  ref={htmlBundleInputRef}
+                  type="file"
+                  multiple
+                  onChange={(event) => {
+                    handleHtmlBundleFolderSelection(event.target.files)
+                  }}
+                  className="sr-only"
+                  {...htmlDirectoryInputProps}
+                />
+                {htmlBundleFiles.length > 0 ? (
+                  <div className="mt-2 rounded-md border border-default bg-white p-2">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Selected folder scan
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Source: {htmlBundleSourceLabel || "selected files"} · found {pickedHtmlBundleEntries.length} bundle folders. Pick one HTML entry file to import only that entry and its local references.
+                    </p>
+                    <div className="mt-2 max-h-56 space-y-2 overflow-y-auto pr-1">
+                      {pickedHtmlBundleEntries.length === 0 ? (
+                        <div className="rounded-md border border-dashed border-default bg-surface-50 px-2 py-3 text-[11px] text-muted-foreground">
+                          No HTML entry files found in the selected folder.
+                        </div>
+                      ) : (
+                        pickedHtmlBundleEntries.map((entry) => (
+                          <div
+                            key={`picked-${entry.id}`}
+                            className="rounded-md border border-default bg-surface-50 p-2"
+                          >
+                            <div className="text-xs font-semibold text-foreground">
+                              {entry.relativeDirectory === "." ? "(root)" : entry.relativeDirectory}
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-1">
+                                  {entry.entryFiles.map((entryFile) => (
+                                    <button
+                                      key={`picked-${entry.id}-${entryFile}`}
+                                      type="button"
+                                      onClick={() => {
+                                        void runHtmlBundleImport(async () => {
+                                          const entryRelativePath =
+                                            entry.relativeDirectory === "."
+                                              ? entryFile
+                                              : `${entry.relativeDirectory}/${entryFile}`
+                                          const selectedFiles =
+                                            await collectPickedHtmlBundleFilesForEntry(
+                                              htmlBundleFiles,
+                                              entryRelativePath
+                                            )
+                                          if (selectedFiles.length === 0) {
+                                            throw new Error("No importable files were found for that HTML entry.")
+                                          }
+                                          await onAddHtmlBundle?.({
+                                            fileEntries: selectedFiles,
+                                            title: htmlBundleTitle.trim() || undefined,
+                                          })
+                                          resetPickedHtmlBundleState()
+                                        }, `Imported ${entryFile} as an HTML node.`)
+                                      }}
+                                      disabled={!activeCanvasFilePath || htmlBundleImportBusy}
+                                      className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
+                                        entryFile === entry.defaultEntryFile
+                                          ? "border-brand-300 bg-brand-50 text-brand-700"
+                                      : "border-default bg-white text-foreground hover:bg-surface-100"
+                                  } disabled:cursor-not-allowed disabled:opacity-60`}
+                                  title={`Import ${entryFile}`}
+                                >
+                                  {entryFile}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (htmlBundleFiles.length === 0) return
+                    void runHtmlBundleImport(async () => {
+                      await onAddHtmlBundle?.({
+                        fileEntries: htmlBundleFiles,
+                        title: htmlBundleTitle.trim() || undefined,
+                      })
+                      resetPickedHtmlBundleState()
+                    }, "Imported selected source as an HTML node.")
+                  }}
+                  disabled={!activeCanvasFilePath || htmlBundleFiles.length === 0 || htmlBundleImportBusy}
+                  className="mt-2 w-full rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {pickedHtmlBundleEntries.length === 1 &&
+                  pickedHtmlBundleEntries[0]?.relativeDirectory === "." &&
+                  pickedHtmlBundleEntries[0]?.entryFiles.length === 1
+                    ? "Import selected HTML file"
+                    : "Import whole selected folder"}
+                </button>
+                {htmlBundleImportStatus ? (
+                  <p className="mt-2 text-[11px] text-emerald-700">{htmlBundleImportStatus}</p>
+                ) : null}
+                {htmlBundleImportError ? (
+                  <p className="mt-2 text-[11px] text-red-600">{htmlBundleImportError}</p>
+                ) : null}
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Choose folder auto-scans the selected root so you can import one HTML entry. Choose HTML file imports a single standalone document. Whole-folder import is still available when you want to pack the entire selected source.
+                  Save this board to a real
+                  <code className="mx-1 font-mono">.canvas</code>
+                  file first so the selected bundle can live under document-local assets.
+                </p>
+              </div>
+            ) : null}
             <p className="text-[11px] text-muted-foreground">
               Interactive iframes work best in Interact mode.
             </p>

@@ -8,5 +8,7 @@ dist
 .canvas-agent/
 .canvas-media/
 .codex/
+.playwright-mcp/
+canvas-state.png
 projects/appsignal-local/
 tests/visual-baselines/.tmp/

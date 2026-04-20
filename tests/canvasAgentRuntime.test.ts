@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -27,6 +27,54 @@ describe("canvas agent runtime", () => {
     expect(runtime.buildDefaultNodeCatalogWorkspaceKey("  thicket  ")).toBe(
       "gallery-thicket-node-catalog"
     )
+  })
+
+  it("reads the canvas theme snapshot from the local session state envelope", async () => {
+    const runtime = await loadRuntime()
+    const sessionDir = await mkdtemp(path.join(tmpdir(), "canvas-agent-runtime-theme-"))
+
+    try {
+      await writeFile(
+        path.join(sessionDir, "state.json"),
+        JSON.stringify(
+          {
+            state: {
+              items: [],
+              groups: [],
+              nextZIndex: 1,
+              selectedIds: [],
+            },
+            themeSnapshot: {
+              themes: [
+                {
+                  id: "default",
+                  label: "Default",
+                  vars: { "--color-brand-600": "#2563eb" },
+                },
+              ],
+              activeThemeId: "default",
+              tokenValues: { "--color-brand-600": "#2563eb" },
+            },
+          },
+          null,
+          2
+        )
+      )
+
+      await expect(runtime.readCanvasAgentThemes({ sessionDir } as any)).resolves.toEqual({
+        themes: [
+          {
+            id: "default",
+            label: "Default",
+            vars: { "--color-brand-600": "#2563eb" },
+          },
+        ],
+        activeThemeId: "default",
+        tokenValues: { "--color-brand-600": "#2563eb" },
+      })
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true })
+    }
   })
 
   it("reads manifest, surface manifests, workspace state, export preview, and screenshot payloads from agent-native endpoints", async () => {
@@ -277,6 +325,18 @@ describe("canvas agent runtime", () => {
           path: "boards/demo.canvas",
         }),
       })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          htmlBundle: {
+            entryAsset: "html/landing/index.html",
+            entryUrl:
+              "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Flanding%2Findex.html",
+            assetCount: 3,
+            importedAt: "2026-04-12T12:00:00.000Z",
+          },
+        }),
+      })
 
     vi.stubGlobal("fetch", fetchMock)
 
@@ -337,6 +397,18 @@ describe("canvas agent runtime", () => {
       ok: true,
       path: "boards/demo.canvas",
     })
+    await expect(
+      runtime.importProjectCanvasHtmlBundle(context as any, "boards/demo.canvas", {
+        title: "Landing",
+        directoryPath: "/tmp/landing",
+      })
+    ).resolves.toEqual({
+      entryAsset: "html/landing/index.html",
+      entryUrl:
+        "/api/projects/demo/canvases/assets/file?path=boards%2Fdemo.canvas&asset=html%2Flanding%2Findex.html",
+      assetCount: 3,
+      importedAt: "2026-04-12T12:00:00.000Z",
+    })
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://127.0.0.1:5178/api/projects/demo/canvases?surface=canvas"
@@ -350,6 +422,9 @@ describe("canvas agent runtime", () => {
     expect(fetchMock.mock.calls[5]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/move")
     expect(fetchMock.mock.calls[6]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/duplicate")
     expect(fetchMock.mock.calls[7]?.[0]).toBe("http://127.0.0.1:5178/api/projects/demo/canvases/delete")
+    expect(fetchMock.mock.calls[8]?.[0]).toBe(
+      "http://127.0.0.1:5178/api/projects/demo/canvases/html-bundle/import"
+    )
   })
 
   it("reads workspace debug payloads from the agent-native endpoint", async () => {
@@ -592,6 +667,94 @@ describe("canvas agent runtime", () => {
     })
   })
 
+  it("captures a focused Canvas screenshot using item ids and padding", async () => {
+    const runtime = await loadRuntime()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          state: {
+            surface: "canvas",
+            state: {
+              items: [
+                {
+                  id: "item-1",
+                  type: "html",
+                  position: { x: 120, y: 160 },
+                  size: { width: 480, height: 320 },
+                },
+              ],
+              groups: [],
+              nextZIndex: 2,
+              selectedIds: [],
+            },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          capture: {
+            workspaceId: "canvas",
+            target: "desktop",
+            mediaUrl: "/api/media/file/canvas-item.png",
+            cropRect: {
+              x: 128,
+              y: 96,
+              width: 640,
+              height: 512,
+            },
+          },
+        }),
+      })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = {
+      serverUrl: "http://127.0.0.1:5178",
+      projectId: "demo",
+      canvasWorkspaceKey: "gallery-demo:canvas",
+    }
+
+    await expect(
+      runtime.captureCanvasItemsScreenshot(context as any, ["item-1"], "desktop", 88)
+    ).resolves.toEqual({
+      workspaceId: "canvas",
+      target: "desktop",
+      mediaUrl: "/api/media/file/canvas-item.png",
+      cropRect: {
+        x: 128,
+        y: 96,
+        width: 640,
+        height: 512,
+      },
+    })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://127.0.0.1:5178/api/agent-native/workspaces/canvas/state?workspaceKey=gallery-demo%3Acanvas"
+    )
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "http://127.0.0.1:5178/api/agent-native/workspaces/canvas/screenshot"
+    )
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body || "{}"))).toMatchObject({
+      projectId: "demo",
+      target: "desktop",
+      focusItemIds: ["item-1"],
+      focusPadding: 88,
+      snapshot: {
+        surface: "canvas",
+        state: {
+          items: [
+            {
+              id: "item-1",
+            },
+          ],
+        },
+      },
+    })
+  })
+
   it("bootstraps an app-owned canvas agent session through the HTTP bootstrap endpoint", async () => {
     const runtime = await loadRuntime()
     const fetchMock = vi.fn().mockResolvedValue({
@@ -700,5 +863,57 @@ describe("canvas agent runtime", () => {
     await runtime.clearCanvasAgentAttachedContext(contextFilePath)
     await expect(readFile(contextFilePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
     await rm(tempDir, { recursive: true, force: true })
+  })
+
+  it("scans local HTML bundle libraries through project file endpoints", async () => {
+    const runtime = await loadRuntime()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        result: {
+          rootPath: "/Users/strongeron/Evil Martians/Claude Code/playground",
+          scannedAt: "2026-04-12T16:00:00.000Z",
+          entries: [
+            {
+              id: "landing",
+              directoryPath: "/Users/strongeron/Evil Martians/Claude Code/playground/landing",
+              relativeDirectory: "landing",
+              entryFiles: ["index.html", "preview.html"],
+              defaultEntryFile: "index.html",
+            },
+          ],
+        },
+      }),
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = {
+      serverUrl: "http://127.0.0.1:5178",
+      projectId: "demo",
+    }
+
+    await expect(
+      runtime.scanProjectCanvasHtmlBundles(
+        context as any,
+        "/Users/strongeron/Evil Martians/Claude Code/playground"
+      )
+    ).resolves.toEqual({
+      rootPath: "/Users/strongeron/Evil Martians/Claude Code/playground",
+      scannedAt: "2026-04-12T16:00:00.000Z",
+      entries: [
+        {
+          id: "landing",
+          directoryPath: "/Users/strongeron/Evil Martians/Claude Code/playground/landing",
+          relativeDirectory: "landing",
+          entryFiles: ["index.html", "preview.html"],
+          defaultEntryFile: "index.html",
+        },
+      ],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:5178/api/projects/demo/canvases/html-bundles?rootPath=%2FUsers%2Fstrongeron%2FEvil+Martians%2FClaude+Code%2Fplayground"
+    )
   })
 })

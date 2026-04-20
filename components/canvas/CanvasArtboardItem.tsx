@@ -261,6 +261,8 @@ export function CanvasArtboardItem({
         setNodeRef(node)
       }}
       className={`absolute ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+      data-canvas-item-id={item.id}
+      data-canvas-item-type={item.type}
       style={{
         left: item.position.x,
         top: item.position.y,

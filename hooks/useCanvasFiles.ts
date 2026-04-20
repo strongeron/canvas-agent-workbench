@@ -4,6 +4,9 @@ import type {
   CanvasDocumentSurface,
   CanvasFileAssetInput,
   CanvasFileDocument,
+  CanvasHtmlBundleImportInput,
+  CanvasHtmlBundleLibraryScanResult,
+  CanvasHtmlBundleImportResult,
   CanvasFileIndexEntry,
   CanvasStateSnapshot,
   CanvasTransform,
@@ -299,6 +302,63 @@ export function useCanvasFiles<
     [projectId, refreshFiles]
   )
 
+  const importCanvasHtmlBundle = useCallback(
+    async (filePath: string, bundle: CanvasHtmlBundleImportInput) => {
+      if (!projectId) throw new Error("Select a project before importing an HTML bundle.")
+      setIsSaving(true)
+      setError(null)
+      try {
+        const response = await fetch(
+          `/api/projects/${encodeURIComponent(projectId)}/canvases/html-bundle/import`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              path: filePath,
+              bundle,
+            }),
+          }
+        )
+        const data = await response.json().catch(() => null)
+        if (!response.ok || !data?.ok || !data?.htmlBundle) {
+          throw new Error(data?.error || "Failed to import HTML bundle.")
+        }
+        return data.htmlBundle as CanvasHtmlBundleImportResult
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error ? nextError.message : "Failed to import HTML bundle."
+        setError(message)
+        throw nextError
+      } finally {
+        setIsSaving(false)
+      }
+    },
+    [projectId]
+  )
+
+  const scanCanvasHtmlBundleLibrary = useCallback(
+    async (rootPath: string) => {
+      if (!projectId) throw new Error("Select a project before scanning an HTML bundle library.")
+      setError(null)
+      try {
+        const response = await fetch(
+          `/api/projects/${encodeURIComponent(projectId)}/canvases/html-bundles?rootPath=${encodeURIComponent(rootPath)}`
+        )
+        const data = await response.json().catch(() => null)
+        if (!response.ok || !data?.ok || !data?.result) {
+          throw new Error(data?.error || "Failed to scan HTML bundle library.")
+        }
+        return data.result as CanvasHtmlBundleLibraryScanResult
+      } catch (nextError) {
+        const message =
+          nextError instanceof Error ? nextError.message : "Failed to scan HTML bundle library."
+        setError(message)
+        throw nextError
+      }
+    },
+    [projectId]
+  )
+
   return {
     files,
     isLoading,
@@ -312,5 +372,7 @@ export function useCanvasFiles<
     moveCanvasFile,
     duplicateCanvasFile,
     deleteCanvasFile,
+    importCanvasHtmlBundle,
+    scanCanvasHtmlBundleLibrary,
   }
 }

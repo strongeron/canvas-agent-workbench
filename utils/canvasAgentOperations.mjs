@@ -9,8 +9,10 @@ export const DEFAULT_ARTBOARD_LAYOUT = {
 
 export const DEFAULT_ARTBOARD_SIZE = { width: 1440, height: 900 }
 export const DEFAULT_ARTBOARD_POSITION = { x: 120, y: 120 }
+export const DEFAULT_HTML_ITEM_SIZE = { width: 720, height: 480 }
 export const DEFAULT_EXPORT_FORMAT = 'react-tailwind'
 export const EXPORT_FORMATS = new Set(['react-tailwind', 'react-css-vars'])
+export const GROUP_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
 
 export function deriveCanvasNextZIndex(items) {
   const list = Array.isArray(items) ? items : []
@@ -69,6 +71,25 @@ export function applyCanvasRemoteOperationToState(state, operation) {
         selectedIds: operation.select ? [operation.item.id] : current.selectedIds,
       }
     }
+    case 'create_items': {
+      const nextBatch = Array.isArray(operation.items)
+        ? operation.items.filter((item) => item && typeof item === 'object' && item.id)
+        : []
+      if (nextBatch.length === 0) {
+        return current
+      }
+
+      const incomingIds = new Set(nextBatch.map((item) => item.id))
+      const preserved = current.items.filter((item) => !incomingIds.has(item.id))
+      const nextItems = [...preserved, ...nextBatch]
+
+      return {
+        ...current,
+        items: nextItems,
+        nextZIndex: Math.max(current.nextZIndex, deriveCanvasNextZIndex(nextItems)),
+        selectedIds: operation.select ? nextBatch.map((item) => item.id) : current.selectedIds,
+      }
+    }
     case 'update_item':
       if (!operation.id) return current
       return {
@@ -97,6 +118,47 @@ export function applyCanvasRemoteOperationToState(state, operation) {
         nextZIndex: 1,
         selectedIds: [],
       }
+    case 'create_group': {
+      if (!operation.group || typeof operation.group !== 'object' || !operation.group.id) {
+        return current
+      }
+      const itemIds = normalizeIdList(operation.itemIds)
+      const existingIndex = current.groups.findIndex((group) => group.id === operation.group.id)
+      const nextGroups =
+        existingIndex >= 0
+          ? current.groups.map((group, index) => (index === existingIndex ? operation.group : group))
+          : [...current.groups, operation.group]
+      const nextItems = current.items.map((item) =>
+        itemIds.includes(item.id) ? { ...item, groupId: operation.group.id } : item
+      )
+
+      return {
+        ...current,
+        items: nextItems,
+        groups: nextGroups,
+        selectedIds: operation.select ? itemIds : current.selectedIds,
+      }
+    }
+    case 'update_group':
+      if (!operation.id) return current
+      return {
+        ...current,
+        groups: current.groups.map((group) =>
+          group.id === operation.id ? { ...group, ...operation.updates } : group
+        ),
+      }
+    case 'delete_group':
+      if (!operation.id) return current
+      return {
+        ...current,
+        items: current.items.map((item) =>
+          item.groupId === operation.id ? { ...item, groupId: undefined } : item
+        ),
+        groups: current.groups.filter((group) => group.id !== operation.id),
+      }
+    case 'set_viewport':
+    case 'focus_items':
+      return current
     default:
       return current
   }
@@ -132,6 +194,10 @@ export function normalizeSize(value, fallback = DEFAULT_ARTBOARD_SIZE) {
   }
 }
 
+export function normalizeBoolean(value, fallback = false) {
+  return typeof value === 'boolean' ? value : fallback
+}
+
 export function normalizeArtboardLayout(value) {
   const input = value && typeof value === 'object' ? value : {}
   return {
@@ -153,6 +219,14 @@ export function createCreateItemOperation(item, select = true) {
   }
 }
 
+export function createCreateItemsOperation(items, select = true) {
+  return {
+    type: 'create_items',
+    items: Array.isArray(items) ? items.filter((item) => item && typeof item === 'object') : [],
+    select,
+  }
+}
+
 export function createUpdateItemOperation(id, updates) {
   return {
     type: 'update_item',
@@ -165,6 +239,52 @@ export function createDeleteItemsOperation(ids) {
   return {
     type: 'delete_items',
     ids: normalizeIdList(ids),
+  }
+}
+
+export function createCreateGroupOperation(group, itemIds = [], select = false) {
+  return {
+    type: 'create_group',
+    group,
+    itemIds: normalizeIdList(itemIds),
+    select,
+  }
+}
+
+export function createUpdateGroupOperation(id, updates) {
+  return {
+    type: 'update_group',
+    id,
+    updates,
+  }
+}
+
+export function createDeleteGroupOperation(id) {
+  return {
+    type: 'delete_group',
+    id,
+  }
+}
+
+export function createSetViewportOperation(viewport) {
+  return {
+    type: 'set_viewport',
+    viewport: {
+      scale: Number(viewport?.scale) || 1,
+      offset: {
+        x: Number(viewport?.offset?.x) || 0,
+        y: Number(viewport?.offset?.y) || 0,
+      },
+    },
+  }
+}
+
+export function createFocusItemsOperation(ids, padding, select = false) {
+  return {
+    type: 'focus_items',
+    ids: normalizeIdList(ids),
+    padding: Number.isFinite(padding) ? Number(padding) : undefined,
+    select,
   }
 }
 
@@ -192,6 +312,58 @@ export function createArtboardItem(state, args = {}) {
     background: normalizeString(args.background) || undefined,
     themeId: normalizeString(args.themeId) || undefined,
     layout: normalizeArtboardLayout(args.layout),
+  }
+}
+
+export function createCanvasGroup(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const itemIds = normalizeIdList(args.itemIds)
+  if (itemIds.length === 0) {
+    throw new Error('Canvas group requires at least one item id.')
+  }
+
+  const groupedItems = current.items.filter((item) => itemIds.includes(item.id))
+  if (groupedItems.length === 0) {
+    throw new Error('Canvas group item ids did not match any canvas items.')
+  }
+
+  const minX = Math.min(...groupedItems.map((item) => item.position.x))
+  const minY = Math.min(...groupedItems.map((item) => item.position.y))
+
+  return {
+    id: normalizeString(args.id) || createCanvasItemId('group'),
+    name: normalizeString(args.name) || `Group ${current.groups.length + 1}`,
+    position: normalizePosition(args.position, { x: minX, y: minY }),
+    isLocked: normalizeBoolean(args.isLocked, false),
+    color:
+      normalizeString(args.color) ||
+      GROUP_COLORS[current.groups.length % GROUP_COLORS.length],
+  }
+}
+
+export function createHtmlCanvasItem(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const src = normalizeString(args.src)
+  if (!src) {
+    throw new Error('HTML item src is required.')
+  }
+
+  return {
+    id: createCanvasItemId('html'),
+    type: 'html',
+    src,
+    title: normalizeString(args.title) || 'HTML bundle',
+    sandbox:
+      normalizeString(args.sandbox) || 'allow-scripts allow-same-origin allow-forms allow-modals',
+    background: normalizeString(args.background) || undefined,
+    entryAsset: normalizeString(args.entryAsset) || undefined,
+    sourcePath: normalizeString(args.sourcePath) || undefined,
+    sourceImportedAt: normalizeString(args.sourceImportedAt) || undefined,
+    position: normalizePosition(args.position, DEFAULT_ARTBOARD_POSITION),
+    size: normalizeSize(args.size, DEFAULT_HTML_ITEM_SIZE),
+    rotation: 0,
+    zIndex: current.nextZIndex,
+    parentId: normalizeString(args.parentId) || undefined,
   }
 }
 

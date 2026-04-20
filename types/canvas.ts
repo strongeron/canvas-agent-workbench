@@ -4,10 +4,12 @@ import type {
 } from "./agentNative"
 import type { DesignSystemScaleConfig } from "../projects/design-system-foundation/designSystemApi"
 import type { ColorCanvasState } from "./colorCanvas"
+import type { ThemeOption } from "./theme"
 
 export type CanvasItem =
   | CanvasComponentItem
   | CanvasEmbedItem
+  | CanvasHtmlItem
   | CanvasMediaItem
   | CanvasMermaidItem
   | CanvasExcalidrawItem
@@ -17,6 +19,7 @@ export type CanvasItem =
 export type CanvasItemInput =
   | Omit<CanvasComponentItem, "id" | "zIndex">
   | Omit<CanvasEmbedItem, "id" | "zIndex">
+  | Omit<CanvasHtmlItem, "id" | "zIndex">
   | Omit<CanvasMediaItem, "id" | "zIndex">
   | Omit<CanvasMermaidItem, "id" | "zIndex">
   | Omit<CanvasExcalidrawItem, "id" | "zIndex">
@@ -26,6 +29,7 @@ export type CanvasItemInput =
 export type CanvasItemUpdate =
   | Partial<Omit<CanvasComponentItem, "id">>
   | Partial<Omit<CanvasEmbedItem, "id">>
+  | Partial<Omit<CanvasHtmlItem, "id">>
   | Partial<Omit<CanvasMediaItem, "id">>
   | Partial<Omit<CanvasMermaidItem, "id">>
   | Partial<Omit<CanvasExcalidrawItem, "id">>
@@ -140,6 +144,17 @@ export interface CanvasMediaItem extends CanvasItemBase {
   sourceCapturedAt?: string
 }
 
+export interface CanvasHtmlItem extends CanvasItemBase {
+  type: "html"
+  src: string
+  title?: string
+  sandbox?: string
+  background?: string
+  entryAsset?: string
+  sourcePath?: string
+  sourceImportedAt?: string
+}
+
 export type CanvasMermaidTheme = "default" | "neutral" | "dark" | "forest" | "base"
 
 export interface CanvasMermaidItem extends CanvasItemBase {
@@ -230,6 +245,43 @@ export interface CanvasFileAssetInput {
   filePath?: string
 }
 
+export interface CanvasHtmlBundleFileInput {
+  relativePath: string
+  dataUrl?: string
+  filePath?: string
+  textContent?: string
+}
+
+export interface CanvasHtmlBundleImportInput {
+  entryFile?: string
+  title?: string
+  directoryPath?: string
+  replaceEntryAsset?: string
+  files?: CanvasHtmlBundleFileInput[]
+}
+
+export interface CanvasHtmlBundleImportResult {
+  assetRoot: string
+  entryAsset: string
+  entryUrl: string
+  assetCount: number
+  importedAt: string
+}
+
+export interface CanvasHtmlBundleLibraryEntry {
+  id: string
+  directoryPath: string
+  relativeDirectory: string
+  entryFiles: string[]
+  defaultEntryFile: string
+}
+
+export interface CanvasHtmlBundleLibraryScanResult {
+  rootPath: string
+  scannedAt: string
+  entries: CanvasHtmlBundleLibraryEntry[]
+}
+
 export interface ColorCanvasFileDocumentData {
   state: ColorCanvasState
   canvasMode: "color-audit" | "system-canvas"
@@ -302,6 +354,11 @@ export type CanvasRemoteOperation =
       select?: boolean
     }
   | {
+      type: "create_items"
+      items: CanvasItem[]
+      select?: boolean
+    }
+  | {
       type: "update_item"
       id: string
       updates: CanvasItemUpdate
@@ -316,6 +373,31 @@ export type CanvasRemoteOperation =
     }
   | {
       type: "clear_canvas"
+    }
+  | {
+      type: "create_group"
+      group: CanvasGroup
+      itemIds: string[]
+      select?: boolean
+    }
+  | {
+      type: "update_group"
+      id: string
+      updates: Partial<Omit<CanvasGroup, "id">>
+    }
+  | {
+      type: "delete_group"
+      id: string
+    }
+  | {
+      type: "set_viewport"
+      viewport: CanvasTransform
+    }
+  | {
+      type: "focus_items"
+      ids: string[]
+      padding?: number
+      select?: boolean
     }
 
 export interface CanvasAgentDefinition {
@@ -441,6 +523,12 @@ export interface CanvasAgentSessionDebug {
   workspaceEvents?: AgentWorkspaceEvent<CanvasRemoteOperation>[]
   toolCommand: string
   toolExamples: string[]
+}
+
+export interface CanvasThemeSnapshot {
+  themes: ThemeOption[]
+  activeThemeId: string | null
+  tokenValues: Record<string, string>
 }
 
 export interface CanvasTransform {

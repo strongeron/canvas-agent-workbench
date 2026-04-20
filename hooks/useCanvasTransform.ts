@@ -94,6 +94,16 @@ export function useCanvasTransform() {
     }))
   }, [])
 
+  const setViewport = useCallback((viewport: CanvasTransform) => {
+    setTransform({
+      scale: Math.max(MIN_SCALE, Math.min(MAX_SCALE, Number(viewport?.scale) || 1)),
+      offset: {
+        x: Number(viewport?.offset?.x) || 0,
+        y: Number(viewport?.offset?.y) || 0,
+      },
+    })
+  }, [])
+
   // Center the view on a specific point
   const centerOn = useCallback((x: number, y: number) => {
     const { width, height } = workspaceRef.current
@@ -192,6 +202,7 @@ export function useCanvasTransform() {
     zoomTo,
     pan,
     panTo,
+    setViewport,
     centerOn,
     handleWheel,
     fitToView,

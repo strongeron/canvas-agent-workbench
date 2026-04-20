@@ -10,12 +10,14 @@ import {
   type EmbedCaptureTarget,
   type EmbedCaptureProvider,
 } from "./embedPreviewService"
+import { CanvasViewportPresets } from "./CanvasViewportPresets"
 
 interface CanvasEmbedPropsPanelProps {
   url: string
   title?: string
   allow?: string
   sandbox?: string
+  size?: { width: number; height: number }
   embedPreviewMode?: EmbedPreviewMode
   resolvedEmbedPreviewMode?: ResolvedEmbedPreviewMode
   embedFrameStatus?: EmbedFrameStatus
@@ -53,6 +55,7 @@ interface CanvasEmbedPropsPanelProps {
     sandbox?: string
     embedPreviewMode?: EmbedPreviewMode
   }) => void
+  onResize?: (size: { width: number; height: number }) => void
   onDelete: () => void
   onClose: () => void
 }
@@ -62,6 +65,7 @@ export function CanvasEmbedPropsPanel({
   title,
   allow,
   sandbox,
+  size,
   embedPreviewMode,
   resolvedEmbedPreviewMode,
   embedFrameStatus,
@@ -90,6 +94,7 @@ export function CanvasEmbedPropsPanel({
   onCaptureSnapshots,
   onRequestState,
   onChange,
+  onResize,
   onDelete,
   onClose,
 }: CanvasEmbedPropsPanelProps) {
@@ -216,6 +221,10 @@ export function CanvasEmbedPropsPanel({
               className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
             />
           </div>
+
+          {onResize ? (
+            <CanvasViewportPresets size={size} onResize={onResize} />
+          ) : null}
 
           <div className="rounded-md bg-surface-50 px-3 py-2 text-xs text-muted-foreground">
             Use Interact mode to click and scroll when iframe/live preview is active.
