@@ -10,6 +10,32 @@ The intended flow is:
 2. Attach a canvas-agent session for the project/surface you want.
 3. Run Claude Code or Codex with the local MCP server enabled.
 
+## Project vs Canvas File
+
+The storage model is:
+
+- `project` = workspace container under `projects/<project-id>/`
+- `.canvas` file = one stored document inside that project
+
+In the app sidebar:
+
+- `Projects` switches the active workspace
+- `Canvases` lists stored `.canvas` documents for that workspace
+- `Current file` shows the document currently bound to the board
+- `Open tabs`, `Recent`, and `Folder tree` are views over that stored file library
+
+There are two persistence modes:
+
+- `Browser draft`
+  The board exists only in local browser storage. It survives refresh locally, but it is not a real `.canvas` document.
+- stored `.canvas` file
+  The board is bound to a real file under the active project and autosaves locally after edits.
+
+Important:
+
+- HTML bundle nodes should be imported into a real stored `.canvas` file, not only a browser draft
+- agent file operations work against stored `.canvas` files
+
 ## Surface Coverage
 
 Current agent coverage:
@@ -217,6 +243,7 @@ When the setup is correct:
 - write tools mutate the live UI without page reload
 - `workspace-debug` shows the event trail
 - screenshot capture returns a current render for the selected surface
+- `capture_canvas_items_screenshot` returns a cropped item screenshot for Canvas nodes when rendered bounds are available
 
 ## Relevant Files
 

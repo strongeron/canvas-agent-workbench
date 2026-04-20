@@ -13,6 +13,15 @@ Related files:
 - [CANVAS_AGENT_MCP_SETUP.md](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/docs/CANVAS_AGENT_MCP_SETUP.md)
 - [CANVAS_AGENT_MCP_COMMANDS.md](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/docs/CANVAS_AGENT_MCP_COMMANDS.md)
 
+## Model
+
+Use this mental model during testing:
+
+- `project` = workspace container
+- `.canvas` file = one stored document inside that project
+
+If the app shows `Browser draft` or `Unsaved canvas`, the board is not yet bound to a real stored file. For HTML bundle testing, open or create a real `.canvas` file first.
+
 ## Launch
 
 Claude:
@@ -130,6 +139,21 @@ Expected result:
 - agent saves first
 - agent captures screenshot after save
 - screenshot reflects the latest visible board state
+
+## Test 6: Item Screenshot Crop
+
+Prompt:
+
+```text
+Use MCP only. Open the Canvas file that contains an HTML node. Read workspace://surface/canvas/state, identify the html node id, and call capture_canvas_items_screenshot for that id. Report the returned cropRect and confirm the screenshot is a node crop rather than a full-board viewport shot.
+```
+
+Expected result:
+
+- agent finds a concrete Canvas item id
+- agent calls `capture_canvas_items_screenshot`
+- response includes `cropRect`
+- screenshot is substantially smaller than the full default desktop viewport when the node bounds are available
 
 ## If The Agent Falls Back To Bash
 
