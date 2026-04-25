@@ -55,7 +55,7 @@ interface CanvasEmbedPropsPanelProps {
     sandbox?: string
     embedPreviewMode?: EmbedPreviewMode
   }) => void
-  onResize?: (size: { width: number; height: number }) => void
+  onResize?: (width: number) => void
   onDelete: () => void
   onClose: () => void
 }

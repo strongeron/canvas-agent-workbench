@@ -3070,7 +3070,11 @@ export function CanvasTab({
 
                 updateItem(selectedEmbedItem.id, updates)
               }}
-              onResize={(size) => updateItem(selectedEmbedItem.id, { size })}
+              onResize={(width) =>
+                updateItem(selectedEmbedItem.id, {
+                  size: { width, height: selectedEmbedItem.size.height },
+                })
+              }
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />
@@ -3087,7 +3091,11 @@ export function CanvasTab({
               sourceImportedAt={selectedHtmlItem.sourceImportedAt}
               size={selectedHtmlItem.size}
               onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
-              onResize={(size) => updateItem(selectedHtmlItem.id, { size })}
+              onResize={(width) =>
+                updateItem(selectedHtmlItem.id, {
+                  size: { width, height: selectedHtmlItem.size.height },
+                })
+              }
               onReplaceBundle={(input) =>
                 handleReplaceHtmlBundle(selectedHtmlItem.id, input)
               }

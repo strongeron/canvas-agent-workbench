@@ -8,6 +8,7 @@ import {
   requestEmbedSnapshot,
   resolveEmbedPreviewMode,
   startEmbedLiveSession,
+  buildLocalProxyUrl,
 } from "./embedPreviewService"
 import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
 
@@ -71,10 +72,13 @@ export function CanvasEmbedItem({
     interactMode,
     onSelect,
   })
+  const isProxyUrl = item.url?.startsWith("/api/proxy/") ?? false
   const frameStatus = item.embedFrameStatus ?? "unknown"
   const requestedPreviewMode = item.embedPreviewMode ?? "auto"
   const previewMode = resolveEmbedPreviewMode(requestedPreviewMode, frameStatus, item.url)
-  const showFrameFallback = frameStatus === "blocked" || frameStatus === "error"
+  const localProxyUrl = buildLocalProxyUrl(item.url)
+  const useProxy = !isProxyUrl && localProxyUrl !== null && (frameStatus === "blocked" || frameStatus === "error")
+  const showFrameFallback = !isProxyUrl && !useProxy && (frameStatus === "blocked" || frameStatus === "error")
   const captureStatus = item.embedCaptureStatus ?? "idle"
   const captureBadgeLabel = captureStatus === "capturing"
     ? "Capture running"
@@ -132,6 +136,18 @@ export function CanvasEmbedItem({
     if (!item.url || typeof window === "undefined") return
     const checkedUrl = item.url.trim()
     if (!checkedUrl) return
+
+    if (checkedUrl.startsWith("/api/proxy/")) {
+      if (frameStatus !== "embeddable") {
+        pushUpdate({
+          embedFrameStatus: "embeddable",
+          embedFrameReason: "Same-origin proxy",
+          embedFrameCheckedAt: new Date().toISOString(),
+          embedFrameCheckedUrl: checkedUrl,
+        })
+      }
+      return
+    }
 
     const alreadyChecked =
       item.embedFrameCheckedUrl === checkedUrl &&
@@ -586,13 +602,14 @@ export function CanvasEmbedItem({
                 </a>
               </div>
             ) : (
-              <div className="relative h-full w-full">
+              <div className="relative h-full w-full overflow-hidden">
                 <iframe
                   ref={iframeRef}
                   title={item.title || item.url}
-                  src={item.url}
+                  src={useProxy ? localProxyUrl : item.url}
                   allow={item.allow}
                   sandbox={item.sandbox}
+                  referrerPolicy={useProxy ? "no-referrer-when-downgrade" : undefined}
                   className={`h-full w-full ${interactMode ? "pointer-events-auto" : "pointer-events-none"}`}
                   onLoad={() => {
                     if (item.embedState !== undefined) {

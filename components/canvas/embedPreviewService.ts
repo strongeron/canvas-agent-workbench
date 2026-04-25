@@ -52,7 +52,7 @@ export function resolveEmbedPreviewMode(
 ): ResolvedEmbedPreviewMode {
   const effectiveMode = mode ?? "auto"
   if (effectiveMode === "auto") {
-    if (frameStatus === "blocked") return "snapshot"
+    if (frameStatus === "blocked" && !isLocalEmbedUrl(url)) return "snapshot"
     if (frameStatus === "error" && !isLocalEmbedUrl(url)) return "snapshot"
     return "iframe"
   }
@@ -61,6 +61,7 @@ export function resolveEmbedPreviewMode(
 
 function isLocalEmbedUrl(url: string | undefined): boolean {
   if (!url) return false
+  if (url.startsWith("/api/proxy/")) return true
   try {
     const parsed = typeof window === "undefined"
       ? new URL(url)
@@ -72,6 +73,20 @@ function isLocalEmbedUrl(url: string | undefined): boolean {
     return false
   } catch {
     return false
+  }
+}
+
+export function buildLocalProxyUrl(url: string | undefined): string | null {
+  if (!url || !isLocalEmbedUrl(url)) return null
+  try {
+    const parsed = typeof window === "undefined"
+      ? new URL(url)
+      : new URL(url, window.location.href)
+    const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80")
+    const pathAndQuery = parsed.pathname + parsed.search + parsed.hash
+    return `/api/proxy/${port}${pathAndQuery}`
+  } catch {
+    return null
   }
 }
 

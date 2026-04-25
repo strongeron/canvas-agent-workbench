@@ -2,6 +2,7 @@ export interface LocalAppEntry {
   port: number
   url: string
   finalUrl?: string
+  proxyUrl?: string
   status?: number
   live?: boolean
   contentType?: string

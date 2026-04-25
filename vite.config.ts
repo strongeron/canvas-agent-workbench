@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
+import http from 'node:http'
 import { execFile } from 'node:child_process'
 import * as nodePty from 'node-pty'
 import {
@@ -5058,11 +5059,15 @@ function paperImportPlugin() {
             }
             const force = requestUrl.searchParams.get('force') === '1'
             const discovered = await discoverLocalApps(appOrigin, force)
+            const apps = discovered.apps.map((app) => ({
+              ...app,
+              proxyUrl: `/api/proxy/${app.port}/`,
+            }))
             return sendJson(res, 200, {
               ok: true,
               source: discovered.source,
               scannedPorts: discovered.scannedPorts,
-              apps: discovered.apps,
+              apps,
               checkedAt: new Date().toISOString(),
             })
           } catch (error) {
@@ -5248,6 +5253,60 @@ function paperImportPlugin() {
           const sessionId = decodeURIComponent(pathname.replace('/api/embed/live-session/', '').trim())
           await deleteEmbedLiveSession(sessionId)
           return sendJson(res, 200, { ok: true })
+        }
+
+        const proxyMatch = pathname.match(/^\/api\/proxy\/(\d+)(\/.*)$/)
+        const refererProxyMatch = !proxyMatch && req.headers.referer
+          ? req.headers.referer.match(/\/api\/proxy\/(\d+)\//)
+          : null
+        if (proxyMatch || refererProxyMatch) {
+          const targetPort = Number(proxyMatch ? proxyMatch[1] : refererProxyMatch[1])
+          const targetPath = proxyMatch
+            ? proxyMatch[2] + (req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '')
+            : req.url
+
+          if (targetPort < 1 || targetPort > 65535) {
+            return sendJson(res, 400, { error: 'Invalid port.' })
+          }
+
+          const proxyHeaders = { ...req.headers }
+          delete proxyHeaders.host
+          proxyHeaders.host = `127.0.0.1:${targetPort}`
+
+          const proxyReq = http.request(
+            {
+              hostname: '127.0.0.1',
+              port: targetPort,
+              path: targetPath,
+              method: req.method,
+              headers: proxyHeaders,
+              timeout: 15000,
+            },
+            (proxyRes) => {
+              const responseHeaders = { ...proxyRes.headers }
+              delete responseHeaders['x-frame-options']
+              delete responseHeaders['content-security-policy']
+              responseHeaders['access-control-allow-origin'] = '*'
+              res.writeHead(proxyRes.statusCode || 502, responseHeaders)
+              proxyRes.pipe(res, { end: true })
+            }
+          )
+
+          proxyReq.on('error', (error) => {
+            if (!res.headersSent) {
+              sendJson(res, 502, { error: `Proxy to localhost:${targetPort} failed: ${error.message}` })
+            }
+          })
+
+          proxyReq.on('timeout', () => {
+            proxyReq.destroy()
+            if (!res.headersSent) {
+              sendJson(res, 504, { error: `Proxy to localhost:${targetPort} timed out.` })
+            }
+          })
+
+          req.pipe(proxyReq, { end: true })
+          return
         }
 
         if (req.method === 'POST' && pathname === '/api/agent/search-web') {

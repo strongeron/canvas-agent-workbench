@@ -13,7 +13,7 @@ export const VIEWPORT_PRESETS = [
 
 interface CanvasViewportPresetsProps {
   size?: { width: number; height: number }
-  onResize: (size: { width: number; height: number }) => void
+  onResize: (width: number) => void
 }
 
 export function CanvasViewportPresets({ size, onResize }: CanvasViewportPresetsProps) {
@@ -24,19 +24,18 @@ export function CanvasViewportPresets({ size, onResize }: CanvasViewportPresetsP
       </label>
       <div className="grid grid-cols-4 gap-1">
         {VIEWPORT_PRESETS.map((preset) => {
-          const isActive =
-            size && size.width === preset.width && size.height === preset.height
+          const isActive = size && Math.round(size.width) === preset.width
           return (
             <button
               key={preset.label}
               type="button"
-              onClick={() => onResize({ width: preset.width, height: preset.height })}
+              onClick={() => onResize(preset.width)}
               className={`flex flex-col items-center gap-0.5 rounded-md border px-1.5 py-1.5 text-center transition-colors ${
                 isActive
                   ? "border-brand-300 bg-brand-50 text-brand-700"
                   : "border-default bg-white text-muted-foreground hover:bg-surface-50 hover:text-foreground"
               }`}
-              title={`${preset.label} (${preset.width}\u00d7${preset.height})`}
+              title={`${preset.label} (${preset.width}px)`}
             >
               {preset.icon === "mobile" ? (
                 <Smartphone className="h-3.5 w-3.5" />
@@ -52,7 +51,7 @@ export function CanvasViewportPresets({ size, onResize }: CanvasViewportPresetsP
       </div>
       {size ? (
         <p className="mt-1.5 text-center text-[10px] text-muted-foreground">
-          {size.width} &times; {size.height}
+          {Math.round(size.width)} &times; {Math.round(size.height)}
         </p>
       ) : null}
     </div>

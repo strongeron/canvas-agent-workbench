@@ -17,7 +17,7 @@ interface CanvasHtmlPropsPanelProps {
     sandbox?: string
     background?: string
   }) => void
-  onResize?: (size: { width: number; height: number }) => void
+  onResize?: (width: number) => void
   onReplaceBundle?: (input: {
     files?: File[]
     fileEntries?: Array<{ file: File; relativePath: string }>

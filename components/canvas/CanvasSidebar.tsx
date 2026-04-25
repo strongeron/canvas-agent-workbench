@@ -1604,16 +1604,21 @@ export function CanvasSidebar({
                       {localApps.length === 0 ? "No apps discovered yet" : "Select local app"}
                     </option>
                     {localApps.map((app) => {
-                      const optionUrl = app.finalUrl || app.url
-                      let hostLabel = optionUrl
+                      const directUrl = app.finalUrl || app.url
+                      const optionUrl = !app.embeddable && app.proxyUrl ? app.proxyUrl : directUrl
+                      let hostLabel = directUrl
                       try {
-                        hostLabel = new URL(optionUrl).host
+                        hostLabel = new URL(directUrl).host
                       } catch {
-                        hostLabel = optionUrl
+                        hostLabel = directUrl
                       }
                       const statusLabel = app.status ? ` · ${app.status}` : ""
                       const liveLabel = app.live === false ? " · not live" : " · live"
-                      const frameLabel = app.embeddable ? "" : " · iframe blocked"
+                      const frameLabel = app.embeddable
+                        ? ""
+                        : app.proxyUrl
+                          ? " · via proxy"
+                          : " · iframe blocked"
                       const label = `${hostLabel}${statusLabel}${liveLabel}${frameLabel}`
                       return (
                         <option key={`${app.port}-${optionUrl}`} value={optionUrl}>
