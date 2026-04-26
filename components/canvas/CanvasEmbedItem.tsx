@@ -487,7 +487,7 @@ export function CanvasEmbedItem({
       return "border-2 border-violet-500 ring-4 ring-violet-500/20"
     }
     if (isSelected) {
-      return "border-2 border-brand-500 ring-4 ring-brand-500/20"
+      return "border border-brand-400 ring-2 ring-brand-400/15 shadow-sm"
     }
     return "border border-default hover:shadow-md"
   }
@@ -557,11 +557,11 @@ export function CanvasEmbedItem({
               )
             ) : previewMode === "snapshot" ? (
               item.embedSnapshotStatus === "ready" && item.embedSnapshotUrl ? (
-                <div className="relative h-full w-full bg-surface-100">
+                <div className="relative h-full w-full overflow-hidden bg-surface-100">
                   <img
                     src={item.embedSnapshotUrl}
                     alt={item.title || item.url}
-                    className="h-full w-full object-cover"
+                    className="absolute left-0 top-0 w-full h-auto"
                     draggable={false}
                   />
                   <div className="pointer-events-none absolute right-2 top-2 rounded bg-surface-900/80 px-2 py-1 text-[10px] text-white">
@@ -605,12 +605,13 @@ export function CanvasEmbedItem({
               <div className="relative h-full w-full overflow-hidden">
                 <iframe
                   ref={iframeRef}
+                  data-canvas-embed-id={item.id}
                   title={item.title || item.url}
                   src={useProxy ? localProxyUrl : item.url}
-                  allow={item.allow}
-                  sandbox={item.sandbox}
+                  allow={item.allow || "fullscreen; clipboard-read; clipboard-write; autoplay; picture-in-picture; web-share; encrypted-media; xr-spatial-tracking"}
+                  sandbox={item.sandbox || "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-pointer-lock allow-presentation allow-storage-access-by-user-activation allow-downloads"}
                   referrerPolicy={useProxy ? "no-referrer-when-downgrade" : undefined}
-                  className={`h-full w-full ${interactMode ? "pointer-events-auto" : "pointer-events-none"}`}
+                  className="h-full w-full"
                   onLoad={() => {
                     if (item.embedState !== undefined) {
                       postToEmbed({
@@ -623,6 +624,9 @@ export function CanvasEmbedItem({
                     }
                   }}
                 />
+                {!interactMode && (
+                  <div className="absolute inset-0" />
+                )}
                 {frameStatus === "checking" && (
                   <div className="pointer-events-none absolute right-2 top-2 rounded bg-surface-900/80 px-2 py-1 text-[10px] text-white">
                     Checking iframe policy...

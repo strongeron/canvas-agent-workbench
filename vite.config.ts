@@ -8,7 +8,9 @@ import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
 import http from 'node:http'
+import zlib from 'node:zlib'
 import { execFile } from 'node:child_process'
+import { injectIframeProxyShims } from './utils/iframeProxyShims'
 import * as nodePty from 'node-pty'
 import {
   createCopilotSingleRouteNodeHandler,
@@ -2926,7 +2928,22 @@ async function captureSnapshotWithPlaywright(url, target, options = {}) {
     }
   }
 
-  const viewport = EMBED_CAPTURE_PRESETS[target] || EMBED_CAPTURE_PRESETS.desktop
+  const presetViewport = EMBED_CAPTURE_PRESETS[target] || EMBED_CAPTURE_PRESETS.desktop
+  // Allow callers (canvas artboards, in particular) to override the viewport so
+  // the captured layout matches the artboard width. Height is treated as a
+  // hint — when fullPage is true Playwright will extend the screenshot to the
+  // full scrollable document regardless.
+  const viewport =
+    options.viewport && Number.isFinite(options.viewport.width)
+      ? {
+          width: Math.max(200, Math.round(options.viewport.width)),
+          height: Math.max(
+            120,
+            Math.round(options.viewport.height || presetViewport.height)
+          ),
+        }
+      : presetViewport
+  const fullPage = options.fullPage === true
   let browser = null
 
   try {
@@ -2975,7 +2992,7 @@ async function captureSnapshotWithPlaywright(url, target, options = {}) {
         : null
     const screenshot = await page.screenshot({
       type: 'png',
-      fullPage: false,
+      fullPage,
       animations: 'disabled',
     })
     const outputBuffer = cropRect
@@ -3065,11 +3082,14 @@ async function captureSnapshotWithFetch(url, target, force = false) {
   }
 }
 
-async function captureEmbedSnapshotTarget(url, target, provider, force = false) {
+async function captureEmbedSnapshotTarget(url, target, provider, force = false, options = {}) {
   const attemptedReasons = []
 
   if (provider === 'auto' || provider === 'playwright') {
-    const playwrightResult = await captureSnapshotWithPlaywright(url, target)
+    const playwrightResult = await captureSnapshotWithPlaywright(url, target, {
+      fullPage: options.fullPage === true,
+      viewport: options.viewport,
+    })
     if (playwrightResult.status === 'ready') {
       const stored = await storeMediaBuffer(
         playwrightResult.buffer,
@@ -5197,10 +5217,24 @@ function paperImportPlugin() {
             const provider = normalizeCaptureProvider(body.provider)
             const targets = normalizeCaptureTargets(body.targets)
             const force = body.force === true
+            const fullPage = body.fullPage === true
+            const viewport =
+              body.viewport && typeof body.viewport === 'object'
+                ? {
+                    width: Number(body.viewport.width),
+                    height: Number(body.viewport.height),
+                  }
+                : undefined
 
             const captures = []
             for (const target of targets) {
-              const capture = await captureEmbedSnapshotTarget(targetUrl.toString(), target, provider, force)
+              const capture = await captureEmbedSnapshotTarget(
+                targetUrl.toString(),
+                target,
+                provider,
+                force,
+                { fullPage, viewport }
+              )
               captures.push(capture)
             }
 
@@ -5286,9 +5320,54 @@ function paperImportPlugin() {
               const responseHeaders = { ...proxyRes.headers }
               delete responseHeaders['x-frame-options']
               delete responseHeaders['content-security-policy']
+              delete responseHeaders['content-security-policy-report-only']
               responseHeaders['access-control-allow-origin'] = '*'
-              res.writeHead(proxyRes.statusCode || 502, responseHeaders)
-              proxyRes.pipe(res, { end: true })
+
+              const contentType = String(proxyRes.headers['content-type'] || '')
+              const isHtml = contentType.toLowerCase().includes('text/html')
+
+              if (!isHtml) {
+                res.writeHead(proxyRes.statusCode || 502, responseHeaders)
+                proxyRes.pipe(res, { end: true })
+                return
+              }
+
+              const encoding = String(proxyRes.headers['content-encoding'] || '').toLowerCase()
+              let bodyStream = proxyRes
+              if (encoding === 'gzip') {
+                bodyStream = proxyRes.pipe(zlib.createGunzip())
+              } else if (encoding === 'br') {
+                bodyStream = proxyRes.pipe(zlib.createBrotliDecompress())
+              } else if (encoding === 'deflate') {
+                bodyStream = proxyRes.pipe(zlib.createInflate())
+              }
+
+              const chunks = []
+              bodyStream.on('data', (chunk) => {
+                chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+              })
+              bodyStream.on('end', () => {
+                const html = Buffer.concat(chunks).toString('utf8')
+                const stripped = html.replace(
+                  /<meta[^>]*http-equiv\s*=\s*["']?content-security-policy(?:-report-only)?["']?[^>]*>/gi,
+                  ''
+                )
+                const shimmed = injectIframeProxyShims(stripped)
+                const outBody = Buffer.from(shimmed, 'utf8')
+                delete responseHeaders['content-encoding']
+                delete responseHeaders['content-length']
+                delete responseHeaders['transfer-encoding']
+                responseHeaders['content-length'] = String(outBody.length)
+                res.writeHead(proxyRes.statusCode || 502, responseHeaders)
+                res.end(outBody)
+              })
+              bodyStream.on('error', (error) => {
+                if (!res.headersSent) {
+                  sendJson(res, 502, { error: `Proxy decode failed: ${error?.message || error}` })
+                } else {
+                  res.end()
+                }
+              })
             }
           )
 

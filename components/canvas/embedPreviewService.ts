@@ -92,7 +92,13 @@ export function buildLocalProxyUrl(url: string | undefined): string | null {
 
 export async function requestEmbedSnapshot(
   url: string,
-  options?: { width?: number; height?: number; force?: boolean },
+  options?: {
+    width?: number
+    height?: number
+    force?: boolean
+    /** Capture the full scrollable page rather than just the viewport. */
+    fullPage?: boolean
+  },
   signal?: AbortSignal
 ): Promise<{
   status: "ready" | "error" | "unknown"
@@ -104,12 +110,24 @@ export async function requestEmbedSnapshot(
 }> {
   const sourceUrl = url.trim()
   const capturedAtFallback = new Date().toISOString()
+  // Default to full-page capture when called from canvas embed slots: the
+  // artboards are tall (e.g. 1918×8242) and we want the captured image to
+  // cover the full scrollable document, not just the viewport, so the
+  // resulting image displays cleanly inside the artboard. Callers that only
+  // need a hero-sized preview (e.g. URL hover thumbnails) can opt out.
+  const fullPage = options?.fullPage !== false
+  const viewportWidth = Number.isFinite(options?.width) ? Number(options?.width) : undefined
+  const viewportHeight = Number.isFinite(options?.height) ? Number(options?.height) : undefined
   const captureResult = await captureEmbedSnapshots(
     sourceUrl,
     {
       targets: ["desktop"],
       provider: "auto",
       force: options?.force === true,
+      fullPage,
+      viewport: viewportWidth
+        ? { width: viewportWidth, height: viewportHeight }
+        : undefined,
     },
     signal
   )
@@ -219,6 +237,8 @@ export async function captureEmbedSnapshots(
     targets?: EmbedCaptureTarget[]
     provider?: EmbedCaptureProvider
     force?: boolean
+    fullPage?: boolean
+    viewport?: { width: number; height?: number }
   },
   signal?: AbortSignal
 ): Promise<{
@@ -248,6 +268,8 @@ export async function captureEmbedSnapshots(
         targets: options?.targets && options.targets.length > 0 ? options.targets : ["desktop"],
         provider: options?.provider || "auto",
         force: options?.force === true,
+        fullPage: options?.fullPage === true,
+        viewport: options?.viewport,
       }),
     })
 

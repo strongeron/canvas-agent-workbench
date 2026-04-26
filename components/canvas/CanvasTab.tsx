@@ -2940,6 +2940,7 @@ export function CanvasTab({
 
           {showPropsPanel && selectedEmbedItem && (
             <CanvasEmbedPropsPanel
+              embedId={selectedEmbedItem.id}
               url={selectedEmbedItem.url}
               title={selectedEmbedItem.title}
               allow={selectedEmbedItem.allow}

@@ -11,8 +11,10 @@ import {
   type EmbedCaptureProvider,
 } from "./embedPreviewService"
 import { CanvasViewportPresets } from "./CanvasViewportPresets"
+import { CanvasEmbedDebugSection } from "./CanvasEmbedDebugSection"
 
 interface CanvasEmbedPropsPanelProps {
+  embedId: string
   url: string
   title?: string
   allow?: string
@@ -61,6 +63,7 @@ interface CanvasEmbedPropsPanelProps {
 }
 
 export function CanvasEmbedPropsPanel({
+  embedId,
   url,
   title,
   allow,
@@ -438,6 +441,8 @@ export function CanvasEmbedPropsPanel({
               </div>
             )}
           </div>
+
+          <CanvasEmbedDebugSection embedId={embedId} url={url} useProxy />
         </div>
       </div>
     </div>
