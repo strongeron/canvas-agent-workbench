@@ -3,14 +3,17 @@ import react from '@vitejs/plugin-react'
 import path, { dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { pathToFileURL } from 'node:url'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { readLocalScanProjects } from './utils/localScanConfig.js'
+import { injectIframeProxyShims } from './utils/iframeProxyShims'
+import { injectCanvasElementIds } from './vite/plugins/canvas-element-id'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
 import http from 'node:http'
+import net from 'node:net'
 import zlib from 'node:zlib'
 import { execFile } from 'node:child_process'
-import { injectIframeProxyShims } from './utils/iframeProxyShims'
 import * as nodePty from 'node-pty'
 import {
   createCopilotSingleRouteNodeHandler,
@@ -98,7 +101,6 @@ const LOCAL_SCAN_ALLOWED_ROOTS = [
     .map((value) => value.trim())
     .filter(Boolean)
     .map((value) => path.resolve(value)),
-  ...(process.env.HOME ? [path.resolve(process.env.HOME)] : []),
 ]
 const LOCAL_SCAN_MAX_FILES = Number(process.env.LOCAL_SCAN_MAX_FILES || 4000)
 const LOCAL_SCAN_MAX_COMPONENTS = Number(process.env.LOCAL_SCAN_MAX_COMPONENTS || 120)
@@ -194,6 +196,134 @@ async function readJson(req) {
   const body = Buffer.concat(chunks).toString('utf8')
   if (!body) return {}
   return JSON.parse(body)
+}
+
+function escapeHtmlText(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function escapeHtmlStyle(value) {
+  return String(value || '').replace(/<\/style/gi, '<\\/style')
+}
+
+function escapeInlineScript(value) {
+  return String(value || '').replace(/<\/script/gi, '<\\/script')
+}
+
+async function compileReactCanvasPreview(input) {
+  const sourceReact = typeof input?.sourceReact === 'string' ? input.sourceReact.trim() : ''
+  if (!sourceReact) {
+    throw new Error('sourceReact is required.')
+  }
+
+  // U1: when the caller provides `sourceId`, inject `data-canvas-id`
+  // attributes into every JSX element so the click-to-select bridge (U2) and
+  // AST writer (U4) can resolve clicks back to AST nodes. Production builds
+  // and ad-hoc compiles without sourceId skip this step entirely.
+  const sourceId = typeof input?.sourceId === 'string' && input.sourceId.trim() ? input.sourceId.trim() : null
+  let injectedIds = []
+  let sourceReactToCompile = sourceReact
+  if (sourceId) {
+    try {
+      const injected = injectCanvasElementIds(sourceReact, { sourceId })
+      sourceReactToCompile = injected.code
+      injectedIds = injected.ids
+    } catch (error) {
+      // Don't fail the compile if the injector can't parse the source. The
+      // editing layer simply won't work for that node, but the preview still
+      // renders. Surface the reason so callers can show a "source not
+      // editable" hint.
+      injectedIds = []
+    }
+  }
+
+  const { build } = await import('esbuild')
+  const userModulePath = 'gallery-user-source.tsx'
+  const entrySource = `
+    import React from 'react'
+    import { createRoot } from 'react-dom/client'
+    import UserComponent from 'gallery-user-source'
+
+    const rootElement = document.getElementById('root')
+    if (!rootElement) {
+      throw new Error('Missing root element.')
+    }
+
+    createRoot(rootElement).render(React.createElement(UserComponent))
+  `
+
+  const result = await build({
+    stdin: {
+      contents: entrySource,
+      resolveDir: __dirname,
+      sourcefile: 'gallery-react-preview-entry.tsx',
+      loader: 'tsx',
+    },
+    bundle: true,
+    write: false,
+    platform: 'browser',
+    format: 'iife',
+    jsx: 'automatic',
+    sourcemap: 'inline',
+    target: ['es2020'],
+    logLevel: 'silent',
+    plugins: [
+      {
+        name: 'gallery-user-source',
+        setup(buildApi) {
+          buildApi.onResolve({ filter: /^gallery-user-source$/ }, () => ({
+            path: userModulePath,
+            namespace: 'gallery-user-source',
+          }))
+          buildApi.onLoad({ filter: /.*/, namespace: 'gallery-user-source' }, () => ({
+            contents: sourceReactToCompile,
+            loader: 'tsx',
+            resolveDir: __dirname,
+          }))
+        },
+      },
+    ],
+  })
+
+  const js = result.outputFiles?.[0]?.text || ''
+  if (!js) {
+    throw new Error('React compile produced no output.')
+  }
+
+  const title = escapeHtmlText(input?.title || 'React preview')
+  const sourceCss = escapeHtmlStyle(input?.sourceCss || '')
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <style>
+      html, body, #root {
+        margin: 0;
+        min-height: 100%;
+      }
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #fff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      ${sourceCss}
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>${escapeInlineScript(js)}</script>
+  </body>
+</html>`
+  return { html, ids: injectedIds }
 }
 
 const CANVAS_AGENT_DEFINITIONS = listCanvasAgentDefinitions()
@@ -957,9 +1087,215 @@ function toFsModuleUrl(filePath) {
   return `/@fs${encodeURI(normalizeFsPathForUrl(filePath))}`
 }
 
+function stripJsonComments(raw) {
+  return raw
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+}
+
+function readJsonFileSync(filePath) {
+  try {
+    return JSON.parse(stripJsonComments(readFileSync(filePath, 'utf8')))
+  } catch {
+    return null
+  }
+}
+
+function resolveLocalScanAliasFile(basePath) {
+  const candidates = [
+    basePath,
+    `${basePath}.tsx`,
+    `${basePath}.ts`,
+    `${basePath}.jsx`,
+    `${basePath}.js`,
+    path.join(basePath, 'index.tsx'),
+    path.join(basePath, 'index.ts'),
+    path.join(basePath, 'index.jsx'),
+    path.join(basePath, 'index.js'),
+  ]
+
+  return candidates.find((candidate) => existsSync(candidate)) || null
+}
+
+function normalizeViteImporterPath(importer) {
+  if (!importer || typeof importer !== 'string') return ''
+  const withoutQuery = importer.split('?')[0]
+  const withoutFsPrefix = withoutQuery.startsWith('/@fs/')
+    ? withoutQuery.slice('/@fs'.length)
+    : withoutQuery
+  try {
+    return decodeURI(withoutFsPrefix)
+  } catch {
+    return withoutFsPrefix
+  }
+}
+
+function normalizeTsconfigPathTarget(value) {
+  return value.replace(/\*.*$/, '').replace(/\/$/, '')
+}
+
+function createLocalScanAliasRecords(repoPath) {
+  const configFiles = ['tsconfig.app.json', 'tsconfig.json', 'jsconfig.json']
+  const records = []
+
+  for (const configFile of configFiles) {
+    const configPath = path.join(repoPath, configFile)
+    if (!existsSync(configPath)) continue
+    const parsed = readJsonFileSync(configPath)
+    const compilerOptions = parsed?.compilerOptions
+    if (!compilerOptions || typeof compilerOptions !== 'object') continue
+    const baseUrl =
+      typeof compilerOptions.baseUrl === 'string'
+        ? path.resolve(repoPath, compilerOptions.baseUrl)
+        : repoPath
+    const paths =
+      compilerOptions.paths && typeof compilerOptions.paths === 'object'
+        ? compilerOptions.paths
+        : {}
+
+    for (const [aliasPattern, targets] of Object.entries(paths)) {
+      if (!Array.isArray(targets) || targets.length === 0) continue
+      const starIndex = aliasPattern.indexOf('*')
+      const prefix = starIndex >= 0 ? aliasPattern.slice(0, starIndex) : aliasPattern
+      records.push({
+        prefix,
+        exact: starIndex < 0,
+        baseUrl,
+        targets: targets
+          .filter((target) => typeof target === 'string' && target.trim())
+          .map((target) => normalizeTsconfigPathTarget(target.trim())),
+      })
+    }
+  }
+
+  if (!records.some((record) => record.prefix === '@/')) {
+    records.push({
+      prefix: '@/',
+      exact: false,
+      baseUrl: repoPath,
+      targets: ['app/frontend', 'src', '.'],
+    })
+  }
+
+  return records.sort((a, b) => b.prefix.length - a.prefix.length)
+}
+
+function readConfiguredLocalScanProjectsSync() {
+  return readLocalScanProjects()
+    .filter(({ repoPath }) => {
+      try {
+        assertLocalScanPathAllowed(repoPath)
+        return true
+      } catch {
+        return false
+      }
+    })
+    .map(({ projectId, repoPath }) => ({
+      projectId,
+      repoPath,
+      aliases: createLocalScanAliasRecords(repoPath),
+    }))
+}
+
 function inferLocalComponentNameFromFile(filePath) {
   const baseName = path.basename(filePath, path.extname(filePath))
   return toPascalCase(baseName || 'LocalComponent')
+}
+
+function localScanAliasPlugin() {
+  let projects = readConfiguredLocalScanProjectsSync()
+  let dirty = false
+  const resolveCache = new Map<string, string | null>()
+
+  const getProjects = () => {
+    if (dirty) {
+      projects = readConfiguredLocalScanProjectsSync()
+      resolveCache.clear()
+      dirty = false
+    }
+    return projects
+  }
+
+  const findProjectForImporter = (importer) => {
+    const importerPath = normalizeViteImporterPath(importer)
+    if (!importerPath) return null
+    return (
+      getProjects().find((candidate) => isSubPath(candidate.repoPath, path.resolve(importerPath))) ||
+      null
+    )
+  }
+
+  const resolveProjectAlias = (project, source) => {
+    const cacheKey = `${project.repoPath}\0${source}`
+    if (resolveCache.has(cacheKey)) return resolveCache.get(cacheKey)!
+
+    let result: string | null = null
+    for (const alias of project.aliases) {
+      const matches = alias.exact ? source === alias.prefix : source.startsWith(alias.prefix)
+      if (!matches) continue
+      const suffix = alias.exact ? '' : source.slice(alias.prefix.length)
+      for (const target of alias.targets) {
+        const resolved = resolveLocalScanAliasFile(path.resolve(alias.baseUrl, target, suffix))
+        if (resolved) {
+          result = resolved
+          break
+        }
+      }
+      if (result) break
+    }
+
+    resolveCache.set(cacheKey, result)
+    return result
+  }
+
+  return {
+    name: 'gallery-local-scan-alias',
+    enforce: 'pre' as const,
+    configureServer(server) {
+      server.watcher.on('change', (file) => {
+        if (file.endsWith('project.json') && file.includes('/projects/')) {
+          dirty = true
+        }
+      })
+    },
+    resolveId(source, importer) {
+      if (!source || !importer || source.startsWith('.') || path.isAbsolute(source)) {
+        return null
+      }
+
+      const project = findProjectForImporter(importer)
+      if (!project) return null
+      return resolveProjectAlias(project, source)
+    },
+    transform(code, id) {
+      const project = findProjectForImporter(id)
+      if (!project || typeof code !== 'string') return null
+
+      // Quick bail-out: check if any alias prefix appears in the source
+      const hasAnyAlias = project.aliases.some((a) => code.includes(a.prefix))
+      if (!hasAnyAlias) return null
+
+      const rewriteImport = (match, prefix, source, suffix) => {
+        const resolved = resolveProjectAlias(project, source)
+        return resolved ? `${prefix}${toFsModuleUrl(resolved)}${suffix}` : match
+      }
+
+      // Single combined regex for: from "...", import("..."), and bare import "..."
+      const nextCode = code.replace(
+        /((?:from|import)\s*\(?\s*["'])([^"']+)(["'])/g,
+        rewriteImport
+      )
+
+      if (nextCode === code) {
+        return null
+      }
+
+      return {
+        code: nextCode,
+        map: null,
+      }
+    },
+  }
 }
 
 function extractReactComponentExports(source, filePath) {
@@ -1045,150 +1381,10 @@ async function collectLocalComponentCandidates(repoPath) {
   return files
 }
 
+const LOCAL_SCAN_PROXY_SOURCE_PATH = path.resolve(__dirname, 'components/local-scan/LocalScannedComponentProxy.tsx')
+
 function buildLocalScanProxySource() {
-  return `import { Component, useEffect, useMemo, useState } from "react"
-import type { ComponentType, ErrorInfo, ReactNode } from "react"
-
-interface LocalScannedComponentProxyProps {
-  moduleUrl: string
-  exportName?: string
-  displayName?: string
-  sourcePath?: string
-  repoName?: string
-}
-
-const NOOP = () => {}
-
-const DEFAULT_PREVIEW_PROPS: Record<string, unknown> = {
-  variants: [{ id: "preview", label: "Preview", name: "Preview" }],
-  active: "preview",
-  onChange: NOOP,
-  onPaletteChange: NOOP,
-  onFontPairChange: NOOP,
-  activePalette: "default",
-  activeFontPair: "default",
-  theme: "dark",
-  minimal: true,
-  showPickBadge: false,
-}
-
-interface LocalRenderBoundaryProps {
-  onError: (message: string) => void
-  children: ReactNode
-}
-
-interface LocalRenderBoundaryState {
-  hasError: boolean
-}
-
-class LocalRenderBoundary extends Component<LocalRenderBoundaryProps, LocalRenderBoundaryState> {
-  state: LocalRenderBoundaryState = { hasError: false }
-
-  static getDerivedStateFromError() {
-    return { hasError: true }
-  }
-
-  componentDidCatch(error: unknown, _errorInfo: ErrorInfo) {
-    const message =
-      error instanceof Error ? error.message : "Component threw during render."
-    this.props.onError(message)
-  }
-
-  render() {
-    if (this.state.hasError) return null
-    return this.props.children
-  }
-}
-
-export default function LocalScannedComponentProxy({
-  moduleUrl,
-  exportName,
-  displayName,
-  sourcePath,
-  repoName,
-  ...passThroughProps
-}: LocalScannedComponentProxyProps & Record<string, unknown>) {
-  const [LoadedComponent, setLoadedComponent] = useState<ComponentType<any> | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [renderError, setRenderError] = useState<string | null>(null)
-
-  const previewProps = useMemo(
-    () => ({
-      ...DEFAULT_PREVIEW_PROPS,
-      ...passThroughProps,
-    }),
-    [passThroughProps]
-  )
-
-  useEffect(() => {
-    let active = true
-    setLoadedComponent(null)
-    setLoadError(null)
-    setRenderError(null)
-
-    void (async () => {
-      try {
-        const mod: Record<string, unknown> = await import(/* @vite-ignore */ moduleUrl)
-        const preferred =
-          exportName && typeof mod[exportName] !== "undefined"
-            ? mod[exportName]
-            : mod.default
-        if (!preferred || (typeof preferred !== "function" && typeof preferred !== "object")) {
-          throw new Error("Export is not a renderable React component.")
-        }
-        if (active) {
-          setLoadedComponent(() => preferred as ComponentType<any>)
-        }
-      } catch (loadError) {
-        if (!active) return
-        const message =
-          loadError instanceof Error ? loadError.message : "Failed to load local module."
-        setLoadError(message)
-      }
-    })()
-
-    return () => {
-      active = false
-    }
-  }, [moduleUrl, exportName])
-
-  if (LoadedComponent) {
-    const Component = LoadedComponent
-    return (
-      <div className="h-full w-full overflow-auto rounded-lg border border-default bg-white p-3">
-        <LocalRenderBoundary onError={setRenderError} key={\`\${moduleUrl}::\${exportName || "default"}\`}>
-          <Component {...previewProps} />
-        </LocalRenderBoundary>
-        {renderError && (
-          <div className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
-            {\`Render error: \${renderError}\`}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div className="h-full w-full rounded-lg border border-default bg-surface-50 p-3 text-foreground">
-      <div className="text-sm font-semibold">{displayName || "Scanned component"}</div>
-      <div className="mt-1 text-xs text-muted-foreground">
-        {repoName ? \`Repo: \${repoName}\` : "Local repository scan"}
-      </div>
-      {sourcePath && (
-        <div className="mt-2 rounded border border-default bg-white px-2 py-1 font-mono text-[11px] text-muted-foreground">
-          {sourcePath}
-        </div>
-      )}
-      <div className="mt-3 text-xs text-muted-foreground">
-        {loadError ? \`Load error: \${loadError}\` : "Loading component module..."}
-      </div>
-      <div className="mt-2 text-[11px] text-muted-foreground">
-        This preview uses dynamic /@fs import and may fail if repo aliases/dependencies are unavailable.
-      </div>
-    </div>
-  )
-}
-`
+  return readFileSync(LOCAL_SCAN_PROXY_SOURCE_PATH, 'utf8')
 }
 
 function formatLocalScanGalleryEntrySource({
@@ -4090,6 +4286,52 @@ function paperImportPlugin() {
         }
       })
 
+      server.httpServer?.on('upgrade', (req, clientSocket, head) => {
+        if (!req.url) return
+        const upgradeMatch = req.url.match(/^\/api\/proxy\/(\d+)(\/.*)?$/)
+        if (!upgradeMatch) return
+
+        const targetPort = Number(upgradeMatch[1])
+        if (!Number.isFinite(targetPort) || targetPort < 1 || targetPort > 65535) {
+          clientSocket.destroy()
+          return
+        }
+        const targetPath = upgradeMatch[2] || '/'
+
+        const upstream = net.connect(targetPort, '127.0.0.1', () => {
+          const headerLines = [`${req.method || 'GET'} ${targetPath} HTTP/1.1`]
+          for (const [name, value] of Object.entries(req.headers)) {
+            if (value === undefined) continue
+            const lowered = name.toLowerCase()
+            if (lowered === 'host') {
+              headerLines.push(`Host: 127.0.0.1:${targetPort}`)
+              continue
+            }
+            if (Array.isArray(value)) {
+              for (const v of value) headerLines.push(`${name}: ${v}`)
+            } else {
+              headerLines.push(`${name}: ${value}`)
+            }
+          }
+          if (!req.headers.host) {
+            headerLines.push(`Host: 127.0.0.1:${targetPort}`)
+          }
+          upstream.write(headerLines.join('\r\n') + '\r\n\r\n')
+          if (head && head.length) upstream.write(head)
+          upstream.pipe(clientSocket)
+          clientSocket.pipe(upstream)
+        })
+
+        const cleanup = () => {
+          upstream.destroy()
+          clientSocket.destroy()
+        }
+        upstream.on('error', cleanup)
+        clientSocket.on('error', cleanup)
+        upstream.on('close', cleanup)
+        clientSocket.on('close', cleanup)
+      })
+
       if (LOCAL_SCAN_AUTO_SYNC) {
         const autoScanProjects = await listLocalScanProjects()
         for (const project of autoScanProjects) {
@@ -4103,6 +4345,19 @@ function paperImportPlugin() {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url) return next()
         const pathname = req.url.split('?')[0]
+
+        if (req.method === 'POST' && pathname === '/api/canvas/compile-react') {
+          try {
+            const body = await readJson(req)
+            const compiled = await compileReactCanvasPreview(body)
+            return sendJson(res, 200, { ok: true, html: compiled.html, ids: compiled.ids })
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to compile React preview.',
+            })
+          }
+        }
 
         if (req.method === 'GET' && pathname === '/api/agent-native/manifest') {
           return sendJson(res, 200, {
@@ -5333,7 +5588,7 @@ function paperImportPlugin() {
               }
 
               const encoding = String(proxyRes.headers['content-encoding'] || '').toLowerCase()
-              let bodyStream = proxyRes
+              let bodyStream: NodeJS.ReadableStream = proxyRes
               if (encoding === 'gzip') {
                 bodyStream = proxyRes.pipe(zlib.createGunzip())
               } else if (encoding === 'br') {
@@ -5342,8 +5597,8 @@ function paperImportPlugin() {
                 bodyStream = proxyRes.pipe(zlib.createInflate())
               }
 
-              const chunks = []
-              bodyStream.on('data', (chunk) => {
+              const chunks: Buffer[] = []
+              bodyStream.on('data', (chunk: Buffer | string) => {
                 chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
               })
               bodyStream.on('end', () => {
@@ -5363,7 +5618,7 @@ function paperImportPlugin() {
               })
               bodyStream.on('error', (error) => {
                 if (!res.headersSent) {
-                  sendJson(res, 502, { error: `Proxy decode failed: ${error?.message || error}` })
+                  sendJson(res, 502, { error: `Proxy decode failed: ${(error as Error).message}` })
                 } else {
                   res.end()
                 }
@@ -5843,10 +6098,14 @@ if (!HAS_COPILOTKIT_REACT_UI) {
 }
 
 export default defineConfig({
-  plugins: [react(), paperImportPlugin(), copilotKitPlugin()],
+  plugins: [localScanAliasPlugin(), react(), paperImportPlugin(), copilotKitPlugin()],
   envDir: __dirname,
   resolve: {
     alias: [
+      {
+        find: 'storybook/test',
+        replacement: path.resolve(__dirname, './components/local-scan/storybook-test-shim.ts'),
+      },
       {
         find: '@inertiajs/react',
         replacement: path.resolve(__dirname, './demo-thicket/shims/inertia-react.tsx'),
