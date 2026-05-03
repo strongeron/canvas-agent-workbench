@@ -1,14 +1,149 @@
 import { Code2, ExternalLink } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import type { CanvasHtmlItem } from "../../types/canvas"
+import {
+  isCanvasReactNodeMessage,
+  type CanvasReactNodeRect,
+} from "../../utils/canvasReactNodeBridge"
+
+export interface CanvasReactNodeSelection {
+  itemId: string
+  canvasId: string
+  tag: string
+  rect: CanvasReactNodeRect
+  fileHint?: string
+}
 
 interface CanvasHtmlFrameProps {
   item: CanvasHtmlItem
   interactMode: boolean
+  /**
+   * Called when the user selects an element inside a React TSX preview node
+   * (via the U2 click bridge). The canvas wires this up to the property
+   * panel in U3.
+   */
+  onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
 }
 
-export function CanvasHtmlFrame({ item, interactMode }: CanvasHtmlFrameProps) {
+export function CanvasHtmlFrame({ item, interactMode, onReactNodeSelect }: CanvasHtmlFrameProps) {
   const title = item.title?.trim() || "HTML bundle"
+  const sourceHtml = item.sourceHtml?.trim() || ""
+  const sourceReact = item.sourceReact?.trim() || ""
+  const sourceCss = item.sourceCss || ""
+  const shouldRenderReact = item.sourceMode === "react"
+  const shouldRenderInline =
+    item.sourceMode === "inline" || (!item.src && Boolean(sourceHtml) && !shouldRenderReact)
+  const [compiledReactHtml, setCompiledReactHtml] = useState("")
+  const [compileStatus, setCompileStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [compileError, setCompileError] = useState("")
+  const [hoverRect, setHoverRect] = useState<CanvasReactNodeRect | null>(null)
+  const [selectionRect, setSelectionRect] = useState<CanvasReactNodeRect | null>(null)
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  // U2: the sourceId that drives data-canvas-id injection and the bridge's
+  // fileHint. For v1 we use the canvas item id; once registry-backed nodes
+  // exist (U6) this becomes the source file path so multiple instances of
+  // the same component agree on ids.
+  const sourceId = item.id
+
+  useEffect(() => {
+    if (!shouldRenderReact) {
+      setCompiledReactHtml("")
+      setCompileStatus("idle")
+      setCompileError("")
+      return
+    }
+
+    if (!sourceReact) {
+      setCompiledReactHtml("")
+      setCompileStatus("error")
+      setCompileError("React source is missing.")
+      return
+    }
+
+    const controller = new AbortController()
+    setCompileStatus("loading")
+    setCompileError("")
+
+    fetch("/api/canvas/compile-react", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceReact,
+        sourceCss,
+        title,
+        sourceId,
+      }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok || !payload?.ok) {
+          throw new Error(payload?.error || "Failed to compile React source.")
+        }
+        return String(payload.html || "")
+      })
+      .then((html) => {
+        setCompiledReactHtml(html)
+        setCompileStatus("ready")
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setCompiledReactHtml("")
+        setCompileStatus("error")
+        setCompileError(error instanceof Error ? error.message : "Failed to compile React source.")
+      })
+
+    return () => controller.abort()
+  }, [shouldRenderReact, sourceReact, sourceCss, title, sourceId])
+
+  // U2: listen for click/hover messages from inside the iframe. Filter by
+  // `event.source === iframeRef.current.contentWindow` so messages from
+  // other React preview nodes on the canvas don't cross-talk.
+  useEffect(() => {
+    if (!shouldRenderReact) return
+    const handler = (event: MessageEvent) => {
+      const iframe = iframeRef.current
+      if (!iframe) return
+      if (event.source !== iframe.contentWindow) return
+      if (!isCanvasReactNodeMessage(event.data)) return
+      const message = event.data
+      if (message.type === "canvas/select") {
+        setSelectionRect(message.rect)
+        if (onReactNodeSelect && message.canvasId) {
+          onReactNodeSelect({
+            itemId: item.id,
+            canvasId: message.canvasId,
+            tag: message.tag,
+            rect: message.rect,
+            fileHint: message.fileHint,
+          })
+        }
+      } else if (message.type === "canvas/hover") {
+        setHoverRect(message.rect)
+      }
+    }
+    window.addEventListener("message", handler)
+    return () => window.removeEventListener("message", handler)
+  }, [shouldRenderReact, onReactNodeSelect, item.id])
+
+  // Clear selection when the source changes — the canvasId references an
+  // AST node from the previous compile and may not exist in the new one.
+  useEffect(() => {
+    setSelectionRect(null)
+    setHoverRect(null)
+  }, [sourceReact, sourceCss, sourceId])
+
+  const frameSource = useMemo(() => {
+    if (shouldRenderReact) return compiledReactHtml
+    if (shouldRenderInline) return sourceHtml
+    return ""
+  }, [compiledReactHtml, shouldRenderInline, shouldRenderReact, sourceHtml])
+  const hasRenderableSource = shouldRenderReact
+    ? compileStatus === "ready" && Boolean(compiledReactHtml)
+    : shouldRenderInline
+      ? Boolean(sourceHtml)
+      : Boolean(item.src)
 
   return (
     <div
@@ -21,7 +156,13 @@ export function CanvasHtmlFrame({ item, interactMode }: CanvasHtmlFrameProps) {
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-foreground">{title}</div>
             <div className="truncate text-[11px] text-muted-foreground">
-              {item.entryAsset || item.src}
+              {shouldRenderReact
+                ? compileStatus === "loading"
+                  ? "React TSX compiling..."
+                  : "React TSX"
+                : shouldRenderInline
+                  ? "Inline HTML"
+                  : item.entryAsset || item.src}
             </div>
           </div>
         </div>
@@ -40,18 +181,61 @@ export function CanvasHtmlFrame({ item, interactMode }: CanvasHtmlFrameProps) {
       </div>
 
       <div className="relative min-h-0 flex-1 bg-white">
-        {item.src ? (
-          <iframe
-            src={item.src}
-            title={title}
-            sandbox={item.sandbox || "allow-scripts allow-same-origin allow-forms allow-modals"}
-            className={`h-full w-full border-0 bg-white ${
-              interactMode ? "pointer-events-auto" : "pointer-events-none"
-            }`}
-          />
+        {hasRenderableSource ? (
+          <>
+            <iframe
+              ref={iframeRef}
+              src={shouldRenderInline || shouldRenderReact ? undefined : item.src}
+              srcDoc={shouldRenderInline || shouldRenderReact ? frameSource : undefined}
+              title={title}
+              sandbox={item.sandbox || "allow-scripts allow-same-origin allow-forms allow-modals allow-popups"}
+              className="h-full w-full border-0 bg-white"
+            />
+            {/* U2: outline overlays for hover and selection. Anchored in
+                iframe-document coords; for v1 the iframe is not scaled
+                inside CanvasHtmlFrame so these align 1:1. The canvas-level
+                wrapper applies its own transform; outlines inside this
+                component work for the unscaled local case. */}
+            {shouldRenderReact && hoverRect && interactMode && (
+              <div
+                className="pointer-events-none absolute rounded-sm ring-1 ring-brand-400/60"
+                style={{
+                  left: hoverRect.x,
+                  top: hoverRect.y,
+                  width: hoverRect.width,
+                  height: hoverRect.height,
+                }}
+              />
+            )}
+            {shouldRenderReact && selectionRect && (
+              <div
+                className="pointer-events-none absolute rounded-sm ring-2 ring-brand-500"
+                style={{
+                  left: selectionRect.x,
+                  top: selectionRect.y,
+                  width: selectionRect.width,
+                  height: selectionRect.height,
+                }}
+              />
+            )}
+            {!interactMode && (
+              <div className="absolute inset-0" />
+            )}
+          </>
+        ) : shouldRenderReact && compileStatus === "loading" ? (
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+            Compiling React preview...
+          </div>
+        ) : shouldRenderReact && compileStatus === "error" ? (
+          <div className="flex h-full items-center justify-center px-6 text-center">
+            <div className="max-w-md rounded-md border border-red-200 bg-red-50 px-4 py-3 text-left text-xs text-red-700">
+              <div className="mb-1 font-semibold">React compile failed</div>
+              <pre className="whitespace-pre-wrap font-mono">{compileError}</pre>
+            </div>
+          </div>
         ) : (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-            HTML bundle source is missing.
+            HTML source is missing.
           </div>
         )}
       </div>

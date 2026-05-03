@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { readLocalScanProjects } from './utils/localScanConfig.js'
 import { injectIframeProxyShims } from './utils/iframeProxyShims'
 import { injectCanvasElementIds } from './vite/plugins/canvas-element-id'
+import { buildBridgeScript as buildCanvasReactNodeBridgeScript } from './utils/canvasReactNodeBridge'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
@@ -297,6 +298,9 @@ async function compileReactCanvasPreview(input) {
 
   const title = escapeHtmlText(input?.title || 'React preview')
   const sourceCss = escapeHtmlStyle(input?.sourceCss || '')
+  // U2: when sourceId is provided we also inject the click-to-select bridge
+  // so iframe clicks postMessage canvas/select events to the parent canvas.
+  const bridgeScript = sourceId ? buildCanvasReactNodeBridgeScript(sourceId) : ''
   const html = `<!doctype html>
 <html>
   <head>
@@ -321,6 +325,7 @@ async function compileReactCanvasPreview(input) {
   <body>
     <div id="root"></div>
     <script>${escapeInlineScript(js)}</script>
+    ${bridgeScript}
   </body>
 </html>`
   return { html, ids: injectedIds }
