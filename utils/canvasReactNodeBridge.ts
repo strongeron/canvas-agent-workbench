@@ -137,12 +137,22 @@ export function buildHoverMessage(
  */
 function bridgeRuntime(options: { fileHint: string; marker: string; version: number }): void {
   if (typeof window === "undefined" || window.parent === window) return
-  // Idempotency guard — if the script is injected twice, the second one
-  // becomes a no-op.
+  // Idempotency guard. The flag stores the fileHint of the active install
+  // so a same-document re-install with a different fileHint can replace the
+  // listeners (otherwise stale fileHints would be emitted on every event).
+  // For srcDoc-driven recompile this is moot — the iframe document is
+  // replaced and the flag goes with it — but DOM-level updates that reuse
+  // the document (or future hot-swap paths) are handled correctly.
+  //
+  // Limitation: this bridge only attaches to the top-level document of the
+  // iframe. JSX rendered inside a nested user iframe (the preview source
+  // contains its own <iframe>) is not reachable; clicks there fall through
+  // and produce no canvas/select message. Documented for U3+ so we don't
+  // chase phantom bugs when nested previews show up.
   const installedKey = "__canvasReactNodeBridgeInstalled"
   const win = window as unknown as Record<string, unknown>
-  if (win[installedKey]) return
-  win[installedKey] = true
+  if (win[installedKey] === options.fileHint) return
+  win[installedKey] = options.fileHint
 
   function findAncestor(start: Element | null): HTMLElement | null {
     let current: Element | null = start
@@ -271,6 +281,30 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
     },
     targetOrigin
   )
+
+  // Inbound channel: the parent can drive selection/hover programmatically
+  // (used by U8's MCP tools and by the property panel's keyboard navigation).
+  // Mirrors the `__canvasShim: 'forceFire'` precedent in iframeProxyShims.ts.
+  // Messages are filtered by the same marker as our outbound traffic so
+  // unrelated postMessages don't trigger anything.
+  window.addEventListener("message", function (event) {
+    const data = event.data as Record<string, unknown> | null
+    if (!data || data[options.marker] !== true) return
+    const type = data.type
+    if (type === "canvas/request-select") {
+      const id = typeof data.canvasId === "string" ? data.canvasId : ""
+      if (!id) return
+      const escaped = (window as unknown as { CSS?: { escape?: (s: string) => string } }).CSS?.escape
+        ? (window as unknown as { CSS: { escape: (s: string) => string } }).CSS.escape(id)
+        : id.replace(/(["\\])/g, "\\$1")
+      const el = document.querySelector(`[data-canvas-id="${escaped}"]`)
+      if (el instanceof HTMLElement) postSelect(el)
+    } else if (type === "canvas/request-clear") {
+      lastHoverId = null
+      pendingMoveTarget = null
+      postHover(null)
+    }
+  })
 }
 
 /**
@@ -284,6 +318,8 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
  * inject HTML in the iframe's same-origin window.
  */
 export function buildBridgeScript(fileHint: string): string {
+  const runtimeText = bridgeRuntime.toString()
+  assertSelfContainedRuntime(runtimeText)
   const opts = escapeScriptInterop(
     JSON.stringify({
       fileHint,
@@ -291,8 +327,47 @@ export function buildBridgeScript(fileHint: string): string {
       version: CANVAS_NODE_BRIDGE_VERSION,
     })
   )
-  const runtimeBody = escapeScriptInterop(bridgeRuntime.toString())
+  const runtimeBody = escapeScriptInterop(runtimeText)
   return `<script data-canvas-iframe-bridge="react-node-select">\n;(${runtimeBody})(${opts});\n</script>`
+}
+
+/**
+ * Closure-capture self-check. The bridge runtime is `.toString()`'d into a
+ * `<script>` block at build time and runs inside an iframe with no access to
+ * the outer module scope. If a future contributor accidentally references
+ * a module-level identifier, the serialized text passes type-checking but
+ * crashes at runtime in the iframe with no diagnostic. This guard scans the
+ * serialized text for known module-scope identifiers and throws at build
+ * time if any appear, surfacing the bug before the canvas tries to render.
+ *
+ * Allowed identifiers used inside the runtime (these are intentional and
+ * must NOT be flagged): the parameter `options`, locals defined inside the
+ * IIFE, and globals like `window`, `document`, `Element`, `HTMLElement`,
+ * `MouseEvent`, `requestAnimationFrame`, `performance`, `MessageEvent`,
+ * `CSS`, `Record` (used only in a type cast — erased at runtime), and the
+ * imported constants which we serialize via the `options` parameter rather
+ * than capturing.
+ */
+function assertSelfContainedRuntime(runtimeText: string): void {
+  const forbidden = [
+    "CANVAS_NODE_BRIDGE_MARKER",
+    "CANVAS_NODE_BRIDGE_VERSION",
+    "isCanvasReactNodeMessage",
+    "findNearestCanvasIdAncestor",
+    "buildSelectMessage",
+    "buildHoverMessage",
+    "buildBridgeScript",
+    "installBridgeForTesting",
+    "escapeScriptInterop",
+    "assertSelfContainedRuntime",
+  ]
+  for (const name of forbidden) {
+    if (runtimeText.includes(name)) {
+      throw new Error(
+        `bridgeRuntime captured module-scope identifier "${name}" — the runtime is .toString()'d into a script tag and cannot reference outer scope. Inline the value or pass it via options.`
+      )
+    }
+  }
 }
 
 /**

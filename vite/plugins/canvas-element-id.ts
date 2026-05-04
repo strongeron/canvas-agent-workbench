@@ -113,15 +113,14 @@ export function injectCanvasElementIds(
           replacement: `data-canvas-id="${canvasId}"`,
         })
       } else {
-        // Insert right after the tagName (and after any JSX type arguments,
-        // i.e. <Component<T> ...>). This places the new attribute first in
-        // the attribute list, which is harmless and visually consistent.
-        const tagNameEnd = node.tagName.getEnd()
-        const typeArgs = node.typeArguments
-        const insertAfter =
-          typeArgs && typeArgs.length > 0
-            ? findClosingAngleAfter(tsxSource, typeArgs[typeArgs.length - 1].getEnd())
-            : tagNameEnd
+        // Insert at the attributes-list position. For `<Foo>`, this is right
+        // after `Foo` and before `>`. For `<Foo<T>>`, it's right after the
+        // type-argument closing `>` and before the opening tag's `>`. For
+        // `<Foo  >` (trailing whitespace), it's right after `Foo` (before
+        // the trivia). Using the AST-given position avoids the previous
+        // char-by-char scan, which could trip on `>` inside type-arg
+        // trivia (e.g. `<Foo<A /* > */>>`).
+        const insertAfter = node.attributes.pos
         edits.push({
           start: insertAfter,
           end: insertAfter,
@@ -141,15 +140,4 @@ export function injectCanvasElementIds(
   }
 
   return { code, ids }
-}
-
-/**
- * Given the position of the last type argument's end, scan forward to the `>`
- * that closes the type-argument list. Returns the index immediately after it.
- */
-function findClosingAngleAfter(source: string, fromPos: number): number {
-  for (let i = fromPos; i < source.length; i++) {
-    if (source[i] === ">") return i + 1
-  }
-  return fromPos
 }

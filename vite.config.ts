@@ -229,17 +229,20 @@ async function compileReactCanvasPreview(input) {
   const sourceId = typeof input?.sourceId === 'string' && input.sourceId.trim() ? input.sourceId.trim() : null
   let injectedIds = []
   let sourceReactToCompile = sourceReact
+  let injectionError = null
   if (sourceId) {
     try {
       const injected = injectCanvasElementIds(sourceReact, { sourceId })
       sourceReactToCompile = injected.code
       injectedIds = injected.ids
     } catch (error) {
-      // Don't fail the compile if the injector can't parse the source. The
-      // editing layer simply won't work for that node, but the preview still
-      // renders. Surface the reason so callers can show a "source not
-      // editable" hint.
+      // Don't fail the compile if the injector can't parse the source — the
+      // preview still renders. Surface the reason in the response so the
+      // canvas can show a "source not editable" hint and skip the property
+      // panel for this node. Also log for dev visibility.
+      injectionError = (error && error.message) || String(error)
       injectedIds = []
+      console.warn(`[canvas-element-id] injection failed for ${sourceId}: ${injectionError}`)
     }
   }
 
@@ -328,7 +331,7 @@ async function compileReactCanvasPreview(input) {
     ${bridgeScript}
   </body>
 </html>`
-  return { html, ids: injectedIds }
+  return { html, ids: injectedIds, injectionError }
 }
 
 const CANVAS_AGENT_DEFINITIONS = listCanvasAgentDefinitions()
@@ -4355,7 +4358,12 @@ function paperImportPlugin() {
           try {
             const body = await readJson(req)
             const compiled = await compileReactCanvasPreview(body)
-            return sendJson(res, 200, { ok: true, html: compiled.html, ids: compiled.ids })
+            return sendJson(res, 200, {
+              ok: true,
+              html: compiled.html,
+              ids: compiled.ids,
+              injectionError: compiled.injectionError,
+            })
           } catch (error) {
             return sendJson(res, 400, {
               ok: false,

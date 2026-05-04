@@ -13,6 +13,13 @@ export interface CanvasReactNodeSelection {
   tag: string
   rect: CanvasReactNodeRect
   fileHint?: string
+  /**
+   * The compile generation this canvasId belongs to. Bumped on every
+   * recompile of the source. Downstream consumers (property panel, AST
+   * writer) compare this to the current generation and reject stale
+   * selections before mutating the source file.
+   */
+  compileGeneration: number
 }
 
 interface CanvasHtmlFrameProps {
@@ -45,6 +52,12 @@ export function CanvasHtmlFrame({ item, interactMode, onReactNodeSelect }: Canva
   // exist (U6) this becomes the source file path so multiple instances of
   // the same component agree on ids.
   const sourceId = item.id
+  // Compile generation: bumped every time we kick off a new compile. The
+  // parent attaches the *current* generation to outbound selections so a
+  // stale canvasId from a previous compile (referencing an AST node that
+  // may not exist after recompile) can be rejected by the property panel
+  // (U3) and the AST writer (U4) before any source mutation runs.
+  const compileGenerationRef = useRef(0)
 
   useEffect(() => {
     if (!shouldRenderReact) {
@@ -62,6 +75,7 @@ export function CanvasHtmlFrame({ item, interactMode, onReactNodeSelect }: Canva
     }
 
     const controller = new AbortController()
+    compileGenerationRef.current += 1
     setCompileStatus("loading")
     setCompileError("")
 
@@ -123,6 +137,7 @@ export function CanvasHtmlFrame({ item, interactMode, onReactNodeSelect }: Canva
             tag: message.tag,
             rect: message.rect,
             fileHint: message.fileHint,
+            compileGeneration: compileGenerationRef.current,
           })
         }
       } else if (message.type === "canvas/hover") {

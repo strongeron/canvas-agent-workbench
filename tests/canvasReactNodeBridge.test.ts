@@ -162,6 +162,34 @@ describe("buildBridgeScript", () => {
     expect(out).toContain(`"marker":"${CANVAS_NODE_BRIDGE_MARKER}"`)
     expect(out).toContain(`"version":${CANVAS_NODE_BRIDGE_VERSION}`)
   })
+
+  it("escapes </script> in fileHint so HTML cannot break out of the script tag", () => {
+    const malicious = "evil</script><img src=x onerror=alert(1)>"
+    const out = buildBridgeScript(malicious)
+    // There should be exactly one </script> in the output — the legitimate
+    // closing tag at the end. The malicious one is escaped to <\/script>.
+    const closingTagCount = (out.match(/<\/script>/g) ?? []).length
+    expect(closingTagCount).toBe(1)
+    expect(out).toContain("evil<\\/script>")
+  })
+
+  it("the serialized runtime body does not reference module-scope identifiers", () => {
+    // Self-check belt-and-braces: even though buildBridgeScript itself
+    // throws if forbidden identifiers leak in, this test surfaces the
+    // failure in the test suite if anyone weakens the runtime check.
+    const out = buildBridgeScript("fileA")
+    // None of the module-scope helpers should appear in the script body
+    // (they cannot work — the iframe has no access to them).
+    for (const forbidden of [
+      "isCanvasReactNodeMessage",
+      "findNearestCanvasIdAncestor",
+      "buildSelectMessage",
+      "buildHoverMessage",
+      "escapeScriptInterop",
+    ]) {
+      expect(out).not.toContain(forbidden)
+    }
+  })
 })
 
 describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
@@ -243,7 +271,7 @@ describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
     expect(selectCall).toBeUndefined()
   })
 
-  it("is idempotent — second install is a no-op", () => {
+  it("is idempotent — second install with same fileHint is a no-op", () => {
     installBridgeForTesting(window, "fileA")
     parentMock.postMessage.mockClear()
     installBridgeForTesting(window, "fileA")
@@ -251,6 +279,89 @@ describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
       (call) => call[0]?.type === "canvas/ready"
     )
     expect(readyCallsAfter).toHaveLength(0)
+  })
+
+  it("re-installs when fileHint changes (handles same-document hot-swap)", () => {
+    installBridgeForTesting(window, "fileA")
+    parentMock.postMessage.mockClear()
+    installBridgeForTesting(window, "fileB")
+    const readyCallsAfter = parentMock.postMessage.mock.calls.filter(
+      (call) => call[0]?.type === "canvas/ready"
+    )
+    expect(readyCallsAfter).toHaveLength(1)
+    expect(readyCallsAfter[0][0].fileHint).toBe("fileB")
+  })
+
+  it("responds to canvas/request-select by posting canvas/select for the matching element", () => {
+    installBridgeForTesting(window, "fileA")
+    const button = makeEl("button", { "data-canvas-id": "abc:1.2" }, "x")
+    document.body.appendChild(button)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          [CANVAS_NODE_BRIDGE_MARKER]: true,
+          version: CANVAS_NODE_BRIDGE_VERSION,
+          type: "canvas/request-select",
+          canvasId: "abc:1.2",
+        },
+      })
+    )
+    const selectCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/select"
+    )
+    expect(selectCall).toBeDefined()
+    expect(selectCall![0].canvasId).toBe("abc:1.2")
+  })
+
+  it("ignores canvas/request-select with no matching element", () => {
+    installBridgeForTesting(window, "fileA")
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          [CANVAS_NODE_BRIDGE_MARKER]: true,
+          type: "canvas/request-select",
+          canvasId: "no-such-id",
+        },
+      })
+    )
+    const selectCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/select"
+    )
+    expect(selectCall).toBeUndefined()
+  })
+
+  it("ignores inbound messages without the bridge marker", () => {
+    installBridgeForTesting(window, "fileA")
+    const button = makeEl("button", { "data-canvas-id": "abc:1.2" }, "x")
+    document.body.appendChild(button)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { type: "canvas/request-select", canvasId: "abc:1.2" },
+      })
+    )
+    expect(parentMock.postMessage).not.toHaveBeenCalled()
+  })
+
+  it("responds to canvas/request-clear by posting null hover", () => {
+    installBridgeForTesting(window, "fileA")
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          [CANVAS_NODE_BRIDGE_MARKER]: true,
+          type: "canvas/request-clear",
+        },
+      })
+    )
+    const hoverCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/hover"
+    )
+    expect(hoverCall).toBeDefined()
+    expect(hoverCall![0].canvasId).toBeNull()
+    expect(hoverCall![0].rect).toBeNull()
   })
 
   it("does not install when window.parent === window (top-level page)", () => {
