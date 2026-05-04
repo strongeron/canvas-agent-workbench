@@ -8,6 +8,7 @@ import { readLocalScanProjects } from './utils/localScanConfig.js'
 import { injectIframeProxyShims } from './utils/iframeProxyShims'
 import { injectCanvasElementIds } from './vite/plugins/canvas-element-id'
 import { buildBridgeScript as buildCanvasReactNodeBridgeScript } from './utils/canvasReactNodeBridge'
+import { readCanvasAstNode } from './utils/canvasAstReader'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
@@ -4353,6 +4354,31 @@ function paperImportPlugin() {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url) return next()
         const pathname = req.url.split('?')[0]
+
+        if (req.method === 'POST' && pathname === '/api/canvas/ast/read') {
+          try {
+            const body = await readJson(req)
+            const sourceTsx = typeof body.sourceReact === 'string' ? body.sourceReact : ''
+            const canvasId = typeof body.canvasId === 'string' ? body.canvasId : ''
+            const sourceId = typeof body.sourceId === 'string' ? body.sourceId : ''
+            if (!sourceTsx || !canvasId || !sourceId) {
+              return sendJson(res, 400, {
+                ok: false,
+                error: 'sourceReact, canvasId, and sourceId are required.',
+              })
+            }
+            const result = readCanvasAstNode(sourceTsx, canvasId, { sourceId })
+            if ('error' in result) {
+              return sendJson(res, 200, { ok: false, error: result.error })
+            }
+            return sendJson(res, 200, { ok: true, node: result })
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to read AST node.',
+            })
+          }
+        }
 
         if (req.method === 'POST' && pathname === '/api/canvas/compile-react') {
           try {

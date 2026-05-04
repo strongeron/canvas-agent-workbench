@@ -20,7 +20,10 @@
  */
 
 import * as ts from "typescript"
-import { createHash } from "node:crypto"
+
+import { buildAstPathMap, hashSourceId, parseTsxSource } from "../../utils/canvasAstPath"
+
+export { hashSourceId } from "../../utils/canvasAstPath"
 
 export interface InjectCanvasElementIdsOptions {
   /** Stable identifier for this source. Hashed into the id prefix. */
@@ -43,12 +46,6 @@ export interface InjectCanvasElementIdsResult {
   ids: CanvasElementIdRecord[]
 }
 
-const SOURCE_ID_HASH_LEN = 8
-
-export function hashSourceId(sourceId: string): string {
-  return createHash("sha1").update(sourceId).digest("hex").slice(0, SOURCE_ID_HASH_LEN)
-}
-
 export function injectCanvasElementIds(
   tsxSource: string,
   options: InjectCanvasElementIdsOptions
@@ -60,31 +57,9 @@ export function injectCanvasElementIds(
     throw new TypeError("injectCanvasElementIds: options.sourceId is required")
   }
 
-  const sourceFile = ts.createSourceFile(
-    "input.tsx",
-    tsxSource,
-    ts.ScriptTarget.Latest,
-    /* setParentNodes */ true,
-    ts.ScriptKind.TSX
-  )
+  const sourceFile = parseTsxSource(tsxSource)
   const sourceIdHash = hashSourceId(options.sourceId)
-
-  // Build a path map for every node we may visit. Path is a dot-separated
-  // sequence of child indexes from the source file. The walk order matches
-  // ts.forEachChild, which is deterministic.
-  const pathMap = new WeakMap<ts.Node, string>()
-  pathMap.set(sourceFile, "")
-
-  function walk(parent: ts.Node, parentPath: string): void {
-    let index = 0
-    ts.forEachChild(parent, (child) => {
-      const childPath = parentPath === "" ? `${index}` : `${parentPath}.${index}`
-      pathMap.set(child, childPath)
-      walk(child, childPath)
-      index++
-    })
-  }
-  walk(sourceFile, "")
+  const pathMap = buildAstPathMap(sourceFile)
 
   type Edit = { start: number; end: number; replacement: string }
   const edits: Edit[] = []
