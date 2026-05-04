@@ -20,7 +20,8 @@
     "demo/App.tsx",
     "demo/components/**/*.tsx",
     "tests/**/*.ts",
-    "tests/**/*.tsx"
+    "tests/**/*.tsx",
+    "vite/**/*.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }

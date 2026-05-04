@@ -62,11 +62,14 @@ export type CanvasReactNodeMessage =
   | CanvasReactNodeHoverMessage
   | CanvasReactNodeReadyMessage
 
-/** Type guard for messages from this bridge. */
+/** Type guard for messages from this bridge. Validates the marker AND the
+ *  discriminator so consumers get correct narrowing on `message.type`. */
 export function isCanvasReactNodeMessage(value: unknown): value is CanvasReactNodeMessage {
   if (!value || typeof value !== "object") return false
   const candidate = value as Record<string, unknown>
-  return candidate[CANVAS_NODE_BRIDGE_MARKER] === true
+  if (candidate[CANVAS_NODE_BRIDGE_MARKER] !== true) return false
+  const type = candidate.type
+  return type === "canvas/select" || type === "canvas/hover" || type === "canvas/ready"
 }
 
 /** Walks up from `start`, returning the nearest ancestor with `data-canvas-id`. */
@@ -156,6 +159,11 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
     return null
   }
 
+  // Same-origin only: the iframe inherits the parent's origin via
+  // allow-same-origin sandbox, so window.location.origin equals the parent
+  // origin. Targeting it explicitly prevents leakage to embedding frames.
+  const targetOrigin = window.location.origin
+
   function postSelect(el: HTMLElement) {
     const rect = el.getBoundingClientRect()
     window.parent.postMessage(
@@ -168,7 +176,7 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
         rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         fileHint: options.fileHint,
       },
-      "*"
+      targetOrigin
     )
   }
 
@@ -183,7 +191,7 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
           rect: null,
           fileHint: options.fileHint,
         },
-        "*"
+        targetOrigin
       )
       return
     }
@@ -197,7 +205,7 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
         rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         fileHint: options.fileHint,
       },
-      "*"
+      targetOrigin
     )
   }
 
@@ -244,6 +252,9 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
   document.addEventListener(
     "mouseleave",
     () => {
+      // Clear pendingMoveTarget so a queued rAF flush can't re-emit the
+      // hover we just cleared (would cause one-frame ring flicker).
+      pendingMoveTarget = null
       lastHoverId = null
       postHover(null)
     },
@@ -258,7 +269,7 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
       type: "canvas/ready",
       fileHint: options.fileHint,
     },
-    "*"
+    targetOrigin
   )
 }
 
@@ -266,34 +277,47 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
  * Builds a `<script>` block string ready to inject into the iframe's HTML.
  * The script runs immediately on parse, attaches listeners, and posts a
  * `canvas/ready` message when set up.
+ *
+ * Security: any string interpolated inside a `<script>` block must escape
+ * `</script>` so a hostile payload (e.g. a maliciously-crafted canvas item
+ * id flowing through `fileHint`) cannot break out of the script context and
+ * inject HTML in the iframe's same-origin window.
  */
 export function buildBridgeScript(fileHint: string): string {
-  const opts = JSON.stringify({
-    fileHint,
-    marker: CANVAS_NODE_BRIDGE_MARKER,
-    version: CANVAS_NODE_BRIDGE_VERSION,
-  })
-  // The runtime is fully self-contained; serialize via toString().
-  return `<script data-canvas-iframe-bridge="react-node-select">\n;(${bridgeRuntime.toString()})(${opts});\n</script>`
+  const opts = escapeScriptInterop(
+    JSON.stringify({
+      fileHint,
+      marker: CANVAS_NODE_BRIDGE_MARKER,
+      version: CANVAS_NODE_BRIDGE_VERSION,
+    })
+  )
+  const runtimeBody = escapeScriptInterop(bridgeRuntime.toString())
+  return `<script data-canvas-iframe-bridge="react-node-select">\n;(${runtimeBody})(${opts});\n</script>`
+}
+
+/**
+ * Replace any `</` sequence with the equivalent JS string-escaped form so
+ * the result is safe to inline inside a `<script>` block. The HTML parser
+ * scans for `</script>` (and other end-tag-like sequences) literally; a
+ * single backslash before the slash is enough to defeat the match while
+ * leaving JS semantics unchanged inside string and regex literals. Function
+ * source returned by `.toString()` does not normally contain `</`, but a
+ * future regex literal or string in the runtime could.
+ */
+function escapeScriptInterop(s: string): string {
+  return s.replace(/<\//g, "<\\/")
 }
 
 // Re-export the runtime symbol for tests that want to drive it directly
-// inside a jsdom document. Tests can call `installBridge(window, fileHint)`
-// to attach listeners without going through the script-tag injection path.
-export function installBridgeForTesting(
-  win: Window,
-  fileHint: string
-): void {
-  // We intentionally call the same runtime — but tests run in a jsdom
-  // window where `window.parent === window`, so the early-return inside
-  // `bridgeRuntime` would skip installation. Tests can override this by
-  // stubbing window.parent first.
-  const runtime = bridgeRuntime as (options: {
-    fileHint: string
-    marker: string
-    version: number
-  }) => void
-  runtime.call(win, {
+// inside a jsdom document. Tests can call `installBridgeForTesting(window,
+// fileHint)` to attach listeners without going through the script-tag
+// injection path.
+//
+// Note: tests run in a jsdom window where `window.parent === window`, so
+// the early-return inside `bridgeRuntime` would skip installation. Tests
+// must stub `window.parent` first.
+export function installBridgeForTesting(win: Window, fileHint: string): void {
+  bridgeRuntime.call(win, {
     fileHint,
     marker: CANVAS_NODE_BRIDGE_MARKER,
     version: CANVAS_NODE_BRIDGE_VERSION,

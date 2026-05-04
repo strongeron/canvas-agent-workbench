@@ -106,6 +106,12 @@ export function CanvasHtmlFrame({ item, interactMode, onReactNodeSelect }: Canva
       const iframe = iframeRef.current
       if (!iframe) return
       if (event.source !== iframe.contentWindow) return
+      // Defense-in-depth: srcDoc with allow-same-origin inherits the parent
+      // origin, so messages should arrive from window.location.origin. The
+      // event.source check above is sufficient today, but the origin filter
+      // covers future cross-origin preview surfaces (U6 file-backed nodes
+      // served from a different host) without protocol changes.
+      if (event.origin !== window.location.origin && event.origin !== "null") return
       if (!isCanvasReactNodeMessage(event.data)) return
       const message = event.data
       if (message.type === "canvas/select") {
