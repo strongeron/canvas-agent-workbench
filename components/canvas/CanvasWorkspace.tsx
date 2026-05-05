@@ -28,6 +28,7 @@ import { CanvasLayoutMediaItem } from "./CanvasLayoutMediaItem"
 import { CanvasLayoutMermaidItem } from "./CanvasLayoutMermaidItem"
 import { CanvasLayoutMarkdownItem } from "./CanvasLayoutMarkdownItem"
 import { CanvasExcalidrawItem as CanvasExcalidrawItemComponent } from "./CanvasExcalidrawItem"
+import type { CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 import { CanvasMarkdownItem as CanvasMarkdownItemComponent } from "./CanvasMarkdownItem"
 import { CanvasMermaidItem as CanvasMermaidItemComponent } from "./CanvasMermaidItem"
 import { CanvasMediaItem as CanvasMediaItemComponent } from "./CanvasMediaItem"
@@ -76,6 +77,8 @@ interface CanvasWorkspaceProps {
     files: File[]
     position: { x: number; y: number }
   }) => void | Promise<void>
+  onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
+  onReactCompileGenerationChange?: (itemId: string, generation: number) => void
 }
 
 export function CanvasWorkspace({
@@ -99,6 +102,8 @@ export function CanvasWorkspace({
   Renderer,
   getComponentById,
   onDropMediaFiles,
+  onReactNodeSelect,
+  onReactCompileGenerationChange,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -267,6 +272,8 @@ export function CanvasWorkspace({
               onUpdate={(updates) => onUpdateItem(child.id, updates)}
               scale={transform.scale}
               interactMode={interactMode}
+              onReactNodeSelect={onReactNodeSelect}
+              onReactCompileGenerationChange={onReactCompileGenerationChange}
             />
           </div>
         )
@@ -357,6 +364,8 @@ export function CanvasWorkspace({
       interactMode,
       onSelectItem,
       onUpdateItem,
+      onReactCompileGenerationChange,
+      onReactNodeSelect,
       Renderer,
       getComponentById,
       transform.scale,
@@ -727,6 +736,8 @@ export function CanvasWorkspace({
                 onUpdate={(updates: Partial<Omit<CanvasHtmlItemType, "id">>) =>
                   onUpdateItem(item.id, updates)
                 }
+                onReactNodeSelect={onReactNodeSelect}
+                onReactCompileGenerationChange={onReactCompileGenerationChange}
               />
             )
           }

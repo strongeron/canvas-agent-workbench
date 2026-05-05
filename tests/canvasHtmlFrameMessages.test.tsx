@@ -255,6 +255,37 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     expect(body.sourceId).toBe("preview-42")
   })
 
+  it("reports a new compile generation when React source changes", async () => {
+    const onGenerationChange = vi.fn()
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem()}
+        interactMode
+        onReactCompileGenerationChange={onGenerationChange}
+      />
+    )
+
+    expect(onGenerationChange).toHaveBeenCalledWith("item-1", 1)
+
+    await act(async () => {
+      harness?.root.render(
+        <CanvasHtmlFrame
+          item={makeItem({
+            sourceReact: "export default function P() { return <button>next</button> }",
+          })}
+          interactMode
+          onReactCompileGenerationChange={onGenerationChange}
+        />
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onGenerationChange).toHaveBeenCalledWith("item-1", 2)
+  })
+
   it("does not attach the message listener for non-React item modes", async () => {
     const onSelect = vi.fn()
     harness = await mount(

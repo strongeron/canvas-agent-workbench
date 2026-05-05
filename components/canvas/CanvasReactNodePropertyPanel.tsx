@@ -2,24 +2,18 @@ import { AlertTriangle, Loader2, RotateCw, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 
 import type { AstAttributeInfo, AstNodeInfo } from "../../utils/canvasAstReader"
+import type { CanvasAstMutation } from "../../utils/canvasAstWriter"
 import type { CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 
 export interface CanvasReactNodePropertyPanelProps {
-  /** The selection emitted by CanvasHtmlFrame on canvas/select. */
   selection: CanvasReactNodeSelection
-  /** Current sourceReact for the selection's owning item. */
   sourceReact: string
-  /** Current compile generation. Stale selections (older generation) are
-   *  shown with a "stale — re-select" banner instead of mutable fields. */
   currentCompileGeneration: number
-  /** Source-of-truth project file path / id. Used as the canvasId prefix.
-   *  For v1 this matches `selection.itemId`. */
   sourceId: string
-  /** Called when the user clears the panel (close button or Esc). */
+  sourceFilePath?: string
+  sourceFileMtime?: number
   onClose: () => void
-  /** Called when the panel wants to switch to source-only mode (out of
-   *  scope for v1 — the canvas item type already supports it via
-   *  CanvasHtmlPropsPanel). U4 plumbs this into the AST writer. */
+  onSourceReactChange: (sourceReact: string, mtimeMs?: number) => void
   onOpenSourceMode?: () => void
 }
 
@@ -36,11 +30,18 @@ export function CanvasReactNodePropertyPanel({
   sourceReact,
   currentCompileGeneration,
   sourceId,
+  sourceFilePath,
+  sourceFileMtime,
   onClose,
+  onSourceReactChange,
   onOpenSourceMode,
 }: CanvasReactNodePropertyPanelProps) {
   const [fetchState, setFetchState] = useState<FetchState>(initialFetchState)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [writeState, setWriteState] = useState<{ status: "idle" | "saving" | "error"; error: string }>({
+    status: "idle",
+    error: "",
+  })
 
   const stale = selection.compileGeneration < currentCompileGeneration
 
@@ -91,6 +92,62 @@ export function CanvasReactNodePropertyPanel({
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
 
+  const applyMutations = useCallback(
+    async (mutations: CanvasAstMutation[]) => {
+      if (stale) return
+      setWriteState({ status: "saving", error: "" })
+      const fileBacked = Boolean(sourceFilePath)
+      try {
+        const response = await fetch("/api/canvas/ast/write", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceReact: fileBacked ? undefined : sourceReact,
+            canvasId: selection.canvasId,
+            sourceId,
+            mutations,
+            filePath: fileBacked ? sourceFilePath : undefined,
+            mtimeMs: fileBacked ? sourceFileMtime : undefined,
+          }),
+        })
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean
+          sourceReact?: string
+          mtimeMs?: number | null
+          error?: string
+          code?: string
+        }
+        if (!response.ok || !payload.ok || typeof payload.sourceReact !== "string") {
+          const errorMsg = payload.error || "Failed to write AST node."
+          throw new Error(
+            payload.code === "mtime-conflict"
+              ? `${errorMsg} The file changed on disk since it was loaded.`
+              : errorMsg
+          )
+        }
+        onSourceReactChange(
+          payload.sourceReact,
+          typeof payload.mtimeMs === "number" ? payload.mtimeMs : undefined
+        )
+        setWriteState({ status: "idle", error: "" })
+      } catch (error) {
+        setWriteState({
+          status: "error",
+          error: error instanceof Error ? error.message : "Failed to write AST node.",
+        })
+      }
+    },
+    [
+      onSourceReactChange,
+      selection.canvasId,
+      sourceFileMtime,
+      sourceFilePath,
+      sourceId,
+      sourceReact,
+      stale,
+    ]
+  )
+
   const headerLabel = useMemo(() => {
     if (stale) return `${selection.tag} (stale)`
     return fetchState.node?.tag || selection.tag
@@ -140,7 +197,12 @@ export function CanvasReactNodePropertyPanel({
         ) : fetchState.status === "error" ? (
           <ErrorBanner error={fetchState.error} onRetry={refresh} />
         ) : fetchState.node ? (
-          <NodeBody node={fetchState.node} onOpenSourceMode={onOpenSourceMode} />
+          <NodeBody
+            node={fetchState.node}
+            writeState={writeState}
+            onApplyMutations={applyMutations}
+            onOpenSourceMode={onOpenSourceMode}
+          />
         ) : null}
       </div>
     </div>
@@ -149,13 +211,24 @@ export function CanvasReactNodePropertyPanel({
 
 function NodeBody({
   node,
+  writeState,
+  onApplyMutations,
   onOpenSourceMode,
 }: {
   node: AstNodeInfo
+  writeState: { status: "idle" | "saving" | "error"; error: string }
+  onApplyMutations: (mutations: CanvasAstMutation[]) => void
   onOpenSourceMode?: () => void
 }) {
   return (
     <div className="space-y-4">
+      {writeState.status === "error" && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+          <div className="font-semibold">Could not apply edit</div>
+          <div className="mt-0.5">{writeState.error}</div>
+        </div>
+      )}
+
       <div>
         <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Element
@@ -204,7 +277,12 @@ function NodeBody({
         ) : (
           <ul className="space-y-2">
             {node.attributes.map((attr, i) => (
-              <AttributeRow key={`${attr.name}-${i}`} attr={attr} />
+              <AttributeRow
+                key={`${attr.name}-${i}`}
+                attr={attr}
+                disabled={writeState.status === "saving"}
+                onApplyMutations={onApplyMutations}
+              />
             ))}
           </ul>
         )}
@@ -219,9 +297,11 @@ function NodeBody({
             Has nested JSX or computed expressions — not editable in v1.
           </p>
         ) : node.textChildren ? (
-          <pre className="whitespace-pre-wrap rounded-md bg-surface-50 px-2 py-1 font-mono text-[11px] text-foreground">
-            {node.textChildren}
-          </pre>
+          <TextChildEditor
+            value={node.textChildren}
+            disabled={writeState.status === "saving"}
+            onApplyMutations={onApplyMutations}
+          />
         ) : (
           <p className="text-[11px] italic text-muted-foreground">(empty)</p>
         )}
@@ -230,7 +310,49 @@ function NodeBody({
   )
 }
 
-function AttributeRow({ attr }: { attr: AstAttributeInfo }) {
+function AttributeRow({
+  attr,
+  disabled,
+  onApplyMutations,
+}: {
+  attr: AstAttributeInfo
+  disabled: boolean
+  onApplyMutations: (mutations: CanvasAstMutation[]) => void
+}) {
+  const [draft, setDraft] = useState(attr.value)
+  useEffect(() => {
+    setDraft(attr.value)
+  }, [attr.value])
+  const dirty = draft !== attr.value
+  const canEdit = attr.editableInV1 && attr.kind !== "spread"
+  const apply = () => {
+    if (!dirty || !canEdit) return
+    if (attr.name === "className" && attr.kind === "literal-string") {
+      onApplyMutations([{ type: "setClassName", value: draft }])
+      return
+    }
+    const valueKind =
+      attr.kind === "literal-number"
+        ? "number"
+        : attr.kind === "literal-boolean" || attr.kind === "shorthand"
+          ? "boolean"
+          : "string"
+    const value =
+      valueKind === "number"
+        ? Number(draft)
+        : valueKind === "boolean"
+          ? draft === "true"
+          : draft
+    onApplyMutations([
+      {
+        type: "setPropValue",
+        propName: attr.name,
+        value,
+        valueKind,
+      },
+    ])
+  }
+
   return (
     <li className="rounded-md border border-default bg-white px-2 py-1.5 text-[11px]">
       <div className="flex items-center justify-between gap-2">
@@ -239,15 +361,85 @@ function AttributeRow({ attr }: { attr: AstAttributeInfo }) {
           {attr.kind}
         </span>
       </div>
-      <div className="mt-1 break-words font-mono text-[10px] text-muted-foreground">
-        {attr.kind === "literal-string" ? `"${attr.value}"` : attr.value}
-      </div>
-      {!attr.editableInV1 && attr.reasonNotEditable && (
+      {canEdit ? (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          {attr.kind === "literal-boolean" || attr.kind === "shorthand" ? (
+            <select
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              disabled={disabled}
+              className="min-w-0 flex-1 rounded border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+            >
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          ) : (
+            <input
+              type={attr.kind === "literal-number" ? "number" : "text"}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              disabled={disabled}
+              className="min-w-0 flex-1 rounded border border-default bg-white px-2 py-1 font-mono text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+            />
+          )}
+          <button
+            type="button"
+            onClick={apply}
+            disabled={disabled || !dirty}
+            className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Apply
+          </button>
+        </div>
+      ) : (
+        <div className="mt-1 break-words font-mono text-[10px] text-muted-foreground">
+          {attr.kind === "literal-string" ? `"${attr.value}"` : attr.value}
+        </div>
+      )}
+      {!canEdit && attr.reasonNotEditable && (
         <div className="mt-1 text-[10px] italic text-amber-700">
           {attr.reasonNotEditable}
         </div>
       )}
     </li>
+  )
+}
+
+function TextChildEditor({
+  value,
+  disabled,
+  onApplyMutations,
+}: {
+  value: string
+  disabled: boolean
+  onApplyMutations: (mutations: CanvasAstMutation[]) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => {
+    setDraft(value)
+  }, [value])
+  const dirty = draft !== value
+  return (
+    <div>
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        disabled={disabled}
+        rows={3}
+        spellCheck={false}
+        className="w-full resize-y rounded-md border border-default bg-white px-2 py-1 font-mono text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+      />
+      <div className="mt-1 flex justify-end">
+        <button
+          type="button"
+          onClick={() => onApplyMutations([{ type: "setTextChild", value: draft }])}
+          disabled={disabled || !dirty}
+          className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Apply text
+        </button>
+      </div>
+    </div>
   )
 }
 

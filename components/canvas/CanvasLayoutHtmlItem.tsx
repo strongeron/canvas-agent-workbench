@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 
 import type { CanvasHtmlItem as CanvasHtmlItemType } from "../../types/canvas"
-import { CanvasHtmlFrame } from "./CanvasHtmlFrame"
+import { CanvasHtmlFrame, type CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 
 interface CanvasLayoutHtmlItemProps {
   item: CanvasHtmlItemType
@@ -10,6 +10,8 @@ interface CanvasLayoutHtmlItemProps {
   onUpdate: (updates: Partial<Omit<CanvasHtmlItemType, "id">>) => void
   scale: number
   interactMode: boolean
+  onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
+  onReactCompileGenerationChange?: (itemId: string, generation: number) => void
 }
 
 const MIN_WIDTH = 280
@@ -22,6 +24,8 @@ export function CanvasLayoutHtmlItem({
   onUpdate,
   scale,
   interactMode,
+  onReactNodeSelect,
+  onReactCompileGenerationChange,
 }: CanvasLayoutHtmlItemProps) {
   const [isResizing, setIsResizing] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
@@ -77,7 +81,12 @@ export function CanvasLayoutHtmlItem({
         onSelect(event.shiftKey)
       }}
     >
-      <CanvasHtmlFrame item={item} interactMode={interactMode} />
+      <CanvasHtmlFrame
+        item={item}
+        interactMode={interactMode}
+        onReactNodeSelect={onReactNodeSelect}
+        onReactCompileGenerationChange={onReactCompileGenerationChange}
+      />
 
       {isSelected && !interactMode ? (
         <>

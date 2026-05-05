@@ -31,9 +31,15 @@ interface CanvasHtmlFrameProps {
    * panel in U3.
    */
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
+  onReactCompileGenerationChange?: (itemId: string, generation: number) => void
 }
 
-export function CanvasHtmlFrame({ item, interactMode, onReactNodeSelect }: CanvasHtmlFrameProps) {
+export function CanvasHtmlFrame({
+  item,
+  interactMode,
+  onReactNodeSelect,
+  onReactCompileGenerationChange,
+}: CanvasHtmlFrameProps) {
   const title = item.title?.trim() || "HTML bundle"
   const sourceHtml = item.sourceHtml?.trim() || ""
   const sourceReact = item.sourceReact?.trim() || ""
@@ -64,10 +70,13 @@ export function CanvasHtmlFrame({ item, interactMode, onReactNodeSelect }: Canva
       setCompiledReactHtml("")
       setCompileStatus("idle")
       setCompileError("")
+      onReactCompileGenerationChange?.(item.id, 0)
       return
     }
 
     if (!sourceReact) {
+      compileGenerationRef.current += 1
+      onReactCompileGenerationChange?.(item.id, compileGenerationRef.current)
       setCompiledReactHtml("")
       setCompileStatus("error")
       setCompileError("React source is missing.")
@@ -76,6 +85,7 @@ export function CanvasHtmlFrame({ item, interactMode, onReactNodeSelect }: Canva
 
     const controller = new AbortController()
     compileGenerationRef.current += 1
+    onReactCompileGenerationChange?.(item.id, compileGenerationRef.current)
     setCompileStatus("loading")
     setCompileError("")
 
@@ -109,7 +119,15 @@ export function CanvasHtmlFrame({ item, interactMode, onReactNodeSelect }: Canva
       })
 
     return () => controller.abort()
-  }, [shouldRenderReact, sourceReact, sourceCss, title, sourceId])
+  }, [
+    item.id,
+    onReactCompileGenerationChange,
+    shouldRenderReact,
+    sourceReact,
+    sourceCss,
+    title,
+    sourceId,
+  ])
 
   // U2: listen for click/hover messages from inside the iframe. Filter by
   // `event.source === iframeRef.current.contentWindow` so messages from

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { CanvasHtmlItem as CanvasHtmlItemType } from "../../types/canvas"
 import { CanvasContextMenu } from "./CanvasContextMenu"
-import { CanvasHtmlFrame } from "./CanvasHtmlFrame"
+import { CanvasHtmlFrame, type CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"
@@ -20,6 +20,8 @@ interface CanvasHtmlItemProps {
   onBringToFront: () => void
   scale: number
   interactMode: boolean
+  onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
+  onReactCompileGenerationChange?: (itemId: string, generation: number) => void
 }
 
 const MIN_WIDTH = 280
@@ -48,6 +50,8 @@ export function CanvasHtmlItem({
   onBringToFront,
   scale,
   interactMode,
+  onReactNodeSelect,
+  onReactCompileGenerationChange,
 }: CanvasHtmlItemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -237,7 +241,12 @@ export function CanvasHtmlItem({
       ) : null}
 
       <div className={`h-full w-full rounded-xl shadow-card transition-shadow ${borderStyle}`}>
-        <CanvasHtmlFrame item={item} interactMode={interactMode} />
+        <CanvasHtmlFrame
+          item={item}
+          interactMode={interactMode}
+          onReactNodeSelect={onReactNodeSelect}
+          onReactCompileGenerationChange={onReactCompileGenerationChange}
+        />
       </div>
 
       {isSelected && !interactMode ? (

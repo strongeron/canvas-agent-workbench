@@ -24,6 +24,7 @@ import type {
   CanvasTransform,
   CanvasMermaidItem,
   CanvasExcalidrawItem,
+  CanvasHtmlItem,
 } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
@@ -31,6 +32,8 @@ import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
 import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "./CanvasFileDialogs"
 import { CanvasHtmlPropsPanel } from "./CanvasHtmlPropsPanel"
+import { CanvasReactNodePropertyPanel } from "./CanvasReactNodePropertyPanel"
+import type { CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
@@ -190,6 +193,15 @@ function stripFileExtension(fileName: string) {
   return trimmed.replace(/\.[^.]+$/, "")
 }
 
+function escapeHtmlText(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 function getCaptureNodeSize(target: EmbedCaptureTarget, viewport?: { width?: number; height?: number }) {
   const fallback = target === "mobile"
     ? { width: 280, height: 600 }
@@ -263,6 +275,7 @@ Rules:
 Create tool guidance:
 - createCanvasItem requires type.
 - For type=component: provide componentId (and optional variantIndex).
+- For type=html: provide source/sourceHtml for inline HTML/CSS/JS, sourceReact plus optional sourceCss for React TSX, or src for a prebuilt URL.
 - For type=embed: provide url.
 - For type=media: provide src (mediaKind optional).
 - For type=markdown: provide source (title/background optional).
@@ -664,6 +677,8 @@ export function CanvasTab({
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [showHelp, setShowHelp] = useState(false)
   const [propsPanelVisible, setPropsPanelVisible] = useState(true)
+  const [reactNodeSelection, setReactNodeSelection] = useState<CanvasReactNodeSelection | null>(null)
+  const [reactCompileGenerations, setReactCompileGenerations] = useState<Record<string, number>>({})
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
   const [layersPanelVisible, setLayersPanelVisible] = useState(false)
   const [themePanelVisible, setThemePanelVisible] = useState(false)
@@ -749,6 +764,13 @@ export function CanvasTab({
   const selectedComponentItem = selectedItem?.type === "component" ? selectedItem : null
   const selectedEmbedItem = selectedItem?.type === "embed" ? selectedItem : null
   const selectedHtmlItem = selectedItem?.type === "html" ? selectedItem : null
+  const selectedReactNodeSelection =
+    selectedHtmlItem && reactNodeSelection?.itemId === selectedHtmlItem.id
+      ? reactNodeSelection
+      : null
+  const selectedReactCompileGeneration = selectedHtmlItem
+    ? reactCompileGenerations[selectedHtmlItem.id] ?? selectedReactNodeSelection?.compileGeneration ?? 0
+    : 0
   const selectedMediaItem = selectedItem?.type === "media" ? selectedItem : null
   const selectedMarkdownItem = selectedItem?.type === "markdown" ? selectedItem : null
   const selectedMermaidItem = selectedItem?.type === "mermaid" ? selectedItem : null
@@ -770,6 +792,20 @@ export function CanvasTab({
     () => ({ items, groups, selectedIds, nextZIndex }),
     [items, groups, selectedIds, nextZIndex]
   )
+
+  useEffect(() => {
+    if (!selectedReactNodeSelection && reactNodeSelection) {
+      setReactNodeSelection(null)
+    }
+  }, [reactNodeSelection, selectedReactNodeSelection])
+
+  const handleReactCompileGenerationChange = useCallback((itemId: string, generation: number) => {
+    setReactCompileGenerations((current) => {
+      if (current[itemId] === generation) return current
+      return { ...current, [itemId]: generation }
+    })
+  }, [])
+
   const applyCanvasAgentOperation = useCallback(
     (operation: CanvasRemoteOperation) => {
       if (!operation || typeof operation !== "object") return
@@ -1491,6 +1527,7 @@ export function CanvasTab({
             src: imported.entryUrl,
             title: nextTitle,
             sandbox: "allow-scripts allow-same-origin allow-forms allow-modals",
+            sourceMode: "bundle",
             entryAsset: imported.entryAsset,
             sourceImportedAt: imported.importedAt,
             position: {
@@ -1521,6 +1558,95 @@ export function CanvasTab({
       importCanvasHtmlBundle,
       refreshCanvasFiles,
       runCanvasPersistenceTask,
+      transform.offset.x,
+      transform.offset.y,
+      transform.scale,
+      workspaceSize.height,
+      workspaceSize.width,
+    ]
+  )
+
+  const handleAddInlineHtml = useCallback(
+    async (input?: {
+      title?: string
+      sourceHtml?: string
+      sourceReact?: string
+      sourceCss?: string
+      position?: { x: number; y: number }
+    }) => {
+      const htmlWidth = 720
+      const htmlHeight = 480
+      const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+      const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+      const targetX = input?.position ? input.position.x : centerX
+      const targetY = input?.position ? input.position.y : centerY
+      const title = input?.title?.trim() || "Inline HTML"
+      const safeTitle = escapeHtmlText(title)
+      const sourceHtml =
+        input?.sourceHtml?.trim() ||
+        `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font: 16px system-ui, sans-serif;
+        color: #111827;
+        background: #ffffff;
+      }
+      main {
+        width: min(520px, calc(100vw - 48px));
+        padding: 32px;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        box-shadow: 0 16px 48px rgb(15 23 42 / 0.12);
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 28px;
+        line-height: 1.1;
+      }
+      p {
+        margin: 0;
+        color: #4b5563;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${safeTitle}</h1>
+      <p>Edit this HTML in the right panel, then apply to re-render the node.</p>
+    </main>
+  </body>
+</html>`
+
+      addItem({
+        type: "html",
+        title,
+        sourceMode: input?.sourceReact ? "react" : "inline",
+        sourceHtml,
+        sourceReact: input?.sourceReact,
+        sourceCss: input?.sourceCss,
+        sandbox: "allow-scripts allow-same-origin allow-forms allow-modals allow-popups",
+        position: {
+          x: Math.max(0, targetX - htmlWidth / 2),
+          y: Math.max(0, targetY - htmlHeight / 2),
+        },
+        size: { width: htmlWidth, height: htmlHeight },
+        rotation: 0,
+      })
+      setPropsPanelVisible(true)
+      if (typeof window !== "undefined" && window.innerWidth < 1100) {
+        setSidebarVisible(false)
+      }
+    },
+    [
+      addItem,
       transform.offset.x,
       transform.offset.y,
       transform.scale,
@@ -1572,6 +1698,7 @@ export function CanvasTab({
             src: imported.entryUrl,
             title: nextTitle,
             sandbox: "allow-scripts allow-same-origin allow-forms allow-modals",
+            sourceMode: "bundle",
             entryAsset: imported.entryAsset,
             sourcePath: input.directoryPath,
             sourceImportedAt: imported.importedAt,
@@ -1658,6 +1785,7 @@ export function CanvasTab({
 
         updateItem(itemId, {
           src: `${imported.entryUrl}${imported.entryUrl.includes("?") ? "&" : "?"}v=${Date.now()}`,
+          sourceMode: "bundle",
           entryAsset: imported.entryAsset,
           sourcePath: input.directoryPath || undefined,
           sourceImportedAt: imported.importedAt,
@@ -2569,6 +2697,10 @@ export function CanvasTab({
             title: item.title,
             sandbox: item.sandbox,
             background: item.background,
+            sourceMode: item.sourceMode,
+            sourceHtml: item.sourceHtml,
+            sourceReact: item.sourceReact,
+            sourceCss: item.sourceCss,
             entryAsset: item.entryAsset,
             sourcePath: item.sourcePath,
             sourceImportedAt: item.sourceImportedAt,
@@ -2849,6 +2981,7 @@ export function CanvasTab({
                 entries={entries}
                 onAddEmbed={handleAddEmbed}
                 onAddHtmlBundle={handleAddHtmlBundle}
+                onAddInlineHtml={handleAddInlineHtml}
                 onAddHtmlBundleFromDirectory={handleAddHtmlBundleFromDirectory}
                 onScanHtmlBundleLibrary={scanCanvasHtmlBundleLibrary}
                 onAddMedia={handleAddMedia}
@@ -2918,6 +3051,12 @@ export function CanvasTab({
             onDimensionsChange={handleDimensionsChange}
             getGroupBounds={getGroupBounds}
             onDropMediaFiles={handleDropMediaFiles}
+            onReactNodeSelect={(selection) => {
+              selectItem(selection.itemId, false)
+              setReactNodeSelection(selection)
+              setPropsPanelVisible(true)
+            }}
+            onReactCompileGenerationChange={handleReactCompileGenerationChange}
           />
 
           {/* Right sidebar - Props Panel (single selection only) */}
@@ -3081,15 +3220,46 @@ export function CanvasTab({
             />
           )}
 
-          {showPropsPanel && selectedHtmlItem && (
+          {showPropsPanel && selectedHtmlItem && selectedReactNodeSelection && (
+            <CanvasReactNodePropertyPanel
+              selection={selectedReactNodeSelection}
+              sourceReact={selectedHtmlItem.sourceReact || ""}
+              currentCompileGeneration={selectedReactCompileGeneration}
+              sourceId={selectedHtmlItem.id}
+              sourceFilePath={selectedHtmlItem.sourceReactFilePath}
+              sourceFileMtime={selectedHtmlItem.sourceReactFileMtime}
+              onSourceReactChange={(sourceReact, mtimeMs) =>
+                updateItem(selectedHtmlItem.id, {
+                  sourceMode: "react",
+                  sourceReact,
+                  ...(typeof mtimeMs === "number"
+                    ? { sourceReactFileMtime: mtimeMs }
+                    : {}),
+                } satisfies Partial<Omit<CanvasHtmlItem, "id">>)
+              }
+              onOpenSourceMode={() => setReactNodeSelection(null)}
+              onClose={() => {
+                setReactNodeSelection(null)
+                handleClosePropsPanel()
+              }}
+            />
+          )}
+
+          {showPropsPanel && selectedHtmlItem && !selectedReactNodeSelection && (
             <CanvasHtmlPropsPanel
               src={selectedHtmlItem.src}
               title={selectedHtmlItem.title}
               sandbox={selectedHtmlItem.sandbox}
               background={selectedHtmlItem.background}
+              sourceMode={selectedHtmlItem.sourceMode}
+              sourceHtml={selectedHtmlItem.sourceHtml}
+              sourceReact={selectedHtmlItem.sourceReact}
+              sourceCss={selectedHtmlItem.sourceCss}
               entryAsset={selectedHtmlItem.entryAsset}
               sourcePath={selectedHtmlItem.sourcePath}
               sourceImportedAt={selectedHtmlItem.sourceImportedAt}
+              sourceReactFilePath={selectedHtmlItem.sourceReactFilePath}
+              sourceReactFileMtime={selectedHtmlItem.sourceReactFileMtime}
               size={selectedHtmlItem.size}
               onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
               onResize={(width) =>

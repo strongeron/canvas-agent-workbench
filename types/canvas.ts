@@ -146,13 +146,19 @@ export interface CanvasMediaItem extends CanvasItemBase {
 
 export interface CanvasHtmlItem extends CanvasItemBase {
   type: "html"
-  src: string
+  src?: string
   title?: string
   sandbox?: string
   background?: string
+  sourceMode?: "bundle" | "inline" | "react" | "url"
+  sourceHtml?: string
+  sourceReact?: string
+  sourceCss?: string
   entryAsset?: string
   sourcePath?: string
   sourceImportedAt?: string
+  sourceReactFilePath?: string
+  sourceReactFileMtime?: number
 }
 
 export type CanvasMermaidTheme = "default" | "neutral" | "dark" | "forest" | "base"

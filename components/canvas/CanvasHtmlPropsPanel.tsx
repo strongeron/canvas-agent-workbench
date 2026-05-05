@@ -1,21 +1,33 @@
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ExternalLink, FolderUp, RefreshCw, Trash2, Upload, X } from "lucide-react"
 import { CanvasViewportPresets } from "./CanvasViewportPresets"
 
 interface CanvasHtmlPropsPanelProps {
-  src: string
+  src?: string
   title?: string
   sandbox?: string
   background?: string
+  sourceMode?: "bundle" | "inline" | "react" | "url"
+  sourceHtml?: string
+  sourceReact?: string
+  sourceCss?: string
   entryAsset?: string
   sourcePath?: string
   sourceImportedAt?: string
+  sourceReactFilePath?: string
+  sourceReactFileMtime?: number
   size?: { width: number; height: number }
   onChange: (updates: {
     src?: string
     title?: string
     sandbox?: string
     background?: string
+    sourceMode?: "bundle" | "inline" | "react" | "url"
+    sourceHtml?: string
+    sourceReact?: string
+    sourceCss?: string
+    sourceReactFilePath?: string
+    sourceReactFileMtime?: number
   }) => void
   onResize?: (width: number) => void
   onReplaceBundle?: (input: {
@@ -34,9 +46,15 @@ export function CanvasHtmlPropsPanel({
   title,
   sandbox,
   background,
+  sourceMode,
+  sourceHtml,
+  sourceReact,
+  sourceCss,
   entryAsset,
   sourcePath,
   sourceImportedAt,
+  sourceReactFilePath,
+  sourceReactFileMtime,
   size,
   onChange,
   onResize,
@@ -49,10 +67,71 @@ export function CanvasHtmlPropsPanel({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isReplacing, setIsReplacing] = useState(false)
   const [replaceError, setReplaceError] = useState<string | null>(null)
+  const [draftSourceHtml, setDraftSourceHtml] = useState(sourceHtml || "")
+  const [draftSourceReact, setDraftSourceReact] = useState(sourceReact || "")
+  const [draftSourceCss, setDraftSourceCss] = useState(sourceCss || "")
+  const [draftSourceReactFilePath, setDraftSourceReactFilePath] = useState(sourceReactFilePath || "")
+  const [loadStatus, setLoadStatus] = useState<"idle" | "loading" | "error">("idle")
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setDraftSourceReactFilePath(sourceReactFilePath || "")
+  }, [sourceReactFilePath])
+
+  useEffect(() => {
+    setDraftSourceHtml(sourceHtml || "")
+  }, [sourceHtml])
+
+  useEffect(() => {
+    setDraftSourceReact(sourceReact || "")
+  }, [sourceReact])
+
+  useEffect(() => {
+    setDraftSourceCss(sourceCss || "")
+  }, [sourceCss])
 
   const handlePickFiles = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
+
+  const handleLoadFromFile = useCallback(async () => {
+    const filePath = draftSourceReactFilePath.trim()
+    if (!filePath) {
+      setLoadStatus("error")
+      setLoadError("Enter a workspace-relative path to a .tsx or .jsx file.")
+      return
+    }
+    setLoadStatus("loading")
+    setLoadError(null)
+    try {
+      const response = await fetch("/api/canvas/ast/load", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filePath }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean
+        sourceReact?: string
+        mtimeMs?: number
+        filePath?: string
+        error?: string
+      }
+      if (!response.ok || !payload.ok || typeof payload.sourceReact !== "string") {
+        throw new Error(payload.error || "Failed to load file.")
+      }
+      setDraftSourceReact(payload.sourceReact)
+      onChange({
+        sourceMode: "react",
+        sourceReact: payload.sourceReact,
+        sourceReactFilePath: payload.filePath,
+        sourceReactFileMtime: payload.mtimeMs,
+      })
+      setLoadStatus("idle")
+    } catch (error) {
+      setLoadStatus("error")
+      setLoadError(error instanceof Error ? error.message : "Failed to load file.")
+    }
+  }, [draftSourceReactFilePath, onChange])
 
   const handleFilesSelected = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,8 +218,13 @@ export function CanvasHtmlPropsPanel({
           <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Source URL</label>
           <input
             type="url"
-            value={src}
-            onChange={(event) => onChange({ src: event.target.value })}
+            value={src || ""}
+            onChange={(event) =>
+              onChange({
+                src: event.target.value,
+                sourceMode: event.target.value.trim() ? "url" : sourceMode,
+              })
+            }
             className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
           />
           {src ? (
@@ -176,6 +260,133 @@ export function CanvasHtmlPropsPanel({
             placeholder="#ffffff or oklch(...)"
             className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
           />
+        </div>
+
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <label className="block text-[11px] font-medium text-muted-foreground">
+              Inline HTML
+            </label>
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  sourceMode: "inline",
+                  sourceHtml: draftSourceHtml,
+                })
+              }
+              className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50"
+            >
+              Apply
+            </button>
+          </div>
+          <textarea
+            value={draftSourceHtml}
+            onChange={(event) => setDraftSourceHtml(event.target.value)}
+            rows={12}
+            spellCheck={false}
+            placeholder="<!doctype html><html><head><style>...</style></head><body>...</body></html>"
+            className="w-full resize-y rounded-md border border-default bg-surface-50 px-3 py-2 font-mono text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+            Applying inline HTML renders this node from stored source instead of a bundled URL.
+          </p>
+        </div>
+
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <label className="block text-[11px] font-medium text-muted-foreground">
+              React TSX
+            </label>
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  sourceMode: "react",
+                  sourceReact: draftSourceReact,
+                  sourceCss: draftSourceCss,
+                })
+              }
+              className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50"
+            >
+              Apply
+            </button>
+          </div>
+          <div className="mb-2 rounded-md border border-default bg-surface-50 px-2 py-1.5">
+            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Source-of-truth file
+            </label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={draftSourceReactFilePath}
+                onChange={(event) => setDraftSourceReactFilePath(event.target.value)}
+                placeholder="projects/design-system-foundation/components/ui/Button.tsx"
+                spellCheck={false}
+                className="min-w-0 flex-1 rounded border border-default bg-white px-2 py-1 font-mono text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+              />
+              <button
+                type="button"
+                onClick={handleLoadFromFile}
+                disabled={loadStatus === "loading"}
+                className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loadStatus === "loading" ? "Loading…" : "Load"}
+              </button>
+              {sourceReactFilePath ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftSourceReactFilePath("")
+                    onChange({
+                      sourceReactFilePath: undefined,
+                      sourceReactFileMtime: undefined,
+                    })
+                  }}
+                  className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-surface-50"
+                  title="Detach from file"
+                >
+                  Detach
+                </button>
+              ) : null}
+            </div>
+            {loadError ? (
+              <p className="mt-1 text-[11px] text-red-700">{loadError}</p>
+            ) : sourceReactFilePath ? (
+              <p className="mt-1 truncate text-[10px] text-muted-foreground" title={sourceReactFilePath}>
+                Saving will write to <span className="font-mono">{sourceReactFilePath}</span>
+                {typeof sourceReactFileMtime === "number"
+                  ? ` (mtime ${new Date(sourceReactFileMtime).toLocaleTimeString()})`
+                  : ""}
+              </p>
+            ) : (
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Optional. When set, panel edits write back to disk via the AST writer.
+              </p>
+            )}
+          </div>
+          <textarea
+            value={draftSourceReact}
+            onChange={(event) => setDraftSourceReact(event.target.value)}
+            rows={12}
+            spellCheck={false}
+            placeholder="export default function Preview() { return <main>Hello</main> }"
+            className="w-full resize-y rounded-md border border-default bg-surface-50 px-3 py-2 font-mono text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+          <label className="mb-1 mt-2 block text-[11px] font-medium text-muted-foreground">
+            CSS
+          </label>
+          <textarea
+            value={draftSourceCss}
+            onChange={(event) => setDraftSourceCss(event.target.value)}
+            rows={5}
+            spellCheck={false}
+            placeholder=".card { padding: 24px; }"
+            className="w-full resize-y rounded-md border border-default bg-surface-50 px-3 py-2 font-mono text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+            React TSX must default-export a component. The local dev server bundles React into the iframe preview.
+          </p>
         </div>
 
         {onResize ? (
