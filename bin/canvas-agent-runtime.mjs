@@ -538,6 +538,17 @@ export async function createComponentFromSource(context, input) {
   })
 }
 
+export async function promoteSubtreeToComponent(context, input) {
+  return postAgentNativeJson(context, '/api/canvas/component/promote', {
+    projectId: input?.projectId || context.projectId,
+    name: input?.name,
+    description: input?.description,
+    sourceHtml: input?.sourceHtml,
+    canvasId: input?.canvasId,
+    sourceId: input?.sourceId,
+  })
+}
+
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
   return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
 }

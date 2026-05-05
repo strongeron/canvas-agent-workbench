@@ -5,6 +5,7 @@ import {
   captureCanvasItemsScreenshot,
   captureWorkspaceScreenshot,
   createComponentFromSource,
+  promoteSubtreeToComponent,
   createProjectCanvasFile,
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
@@ -351,6 +352,24 @@ const TOOL_DEFINITIONS = [
         },
       },
       required: ['name', 'sourceHtml'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'promote_to_component',
+    description:
+      'Extract an HTML subtree from a canvas item by canvasId, write it as a new project component under projects/<projectId>/components/, and append a kind=html registry entry. Useful for graduating a region of a canvas board into a reusable primitive.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        sourceHtml: { type: 'string' },
+        canvasId: { type: 'string' },
+        sourceId: { type: 'string' },
+      },
+      required: ['name', 'sourceHtml', 'canvasId', 'sourceId'],
       additionalProperties: false,
     },
   },
@@ -1650,6 +1669,25 @@ async function callTool(name, args) {
         { source: 'canvas-agent-mcp' }
       )
       return asToolResult({ component, item, result })
+    }
+    case 'promote_to_component': {
+      const name = normalizeString(args.name)
+      const sourceHtml = typeof args.sourceHtml === 'string' ? args.sourceHtml : ''
+      const canvasId = normalizeString(args.canvasId)
+      const sourceId = normalizeString(args.sourceId)
+      if (!name) return asToolError('name is required.')
+      if (!sourceHtml.trim()) return asToolError('sourceHtml is required.')
+      if (!canvasId) return asToolError('canvasId is required.')
+      if (!sourceId) return asToolError('sourceId is required.')
+      const result = await promoteSubtreeToComponent(context, {
+        projectId: normalizeString(args.projectId) || context.projectId,
+        name,
+        description: normalizeString(args.description) || undefined,
+        sourceHtml,
+        canvasId,
+        sourceId,
+      })
+      return asToolResult(result)
     }
     case 'create_component_from_tsx': {
       const name = normalizeString(args.name)

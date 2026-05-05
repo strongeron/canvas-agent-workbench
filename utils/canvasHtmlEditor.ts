@@ -337,13 +337,13 @@ function resolveHtmlPath(root: HtmlParentNode, path: string): HtmlChildNode | nu
   if (!path) return null
   const parts = path.split(".")
   let current: HtmlParentNode = root
-  for (const part of parts) {
-    const target = Number.parseInt(part, 10)
+  for (let i = 0; i < parts.length; i++) {
+    const target = Number.parseInt(parts[i], 10)
     if (!Number.isInteger(target) || target < 0) return null
     const children = getMeaningfulChildren(current)
     const child = children[target]
     if (!child) return null
-    if (part === parts[parts.length - 1]) return child
+    if (i === parts.length - 1) return child
     if (!hasChildNodes(child)) return null
     current = child
   }
@@ -432,6 +432,63 @@ function applyReplacements(source: string, replacements: Replacement[]): string 
     .reduce((next, replacement) => {
       return `${next.slice(0, replacement.start)}${replacement.text}${next.slice(replacement.end)}`
     }, source)
+}
+
+export type CanvasHtmlExtractResult =
+  | { ok: true; subtreeHtml: string; tag: string }
+  | {
+      ok: false
+      error: string
+      code:
+        | "bad-input"
+        | "not-found"
+        | "unsupported-node"
+        | "unsupported-mutation"
+        | "unsupported-expression"
+        | "overlap"
+        | "parse-error"
+    }
+
+/**
+ * Extract a JSX-style subtree from an HTML source by canvasId. Returns the
+ * cleaned HTML for the matching element (with `data-canvas-id` attributes
+ * stripped recursively). Used by the promote-to-component flow.
+ */
+export function extractHtmlSubtree(
+  sourceHtml: string,
+  canvasId: string,
+  options: { sourceId: string }
+): CanvasHtmlExtractResult {
+  if (typeof sourceHtml !== "string") {
+    return { ok: false, code: "bad-input", error: "sourceHtml must be a string" }
+  }
+  if (!options || typeof options.sourceId !== "string" || !options.sourceId) {
+    return { ok: false, code: "bad-input", error: "sourceId is required" }
+  }
+  if (typeof canvasId !== "string" || !canvasId.includes(":")) {
+    return { ok: false, code: "bad-input", error: "Malformed canvasId" }
+  }
+
+  const resolved = resolveCanvasHtmlElement(sourceHtml, canvasId, options)
+  if (!resolved.ok) return resolved
+
+  // Walk the matched element and remove data-canvas-id from itself and all
+  // descendants so the extracted subtree is portable.
+  stripCanvasIdAttribute(resolved.element)
+
+  const subtreeHtml = parse5.serialize({
+    nodeName: "#document-fragment",
+    childNodes: [resolved.element],
+  } as HtmlParentNode)
+
+  return { ok: true, subtreeHtml: subtreeHtml.trim(), tag: resolved.element.tagName }
+}
+
+function stripCanvasIdAttribute(element: HtmlElement): void {
+  element.attrs = element.attrs.filter((attr) => attr.name !== "data-canvas-id")
+  for (const child of element.childNodes) {
+    if (isElementNode(child)) stripCanvasIdAttribute(child)
+  }
 }
 
 function escapeHtmlText(value: string): string {
