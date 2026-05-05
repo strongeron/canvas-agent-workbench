@@ -9,6 +9,7 @@ import {
   Maximize2,
   Minus,
   MousePointer2,
+  Package,
   Palette,
   PanelLeft,
   Plus,
@@ -49,6 +50,7 @@ interface CanvasToolbarProps {
   onToggleHelp: () => void
   onToggleScenes: () => void
   onToggleLayers: () => void
+  onToggleLibraryPanel: () => void
   onToggleInteractMode: () => void
   onAddArtboard: () => void
   onImportFromPaper?: () => void
@@ -67,6 +69,7 @@ interface CanvasToolbarProps {
   sidebarVisible: boolean
   scenesVisible: boolean
   layersVisible: boolean
+  libraryPanelVisible: boolean
   themePanelVisible: boolean
   copilotPanelVisible: boolean
   importingPaper?: boolean
@@ -88,6 +91,7 @@ export function CanvasToolbar({
   onToggleHelp,
   onToggleScenes,
   onToggleLayers,
+  onToggleLibraryPanel,
   onToggleInteractMode,
   onAddArtboard,
   onImportFromPaper,
@@ -106,6 +110,7 @@ export function CanvasToolbar({
   sidebarVisible,
   scenesVisible,
   layersVisible,
+  libraryPanelVisible,
   themePanelVisible,
   copilotPanelVisible,
   importingPaper,
@@ -113,12 +118,12 @@ export function CanvasToolbar({
   Tooltip,
 }: CanvasToolbarProps) {
   const focusRingClass =
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-  const iconButtonClass = `h-10 w-10 p-0 text-gray-900 hover:bg-gray-200 ${focusRingClass}`
-  const activeIconButtonClass = `h-10 w-10 p-0 bg-gray-200 text-gray-950 ${focusRingClass}`
+    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-1"
+  const iconButtonClass = `h-10 w-10 p-0 text-foreground hover:bg-surface-100 ${focusRingClass}`
+  const activeIconButtonClass = `h-10 w-10 p-0 bg-surface-200 text-foreground ${focusRingClass}`
 
   return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-gray-300 bg-white px-3 py-2 shadow-lg">
+    <div className="flex items-center gap-2.5 rounded-lg border border-default bg-white px-3 py-2 shadow-lg">
       {/* Sidebar toggle */}
       <Tooltip content={`${sidebarVisible ? "Hide" : "Show"} sidebar [  ]`}>
         <Button
@@ -151,7 +156,7 @@ export function CanvasToolbar({
         <Tooltip content="Click to reset [ 0 ]">
           <button
             onClick={onResetZoom}
-            className={`min-w-[64px] rounded px-2 py-1 text-xs font-semibold tabular-nums text-gray-900 hover:bg-gray-100 ${focusRingClass}`}
+            className={`min-w-[64px] rounded px-2 py-1 text-xs font-semibold tabular-nums text-foreground hover:bg-surface-100 ${focusRingClass}`}
           >
             {Math.round(scale * 100)}%
           </button>
@@ -227,7 +232,7 @@ export function CanvasToolbar({
             </Button>
           </Tooltip>
           {onImportKindChange && (
-            <div className="flex items-center gap-1 rounded-md border border-gray-200 bg-white p-1">
+            <div className="flex items-center gap-1 rounded-md border border-default bg-white p-1">
               {(["ui", "page"] as const).map((kind) => (
                 <button
                   key={kind}
@@ -235,8 +240,8 @@ export function CanvasToolbar({
                   onClick={() => onImportKindChange(kind)}
                   className={`rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
                     importKind === kind
-                      ? "bg-gray-900 text-white"
-                      : "text-gray-600 hover:bg-gray-100"
+                      ? "bg-foreground text-white"
+                      : "text-muted-foreground hover:bg-surface-100"
                   }`}
                 >
                   {kind}
@@ -289,7 +294,7 @@ export function CanvasToolbar({
               variant="ghost"
               size="sm"
               onClick={onDeleteSelected}
-              className={`${iconButtonClass} text-gray-700 hover:text-red-600`}
+              className={`${iconButtonClass} text-muted-foreground hover:text-red-600`}
               aria-label="Delete selected"
             >
               <Trash2 className="h-5 w-5" />
@@ -329,7 +334,7 @@ export function CanvasToolbar({
       )}
 
       {/* Item count and clear */}
-      <span className="px-1 text-xs tabular-nums text-gray-700">
+      <span className="px-1 text-xs tabular-nums text-muted-foreground">
         {itemCount}
       </span>
 
@@ -339,7 +344,7 @@ export function CanvasToolbar({
             variant="ghost"
             size="sm"
             onClick={onClearCanvas}
-            className={`${iconButtonClass} text-gray-600 hover:text-red-600`}
+            className={`${iconButtonClass} text-muted-foreground hover:text-red-600`}
             aria-label="Clear canvas"
           >
             <Trash2 className="h-5 w-5" />
@@ -374,6 +379,20 @@ export function CanvasToolbar({
           aria-pressed={layersVisible}
         >
           <Layers className="h-5 w-5" />
+        </Button>
+      </Tooltip>
+
+      {/* Library */}
+      <Tooltip content="Component library">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleLibraryPanel}
+          className={libraryPanelVisible ? activeIconButtonClass : iconButtonClass}
+          aria-label="Toggle component library"
+          aria-pressed={libraryPanelVisible}
+        >
+          <Package className="h-5 w-5" />
         </Button>
       </Tooltip>
 

@@ -11,6 +11,7 @@ import { buildBridgeScript as buildCanvasReactNodeBridgeScript } from './utils/c
 import { readCanvasAstNode } from './utils/canvasAstReader'
 import { applyCanvasAstWriteRequest } from './vite/api/canvasAstWrite'
 import { applyCanvasAstLoadRequest } from './vite/api/canvasAstLoad'
+import { applyCanvasRegistryListRequest } from './vite/api/canvasRegistryList'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
@@ -4378,6 +4379,26 @@ function paperImportPlugin() {
             return sendJson(res, 400, {
               ok: false,
               error: error?.message || 'Failed to read AST node.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/registry/list') {
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasRegistryListRequest(body, { workspaceRoot: __dirname })
+            if (!result.ok) {
+              return sendJson(res, result.status, {
+                ok: false,
+                code: result.code,
+                error: result.error,
+              })
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to list registry primitives.',
             })
           }
         }

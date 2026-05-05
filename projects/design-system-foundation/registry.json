@@ -1,11 +1,53 @@
 {
   "ui": [
-    "primitive/box",
-    "primitive/stack",
-    "primitive/text",
-    "primitive/heading",
-    "primitive/surface",
-    "primitive/button"
+    {
+      "id": "primitive/button",
+      "displayName": "Button",
+      "filePath": "components/ui/Button.tsx",
+      "importName": "Button",
+      "snippet": "<Button variant=\"primary\" size=\"md\">Click me</Button>",
+      "description": "Action button with primary/secondary/ghost/danger variants"
+    },
+    {
+      "id": "primitive/box",
+      "displayName": "Box",
+      "filePath": "components/ui/Box.tsx",
+      "importName": "Box",
+      "snippet": "<Box padding=\"md\" surface=\"default\" radius=\"lg\">Content</Box>",
+      "description": "Padded container with surface, radius, and shadow variants"
+    },
+    {
+      "id": "primitive/stack",
+      "displayName": "Stack",
+      "filePath": "components/ui/Stack.tsx",
+      "importName": "Stack",
+      "snippet": "<Stack gap=\"md\">\n      <span>First</span>\n      <span>Second</span>\n    </Stack>",
+      "description": "Vertical or horizontal flex layout with consistent gap"
+    },
+    {
+      "id": "primitive/text",
+      "displayName": "Text",
+      "filePath": "components/ui/Text.tsx",
+      "importName": "Text",
+      "snippet": "<Text size=\"base\">Body text goes here.</Text>",
+      "description": "Typographic text primitive with scale + tone variants"
+    },
+    {
+      "id": "primitive/heading",
+      "displayName": "Heading",
+      "filePath": "components/ui/Heading.tsx",
+      "importName": "Heading",
+      "snippet": "<Heading level={2}>Section heading</Heading>",
+      "description": "Display heading primitive (h1–h6)"
+    },
+    {
+      "id": "primitive/surface",
+      "displayName": "Surface",
+      "filePath": "components/ui/Surface.tsx",
+      "importName": "Surface",
+      "snippet": "<Surface tone=\"default\" padding=\"lg\">Surface content</Surface>",
+      "description": "Themed surface card with tone + padding variants"
+    }
   ],
   "page": []
 }

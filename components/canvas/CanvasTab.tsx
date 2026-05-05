@@ -27,6 +27,7 @@ import type {
   CanvasHtmlItem,
 } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
+import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
 import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
@@ -681,6 +682,7 @@ export function CanvasTab({
   const [reactCompileGenerations, setReactCompileGenerations] = useState<Record<string, number>>({})
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
   const [layersPanelVisible, setLayersPanelVisible] = useState(false)
+  const [libraryPanelVisible, setLibraryPanelVisible] = useState(false)
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
   const [interactMode, setInteractMode] = useState(false)
@@ -2937,6 +2939,7 @@ export function CanvasTab({
           onToggleHelp={toggleHelp}
           onToggleScenes={toggleScenes}
           onToggleLayers={toggleLayers}
+          onToggleLibraryPanel={() => setLibraryPanelVisible((v) => !v)}
           onToggleThemePanel={toggleThemePanel}
           onToggleCopilotPanel={toggleCopilotPanel}
           onToggleInteractMode={toggleInteractMode}
@@ -2955,6 +2958,7 @@ export function CanvasTab({
           sidebarVisible={sidebarVisible}
           scenesVisible={scenesPanelVisible}
           layersVisible={layersPanelVisible}
+          libraryPanelVisible={libraryPanelVisible}
           themePanelVisible={themePanelVisible}
           copilotPanelVisible={copilotPanelVisible}
           importingPaper={isImportingPaper}
@@ -3025,6 +3029,19 @@ export function CanvasTab({
               />
             </div>
           </div>
+
+          {libraryPanelVisible && (
+            <CanvasLibraryPanel
+              projectId="design-system-foundation"
+              onInstantiate={async (input) => {
+                await handleAddInlineHtml({
+                  title: input.title,
+                  sourceReact: input.sourceReact,
+                })
+              }}
+              onClose={() => setLibraryPanelVisible(false)}
+            />
+          )}
 
           <CanvasWorkspace
             items={items}

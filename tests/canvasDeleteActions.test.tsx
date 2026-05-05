@@ -131,6 +131,7 @@ describe("canvas delete affordances", () => {
         onToggleHelp={() => {}}
         onToggleScenes={() => {}}
         onToggleLayers={() => {}}
+        onToggleLibraryPanel={() => {}}
         onToggleInteractMode={() => {}}
         onAddArtboard={() => {}}
         onGroupSelected={() => {}}
@@ -146,6 +147,7 @@ describe("canvas delete affordances", () => {
         sidebarVisible={true}
         scenesVisible={false}
         layersVisible={false}
+        libraryPanelVisible={false}
         themePanelVisible={false}
         copilotPanelVisible={false}
         Button={TestButton}
