@@ -76,13 +76,22 @@ projects/<projectId>/
     <repo-name>/
 ```
 
-### Token model
+### Token model — three-layer CSS cascade
 
-- Single `tokens.css` per project. Top-level `:root { --token: value; }` blocks.
-- Token panel reads via `/api/canvas/tokens/list` (regex-parses the file).
-- Token panel writes via `/api/canvas/tokens/write` with mtime guard + atomic rename.
-- Component-scoped tokens are just nested CSS scopes in the same file: `[data-component="button"] { --button-bg: var(--color-primary); }`.
-- Existing `designTokens.ts` is left alone for the design-system-foundation project; it becomes a *derived* artifact later if needed.
+Tokens cascade through three real CSS layers, each in its own file:
+
+1. **Project base** — `projects/<id>/tokens.css`. Top-level `:root { --token: value; }` declarations. Loaded by every canvas in the project.
+2. **Canvas overrides** — sidecar `<canvasName>.tokens.css` next to `<canvasName>.canvas`, created on demand when a user adds a canvas-scoped override. Loaded only when that canvas is open. `:root` declarations override the project base via the cascade.
+3. **Component scopes** — co-located component CSS files (`Button.css` next to `Button.html`). Selectors like `[data-component="button"] { --button-bg: var(--color-brand); }` define component-internal tokens that consume project/canvas vars.
+
+The token panel reads/writes the right layer based on selection state:
+- Nothing selected → project base
+- A canvas is open with no element selected → canvas override file
+- A component element is selected → that component's co-located CSS file
+
+All three writers share the endpoint shape (`/api/canvas/tokens/write` with `layer: "project" | "canvas" | "component"` discriminator), mtime guard, atomic rename, and MCP tool wrapping.
+
+Existing `designTokens.ts` in `projects/design-system-foundation/` is left alone. A new `tokens.css` is added next to it as the editable layer; the TS file remains as a legacy consumer surface and can be regenerated/deprecated later.
 
 ### Component editing model
 
@@ -140,7 +149,7 @@ projects/<projectId>/
 
 | Phase | Slice | Days | Acceptance |
 |---|---|---|---|
-| **P1** | **Color tokens via `tokens.css`** | 1–2 | Token panel lists + edits color custom properties; HMR re-renders; `update_design_token` MCP tool |
+| **P1** | **Color tokens via three-layer `tokens.css`** | 2 | Panel reads project + canvas-override + component layers; edits write to the right layer with mtime guard; HMR re-renders; `update_design_token` MCP tool with `layer` arg |
 | **P2** | **Typography + spacing tokens via `tokens.css`** | 1 | Same panel handles font-family/size/spacing tokens; same writer (one CSS file) |
 | **P3** | **HTML element-id injection + click bridge** | 2 | Click any element in an `.html` canvas node → property panel opens with tag/attrs/classes |
 | **P4** | **HTML property panel + writer (literal mutations)** | 2–3 | Edit attrs/classList/textContent → save to `.html` file; mtime guard; MCP tool |
@@ -152,19 +161,16 @@ projects/<projectId>/
 
 **Total core (P1–P8):** ~13–17 days.
 
-## Open questions
+## Resolved decisions
 
-1. **`tokens.css` location for design-system-foundation.** The existing project uses `designTokens.ts`. Do we (a) generate `tokens.css` from it, (b) leave the existing project on TSX and start fresh on a new project for v2, or (c) migrate design-system-foundation to `tokens.css` as the source-of-truth and let the `.ts` file go away?
-
-2. **HTML parser choice.** parse5 (W3C-compliant, larger) vs htmlparser2 (faster, smaller). I'd default to parse5 for round-trip fidelity. Decide in P3.
-
-3. **CSS scope for component styles.** Per-component `.css` co-located with `.html`, or one global stylesheet per project? I'd default to co-located (`Button.html` + `Button.css`) for cohesion, but agree this in P3.
-
-4. **Registry schema extension for HTML primitives.** New fields like `htmlPath`, `cssPath`, `kind: "html" | "tsx"`. Backwards-compat the existing `filePath` + `importName` fields. Decide in P3.
-
-5. **Move/cut-paste across parents.** Phase 5 ships insert/remove/reorder/wrap/unwrap/swap-tag — but cut-and-paste subtrees across distant parents is its own design (clipboard model). I'd defer to a P5.5 if needed.
-
-6. **Iframe drag affordance.** The plan has zero canvas-side drag handles for resize/move *inside* the iframe (only positioning of the canvas node itself). Some users may want this. Defer or open a separate spec?
+| # | Question | Decision |
+|---|---|---|
+| 1 | Tokens for design-system-foundation | **Three-layer cascade**: project `tokens.css` + sidecar `<canvas>.tokens.css` + co-located component CSS. `designTokens.ts` left alone as legacy consumer. |
+| 2 | HTML parser | **parse5** — W3C-compliant, best round-trip fidelity. |
+| 3 | CSS scope for components | **Co-located** `Button.html` + `Button.css`. |
+| 4 | Registry schema | **Single `registry.json`** with `kind: "html" \| "tsx"` field; backwards-compat existing `filePath`/`importName`. |
+| 5 | Cut-paste across parents | **Defer** to P5.5 (after P5 ships the 80% case). |
+| 6 | Iframe drag affordance | **Defer**, separate spec when it's the next priority. |
 
 ## References
 
