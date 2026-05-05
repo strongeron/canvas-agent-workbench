@@ -4,6 +4,32 @@ type: feat
 status: active
 date: 2026-05-05
 origin: docs/specs/2026-05-05-canvas-v3-direct-manipulation.md
+deepened: 2026-05-05
+---
+
+## Post-review revisions (round 1)
+
+This plan was reviewed via `ce-doc-review` (6 personas: coherence, feasibility, design, security, scope-guardian, adversarial). Material changes applied below:
+
+- **canvasIdMap is identity-based, not positional.** Wrap/insert/reorder cannot be paired by positional walk because AST-path ids shift in non-trivial ways (every descendant changes after a wrap). U1+U2 now thread a `data-canvas-stable-id` attribute through ts.factory / parse5 mutations and use it for old→new id mapping. Hash-based ids are still used for *initial* injection; structural mutations carry stable ids forward.
+- **TSX trivia preservation: chosen `recast`.** `ts.createPrinter` reformats the parent subtree on reprint, which destroys the trivia the offset writer carefully preserves. recast preserves untouched-node source byte-for-byte and only re-prints touched nodes. Decision moves out of risk row into Key Technical Decisions.
+- **Bridge protocol is bidirectional in v3** — added new U13 (parent→iframe message handlers). U3, U4, U6 all depend on it. The original "reused as-is" claim was wrong.
+- **U4 split into U4a + U4b.** U4a (drag-resize via existing setClassName writer + coordinate math) has zero structural deps and lands first to de-risk coord math early. U4b (drop targets + structural drag) depends on U1+U2.
+- **U9 corrected.** Artboard children are CanvasItems in canvas state, not source-file DOM nodes. Removed false U1+U2 dependency; uses existing `update_item` operation. `canvasArtboardWrite.ts` removed from output.
+- **Mutation log: byte-snapshot, hard memory cap.** Resolved the line 135 vs 449 contradiction. Stores `{ preMutationSource, postMutationSource }` per entry. Caps at 25 entries per file and 50MB total log size with size-aware FIFO eviction. The "decide after profiling" phrasing removed.
+- **Inline-edit lock substrate specified** — vite dev-server in-memory map keyed by file path with 5s heartbeat from the editing UI; expires on missed heartbeats.
+- **Workspace-containment guard explicit on every new endpoint.** Each new write endpoint imports `resolveWorkspacePath` from `vite/api/canvasAstWrite.ts` with a per-endpoint extension allowlist.
+- **CanvasHtmlFrame scale prop interface change called out.** v3 adds `canvasScale: number` to `CanvasHtmlFrameProps`; CanvasTab supplies it from the canvas transform.
+- **Coordinate math: pan included, rotation excluded.** Scope boundary: v3 assumes `canvas transform = scale ∘ translate` only (no rotation).
+- **U12 anchored to new R14** (visual feedback during library drag) — was previously orphaned with no requirement backing.
+- **U6 markdown deps surfaced** — `unified` + `remark-parse` + `remark-stringify` listed under Dependencies, not just package.json modify; test scenarios grounded against the realistic R7 scope (plain block edits + reorder + bold).
+- **Spec mismatch resolved**: artboard "promote layout" (spec line 194) is **out of v3** and noted in spec follow-up.
+- **U8 `canvasMediaWrite.ts` removed** — media crop/clip is canvas-state only via `update_item`. No new endpoint.
+- **Mermaid label edit fallback criterion added** — if bridge cannot see SVG `data-id` attributes after U13 lands, U10 falls back to source-textarea-only without further bridge work.
+- **Memory/security note on mutation log**: log entries hold full file source; documented as v3 constraint that secrets-in-source flow into client memory.
+
+Findings deferred to per-phase implementation checklists (design states, panel layouts, structural-button affordances, snap-guide visuals): captured in each unit's "UX details to specify" line where applicable; not load-bearing for plan approval.
+
 ---
 
 # feat: Canvas v3 — direct manipulation across all node types
@@ -72,7 +98,10 @@ Before planning new work, this is what's actually shipped and reusable:
 - R10. Artboard children can be drag-reordered within the artboard. Gap is drag-adjustable.
 - R11. Mermaid nodes support clicking a rendered node label to edit it inline; source mermaid updates.
 - R12. Every direct-manipulation action is reachable through MCP — agent calls produce identical results to UI drags.
-- R13. Iframe scaling (item rendered at 50% / 100% / 200% canvas zoom) does not break pointer math — handles stay anchored, drags compute correctly.
+- R13. Iframe scaling (item rendered at 50% / 100% / 200% canvas zoom) does not break pointer math — handles stay anchored, drags compute correctly. Coordinate math also handles canvas pan offset; **rotation is explicitly out of scope** (canvas transform = scale ∘ translate only).
+- R14. Drop-target visual feedback — when a primitive is dragged from the library or another canvas item, drop-zone insert lines render between siblings of the hovered parent, and a wrap affordance highlights leaf elements. Clears on drop or cancel.
+
+**Phase mapping (spec V → plan U):** V1→U1+U2, V2→U4a, V3→U5, V4→U6, V5→U7, V6→U8, V7→U9, V8→U10, V9→U11. New U-IDs introduced by the plan (no spec-V counterpart): U3 (canvasIdMap rebase + selection state propagation, infra), U4b + U12 (drop targets, deferred from spec primitives section), U13 (bridge bidirectional protocol, infrastructure prereq).
 
 **Origin actors:** human designer (drags, scrubs, clicks); agent (MCP-driven mutations); pair (mixed sessions on same source).
 **Origin flows:** F1 click → handles render; F2 drag-resize → source mutates → iframe re-renders → handles re-anchor; F3 click structural button → AST mutation → canvasIdMap rebase → selection follows; F4 Cmd-Z → mutation log replays inverse.
@@ -129,13 +158,19 @@ Before planning new work, this is what's actually shipped and reusable:
 
 ## Key Technical Decisions
 
-- **Two writers, two mutation models.** TSX stays offset-based for literal mutations (existing) and gains a node-replacement model for structural (new). HTML uses parse5 throughout, where structural mutations are natural tree operations. Dispatch by file extension is unchanged.
-- **canvasIdMap is part of the mutation envelope.** Every writer returns `{ ok, source, appliedMutations, canvasIdMap }` where `canvasIdMap[oldId] = newId | null`. Empty for non-structural mutations. The property panel + selection state walk it on every write.
+- **Two writers, two mutation models.** TSX stays offset-based for literal mutations (existing) and gains a node-replacement model for structural (new) using **recast** (preserves trivia for untouched siblings; only re-prints mutated subtrees). HTML uses parse5 throughout. Dispatch by file extension is unchanged.
+- **AST library: recast.** Chosen over `ts.factory` + `createPrinter` (which reformats the parent subtree, dropping comments and blank lines) and over ts-morph (~30MB+ install, same trivia semantics as the raw printer). recast adds ~5MB and round-trips trivia for unchanged nodes. Scope: only the mutated node region is reprinted; everything else stays as raw source slices.
+- **canvasIdMap is identity-based, not positional.** Every JSX/HTML element gets a stable identity attribute (`data-canvas-stable-id`) injected during structural mutations and threaded through ts-factory / parse5 mutation calls. Initial canvasIds are still hash-derived (existing v1+v2 behavior); structural mutations carry the stable id forward and the writer returns `canvasIdMap[oldHashId] = newHashId | null` resolved via stable ids. Hash ids are recomputed for the new tree; stable ids let the writer pair semantically-identical nodes across the mutation boundary.
+- **Mutation envelope.** Every writer returns `{ ok, source, appliedMutations, canvasIdMap, prevSourceSnapshot }` where `canvasIdMap[oldId] = newId | null` (empty for non-structural mutations) and `prevSourceSnapshot` is the source text before the mutation (used by U5 for undo).
 - **Drag math runs parent-side.** The bridge reports element rects; pointer events fire on the parent canvas. No iframe-side drag handlers — they wouldn't survive throttling and would confuse coordinate translation. The overlay is a pure parent component anchored to bridge-reported rects.
-- **Mutation log is append-only and in-memory.** `CanvasMutationLog` lives in `CanvasTab` state, indexed by file path. Each entry: `{ id, timestamp, filePath, mutations, canvasIdMap, inverseSource? }`. Inverse computed lazily on undo (re-read source pre-mutation, store as inverse for redo).
-- **Inline text edit uses contenteditable on the iframe element.** The bridge sends a `canvas/edit-start` message; iframe sets `contenteditable="true"` on the matched element; commit on blur sends `canvas/edit-commit` with the new text → writer mutation. No textarea overlay (visual position would drift).
-- **Markdown uses mdast (unified/remark).** New dependency for v3 — small, typed, well-supported. Block reorder is a tree manipulation; inline format toolbar wraps mdast `strong`/`emphasis`/`list`/etc.
-- **Component prop scrub uses a numeric drag-to-edit input.** Detect "numeric prop" by the prop's TypeScript type (number | percentage | em/rem string with leading number). Visual cue: drag-icon next to the input. Implementation: pointer-down + `requestPointerLock()` for unbounded drag; cumulative delta updates the value through the existing `setPropValue` mutation.
+- **Bridge is bidirectional in v3.** v1+v2 protocol was iframe→parent only. v3 adds parent→iframe messages: `canvas/refresh-rect` (re-emit a rect for a given canvasId after recompile), `canvas/edit-start` (turn on contenteditable on the matched element), `canvas/edit-commit` (signal to release contenteditable). Inbound handlers are added to the injected bridge script with the same versioning + origin filtering. New U13 owns this work.
+- **Mutation log: byte-snapshot, hard memory cap.** `CanvasMutationLog` lives in `CanvasTab` state, indexed by file path. Each entry: `{ id, timestamp, filePath, mutations, canvasIdMap, prevSourceSnapshot, postSourceSnapshot }`. **Cap: 25 entries per file, 50MB total log size; size-aware FIFO eviction (largest oldest entry evicted first).** Documented constraint: log entries hold full source; secrets in source code flow into client memory and are reachable by any same-origin script — v3 ships with this limitation.
+- **Inline text edit uses contenteditable on the iframe element.** Bridge sends `canvas/edit-start`; iframe sets `contenteditable="true"` on the matched element; commit on blur sends `canvas/edit-commit` with the new text → writer mutation. No textarea overlay (visual position would drift).
+- **Inline-edit lock substrate**: vite dev-server in-memory map `Map<absoluteFilePath, { until: timestamp, sessionId: string }>`. Editing UI sends a heartbeat every 5s; lock auto-expires 8s after last heartbeat (gives 1 retry slack). MCP tool calls and direct API writes consult the same map and return 409 `inline-edit-active` when the file is locked by another session. Browser tab close → no heartbeat → lock expires within 8s.
+- **Workspace-containment guard everywhere.** Every new file-write endpoint imports `resolveWorkspacePath` from `vite/api/canvasAstWrite.ts` with a per-endpoint extension allowlist (markdown writes accept `.md` only, etc.). Specified per-endpoint in U6/U10/U11.
+- **`childSource` parse validation on write.** insertChild and wrapSelection mutations parse the supplied `childSource` before splicing — TSX through recast/typescript, HTML through parse5. Invalid source returns 400 `parse-error` with no file change. Top-level imports/scripts in `childSource` are rejected (HTML disallows `<script>` and `<iframe>`; TSX rejects `ImportDeclaration` outside the root module).
+- **Markdown uses mdast (unified/remark).** New runtime deps: `unified`, `remark-parse`, `remark-stringify`. Combined ~150KB minified. Justified by R7 scope (block reorder + inline format toolbar): regex-based block splitter would handle reorder but not inline `strong`/`emphasis`/`list` wrapping cleanly.
+- **Component prop scrub uses a numeric drag-to-edit input.** Detect "numeric prop" by the prop's TypeScript type (number | percentage | em/rem string with leading number). Visual cue: drag-icon next to the input. Implementation: pointer-down + `requestPointerLock()` for unbounded drag; cumulative delta updates the value through the existing `setPropValue` mutation. (Lock applied on the parent panel input, not the iframe — no sandbox attribute change required.)
 
 ---
 
@@ -221,29 +256,30 @@ Coordinate math sketch:
 
 ```
 utils/
-  canvasAstWriter.ts                  (modify — add structural mutations)
+  canvasAstWriter.ts                  (modify — add structural mutations + recast integration)
   canvasHtmlEditor.ts                 (modify — add structural mutations)
+  canvasReactNodeBridge.ts            (modify — bidirectional message handlers in injected script)
   canvasMarkdownWriter.ts             (new — mdast-based block + inline mutations)
-  canvasMediaCropWriter.ts            (new — pure-data crop/clip writes to canvas state)
-  canvasMutationLog.ts                (new — append-only log + inverse computation)
+  canvasMutationLog.ts                (new — append-only log with byte snapshots)
   canvasIframeCoordinates.ts          (new — pointer ↔ iframe coordinate math)
+  canvasInlineEditLock.ts             (new — vite dev-server in-memory lock map + heartbeat)
 
 components/canvas/
   CanvasIframeOverlay.tsx             (new — 8 resize anchors + drag handle)
-  CanvasReactNodePropertyPanel.tsx    (modify — structural-edit buttons + undo/redo)
+  CanvasReactNodePropertyPanel.tsx    (modify — structural-edit buttons + undo/redo + lock toast)
   CanvasMarkdownItem.tsx              (modify — inline-edit + block reorder)
   CanvasMermaidItem.tsx               (modify — clickable label edit)
-  CanvasMediaItem.tsx                 (modify — crop + clip handles)
-  CanvasArtboardItem.tsx              (modify — child reorder + gap drag)
+  CanvasMediaItem.tsx                 (modify — crop + clip handles via canvas-state update)
+  CanvasArtboardItem.tsx              (modify — child reorder via update_item; gap drag)
+  CanvasHtmlFrame.tsx                 (modify — host overlay; new canvasScale prop)
 
 vite/api/
-  canvasMarkdownWrite.ts              (new)
-  canvasMediaWrite.ts                 (new)
-  canvasArtboardWrite.ts              (new — child order + layout config)
-  canvasAstWrite.ts                   (modify — extended mutation dispatch)
+  canvasMarkdownWrite.ts              (new — uses resolveWorkspacePath with .md allowlist)
+  canvasInlineEditLock.ts             (new — POST endpoints for acquire/release/heartbeat)
+  canvasAstWrite.ts                   (modify — extended mutation dispatch + lock check)
 
 bin/
-  canvas-mcp-server                   (modify — register new tools)
+  canvas-mcp-server                   (modify — register apply_structural_mutation, etc.)
   canvas-agent-runtime.mjs            (modify — runtime helpers)
 
 tests/
@@ -251,10 +287,12 @@ tests/
   canvasHtmlStructural.test.ts        (new)
   canvasMarkdownWriter.test.ts        (new)
   canvasMutationLog.test.ts           (new)
-  canvasIframeCoordinates.test.ts     (new)
+  canvasIframeCoordinates.test.ts     (new — pan + scale, no rotation)
   canvasIframeOverlay.test.tsx        (new)
+  canvasInlineEditLock.test.ts        (new)
+  canvasReactNodeBridge.test.ts       (modify — bidirectional protocol)
 
-types/canvas.ts                       (modify — mutationLogId on CanvasItemBase, crop/clip refinement)
+types/canvas.ts                       (modify — mutationLogId on CanvasItemBase, crop/clip on CanvasMediaItem)
 
 docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 ```
@@ -263,30 +301,31 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 ## Implementation Units
 
-- U1. **Structural AST mutations for TSX**
+- U1. **Structural AST mutations for TSX (recast + identity tracking)**
 
-**Goal:** Extend `canvasAstWriter` with `insertChild`, `removeNode`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag` mutations. Each returns a `canvasIdMap: Record<string, string | null>` mapping old→new ids. The existing offset-based literal-mutation path is unchanged; structural mutations use a node-replacement-and-reprint approach (re-emit the parent's text from the AST after mutation).
+**Goal:** Extend `canvasAstWriter` with `insertChild`, `removeNode`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag` mutations. Each returns a `canvasIdMap: Record<string, string | null>` mapping old→new ids and a `prevSourceSnapshot` for the mutation log. Existing offset-based literal-mutation path is unchanged; structural mutations use **recast** (preserves trivia for untouched siblings) + identity-based id tracking (`data-canvas-stable-id` threaded through factory mutations).
 
 **Requirements:** R4, R5
 
-**Dependencies:** None (extends existing writer).
+**Dependencies:** None (extends existing writer; recast is a new dep).
 
 **Files:**
 - Modify: `utils/canvasAstWriter.ts`
+- Modify: `package.json` — add `recast` (~5MB)
 - Create: `tests/canvasAstStructural.test.ts`
 
 **Approach:**
-- Add new union members to `CanvasAstMutation`: `{ type: "insertChild", parentCanvasId, position, childSource }`, etc.
-- For structural mutations, compute the parent's pre-mutation source range, mutate the AST in-place via `ts.factory`, reprint the parent subtree (`createPrinter().printNode(EmitHint.Unspecified, parent, sourceFile)`), splice into source.
-- Compute `canvasIdMap` by re-running the U1 (data-canvas-id) hash logic on the new AST and pairing old/new canvasIds positionally.
-- Return mutation envelope with both `source` and `canvasIdMap`.
+- Add new union members to `CanvasAstMutation`: `{ type: "insertChild", parentCanvasId, position, childSource }`, `{ type: "removeNode", canvasId }`, `{ type: "reorderSibling", canvasId, direction: "up" | "down" }`, `{ type: "wrapSelection", canvasId, wrapperTag, wrapperAttrs? }`, `{ type: "unwrap", canvasId }`, `{ type: "swapTag", canvasId, newTag }`.
+- For structural mutations: parse the source via `recast.parse(source, { parser: typescriptParser })`, locate the AST node by canvasId, mutate the tree (insert/remove/reorder/wrap/unwrap/replace), then `recast.print(ast).code`. recast emits unmodified subtrees as raw source slices and only reprints touched nodes.
+- **Identity-based canvasIdMap:** before mutation, walk the AST and assign every JSX element a `data-canvas-stable-id={hash(initialAstPath)}` attribute (transient, not written to disk — kept in a WeakMap keyed by AST node). Carry stable ids forward through factory.update calls. After mutation, recompute the hash-based canvasId for the new AST and pair old→new by stable id.
+- **Parse validation on `childSource`:** parse via recast/typescript before splicing. Reject if (a) parse fails (`parse-error` 400), (b) contains top-level `ImportDeclaration` (`unsupported-source` 400), (c) is not a single JSX expression.
 
-**Execution note:** Test-first. Real fixtures (`Button.tsx`, a small page with multiple JSX children) so each mutation type is verified end-to-end before integration.
+**Execution note:** Test-first. Real fixtures (`Button.tsx`, a small page with multiple JSX children) so each mutation type is verified end-to-end before integration. Specifically test the trivia preservation claim: a no-op insertChild + removeNode round-trip must be byte-identical for sibling source outside the mutation point.
 
 **Patterns to follow:**
-- Existing `writeCanvasAstNode` shape (input/output envelope).
-- `injectCanvasElementIds` for the canvasId hash logic.
-- ts-morph or `ts.factory` for AST mutation — pick whichever is already in deps; introduce ts-morph if not.
+- Existing `writeCanvasAstNode` envelope shape.
+- `injectCanvasElementIds` for the canvasId hash logic on the new AST.
+- recast's `prettyPrint` config to match the project's existing TS style.
 
 **Test scenarios:**
 - *Happy path:* insert a `<span>Hello</span>` as the first child of a `<div>` → file mutates → canvasIdMap shows the new span's id and updated ids for shifted siblings.
@@ -324,7 +363,9 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 **Approach:**
 - Add `insertChild`, `removeNode`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag` to `CanvasHtmlMutation`.
 - For each, parse the source via `parseFragment` with `sourceCodeLocationInfo: true`, mutate the parse5 tree, run `serialize()`, return new source + canvasIdMap.
+- **Identity-based canvasIdMap (mirrors U1):** assign a `data-canvas-stable-id` attribute (transient, in-memory only — stripped before serialize) on every element pre-mutation; carry through tree mutations; re-hash post-mutation; pair old→new by stable id.
 - Reuse the existing `walkElementChildren` walker for canvasId rebuilding.
+- **`childSource` validation:** parse the supplied HTML via `parseFragment`; reject if it contains `<script>`, `<iframe>`, or top-level non-element nodes (parse-error 400).
 
 **Patterns to follow:**
 - Existing `writeCanvasHtmlNode` shape.
@@ -351,13 +392,43 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 ---
 
+- U13. **Bidirectional bridge protocol (parent → iframe handlers)**
+
+**Goal:** Extend `canvasReactNodeBridge` so the parent can send messages *into* the iframe: `canvas/refresh-rect` (re-emit a rect for a given canvasId), `canvas/edit-start` (set contenteditable on the matched element), `canvas/edit-commit` (release contenteditable). The injected bridge script gains a `window.addEventListener("message", ...)` block with the same versioning + origin filtering as outbound messages.
+
+**Requirements:** R5 (handoff), R7 (inline edit), R13 (rect re-anchor after recompile)
+
+**Dependencies:** None.
+
+**Files:**
+- Modify: `utils/canvasReactNodeBridge.ts` — extend `buildBridgeScript` with inbound handlers; add `CanvasReactNodeRefreshRectMessage`, `CanvasReactNodeEditStartMessage`, `CanvasReactNodeEditCommitMessage` types.
+- Modify: `tests/canvasReactNodeBridge.test.ts` — verify inbound message handling with valid/invalid versions, missing markers, foreign origins.
+
+**Approach:**
+- Inbound message contract: parent posts `{ marker: CANVAS_NODE_BRIDGE_MARKER, version: CANVAS_NODE_BRIDGE_VERSION, type: "canvas/refresh-rect" | "canvas/edit-start" | "canvas/edit-commit", canvasId, ... }` to the iframe via `iframe.contentWindow.postMessage`.
+- Iframe-side handler validates marker + version + origin; on `canvas/refresh-rect`, queries DOM by `[data-canvas-id="..."]` and re-emits the rect via the existing outbound `canvas/select` (or a new `canvas/rect-update` for clarity); on `canvas/edit-start`, sets `contentEditable="true"` on the matched element + focuses it; on `canvas/edit-commit`, reads the new text + posts back as `canvas/edit-result`, then sets `contentEditable="false"`.
+- Add `CanvasReactNodeFrame` (parent helper hook in components/canvas/) that exposes `requestRectRefresh(canvasId)`, `startInlineEdit(canvasId)`, `commitInlineEdit()`.
+
+**Test scenarios:**
+- *Happy path:* parent posts `canvas/refresh-rect` for an existing canvasId → iframe responds with current rect.
+- *Edge case:* canvasId not in DOM → iframe posts `canvas/select` with rect=null (signaling stale).
+- *Edge case:* mismatched version → message ignored.
+- *Edge case:* origin not in allowlist → message ignored.
+- *Integration:* parent sends `canvas/edit-start` → element becomes contenteditable + focused; user types; blur emits `canvas/edit-result` with the typed text.
+
+**Verification:**
+- Bridge protocol round-trip works in both directions.
+- No regression in existing outbound flows.
+
+---
+
 - U3. **canvasIdMap rebase + selection state propagation**
 
-**Goal:** When a writer returns `canvasIdMap`, the property panel and any active selection automatically rebase to the new ids without re-clicking. The mutation envelope from U1+U2 carries through endpoints to the panel.
+**Goal:** When a writer returns `canvasIdMap`, the property panel and any active selection automatically rebase to the new ids without re-clicking. The mutation envelope from U1+U2 carries through endpoints to the panel; bridge requests fresh rects after iframe recompiles.
 
 **Requirements:** R5
 
-**Dependencies:** U1, U2.
+**Dependencies:** U1, U2, U13.
 
 **Files:**
 - Modify: `vite/api/canvasAstWrite.ts` (carry canvasIdMap through response)
@@ -383,13 +454,13 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 ---
 
-- U4. **CanvasIframeOverlay — resize + move handles**
+- U4a. **CanvasIframeOverlay — resize + move handles (de-risked, ships first)**
 
-**Goal:** Render 8 resize anchors + 1 drag handle on the parent canvas, anchored to the selected iframe element's rect. Pointer events on the overlay translate (with scale-aware math) into mutations.
+**Goal:** Render 8 resize anchors + 1 drag handle on the parent canvas, anchored to the selected iframe element's rect. Pointer events on the overlay translate (with scale-aware math, including pan offset) into mutations using the **existing** `setClassName` / `setStyle` writers (no structural mutations needed). Lands first to de-risk the coordinate math, which is the highest-risk piece of the overlay system.
 
 **Requirements:** R1, R2, R3, R13
 
-**Dependencies:** U1+U2 (mutations exist), U3 (selection state).
+**Dependencies:** U13 (bidirectional bridge — overlay needs `canvas/refresh-rect` to re-anchor after recompile).
 
 **Files:**
 - Create: `components/canvas/CanvasIframeOverlay.tsx`
@@ -400,10 +471,12 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 **Approach:**
 - Overlay is a sibling of the iframe inside `CanvasHtmlFrame`'s container, positioned absolutely. It reads the iframe rect (from `iframe.getBoundingClientRect()`) and the bridge-reported element rect, computes the on-screen rect, and renders 8 corner/edge anchors + a center drag handle.
-- Pointer-down on a corner: enter resize mode. Track `pointermove` on the parent (with `pointer-capture` to handle moving outside the iframe). On `pointerup`, compute final size delta, emit `setStyle` mutation (or `setClassName` for utility-class systems — see decision below).
-- Pointer-down on the drag handle: enter move mode. Same flow but for position.
-- Coordinate math lives in `canvasIframeCoordinates.ts` — pure functions, fully unit-tested at 50% / 100% / 200% on canvas + iframe scales.
-- For Tailwind-style classes, drag-resize emits class changes (e.g., `w-32` → `w-48`) snapped to the closest size in the design system. For inline-style targets, emits `style="width: 240px"` directly. The dispatch is per-file by user preference (later) or per-element by detection (current pragmatic default: snap to Tailwind sizes if a `w-*` or `h-*` class is present; otherwise fall back to inline style).
+- `CanvasHtmlFrame` gains a `canvasScale: number` prop supplied by `CanvasTab` from the canvas transform; the overlay reads this for delta translation.
+- Pointer-down on a corner → resize mode. Track `pointermove` on the parent (with `setPointerCapture`). On `pointerup`, compute final delta, emit `setClassName` or `setStyle` via existing writer.
+- Pointer-down on drag handle → move mode (same flow, position only).
+- Coordinate math lives in `canvasIframeCoordinates.ts` — pure functions tested at 50% / 100% / 200% canvas zoom × 50% / 100% / 200% iframe zoom × non-zero pan offset. **Rotation is out of scope** (asserted in tests).
+- Drag-resize emits **commit-on-release**, not per-frame. During the drag the overlay paints an optimistic preview rect so the user sees the new size before the iframe recompiles. Iframe rect rebases via U13's `canvas/refresh-rect` after compile-react completes.
+- **Tailwind-class snap table**: read from `tailwind.config.js` `theme.spacing` + `theme.width` + `theme.height` at server boot; closest snap is the nearest enumerated value to the dragged delta. If the element has no `w-*`/`h-*` class, drag emits inline `style="width: <px>"`. Documented heuristic; user can override per-edit by holding Alt to force inline style or Cmd to force class snap.
 
 **Execution note:** Coordinate math is high-risk. Test-first with golden numeric cases.
 
@@ -446,11 +519,13 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 **Approach:**
 - `CanvasMutationLog` exports a small reducer-like API: `pushEntry(entry)`, `undo()`, `redo()`, `peek()`.
-- Each entry: `{ id, timestamp, filePath, mutations, preMutationSource, canvasIdMap }`.
-- Undo: re-write the file with `preMutationSource` (cheap; no inverse-mutation computation needed).
-- Redo: re-write with `postMutationSource` (stored alongside).
-- Cmd-Z / Cmd-Shift-Z global shortcuts — handled at `CanvasTab` level so they work regardless of which panel is focused.
-- Storage: in-memory only. Reload clears the log.
+- Each entry: `{ id, timestamp, filePath, mutations, prevSourceSnapshot, postSourceSnapshot, canvasIdMap }`.
+- **Hard cap: 25 entries per file, 50MB total log size**, with size-aware FIFO eviction (largest oldest entry first). Documented constraint: log holds full source — secrets in code reach client memory.
+- Undo: re-write the file with `prevSourceSnapshot` (single endpoint call, no inverse-mutation computation).
+- Redo: re-write with `postSourceSnapshot`.
+- Eviction: when redo stack is non-empty and a new mutation lands, redo entries beyond the new mutation are dropped (standard linear undo).
+- Cmd-Z / Cmd-Shift-Z global shortcuts — handled at `CanvasTab` level so they work regardless of which panel is focused. Visual feedback: small toast (`"Undid: <mutation summary>"`) for ~1.5s.
+- Storage: in-memory only. Reload clears the log (documented as v3 constraint).
 
 **Patterns to follow:**
 - Existing keyboard-handling in `CanvasTab.tsx` (look for `KeyboardEvent` listeners).
@@ -471,26 +546,27 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 - U6. **Markdown direct edit (block + inline)**
 
-**Goal:** Click a rendered markdown block (heading, paragraph, list item) → inline edit; format toolbar (bold/italic/list); drag-to-reorder blocks. Source markdown updates via mdast.
+**Goal:** Click a rendered markdown block (heading, paragraph, list item) → inline edit (via U13's `canvas/edit-start`); format toolbar (bold/italic/list); drag-to-reorder blocks. Source markdown updates via mdast.
 
 **Requirements:** R7
 
-**Dependencies:** None (independent of TSX/HTML work).
+**Dependencies:** U13 (bidirectional bridge for `canvas/edit-start` + `canvas/edit-commit`). Otherwise independent of TSX/HTML work.
+
+**External deps added (U6):** `unified`, `remark-parse`, `remark-stringify` — combined ~150KB minified. Justified by R7 scope: regex-based block splitter would handle reorder but not inline `strong`/`emphasis`/`list` wrapping cleanly.
 
 **Files:**
 - Create: `utils/canvasMarkdownWriter.ts`
-- Create: `vite/api/canvasMarkdownWrite.ts`
+- Create: `vite/api/canvasMarkdownWrite.ts` — uses `resolveWorkspacePath(filePath, workspaceRoot, [".md"])` for path guard; mtime guard; atomic temp+rename; consults `canvasInlineEditLock` map and returns 409 `inline-edit-active` if locked.
 - Create: `tests/canvasMarkdownWriter.test.ts`
 - Modify: `components/canvas/CanvasMarkdownItem.tsx`
 - Modify: `vite.config.ts` (register endpoint)
-- Modify: `package.json` (add `unified` + `remark-parse` + `remark-stringify`)
+- Modify: `package.json` (add deps above)
 
 **Approach:**
 - Parse the markdown source into mdast via remark-parse.
-- Each top-level mdast node = one block. Click triggers `contentEditable` on the rendered DOM block; commit on blur computes the new text and re-serializes to mdast → markdown.
+- Each top-level mdast node = one block. Click triggers `canvas/edit-start` via U13; user types; blur posts `canvas/edit-result` → writer recomputes mdast → re-serializes via remark-stringify.
 - Drag-reorder swaps block positions in the mdast tree → re-serialize.
-- Format toolbar: select text → wrap in `strong`/`emphasis` mdast nodes.
-- Endpoint: `/api/canvas/markdown/write` with mtime guard + atomic temp+rename.
+- Format toolbar: select text → wrap in `strong`/`emphasis` mdast nodes. Toolbar appears on text selection within an active inline-edit (positioned floating above selection); dismisses on blur or click outside.
 - MCP tool: `update_markdown_block` (block path + new content / new type).
 
 **Test scenarios:**
@@ -547,13 +623,12 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 **Files:**
 - Modify: `components/canvas/CanvasMediaItem.tsx`
 - Modify: `components/canvas/CanvasMediaPropsPanel.tsx`
-- Modify: `types/canvas.ts` (confirm `crop` field exists; add if needed)
-- Create: `vite/api/canvasMediaWrite.ts` (if media changes need server-side persistence; otherwise canvas-state only)
+- Modify: `types/canvas.ts` (confirm `crop` field; add if needed)
 - Create: `tests/canvasMediaCrop.test.tsx`
 
 **Approach:**
-- Image crop: render 4 corner handles overlaid on the rendered image. Drag updates the `crop` field on the canvas item (canvas state only — no source file mutation).
-- Video clip: render a horizontal scrub bar with start/end handles. Drag updates `clipStartSec` / `clipEndSec` on the item.
+- Image crop: render 4 corner handles overlaid on the rendered image. Drag updates the `crop` field on the canvas item via existing `update_item` operation — canvas state only, no source file mutation, **no new endpoint**.
+- Video clip: render a horizontal scrub bar with start/end handles. Drag updates `clipStartSec` / `clipEndSec` via `update_item`.
 - Both are non-destructive: original src is unchanged; rendering applies the crop/clip on display.
 
 **Test scenarios:**
@@ -567,30 +642,30 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 ---
 
-- U9. **Artboard child reorder + gap drag**
+- U9. **Artboard child reorder + gap drag (canvas-state only)**
 
-**Goal:** Drag children inside an artboard to reorder. Drag the artboard's gap value via a slider/scrub.
+**Goal:** Drag children inside an artboard to reorder. Drag the artboard's gap value via slider/scrub. **No source-file mutation** — artboard children are `CanvasItem` objects in canvas state with `parentId` and `order` fields.
 
 **Requirements:** R10
 
-**Dependencies:** U1+U2 (children are JSX/HTML).
+**Dependencies:** None. Uses existing `CanvasRemoteOperation.update_item` to mutate `order` field.
 
 **Files:**
 - Modify: `components/canvas/CanvasArtboardItem.tsx`
 - Modify: `components/canvas/CanvasArtboardPropsPanel.tsx`
-- Create: `vite/api/canvasArtboardWrite.ts` (if order/layout needs server persistence; else canvas state)
 
 **Approach:**
-- Within an artboard, each child has a drag handle at its top-left. Drag → reorder via `reorderSibling` mutation (U1/U2).
-- Gap slider on the panel + drag-scrub on the artboard's edge → updates layout.gap; live preview.
+- Each child gets a drag handle at top-left. Drag → reorder by computing new `order` value, dispatch `update_item` operation.
+- Gap slider on the panel + drag-scrub on the artboard's edge → updates `layout.gap` via `update_item`; live preview from canvas state.
+- No new endpoint, no AST writer changes — this is pure canvas-state manipulation.
 
 **Test scenarios:**
-- *Happy path:* drag child 0 to position 2 → layout reflects new order.
-- *Happy path:* scrub gap from 8 to 24 → live re-render.
+- *Happy path:* drag child 0 to position 2 → `order` field on each child updates; rendering reflects new order.
+- *Happy path:* scrub gap from 8 to 24 → `layout.gap` updates; live re-render.
 - *Edge case:* reorder past artboard bounds → clamped.
 
 **Verification:**
-- Manual: build a 3-card artboard; reorder by drag; verify source.
+- Manual: build a 3-card artboard; reorder by drag; verify canvas state.
 
 ---
 
@@ -606,8 +681,11 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 - Modify: `components/canvas/CanvasMermaidItem.tsx`
 
 **Approach:**
-- After mermaid renders SVG, attach click handlers to `<g>` elements that have `data-id` (mermaid sets this). On click → render an inline input over the label → commit blur → regex-replace in source.
+- After mermaid renders SVG, attach a click handler at the SVG root that walks up to find the `<g>` with mermaid's `data-id`. **Bridge does not see SVG attributes** (current bridge uses `instanceof HTMLElement` + `data-canvas-id`); U10 uses a parallel SVG-specific click handler in the iframe-side mermaid render code, with a small lookup table mapping mermaid `data-id` → mdast position in source.
+- On click → render an inline input over the label → commit blur → regex-replace in source.
 - For complex mermaid syntax (links, decorators), labels live inside specific node types (`A[Label]`, `B((Label))`). The replace must respect those forms.
+
+**Fallback criterion:** if the SVG-side click handler cannot reliably resolve mermaid's `data-id` to a source position (different mermaid versions emit different attributes), U10 ships **source-textarea-only** (existing behavior unchanged) and inline label edit is deferred to a future pass. Verification: fixture-test with mermaid 11.x; if rendering doesn't expose stable per-node ids, fall back. The SVG-bridge expansion is **not** in U13's scope.
 
 **Test scenarios:**
 - *Happy path:* click a flowchart node → edit label → source's `A[Old]` becomes `A[New]`.
@@ -633,9 +711,10 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 - Modify: `docs/CANVAS_AGENT_MCP_COMMANDS.md` (workflows)
 
 **Approach:**
-- New MCP tools mirror endpoints: `apply_structural_mutation` (TSX or HTML, with the structural mutation discriminator), `update_markdown_block`, `update_media_crop`, `update_artboard_layout`, `update_mermaid_label`, `cycle_component_variant`.
-- `apply_structural_mutation` is a thin wrapper over the existing AST/HTML write endpoints — no new endpoint, just exposing the new mutation types via MCP.
+- New MCP tools mirror endpoints: `apply_structural_mutation` (TSX or HTML, with the structural mutation discriminator), `update_markdown_block`, `update_media_crop` (canvas-state via update_item), `update_artboard_layout` (canvas-state), `update_mermaid_label`, `cycle_component_variant`.
+- `apply_structural_mutation` is a thin wrapper over the existing AST/HTML write endpoints — no new endpoint, just exposing the new mutation types via MCP. The same `childSource` validation applies (HTML primitive parsing rejects `<script>`/`<iframe>`; TSX rejects top-level imports).
 - Each tool returns `canvasIdMap` so an agent driving multiple sequential mutations rebases its target ids automatically.
+- **Trust boundary note:** MCP `childSource` is parsed and validated identically to UI-supplied source; agent and UI cannot cross the validation boundary. Acceptable in v3's local-first model; documented constraint.
 - Doc updates: a "Direct manipulation via the agent" section walks through structural mutations end-to-end.
 
 **Test scenarios:**
@@ -649,13 +728,41 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 ---
 
-- U12. **Drop targets + Shift-click multi-select primitives (cross-cutting)**
+- U4b. **Drop targets + drag-into-existing-element (structural insert via drag)**
 
-**Goal:** When dragging from the library or another node, render insert-zones between siblings. Shift-click adds an element to the current selection (single-iframe).
+**Goal:** Extend `CanvasIframeOverlay` to render insert-zones between siblings of the hovered element when dragging from the library panel. Drop fires an `insertChild` mutation (U1 or U2 depending on file kind). Hovering a leaf element with no siblings shows a "wrap" affordance instead.
 
-**Requirements:** R1 (visual feedback during drag), spec's "Direct-manipulation primitives" section.
+**Requirements:** R14, R4 (structural via drag)
 
-**Dependencies:** U4 (overlay is the host).
+**Dependencies:** U1, U2, U4a, U13.
+
+**Files:**
+- Modify: `components/canvas/CanvasIframeOverlay.tsx`
+- Modify: `components/canvas/CanvasLibraryPanel.tsx` (drag source + dragstart payload)
+
+**Approach:**
+- During `dragstart` from the library panel, the overlay enters drop-target mode: render thin horizontal/vertical insert lines between each pair of rendered siblings of the hovered parent element. The parent is determined by walking up from the pointer's iframe-local coordinates.
+- On `drop`, dispatch `insertChild` mutation with the hovered parent's canvasId + the computed position.
+- For leaf elements with no siblings, render a wrap affordance (highlighted bounding rect + "Wrap" label) that fires a `wrapSelection` mutation on drop.
+- Drop targets disappear on `dragend` (drop or cancel).
+
+**Test scenarios:**
+- *Happy path:* drag a Button from library over a Stack with 2 children → 3 insert lines render → drop on the second line → Button inserts at index 1 → file mutates → canvasIdMap pairs the new button with a fresh id.
+- *Edge case:* drag over a leaf element → wrap affordance only.
+- *Edge case:* drag-cancelled (Esc, drop off-canvas) → drop targets clear.
+
+**Verification:**
+- Manual: drag a primitive into an existing artboard; observe insert lines; drop; verify source.
+
+---
+
+- U12. **Shift-click multi-select primitives (within one iframe)**
+
+**Goal:** Shift-click adds an element to the current selection (single-iframe only). Multi-element selection allows group-transform via the overlay (resize/move applies to all). Cross-iframe selection is explicitly out of scope.
+
+**Requirements:** R14 (cross-element interactions during drag).
+
+**Dependencies:** U4a (overlay), U13 (bridge).
 
 **Files:**
 - Modify: `components/canvas/CanvasIframeOverlay.tsx`
@@ -693,19 +800,21 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 | Risk | Mitigation |
 |---|---|
-| Coordinate math is fragile under nested transforms (canvas zoom × iframe zoom). | Pure functions in `canvasIframeCoordinates.ts` with golden tests at 50% / 100% / 200% on each axis. Manual verification in U4. |
-| Element rect goes stale mid-drag when mutation triggers re-render. | Pause iframe re-render during active drag; resume + rebase on drag end. Decided in U4 testing. |
-| TSX structural mutations require more than the offset-based writer can do — could become a rewrite, not extension. | U1 explicitly plans the node-replacement-and-reprint model alongside existing offset model. ts-morph or `ts.factory` for the AST mutation. Test-first to verify trivia preservation; fall back to recast if ts-morph drops trivia. |
-| canvasIdMap mismatch — panel rebases to wrong id. | Deterministic hash logic shared between U1 (data-canvas-id), U3 (rebase), and write endpoint. Tests verify same source + same mutation = same id map. |
-| Multiple iframes on canvas all listening to drag — perf/conflict. | Bridge already filters by `event.source`. v3 confirms scaling + adds a per-iframe overlay registration. |
-| Markdown direct edit conflicts with source-textarea edit. | When inline-edit is active, the textarea is locked. mtime guard catches concurrent agent writes. |
-| Agent parity for drag — agents don't drag, they set values. | Drag emits the same `setStyle` / `setClassName` mutation an MCP tool calls directly with absolute values. The agent doesn't need a "drag" tool. |
+| Coordinate math is fragile under nested transforms (canvas zoom × iframe zoom × pan). | Pure functions in `canvasIframeCoordinates.ts` with golden tests at 50%/100%/200% on each axis × non-zero pan. **Rotation is out of scope** (asserted in tests). |
+| Element rect goes stale mid-drag when mutation triggers re-render. | Commit-on-release: drag math runs parent-side without source mutation until pointerup. Optimistic preview rect on the overlay covers the recompile gap. After write, U13's `canvas/refresh-rect` re-anchors. |
+| TSX structural mutations would destroy trivia if reprinted via `ts.createPrinter`. | **Resolved**: use **recast** which preserves trivia for untouched siblings and only re-prints touched nodes. recast is added to deps in U1 (~5MB). |
+| canvasIdMap could mispair after wrap/insert (positional walk fails). | **Resolved**: identity-based pairing via `data-canvas-stable-id` threaded through ts-factory / parse5 mutations. Stable id maps old→new across mutations regardless of structural shape change. |
+| Multiple iframes on canvas all listening to drag — perf/conflict. | Bridge already filters by `event.source`. U13 confirms inbound handlers also filter by message marker + version + origin. |
+| Inline-edit lock isolation across processes (MCP server vs UI). | **Resolved**: lock substrate is a vite dev-server in-memory map (`canvasInlineEditLock.ts`) consulted by every write endpoint and the MCP server. 5s heartbeat + 8s timeout. |
+| Agent parity for drag — agents don't drag, they set values. | Drag emits the same `setStyle` / `setClassName` / structural mutation an MCP tool calls directly. No new MCP "drag" tool. |
 | Component prop scrub vs. text input ambiguity. | Numeric props get scrub (detected by registry/type info); string/enum inputs/selects. |
 | Snap-to-edge guides clutter the iframe at small zoom. | Render only when drag is in progress; fade out within 1s of drag-end. |
-| Undo log memory growth. | In-memory + session-bounded; cap at 500 entries (FIFO eviction). Documented as v3 constraint. |
-| Mermaid SVG click-target semantics differ from HTML. | U10 decision: extend bridge for SVG-namespaced data attributes; if mermaid doesn't expose stable ids per node, fall back to source-textarea-only. |
+| Undo log memory growth on large files. | **Hard cap: 25 entries per file, 50MB total log size**, size-aware FIFO eviction. Documented constraint: secrets in source flow into client memory. |
+| Mermaid SVG click-target semantics differ from HTML. | U10 ships a parallel SVG click handler; if mermaid versions don't expose stable per-node ids, fallback to source-textarea-only (no bridge changes required). |
 | Cross-iframe multi-select would mean coordinate translation across the canvas. | Explicitly out of scope for v3. Single-iframe only. |
-| Persistent undo would need server-side log + per-user state. | Out of scope for v3. v4 conversation. |
+| Persistent undo would need server-side log + per-user state. | Out of scope for v3. v4 follow-up (no spec yet). |
+| Path traversal on new write endpoints. | Every new write endpoint imports `resolveWorkspacePath` with a per-endpoint extension allowlist (markdown: `.md`, etc.). Guard explicitly named in each endpoint's Files list. |
+| Stored XSS via `childSource` in insertChild/wrapSelection. | Parse-validate every `childSource` before splicing. HTML rejects `<script>`/`<iframe>`; TSX rejects top-level imports. Returns 400 `parse-error` or `unsupported-source` with no file change. |
 
 ---
 
