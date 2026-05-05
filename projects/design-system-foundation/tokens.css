@@ -1,0 +1,12 @@
+:root {
+  --color-surface: rgb(252, 254, 253);
+  --color-surface-dim: rgb(247, 251, 249);
+  --color-foreground: rgb(42, 42, 40);
+  --color-muted-foreground: rgb(89, 89, 85);
+  --color-border-default: rgba(200, 200, 196, 0.6);
+  --color-border-strong: rgba(200, 200, 196, 0.8);
+  --color-brand-500: rgb(43, 84, 62);
+  --color-brand-600: rgb(37, 71, 53);
+  --color-inverse: rgb(255, 255, 255);
+  --color-error: rgb(206, 82, 62);
+}

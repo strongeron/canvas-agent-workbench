@@ -174,9 +174,149 @@ describe("canvas MCP server", () => {
     const queuedOperations: unknown[] = []
     let importedHtmlBundleRequestBody: Record<string, any> | null = null
     let canvasScreenshotRequestBody: Record<string, any> | null = null
+    let tokenWriteRequestBody: Record<string, any> | null = null
+    let htmlReadRequestBody: Record<string, any> | null = null
+    let htmlWriteRequestBody: Record<string, any> | null = null
+    let componentCreateRequestBody: Record<string, any> | null = null
 
     server = createServer((req, res) => {
       const requestUrl = new URL(req.url || "/", "http://127.0.0.1")
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/tokens/list") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            projectId: "demo",
+            filePath: "projects/demo/tokens.css",
+            mtimeMs: 123,
+            tokens: [{ name: "--color-brand-600", value: "#2563eb", category: "color" }],
+            sourceCss: ":root { --color-brand-600: #2563eb; }",
+          })
+        )
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/tokens/write") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          tokenWriteRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              projectId: "demo",
+              filePath: "projects/demo/tokens.css",
+              mtimeMs: 124,
+              appliedMutations: 1,
+              tokens: [{ name: "--color-brand-600", value: "#1d4ed8", category: "color" }],
+              sourceCss: ":root { --color-brand-600: #1d4ed8; }",
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/ast/load") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            kind: "html",
+            filePath: "projects/demo/components/Card.html",
+            source: "<article class=\"card\">Hello</article>",
+            sourceHtml: "<article class=\"card\">Hello</article>",
+            mtimeMs: 456,
+          })
+        )
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/ast/read") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          htmlReadRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              node: {
+                canvasId: htmlReadRequestBody?.canvasId,
+                tag: "article",
+                attributes: [{ name: "class", value: "card", kind: "literal-string" }],
+                textContent: "Hello",
+              },
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/ast/write") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          htmlWriteRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              kind: "html",
+              sourceHtml: "<article class=\"card featured\">Hello</article>",
+              appliedMutations: 1,
+              mtimeMs: 457,
+              filePath: "projects/demo/components/Card.html",
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/component/create") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          componentCreateRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          const isTsx = componentCreateRequestBody?.format === "tsx"
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              projectId: "demo",
+              primitive: {
+                id: isTsx ? "primitive/badge" : "primitive/promo-card",
+                displayName: isTsx ? "Badge" : "PromoCard",
+                category: "ui",
+                kind: isTsx ? "tsx" : "html",
+                filePath: isTsx ? "components/Badge.tsx" : "components/PromoCard.html",
+              },
+              files: [
+                {
+                  filePath: isTsx ? "components/Badge.tsx" : "components/PromoCard.html",
+                  mtimeMs: 789,
+                },
+              ],
+            })
+          )
+        })
+        return
+      }
+
       if (
         req.method === "POST" &&
         (requestUrl.pathname === "/api/agent-native/workspaces/color-audit/operations" ||
@@ -596,6 +736,172 @@ describe("canvas MCP server", () => {
       expect(canvasThemes.result?.structuredContent?.tokenValues?.["--color-brand-600"]).toBe(
         "#2563eb"
       )
+
+      const listedTokens = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4b-tokens-list",
+        method: "tools/call",
+        params: {
+          name: "list_design_tokens",
+          arguments: { projectId: "demo" },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(listedTokens.result?.structuredContent?.tokens?.[0]?.name).toBe("--color-brand-600")
+      expect(listedTokens.result?.structuredContent?.mtimeMs).toBe(123)
+
+      const updatedToken = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4c-token-update",
+        method: "tools/call",
+        params: {
+          name: "update_design_token",
+          arguments: {
+            projectId: "demo",
+            name: "--color-brand-600",
+            value: "#1d4ed8",
+            mtimeMs: 123,
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(tokenWriteRequestBody).toMatchObject({
+        projectId: "demo",
+        mutation: { type: "set", name: "--color-brand-600", value: "#1d4ed8" },
+        mtimeMs: 123,
+      })
+      expect(updatedToken.result?.structuredContent?.tokens?.[0]?.value).toBe("#1d4ed8")
+
+      const readHtmlNodeResult = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4d-html-read",
+        method: "tools/call",
+        params: {
+          name: "read_html_node",
+          arguments: {
+            filePath: "projects/demo/components/Card.html",
+            canvasId: "abc123:0",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(htmlReadRequestBody).toMatchObject({
+        sourceHtml: "<article class=\"card\">Hello</article>",
+        canvasId: "abc123:0",
+        sourceId: "projects/demo/components/Card.html",
+      })
+      expect(readHtmlNodeResult.result?.structuredContent?.node?.tag).toBe("article")
+      expect(readHtmlNodeResult.result?.structuredContent?.mtimeMs).toBe(456)
+
+      const updatedHtmlNode = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-html-update",
+        method: "tools/call",
+        params: {
+          name: "update_html_node",
+          arguments: {
+            filePath: "projects/demo/components/Card.html",
+            canvasId: "abc123:0",
+            mtimeMs: 456,
+            mutations: [{ type: "setClassName", value: "card featured" }],
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(htmlWriteRequestBody).toMatchObject({
+        filePath: "projects/demo/components/Card.html",
+        canvasId: "abc123:0",
+        sourceId: "projects/demo/components/Card.html",
+        mtimeMs: 456,
+        mutations: [{ type: "setClassName", value: "card featured" }],
+      })
+      expect(updatedHtmlNode.result?.structuredContent?.sourceHtml).toContain("featured")
+
+      const createdHtmlComponentPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "4f-component-html",
+        method: "tools/call",
+        params: {
+          name: "create_component_from_html",
+          arguments: {
+            projectId: "demo",
+            name: "Promo Card",
+            sourceHtml: "<article>Promo</article>",
+            sourceCss: "article { padding: 16px; }",
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedHtmlComponentCreate = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedHtmlComponentCreate.request).toMatchObject({
+        toolName: "create_component_from_html",
+        operation: {
+          type: "create_item",
+          item: {
+            type: "html",
+            sourceMode: "inline",
+            sourceHtml: "<article>Promo</article>",
+            sourcePath: "projects/demo/components/PromoCard.html",
+          },
+        },
+      })
+      await queuedHtmlComponentCreate.respond({
+        ok: true,
+        updatedAt: "2026-05-05T18:00:00.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const createdHtmlComponent = await createdHtmlComponentPromise
+
+      expect(componentCreateRequestBody).toMatchObject({
+        projectId: "demo",
+        name: "Promo Card",
+        format: "html",
+        sourceHtml: "<article>Promo</article>",
+      })
+      expect(createdHtmlComponent.result?.structuredContent?.component?.primitive?.kind).toBe("html")
+      expect(createdHtmlComponent.result?.structuredContent?.item?.sourceMode).toBe("inline")
+
+      const createdTsxComponentPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "4g-component-tsx",
+        method: "tools/call",
+        params: {
+          name: "create_component_from_tsx",
+          arguments: {
+            projectId: "demo",
+            name: "Badge",
+            sourceTsx: "export function Badge() { return <span>Badge</span> }",
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedTsxComponentCreate = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedTsxComponentCreate.request).toMatchObject({
+        toolName: "create_component_from_tsx",
+        operation: {
+          type: "create_item",
+          item: {
+            type: "html",
+            sourceMode: "react",
+            sourcePath: "projects/demo/components/Badge.tsx",
+          },
+        },
+      })
+      expect(queuedTsxComponentCreate.request.operation.item.sourceReact).toContain("import { Badge }")
+      await queuedTsxComponentCreate.respond({
+        ok: true,
+        updatedAt: "2026-05-05T18:00:01.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const createdTsxComponent = await createdTsxComponentPromise
+
+      expect(componentCreateRequestBody).toMatchObject({
+        projectId: "demo",
+        name: "Badge",
+        format: "tsx",
+        sourceTsx: "export function Badge() { return <span>Badge</span> }",
+      })
+      expect(createdTsxComponent.result?.structuredContent?.component?.primitive?.kind).toBe("tsx")
 
       const exportResource = (await sendRpc({
         jsonrpc: "2.0",

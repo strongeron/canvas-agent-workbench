@@ -5,6 +5,7 @@ import { promises as fs } from "node:fs"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { hashSourceId } from "../utils/canvasAstPath"
+import { injectCanvasHtmlElementIds } from "../utils/canvasHtmlEditor"
 import { injectCanvasElementIds } from "../vite/plugins/canvas-element-id"
 import { applyCanvasAstWriteRequest } from "../vite/api/canvasAstWrite"
 
@@ -109,5 +110,41 @@ describe("applyCanvasAstWriteRequest (file-backed)", () => {
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.status).toBe(403)
+  })
+
+  it("dispatches file-backed HTML mutations by extension", async () => {
+    const root = await createTempDir("canvas-html-write-endpoint-")
+    const relativePath = "components/Card.html"
+    const absolute = path.join(root, relativePath)
+    const source = `<article class="card">Hello</article>`
+    await fs.mkdir(path.dirname(absolute), { recursive: true })
+    await fs.writeFile(absolute, source, "utf8")
+    const initialStat = await fs.stat(absolute)
+    const canvasId = injectCanvasHtmlElementIds(source, {
+      sourceId: relativePath,
+      injectBridge: false,
+    }).ids[0]?.canvasId
+
+    const result = await applyCanvasAstWriteRequest(
+      {
+        filePath: relativePath,
+        canvasId,
+        sourceId: relativePath,
+        mtimeMs: initialStat.mtimeMs,
+        mutations: [
+          { type: "setClassName", value: "card featured" },
+          { type: "setTextContent", value: "Featured" },
+        ],
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.kind).toBe("html")
+    expect(result.sourceHtml).toBe(`<article class="card featured">Featured</article>`)
+    const onDisk = await fs.readFile(absolute, "utf8")
+    expect(onDisk).toBe(result.sourceHtml)
+    expect(onDisk).not.toContain("data-canvas-id")
   })
 })

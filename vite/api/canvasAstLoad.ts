@@ -14,9 +14,13 @@ interface CanvasAstLoadOptions {
 export type CanvasAstLoadResponse =
   | {
       ok: true
-      sourceReact: string
+      sourceReact?: string
+      sourceHtml?: string
+      sourceCss?: string
+      source: string
       mtimeMs: number
       filePath: string
+      kind: "tsx" | "html" | "css"
     }
   | {
       ok: false
@@ -34,23 +38,27 @@ export async function applyCanvasAstLoadRequest(
     return { ok: false, status: 400, code: "bad-input", error: "filePath is required." }
   }
 
-  const resolved = resolveWorkspacePath(filePath, options.workspaceRoot)
+  const resolved = resolveWorkspacePath(filePath, options.workspaceRoot, [".tsx", ".jsx", ".html", ".css"])
   if (!resolved) {
     return {
       ok: false,
       status: 403,
       code: "bad-path",
-      error: "filePath must resolve inside the workspace and end in .tsx or .jsx.",
+      error: "filePath must resolve inside the workspace and end in .tsx, .jsx, .html, or .css.",
     }
   }
 
   try {
     const [source, stat] = await Promise.all([fs.readFile(resolved, "utf8"), fs.stat(resolved)])
+    const extension = path.extname(resolved).toLowerCase()
+    const kind = extension === ".html" ? "html" : extension === ".css" ? "css" : "tsx"
     return {
       ok: true,
-      sourceReact: source,
+      ...(kind === "html" ? { sourceHtml: source } : kind === "css" ? { sourceCss: source } : { sourceReact: source }),
+      source,
       mtimeMs: stat.mtimeMs,
       filePath: path.relative(options.workspaceRoot, resolved),
+      kind,
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException)?.code
@@ -61,7 +69,7 @@ export async function applyCanvasAstLoadRequest(
       ok: false,
       status: 500,
       code: "read-failed",
-      error: error instanceof Error ? error.message : "Failed to read TSX file.",
+      error: error instanceof Error ? error.message : "Failed to read source file.",
     }
   }
 }

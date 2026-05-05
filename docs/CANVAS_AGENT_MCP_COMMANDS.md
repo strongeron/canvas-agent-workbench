@@ -89,6 +89,12 @@ Use these when you want the agent to manage the file library itself:
 - `get_canvas_state`
 - `get_canvas_selection`
 - `get_canvas_themes`
+- `list_design_tokens`
+- `update_design_token`
+- `read_html_node`
+- `update_html_node`
+- `create_component_from_html`
+- `create_component_from_tsx`
 - `list_primitives`
 - `get_primitive`
 - `create_artboard`
@@ -112,6 +118,9 @@ What this surface supports:
 - read current board
 - inspect selection
 - inspect available canvas themes and current resolved theme tokens
+- list and update project-level `tokens.css` custom properties with mtime guards
+- read and mutate editable HTML nodes by `data-canvas-id`
+- create new source-backed HTML or TSX components from pasted/generated code
 - inspect registered primitives and their metadata
 - create/update/delete board items
 - create several board items atomically in one queued operation
@@ -126,6 +135,14 @@ Batch create note:
 - capture a screenshot cropped around specific rendered canvas items
 - export primitive-only artboards as React
 
+Web-native editing tools:
+
+- `list_design_tokens` reads `projects/<projectId>/tokens.css`; missing files return an empty token list and `mtimeMs: null`.
+- `update_design_token` sets one CSS custom property. Pass `mtimeMs` from `list_design_tokens` when the file already exists.
+- `read_html_node` reads tag, attributes, classes, and text for a selected HTML element. Use `filePath` for file-backed components or `sourceHtml` for inline components.
+- `update_html_node` accepts literal mutations like `setClassName`, `setAttribute`, and `setTextContent`. File-backed writes require the current `mtimeMs`.
+- `create_component_from_html` and `create_component_from_tsx` write under `projects/<projectId>/components/`, append a matching `registry.json` entry, and create a preview node unless `createItem: false` is passed.
+
 Screenshot note:
 
 - `capture_canvas_items_screenshot` crops the rendered board to the requested item ids when those nodes are visible; it falls back to the focused viewport capture path if direct crop bounds are unavailable
@@ -135,6 +152,8 @@ Current writable entity types:
 
 - artboards
 - component items
+- inline HTML/CSS/JS nodes
+- React TSX preview nodes
 - local HTML bundle nodes
 - embeds
 - media
@@ -147,6 +166,8 @@ HTML bundle notes:
 - this is for local HTML/CSS/JS bundles, not arbitrary remote websites
 - the imported bundle is stored under the document-local `.assets` folder
 - the live node renders in an iframe, so resize and interact mode work as expected
+- inline HTML nodes can also be created directly with `create_item` by passing an `html` item with `sourceMode: "inline"` and `sourceHtml`
+- React TSX nodes use the same `html` item type with `sourceMode: "react"`, `sourceReact`, and optional `sourceCss`; `sourceReact` must default-export a component
 - if you have a large external library, scan it first and choose the exact folder + entry file to import
 - if you are importing from the UI, save the board to a real `.canvas` file first
 - agents can also author bundles inline by passing `bundle.files[].textContent` for HTML, CSS, or JS files instead of base64 payloads

@@ -4,11 +4,14 @@ import {
   buildCanvasContextSummary,
   captureCanvasItemsScreenshot,
   captureWorkspaceScreenshot,
+  createComponentFromSource,
   createProjectCanvasFile,
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
   importProjectCanvasHtmlBundle,
+  listDesignTokens,
   scanProjectCanvasHtmlBundles,
+  readCanvasHtmlNode,
   readAgentNativeWorkspaceDebug,
   enqueueAgentNativeWorkspaceOperation,
   readAgentNativeManifest,
@@ -29,6 +32,8 @@ import {
   readCanvasAgentSelection,
   readCanvasAgentState,
   readCanvasAgentThemes,
+  updateCanvasHtmlNode,
+  updateDesignToken,
 } from './canvas-agent-runtime.mjs'
 import {
   DEFAULT_EXPORT_FORMAT,
@@ -250,6 +255,132 @@ const TOOL_DEFINITIONS = [
         },
       },
       required: ['path', 'bundle'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_design_tokens',
+    description: 'List project-level design tokens from projects/<projectId>/tokens.css.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_design_token',
+    description:
+      'Set a project-level CSS custom property in projects/<projectId>/tokens.css with the same mtime guard as the UI.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string' },
+        name: { type: 'string', description: 'CSS custom property name, e.g. --color-brand-600.' },
+        value: { type: 'string' },
+        mtimeMs: { type: 'number' },
+      },
+      required: ['name', 'value'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'read_html_node',
+    description:
+      'Read an editable HTML element by data-canvas-id from inline sourceHtml or a workspace-relative .html file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string' },
+        sourceHtml: { type: 'string' },
+        canvasId: { type: 'string' },
+        sourceId: { type: 'string' },
+      },
+      required: ['canvasId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_html_node',
+    description:
+      'Apply literal HTML mutations (class, attrs, text) by data-canvas-id to inline sourceHtml or a workspace-relative .html file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string' },
+        sourceHtml: { type: 'string' },
+        canvasId: { type: 'string' },
+        sourceId: { type: 'string' },
+        mtimeMs: { type: 'number' },
+        mutations: {
+          type: 'array',
+          items: { type: 'object' },
+          minItems: 1,
+        },
+      },
+      required: ['canvasId', 'mutations'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_component_from_html',
+    description:
+      'Create a project component from pasted HTML/CSS under projects/<projectId>/components/ and append a kind=html registry entry.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string' },
+        name: { type: 'string' },
+        sourceHtml: { type: 'string' },
+        sourceCss: { type: 'string' },
+        description: { type: 'string' },
+        createItem: { type: 'boolean' },
+        select: { type: 'boolean' },
+        item: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            sandbox: { type: 'string' },
+            background: { type: 'string' },
+            parentId: { type: 'string' },
+            position: positionSchema(),
+            size: sizeSchema(),
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['name', 'sourceHtml'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_component_from_tsx',
+    description:
+      'Create a project component from pasted TSX under projects/<projectId>/components/ and append a kind=tsx registry entry.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string' },
+        name: { type: 'string' },
+        sourceTsx: { type: 'string' },
+        description: { type: 'string' },
+        createItem: { type: 'boolean' },
+        select: { type: 'boolean' },
+        item: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            sandbox: { type: 'string' },
+            background: { type: 'string' },
+            parentId: { type: 'string' },
+            position: positionSchema(),
+            size: sizeSchema(),
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['name', 'sourceTsx'],
       additionalProperties: false,
     },
   },
@@ -1439,6 +1570,129 @@ async function callTool(name, args) {
         return asToolError(error instanceof Error ? error.message : 'Failed to create html item.')
       }
     }
+    case 'list_design_tokens':
+      return asToolResult(await listDesignTokens(context, normalizeString(args.projectId) || context.projectId))
+    case 'update_design_token': {
+      const name = normalizeString(args.name)
+      const value = normalizeString(args.value)
+      if (!name) return asToolError('name is required.')
+      if (!value) return asToolError('value is required.')
+      return asToolResult(
+        await updateDesignToken(context, {
+          projectId: normalizeString(args.projectId) || context.projectId,
+          name,
+          value,
+          mtimeMs: typeof args.mtimeMs === 'number' ? args.mtimeMs : undefined,
+        })
+      )
+    }
+    case 'read_html_node': {
+      const canvasId = normalizeString(args.canvasId)
+      if (!canvasId) return asToolError('canvasId is required.')
+      return asToolResult(
+        await readCanvasHtmlNode(context, {
+          filePath: normalizeString(args.filePath) || undefined,
+          sourceHtml: typeof args.sourceHtml === 'string' ? args.sourceHtml : undefined,
+          canvasId,
+          sourceId: normalizeString(args.sourceId) || undefined,
+        })
+      )
+    }
+    case 'update_html_node': {
+      const canvasId = normalizeString(args.canvasId)
+      if (!canvasId) return asToolError('canvasId is required.')
+      if (!Array.isArray(args.mutations) || args.mutations.length === 0) {
+        return asToolError('mutations is required.')
+      }
+      return asToolResult(
+        await updateCanvasHtmlNode(context, {
+          filePath: normalizeString(args.filePath) || undefined,
+          sourceHtml: typeof args.sourceHtml === 'string' ? args.sourceHtml : undefined,
+          canvasId,
+          sourceId: normalizeString(args.sourceId) || undefined,
+          mutations: args.mutations,
+          mtimeMs: typeof args.mtimeMs === 'number' ? args.mtimeMs : undefined,
+        })
+      )
+    }
+    case 'create_component_from_html': {
+      const name = normalizeString(args.name)
+      const sourceHtml = typeof args.sourceHtml === 'string' ? args.sourceHtml : ''
+      if (!name) return asToolError('name is required.')
+      if (!sourceHtml.trim()) return asToolError('sourceHtml is required.')
+      const projectId = normalizeString(args.projectId) || context.projectId
+      const component = await createComponentFromSource(context, {
+        projectId,
+        name,
+        format: 'html',
+        sourceHtml,
+        sourceCss: typeof args.sourceCss === 'string' ? args.sourceCss : undefined,
+        description: normalizeString(args.description) || undefined,
+      })
+      if (args.createItem === false) return asToolResult({ component })
+      const state = await readCanvasAgentState(context)
+      const itemArgs = args.item && typeof args.item === 'object' ? args.item : {}
+      const item = createHtmlCanvasItem(state, {
+        title: normalizeString(itemArgs.title) || component?.primitive?.displayName || name,
+        sourceHtml,
+        sourceMode: 'inline',
+        sourcePath: component?.primitive?.filePath ? `projects/${projectId}/${component.primitive.filePath}` : undefined,
+        sandbox: normalizeString(itemArgs.sandbox) || undefined,
+        background: normalizeString(itemArgs.background) || undefined,
+        parentId: normalizeString(itemArgs.parentId) || undefined,
+        position: itemArgs.position,
+        size: itemArgs.size,
+      })
+      const result = await enqueueCanvasAgentOperation(
+        context,
+        'create_component_from_html',
+        createCreateItemOperation(item, args.select !== false),
+        { source: 'canvas-agent-mcp' }
+      )
+      return asToolResult({ component, item, result })
+    }
+    case 'create_component_from_tsx': {
+      const name = normalizeString(args.name)
+      const sourceTsx = typeof args.sourceTsx === 'string' ? args.sourceTsx : ''
+      if (!name) return asToolError('name is required.')
+      if (!sourceTsx.trim()) return asToolError('sourceTsx is required.')
+      const projectId = normalizeString(args.projectId) || context.projectId
+      const component = await createComponentFromSource(context, {
+        projectId,
+        name,
+        format: 'tsx',
+        sourceTsx,
+        description: normalizeString(args.description) || undefined,
+      })
+      if (args.createItem === false) return asToolResult({ component })
+      const state = await readCanvasAgentState(context)
+      const itemArgs = args.item && typeof args.item === 'object' ? args.item : {}
+      const importName = component?.primitive?.importName || normalizeComponentNameForImport(name)
+      const importPath = component?.primitive?.filePath
+        ? `../../projects/${projectId}/${component.primitive.filePath.replace(/\.tsx?$/, '')}`
+        : null
+      const sourceReact = importPath
+        ? `import { ${importName} } from "${importPath}"\n\nexport default function Preview() {\n  return <${importName} />\n}\n`
+        : sourceTsx
+      const item = createHtmlCanvasItem(state, {
+        title: normalizeString(itemArgs.title) || component?.primitive?.displayName || name,
+        sourceReact,
+        sourceMode: 'react',
+        sourcePath: component?.primitive?.filePath ? `projects/${projectId}/${component.primitive.filePath}` : undefined,
+        sandbox: normalizeString(itemArgs.sandbox) || undefined,
+        background: normalizeString(itemArgs.background) || undefined,
+        parentId: normalizeString(itemArgs.parentId) || undefined,
+        position: itemArgs.position,
+        size: itemArgs.size,
+      })
+      const result = await enqueueCanvasAgentOperation(
+        context,
+        'create_component_from_tsx',
+        createCreateItemOperation(item, args.select !== false),
+        { source: 'canvas-agent-mcp' }
+      )
+      return asToolResult({ component, item, result })
+    }
     case 'get_workspace_events': {
       const workspaceId = normalizeString(args.workspaceId)
       if (!workspaceId) return asToolError('workspaceId is required.')
@@ -2177,6 +2431,13 @@ function flattenCanvasSummaryItems(summary) {
     map.set(item.id, item)
   }
   return map
+}
+
+function normalizeComponentNameForImport(value) {
+  const words = normalizeString(value).match(/[A-Za-z0-9]+/g)
+  if (!words || words.length === 0) return 'GeneratedComponent'
+  const name = words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join('')
+  return /^[A-Za-z]/.test(name) ? name : `Component${name}`
 }
 
 function asToolResult(payload) {

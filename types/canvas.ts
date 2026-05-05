@@ -157,6 +157,8 @@ export interface CanvasHtmlItem extends CanvasItemBase {
   entryAsset?: string
   sourcePath?: string
   sourceImportedAt?: string
+  sourceHtmlFilePath?: string
+  sourceHtmlFileMtime?: number
   sourceReactFilePath?: string
   sourceReactFileMtime?: number
 }

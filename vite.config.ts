@@ -9,9 +9,12 @@ import { injectIframeProxyShims } from './utils/iframeProxyShims'
 import { injectCanvasElementIds } from './vite/plugins/canvas-element-id'
 import { buildBridgeScript as buildCanvasReactNodeBridgeScript } from './utils/canvasReactNodeBridge'
 import { readCanvasAstNode } from './utils/canvasAstReader'
+import { injectCanvasHtmlElementIds, readCanvasHtmlNode } from './utils/canvasHtmlEditor'
 import { applyCanvasAstWriteRequest } from './vite/api/canvasAstWrite'
 import { applyCanvasAstLoadRequest } from './vite/api/canvasAstLoad'
 import { applyCanvasRegistryListRequest } from './vite/api/canvasRegistryList'
+import { applyCanvasComponentCreateRequest } from './vite/api/canvasComponentCreate'
+import { listProjectDesignTokens, writeProjectDesignToken } from './utils/canvasTokenCss'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
@@ -4362,15 +4365,18 @@ function paperImportPlugin() {
           try {
             const body = await readJson(req)
             const sourceTsx = typeof body.sourceReact === 'string' ? body.sourceReact : ''
+            const sourceHtml = typeof body.sourceHtml === 'string' ? body.sourceHtml : ''
             const canvasId = typeof body.canvasId === 'string' ? body.canvasId : ''
             const sourceId = typeof body.sourceId === 'string' ? body.sourceId : ''
-            if (!sourceTsx || !canvasId || !sourceId) {
+            if ((!sourceTsx && !sourceHtml) || !canvasId || !sourceId) {
               return sendJson(res, 400, {
                 ok: false,
-                error: 'sourceReact, canvasId, and sourceId are required.',
+                error: 'sourceReact or sourceHtml, canvasId, and sourceId are required.',
               })
             }
-            const result = readCanvasAstNode(sourceTsx, canvasId, { sourceId })
+            const result = sourceHtml
+              ? readCanvasHtmlNode(sourceHtml, canvasId, { sourceId })
+              : readCanvasAstNode(sourceTsx, canvasId, { sourceId })
             if ('error' in result) {
               return sendJson(res, 200, { ok: false, error: result.error })
             }
@@ -4379,6 +4385,94 @@ function paperImportPlugin() {
             return sendJson(res, 400, {
               ok: false,
               error: error?.message || 'Failed to read AST node.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/inject-html') {
+          try {
+            const body = await readJson(req)
+            const sourceHtml = typeof body.sourceHtml === 'string' ? body.sourceHtml : ''
+            const sourceId = typeof body.sourceId === 'string' ? body.sourceId : ''
+            if (!sourceHtml || !sourceId) {
+              return sendJson(res, 400, {
+                ok: false,
+                error: 'sourceHtml and sourceId are required.',
+              })
+            }
+            const result = injectCanvasHtmlElementIds(sourceHtml, {
+              sourceId,
+              injectBridge: body.injectBridge !== false,
+            })
+            return sendJson(res, 200, {
+              ok: true,
+              html: result.html,
+              ids: result.ids,
+            })
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to inject HTML canvas ids.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/tokens/list') {
+          try {
+            const body = await readJson(req)
+            const result = await listProjectDesignTokens(body, { workspaceRoot: __dirname })
+            if (!result.ok) {
+              return sendJson(res, result.status, {
+                ok: false,
+                code: result.code,
+                error: result.error,
+              })
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to list design tokens.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/tokens/write') {
+          try {
+            const body = await readJson(req)
+            const result = await writeProjectDesignToken(body, { workspaceRoot: __dirname })
+            if (!result.ok) {
+              return sendJson(res, result.status, {
+                ok: false,
+                code: result.code,
+                error: result.error,
+              })
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to write design token.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/component/create') {
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasComponentCreateRequest(body, { workspaceRoot: __dirname })
+            if (!result.ok) {
+              return sendJson(res, result.status, {
+                ok: false,
+                code: result.code,
+                error: result.error,
+              })
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to create component.',
             })
           }
         }

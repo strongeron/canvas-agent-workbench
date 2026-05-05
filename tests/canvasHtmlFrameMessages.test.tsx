@@ -286,14 +286,14 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     expect(onGenerationChange).toHaveBeenCalledWith("item-1", 2)
   })
 
-  it("does not attach the message listener for non-React item modes", async () => {
+  it("does not attach the message listener for bundle/url item modes", async () => {
     const onSelect = vi.fn()
     harness = await mount(
       <CanvasHtmlFrame
         item={makeItem({
-          sourceMode: "inline",
+          sourceMode: "bundle",
           sourceReact: undefined,
-          sourceHtml: "<button>x</button>",
+          src: "/some/bundle/index.html",
         })}
         interactMode
         onReactNodeSelect={onSelect}

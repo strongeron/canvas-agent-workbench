@@ -18,6 +18,7 @@ describe("parseCanvasRegistry", () => {
       id: "primitive/button",
       displayName: "Button",
       category: "ui",
+      kind: "tsx",
     })
   })
 
@@ -42,6 +43,31 @@ describe("parseCanvasRegistry", () => {
       importName: "Button",
       snippet: "<Button />",
       description: "Action button",
+      kind: "tsx",
+    })
+  })
+
+  it("parses HTML entries with co-located CSS metadata", () => {
+    const result = parseCanvasRegistry({
+      ui: [
+        {
+          id: "primitive/card",
+          displayName: "Card",
+          kind: "html",
+          filePath: "components/Card.html",
+          cssPath: "components/Card.css",
+          componentSlug: "card",
+        },
+      ],
+    })
+
+    expect(result.warnings).toEqual([])
+    expect(result.primitives[0]).toMatchObject({
+      id: "primitive/card",
+      kind: "html",
+      filePath: "components/Card.html",
+      cssPath: "components/Card.css",
+      componentSlug: "card",
     })
   })
 
@@ -78,6 +104,7 @@ describe("buildPrimitiveSnippet", () => {
     id: "primitive/button",
     displayName: "Button",
     category: "ui",
+    kind: "tsx",
     filePath: "components/ui/Button.tsx",
     importName: "Button",
     snippet: "<Button>Click me</Button>",
@@ -96,6 +123,7 @@ describe("buildPrimitiveSnippet", () => {
       id: "primitive/button",
       displayName: "Button",
       category: "ui",
+      kind: "tsx",
       filePath: "components/ui/Button.tsx",
       importName: "Button",
     })
@@ -107,6 +135,7 @@ describe("buildPrimitiveSnippet", () => {
       id: "primitive/box",
       displayName: "Box",
       category: "ui",
+      kind: "tsx",
     })
     expect(source).toContain("<div>Box</div>")
     expect(source).not.toContain("import")

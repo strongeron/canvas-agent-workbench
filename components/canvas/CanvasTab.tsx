@@ -27,6 +27,7 @@ import type {
   CanvasHtmlItem,
 } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
+import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
 import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
 import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
@@ -683,6 +684,7 @@ export function CanvasTab({
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
   const [layersPanelVisible, setLayersPanelVisible] = useState(false)
   const [libraryPanelVisible, setLibraryPanelVisible] = useState(false)
+  const [componentPasteDialogVisible, setComponentPasteDialogVisible] = useState(false)
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
   const [interactMode, setInteractMode] = useState(false)
@@ -1574,6 +1576,11 @@ export function CanvasTab({
       sourceHtml?: string
       sourceReact?: string
       sourceCss?: string
+      sourcePath?: string
+      sourceHtmlFilePath?: string
+      sourceHtmlFileMtime?: number
+      sourceReactFilePath?: string
+      sourceReactFileMtime?: number
       position?: { x: number; y: number }
     }) => {
       const htmlWidth = 720
@@ -1634,6 +1641,11 @@ export function CanvasTab({
         sourceHtml,
         sourceReact: input?.sourceReact,
         sourceCss: input?.sourceCss,
+        sourcePath: input?.sourcePath,
+        sourceHtmlFilePath: input?.sourceHtmlFilePath,
+        sourceHtmlFileMtime: input?.sourceHtmlFileMtime,
+        sourceReactFilePath: input?.sourceReactFilePath,
+        sourceReactFileMtime: input?.sourceReactFileMtime,
         sandbox: "allow-scripts allow-same-origin allow-forms allow-modals allow-popups",
         position: {
           x: Math.max(0, targetX - htmlWidth / 2),
@@ -1655,6 +1667,58 @@ export function CanvasTab({
       workspaceSize.height,
       workspaceSize.width,
     ]
+  )
+
+  const handleComponentPasteCreated = useCallback(
+    async (input: {
+      result: {
+        projectId: string
+        primitive: {
+          displayName: string
+          kind: "html" | "tsx"
+          filePath?: string
+          importName?: string
+        }
+        files: Array<{ filePath: string; mtimeMs: number }>
+      }
+      format: "html" | "tsx"
+      sourceHtml?: string
+      sourceCss?: string
+      sourceTsx?: string
+    }) => {
+      const primitive = input.result.primitive
+      const filePath = primitive.filePath ? `projects/${input.result.projectId}/${primitive.filePath}` : undefined
+      const sourceFile = input.result.files.find((file) => file.filePath === primitive.filePath)
+
+      if (input.format === "html") {
+        await handleAddInlineHtml({
+          title: primitive.displayName,
+          sourceHtml: input.sourceHtml,
+          sourceCss: input.sourceCss,
+          sourcePath: filePath,
+          sourceHtmlFilePath: filePath,
+          sourceHtmlFileMtime: sourceFile?.mtimeMs,
+        })
+        return
+      }
+
+      const importName = primitive.importName || primitive.displayName.replace(/[^A-Za-z0-9_$]/g, "")
+      const importPath = primitive.filePath
+        ? `../../projects/${input.result.projectId}/${primitive.filePath.replace(/\.tsx?$/, "")}`
+        : ""
+      const sourceReact = importPath
+        ? `import { ${importName} } from "${importPath}"\n\nexport default function Preview() {\n  return <${importName} />\n}\n`
+        : input.sourceTsx
+
+      await handleAddInlineHtml({
+        title: primitive.displayName,
+        sourceReact,
+        sourcePath: filePath,
+        sourceReactFilePath: filePath,
+        sourceReactFileMtime: sourceFile?.mtimeMs,
+      })
+    },
+    [handleAddInlineHtml]
   )
 
   const handleAddHtmlBundleFromDirectory = useCallback(
@@ -2940,6 +3004,7 @@ export function CanvasTab({
           onToggleScenes={toggleScenes}
           onToggleLayers={toggleLayers}
           onToggleLibraryPanel={() => setLibraryPanelVisible((v) => !v)}
+          onCreateComponentFromPaste={() => setComponentPasteDialogVisible(true)}
           onToggleThemePanel={toggleThemePanel}
           onToggleCopilotPanel={toggleCopilotPanel}
           onToggleInteractMode={toggleInteractMode}
@@ -3037,9 +3102,20 @@ export function CanvasTab({
                 await handleAddInlineHtml({
                   title: input.title,
                   sourceReact: input.sourceReact,
+                  sourceHtml: input.sourceHtml,
+                  sourcePath: input.sourcePath,
                 })
               }}
+              onCreateFromPaste={() => setComponentPasteDialogVisible(true)}
               onClose={() => setLibraryPanelVisible(false)}
+            />
+          )}
+
+          {componentPasteDialogVisible && (
+            <CanvasComponentPasteDialog
+              projectId={activeProjectId || "design-system-foundation"}
+              onCreated={handleComponentPasteCreated}
+              onClose={() => setComponentPasteDialogVisible(false)}
             />
           )}
 
@@ -3241,16 +3317,40 @@ export function CanvasTab({
             <CanvasReactNodePropertyPanel
               selection={selectedReactNodeSelection}
               sourceReact={selectedHtmlItem.sourceReact || ""}
+              sourceHtml={selectedHtmlItem.sourceHtml || ""}
+              sourceKind={selectedHtmlItem.sourceMode === "inline" ? "html" : "tsx"}
               currentCompileGeneration={selectedReactCompileGeneration}
-              sourceId={selectedHtmlItem.id}
-              sourceFilePath={selectedHtmlItem.sourceReactFilePath}
-              sourceFileMtime={selectedHtmlItem.sourceReactFileMtime}
+              sourceId={
+                selectedHtmlItem.sourcePath ||
+                selectedHtmlItem.sourceHtmlFilePath ||
+                selectedHtmlItem.sourceReactFilePath ||
+                selectedHtmlItem.id
+              }
+              sourceFilePath={
+                selectedHtmlItem.sourceMode === "inline"
+                  ? selectedHtmlItem.sourceHtmlFilePath
+                  : selectedHtmlItem.sourceReactFilePath
+              }
+              sourceFileMtime={
+                selectedHtmlItem.sourceMode === "inline"
+                  ? selectedHtmlItem.sourceHtmlFileMtime
+                  : selectedHtmlItem.sourceReactFileMtime
+              }
               onSourceReactChange={(sourceReact, mtimeMs) =>
                 updateItem(selectedHtmlItem.id, {
                   sourceMode: "react",
                   sourceReact,
                   ...(typeof mtimeMs === "number"
                     ? { sourceReactFileMtime: mtimeMs }
+                    : {}),
+                } satisfies Partial<Omit<CanvasHtmlItem, "id">>)
+              }
+              onSourceHtmlChange={(sourceHtml, mtimeMs) =>
+                updateItem(selectedHtmlItem.id, {
+                  sourceMode: "inline",
+                  sourceHtml,
+                  ...(typeof mtimeMs === "number"
+                    ? { sourceHtmlFileMtime: mtimeMs }
                     : {}),
                 } satisfies Partial<Omit<CanvasHtmlItem, "id">>)
               }
@@ -3419,6 +3519,7 @@ export function CanvasTab({
 
           {themePanelVisible && (
             <CanvasThemePanel
+              projectId={activeProjectId}
               themes={themes}
               activeThemeId={activeThemeId}
               onThemeChange={setActiveThemeId}

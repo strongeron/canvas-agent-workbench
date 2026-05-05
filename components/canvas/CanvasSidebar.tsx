@@ -346,6 +346,12 @@ interface CanvasSidebarProps {
     fileEntries?: Array<{ file: File; relativePath: string }>
     title?: string
   }) => void | Promise<void>
+  onAddInlineHtml?: (input?: {
+    title?: string
+    sourceHtml?: string
+    sourceReact?: string
+    sourceCss?: string
+  }) => void | Promise<void>
   onAddHtmlBundleFromDirectory?: (input: {
     directoryPath: string
     entryFile?: string
@@ -414,6 +420,7 @@ export function CanvasSidebar({
   entries,
   onAddEmbed,
   onAddHtmlBundle,
+  onAddInlineHtml,
   onAddHtmlBundleFromDirectory,
   onScanHtmlBundleLibrary,
   onAddMedia,
@@ -1664,6 +1671,72 @@ export function CanvasSidebar({
                   className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 />
                 <div className="mt-2 flex gap-2">
+                  {onAddInlineHtml ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void onAddInlineHtml({
+                            title: htmlBundleTitle.trim() || undefined,
+                          })
+                        }}
+                        className="flex-1 rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+                      >
+                        HTML node
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const title = htmlBundleTitle.trim() || "React preview"
+                          void onAddInlineHtml({
+                            title,
+                            sourceReact: `export default function Preview() {
+  return (
+    <main className="card">
+      <p className="eyebrow">React TSX</p>
+      <h1>{${JSON.stringify(title)}}</h1>
+      <p>Edit this component and CSS in the right panel, then apply to re-render the node.</p>
+    </main>
+  )
+}
+`,
+                            sourceCss: `.card {
+  width: min(520px, calc(100vw - 48px));
+  margin: 48px auto;
+  padding: 32px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgb(15 23 42 / 0.12);
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+p {
+  color: #4b5563;
+  line-height: 1.6;
+}
+`,
+                          })
+                        }}
+                        className="flex-1 rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+                      >
+                        React node
+                      </button>
+                    </>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {

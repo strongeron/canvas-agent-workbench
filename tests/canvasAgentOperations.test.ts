@@ -122,4 +122,52 @@ describe("canvas agent operations core", () => {
     expect(exported.code).toContain("export function LandingBoard()")
     expect(exported.code).toContain("import { Button }")
   })
+
+  it("builds inline html items from source", async () => {
+    const ops = await loadCanvasAgentOperations()
+
+    const item = ops.createHtmlCanvasItem(
+      {
+        items: [],
+        groups: [],
+        nextZIndex: 7,
+        selectedIds: [],
+      },
+      {
+        title: "Inline card",
+        sourceHtml: "<!doctype html><html><body><main>Hello</main></body></html>",
+      }
+    )
+
+    expect(item.type).toBe("html")
+    expect(item.zIndex).toBe(7)
+    expect(item.src).toBeUndefined()
+    expect(item.sourceMode).toBe("inline")
+    expect(item.sourceHtml).toContain("<main>Hello</main>")
+  })
+
+  it("builds react html items from TSX source", async () => {
+    const ops = await loadCanvasAgentOperations()
+
+    const item = ops.createHtmlCanvasItem(
+      {
+        items: [],
+        groups: [],
+        nextZIndex: 8,
+        selectedIds: [],
+      },
+      {
+        title: "React card",
+        sourceReact: "export default function Preview() { return <main>Hello</main> }",
+        sourceCss: "main { padding: 24px; }",
+      }
+    )
+
+    expect(item.type).toBe("html")
+    expect(item.zIndex).toBe(8)
+    expect(item.src).toBeUndefined()
+    expect(item.sourceMode).toBe("react")
+    expect(item.sourceReact).toContain("function Preview")
+    expect(item.sourceCss).toContain("padding")
+  })
 })

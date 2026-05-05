@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Loader2, Package, RotateCw, X } from "lucide-react"
+import { Loader2, Package, Plus, RotateCw, X } from "lucide-react"
 
 import {
   buildPrimitiveSnippet,
@@ -10,9 +10,12 @@ export interface CanvasLibraryPanelProps {
   projectId?: string
   onInstantiate: (input: {
     title: string
-    sourceReact: string
-    sourceMode?: "react"
+    sourceReact?: string
+    sourceHtml?: string
+    sourceMode?: "react" | "inline"
+    sourcePath?: string
   }) => void | Promise<void>
+  onCreateFromPaste?: () => void
   onClose: () => void
 }
 
@@ -33,6 +36,7 @@ const initialFetchState: FetchState = {
 export function CanvasLibraryPanel({
   projectId = "design-system-foundation",
   onInstantiate,
+  onCreateFromPaste,
   onClose,
 }: CanvasLibraryPanelProps) {
   const [fetchState, setFetchState] = useState<FetchState>(initialFetchState)
@@ -79,15 +83,40 @@ export function CanvasLibraryPanel({
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
 
   const instantiate = useCallback(
-    (primitive: CanvasRegistryPrimitive) => {
+    async (primitive: CanvasRegistryPrimitive) => {
+      if (primitive.kind === "html" && primitive.filePath) {
+        const response = await fetch("/api/canvas/ast/load", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filePath: `projects/${projectId}/${primitive.filePath}`,
+          }),
+        })
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean
+          sourceHtml?: string
+          source?: string
+          error?: string
+        }
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || "Failed to load HTML primitive.")
+        }
+        await onInstantiate({
+          title: primitive.displayName,
+          sourceHtml: payload.sourceHtml || payload.source || "",
+          sourceMode: "inline",
+          sourcePath: `projects/${projectId}/${primitive.filePath}`,
+        })
+        return
+      }
       const sourceReact = buildPrimitiveSnippet(primitive)
-      void onInstantiate({
+      await onInstantiate({
         title: primitive.displayName,
         sourceReact,
         sourceMode: "react",
       })
     },
-    [onInstantiate]
+    [onInstantiate, projectId]
   )
 
   return (
@@ -103,6 +132,16 @@ export function CanvasLibraryPanel({
           </h3>
         </div>
         <div className="flex items-center gap-1">
+          {onCreateFromPaste && (
+            <button
+              type="button"
+              onClick={onCreateFromPaste}
+              className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+              title="New from paste"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={refresh}
@@ -190,11 +229,16 @@ function PrimitiveList({
               <li key={primitive.id}>
                 <button
                   type="button"
-                  onClick={() => onInstantiate(primitive)}
+                  onClick={() => void onInstantiate(primitive)}
                   className="w-full rounded-md border border-default bg-white px-2.5 py-2 text-left text-[12px] hover:border-brand-300 hover:bg-brand-50"
                   title={primitive.id}
                 >
-                  <div className="font-semibold text-foreground">{primitive.displayName}</div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-foreground">{primitive.displayName}</span>
+                    <span className="rounded bg-surface-100 px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                      {primitive.kind}
+                    </span>
+                  </div>
                   {primitive.description && (
                     <div className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">
                       {primitive.description}

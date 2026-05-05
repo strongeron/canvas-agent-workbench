@@ -344,18 +344,32 @@ export function createCanvasGroup(state, args = {}) {
 export function createHtmlCanvasItem(state, args = {}) {
   const current = normalizeCanvasStateSnapshot(state)
   const src = normalizeString(args.src)
-  if (!src) {
-    throw new Error('HTML item src is required.')
+  const sourceReact = normalizeString(args.sourceReact)
+  const sourceCss = typeof args.sourceCss === 'string' ? args.sourceCss : undefined
+  const sourceHtml = normalizeString(args.sourceHtml || args.source)
+  if (!src && !sourceHtml && !sourceReact) {
+    throw new Error('HTML item src, sourceHtml, or sourceReact is required.')
   }
 
   return {
     id: createCanvasItemId('html'),
     type: 'html',
-    src,
+    src: src || undefined,
     title: normalizeString(args.title) || 'HTML bundle',
     sandbox:
       normalizeString(args.sandbox) || 'allow-scripts allow-same-origin allow-forms allow-modals',
     background: normalizeString(args.background) || undefined,
+    sourceMode:
+      ['bundle', 'inline', 'react', 'url'].includes(args.sourceMode)
+        ? args.sourceMode
+        : sourceReact
+          ? 'react'
+        : sourceHtml
+          ? 'inline'
+          : 'bundle',
+    sourceHtml: sourceHtml || undefined,
+    sourceReact: sourceReact || undefined,
+    sourceCss,
     entryAsset: normalizeString(args.entryAsset) || undefined,
     sourcePath: normalizeString(args.sourcePath) || undefined,
     sourceImportedAt: normalizeString(args.sourceImportedAt) || undefined,

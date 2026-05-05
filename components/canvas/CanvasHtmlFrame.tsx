@@ -48,6 +48,7 @@ export function CanvasHtmlFrame({
   const shouldRenderInline =
     item.sourceMode === "inline" || (!item.src && Boolean(sourceHtml) && !shouldRenderReact)
   const [compiledReactHtml, setCompiledReactHtml] = useState("")
+  const [injectedInlineHtml, setInjectedInlineHtml] = useState("")
   const [compileStatus, setCompileStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
   const [compileError, setCompileError] = useState("")
   const [hoverRect, setHoverRect] = useState<CanvasReactNodeRect | null>(null)
@@ -57,7 +58,7 @@ export function CanvasHtmlFrame({
   // fileHint. For v1 we use the canvas item id; once registry-backed nodes
   // exist (U6) this becomes the source file path so multiple instances of
   // the same component agree on ids.
-  const sourceId = item.id
+  const sourceId = item.sourcePath || item.sourceReactFilePath || item.id
   // Compile generation: bumped every time we kick off a new compile. The
   // parent attaches the *current* generation to outbound selections so a
   // stale canvasId from a previous compile (referencing an AST node that
@@ -129,11 +130,45 @@ export function CanvasHtmlFrame({
     sourceId,
   ])
 
+  useEffect(() => {
+    if (!shouldRenderInline || !sourceHtml) {
+      setInjectedInlineHtml("")
+      return
+    }
+
+    const controller = new AbortController()
+    compileGenerationRef.current += 1
+    onReactCompileGenerationChange?.(item.id, compileGenerationRef.current)
+    fetch("/api/canvas/inject-html", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceHtml,
+        sourceId,
+      }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok || !payload?.ok) {
+          throw new Error(payload?.error || "Failed to prepare HTML source.")
+        }
+        return String(payload.html || "")
+      })
+      .then((html) => setInjectedInlineHtml(html))
+      .catch(() => {
+        if (controller.signal.aborted) return
+        setInjectedInlineHtml(sourceHtml)
+      })
+
+    return () => controller.abort()
+  }, [item.id, onReactCompileGenerationChange, shouldRenderInline, sourceHtml, sourceId])
+
   // U2: listen for click/hover messages from inside the iframe. Filter by
   // `event.source === iframeRef.current.contentWindow` so messages from
   // other React preview nodes on the canvas don't cross-talk.
   useEffect(() => {
-    if (!shouldRenderReact) return
+    if (!shouldRenderReact && !shouldRenderInline) return
     const handler = (event: MessageEvent) => {
       const iframe = iframeRef.current
       if (!iframe) return
@@ -164,20 +199,20 @@ export function CanvasHtmlFrame({
     }
     window.addEventListener("message", handler)
     return () => window.removeEventListener("message", handler)
-  }, [shouldRenderReact, onReactNodeSelect, item.id])
+  }, [shouldRenderInline, shouldRenderReact, onReactNodeSelect, item.id])
 
   // Clear selection when the source changes — the canvasId references an
   // AST node from the previous compile and may not exist in the new one.
   useEffect(() => {
     setSelectionRect(null)
     setHoverRect(null)
-  }, [sourceReact, sourceCss, sourceId])
+  }, [sourceHtml, sourceReact, sourceCss, sourceId])
 
   const frameSource = useMemo(() => {
     if (shouldRenderReact) return compiledReactHtml
-    if (shouldRenderInline) return sourceHtml
+    if (shouldRenderInline) return injectedInlineHtml || sourceHtml
     return ""
-  }, [compiledReactHtml, shouldRenderInline, shouldRenderReact, sourceHtml])
+  }, [compiledReactHtml, injectedInlineHtml, shouldRenderInline, shouldRenderReact, sourceHtml])
   const hasRenderableSource = shouldRenderReact
     ? compileStatus === "ready" && Boolean(compiledReactHtml)
     : shouldRenderInline
@@ -235,7 +270,7 @@ export function CanvasHtmlFrame({
                 inside CanvasHtmlFrame so these align 1:1. The canvas-level
                 wrapper applies its own transform; outlines inside this
                 component work for the unscaled local case. */}
-            {shouldRenderReact && hoverRect && interactMode && (
+            {(shouldRenderReact || shouldRenderInline) && hoverRect && interactMode && (
               <div
                 className="pointer-events-none absolute rounded-sm ring-1 ring-brand-400/60"
                 style={{
@@ -246,7 +281,7 @@ export function CanvasHtmlFrame({
                 }}
               />
             )}
-            {shouldRenderReact && selectionRect && (
+            {(shouldRenderReact || shouldRenderInline) && selectionRect && (
               <div
                 className="pointer-events-none absolute rounded-sm ring-2 ring-brand-500"
                 style={{

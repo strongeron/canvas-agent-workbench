@@ -3,17 +3,21 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 
 import type { AstAttributeInfo, AstNodeInfo } from "../../utils/canvasAstReader"
 import type { CanvasAstMutation } from "../../utils/canvasAstWriter"
+import type { CanvasHtmlMutation } from "../../utils/canvasHtmlEditor"
 import type { CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 
 export interface CanvasReactNodePropertyPanelProps {
   selection: CanvasReactNodeSelection
   sourceReact: string
+  sourceHtml?: string
+  sourceKind?: "tsx" | "html"
   currentCompileGeneration: number
   sourceId: string
   sourceFilePath?: string
   sourceFileMtime?: number
   onClose: () => void
   onSourceReactChange: (sourceReact: string, mtimeMs?: number) => void
+  onSourceHtmlChange?: (sourceHtml: string, mtimeMs?: number) => void
   onOpenSourceMode?: () => void
 }
 
@@ -28,12 +32,15 @@ const initialFetchState: FetchState = { status: "idle", node: null, error: "" }
 export function CanvasReactNodePropertyPanel({
   selection,
   sourceReact,
+  sourceHtml = "",
+  sourceKind = "tsx",
   currentCompileGeneration,
   sourceId,
   sourceFilePath,
   sourceFileMtime,
   onClose,
   onSourceReactChange,
+  onSourceHtmlChange,
   onOpenSourceMode,
 }: CanvasReactNodePropertyPanelProps) {
   const [fetchState, setFetchState] = useState<FetchState>(initialFetchState)
@@ -57,6 +64,7 @@ export function CanvasReactNodePropertyPanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sourceReact,
+        sourceHtml: sourceKind === "html" ? sourceHtml : undefined,
         canvasId: selection.canvasId,
         sourceId,
       }),
@@ -84,6 +92,8 @@ export function CanvasReactNodePropertyPanel({
     return () => controller.abort()
   }, [
     selection.canvasId,
+    sourceHtml,
+    sourceKind,
     sourceReact,
     sourceId,
     refreshKey,
@@ -93,7 +103,7 @@ export function CanvasReactNodePropertyPanel({
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
 
   const applyMutations = useCallback(
-    async (mutations: CanvasAstMutation[]) => {
+    async (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => {
       if (stale) return
       setWriteState({ status: "saving", error: "" })
       const fileBacked = Boolean(sourceFilePath)
@@ -102,7 +112,8 @@ export function CanvasReactNodePropertyPanel({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            sourceReact: fileBacked ? undefined : sourceReact,
+            sourceReact: sourceKind === "tsx" && !fileBacked ? sourceReact : undefined,
+            sourceHtml: sourceKind === "html" && !fileBacked ? sourceHtml : undefined,
             canvasId: selection.canvasId,
             sourceId,
             mutations,
@@ -113,11 +124,13 @@ export function CanvasReactNodePropertyPanel({
         const payload = (await response.json().catch(() => ({}))) as {
           ok?: boolean
           sourceReact?: string
+          sourceHtml?: string
           mtimeMs?: number | null
           error?: string
           code?: string
         }
-        if (!response.ok || !payload.ok || typeof payload.sourceReact !== "string") {
+        const nextSource = sourceKind === "html" ? payload.sourceHtml : payload.sourceReact
+        if (!response.ok || !payload.ok || typeof nextSource !== "string") {
           const errorMsg = payload.error || "Failed to write AST node."
           throw new Error(
             payload.code === "mtime-conflict"
@@ -125,10 +138,12 @@ export function CanvasReactNodePropertyPanel({
               : errorMsg
           )
         }
-        onSourceReactChange(
-          payload.sourceReact,
-          typeof payload.mtimeMs === "number" ? payload.mtimeMs : undefined
-        )
+        const nextMtime = typeof payload.mtimeMs === "number" ? payload.mtimeMs : undefined
+        if (sourceKind === "html") {
+          onSourceHtmlChange?.(nextSource, nextMtime)
+        } else {
+          onSourceReactChange(nextSource, nextMtime)
+        }
         setWriteState({ status: "idle", error: "" })
       } catch (error) {
         setWriteState({
@@ -139,10 +154,13 @@ export function CanvasReactNodePropertyPanel({
     },
     [
       onSourceReactChange,
+      onSourceHtmlChange,
       selection.canvasId,
       sourceFileMtime,
       sourceFilePath,
       sourceId,
+      sourceHtml,
+      sourceKind,
       sourceReact,
       stale,
     ]
@@ -157,7 +175,9 @@ export function CanvasReactNodePropertyPanel({
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
       <header className="flex items-start justify-between gap-2 border-b border-default px-4 py-3">
         <div className="min-w-0 flex-1">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">React node</div>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            {sourceKind === "html" ? "HTML node" : "React node"}
+          </div>
           <h3 className="truncate text-sm font-semibold text-foreground" title={headerLabel}>
             &lt;{headerLabel}&gt;
           </h3>
@@ -199,6 +219,7 @@ export function CanvasReactNodePropertyPanel({
         ) : fetchState.node ? (
           <NodeBody
             node={fetchState.node}
+            sourceKind={sourceKind}
             writeState={writeState}
             onApplyMutations={applyMutations}
             onOpenSourceMode={onOpenSourceMode}
@@ -211,13 +232,15 @@ export function CanvasReactNodePropertyPanel({
 
 function NodeBody({
   node,
+  sourceKind,
   writeState,
   onApplyMutations,
   onOpenSourceMode,
 }: {
   node: AstNodeInfo
+  sourceKind: "tsx" | "html"
   writeState: { status: "idle" | "saving" | "error"; error: string }
-  onApplyMutations: (mutations: CanvasAstMutation[]) => void
+  onApplyMutations: (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => void
   onOpenSourceMode?: () => void
 }) {
   return (
@@ -252,7 +275,7 @@ function NodeBody({
             <div>
               <div className="font-semibold">Source-only mode</div>
               <div className="mt-0.5">
-                {node.reasonNotEditable ?? "This element falls outside the v1 edit subset."}
+                {node.reasonNotEditable ?? "This element falls outside the editable subset."}
               </div>
               {onOpenSourceMode && (
                 <button
@@ -280,6 +303,7 @@ function NodeBody({
               <AttributeRow
                 key={`${attr.name}-${i}`}
                 attr={attr}
+                sourceKind={sourceKind}
                 disabled={writeState.status === "saving"}
                 onApplyMutations={onApplyMutations}
               />
@@ -294,7 +318,7 @@ function NodeBody({
         </div>
         {node.hasNonTextChildren ? (
           <p className="text-[11px] italic text-muted-foreground">
-            Has nested JSX or computed expressions — not editable in v1.
+            Has nested elements or computed expressions — not editable here.
           </p>
         ) : node.textChildren ? (
           <TextChildEditor
@@ -312,12 +336,14 @@ function NodeBody({
 
 function AttributeRow({
   attr,
+  sourceKind,
   disabled,
   onApplyMutations,
 }: {
   attr: AstAttributeInfo
+  sourceKind: "tsx" | "html"
   disabled: boolean
-  onApplyMutations: (mutations: CanvasAstMutation[]) => void
+  onApplyMutations: (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => void
 }) {
   const [draft, setDraft] = useState(attr.value)
   useEffect(() => {
@@ -327,6 +353,10 @@ function AttributeRow({
   const canEdit = attr.editableInV1 && attr.kind !== "spread"
   const apply = () => {
     if (!dirty || !canEdit) return
+    if (sourceKind === "html") {
+      onApplyMutations([{ type: "setAttribute", attrName: attr.name, value: draft }])
+      return
+    }
     if (attr.name === "className" && attr.kind === "literal-string") {
       onApplyMutations([{ type: "setClassName", value: draft }])
       return
@@ -412,7 +442,7 @@ function TextChildEditor({
 }: {
   value: string
   disabled: boolean
-  onApplyMutations: (mutations: CanvasAstMutation[]) => void
+  onApplyMutations: (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => void
 }) {
   const [draft, setDraft] = useState(value)
   useEffect(() => {

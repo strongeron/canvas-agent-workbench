@@ -4,8 +4,11 @@ export interface CanvasRegistryPrimitive {
   id: string
   displayName: string
   category: CanvasRegistryCategory
+  kind: "html" | "tsx"
   filePath?: string
   importName?: string
+  cssPath?: string
+  componentSlug?: string
   snippet?: string
   description?: string
 }
@@ -49,6 +52,7 @@ function parseEntry(
       id: entry,
       displayName: deriveDisplayName(entry),
       category,
+      kind: "tsx",
     }
   }
   if (!entry || typeof entry !== "object") {
@@ -65,12 +69,16 @@ function parseEntry(
     typeof value.displayName === "string" && value.displayName.trim()
       ? value.displayName.trim()
       : deriveDisplayName(id)
+  const kind = value.kind === "html" ? "html" : "tsx"
   return {
     id,
     displayName,
     category,
+    kind,
     filePath: typeof value.filePath === "string" ? value.filePath : undefined,
     importName: typeof value.importName === "string" ? value.importName : undefined,
+    cssPath: typeof value.cssPath === "string" ? value.cssPath : undefined,
+    componentSlug: typeof value.componentSlug === "string" ? value.componentSlug : undefined,
     snippet: typeof value.snippet === "string" ? value.snippet : undefined,
     description: typeof value.description === "string" ? value.description : undefined,
   }

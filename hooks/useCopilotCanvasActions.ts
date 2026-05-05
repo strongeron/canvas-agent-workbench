@@ -58,7 +58,7 @@ interface Size {
 }
 
 interface CreateCanvasItemArgs {
-  type?: "component" | "embed" | "media" | "markdown" | "mermaid" | "excalidraw" | "artboard"
+  type?: "component" | "html" | "embed" | "media" | "markdown" | "mermaid" | "excalidraw" | "artboard"
   position?: Point
   size?: Size
   componentId?: string
@@ -66,6 +66,10 @@ interface CreateCanvasItemArgs {
   url?: string
   src?: string
   source?: string
+  sourceHtml?: string
+  sourceMode?: "bundle" | "inline" | "react" | "url"
+  sourceReact?: string
+  sourceCss?: string
   title?: string
   name?: string
   parentId?: string
@@ -86,8 +90,13 @@ interface UpdateCanvasItemArgs {
   url?: string
   src?: string
   source?: string
+  sourceHtml?: string
+  sourceMode?: "bundle" | "inline" | "react" | "url"
+  sourceReact?: string
+  sourceCss?: string
   name?: string
   title?: string
+  sandbox?: string
   mediaKind?: "image" | "video" | "gif"
   mermaidTheme?: "default" | "neutral" | "dark" | "forest" | "base"
   sourceMermaid?: string
@@ -325,7 +334,12 @@ function sanitizeCanvasItem(item: CanvasItem) {
       ...base,
       title: item.title || "HTML bundle",
       src: item.src,
+      sourceMode: item.sourceMode || null,
       entryAsset: item.entryAsset || null,
+      sourcePreview:
+        typeof item.sourceHtml === "string" ? item.sourceHtml.slice(0, 180) : null,
+      reactPreview:
+        typeof item.sourceReact === "string" ? item.sourceReact.slice(0, 180) : null,
     }
   }
 
@@ -477,13 +491,13 @@ export function useCopilotCanvasActions({
 
   useCopilotAction({
     name: "createCanvasItem",
-    description: "Create a canvas item of type component/embed/media/markdown/mermaid/excalidraw/artboard.",
+    description: "Create a canvas item of type component/html/embed/media/markdown/mermaid/excalidraw/artboard.",
     parameters: [
       {
         name: "type",
         type: "string",
         required: true,
-        enum: ["component", "embed", "media", "markdown", "mermaid", "excalidraw", "artboard"],
+        enum: ["component", "html", "embed", "media", "markdown", "mermaid", "excalidraw", "artboard"],
       },
       {
         name: "position",
@@ -508,6 +522,15 @@ export function useCopilotCanvasActions({
       { name: "url", type: "string", required: false },
       { name: "src", type: "string", required: false },
       { name: "source", type: "string", required: false },
+      { name: "sourceHtml", type: "string", required: false },
+      { name: "sourceReact", type: "string", required: false },
+      { name: "sourceCss", type: "string", required: false },
+      {
+        name: "sourceMode",
+        type: "string",
+        enum: ["bundle", "inline", "react", "url"],
+        required: false,
+      },
       { name: "title", type: "string", required: false },
       { name: "name", type: "string", required: false },
       { name: "parentId", type: "string", required: false },
@@ -571,6 +594,32 @@ export function useCopilotCanvasActions({
           embedSnapshotStatus: "idle",
           embedLiveStatus: "idle",
           embedCaptureStatus: "idle",
+          ...parentProps,
+        })
+        return { ok: true, itemId: createdId }
+      }
+
+      if (args.type === "html") {
+        const sourceReact = (args.sourceReact || "").trim()
+        const sourceHtml = (args.sourceHtml || (!sourceReact ? args.source : "") || "").trim()
+        const sourceCss = (args.sourceCss || "").trim()
+        const src = (args.src || args.url || "").trim()
+        if (!sourceHtml && !sourceReact && !src) {
+          return { ok: false, error: "source/sourceHtml, sourceReact, or src/url is required when creating html items." }
+        }
+        createdId = addItem({
+          type: "html",
+          src: src || undefined,
+          sourceHtml: sourceHtml || undefined,
+          sourceReact: sourceReact || undefined,
+          sourceCss: sourceCss || undefined,
+          sourceMode: args.sourceMode || (sourceReact ? "react" : sourceHtml ? "inline" : "url"),
+          title: args.title?.trim() || (sourceReact ? "React TSX" : sourceHtml ? "Inline HTML" : "HTML node"),
+          sandbox: "allow-scripts allow-same-origin allow-forms allow-modals allow-popups",
+          background: args.background?.trim() || undefined,
+          position: basePosition,
+          size: clampSize(args.size, { width: 720, height: 480 }),
+          rotation: 0,
           ...parentProps,
         })
         return { ok: true, itemId: createdId }
@@ -811,8 +860,18 @@ export function useCopilotCanvasActions({
       { name: "url", type: "string", required: false },
       { name: "src", type: "string", required: false },
       { name: "source", type: "string", required: false },
+      { name: "sourceHtml", type: "string", required: false },
+      { name: "sourceReact", type: "string", required: false },
+      { name: "sourceCss", type: "string", required: false },
+      {
+        name: "sourceMode",
+        type: "string",
+        enum: ["bundle", "inline", "react", "url"],
+        required: false,
+      },
       { name: "name", type: "string", required: false },
       { name: "title", type: "string", required: false },
+      { name: "sandbox", type: "string", required: false },
       { name: "mediaKind", type: "string", enum: ["image", "video", "gif"], required: false },
       {
         name: "mermaidTheme",
@@ -835,6 +894,8 @@ export function useCopilotCanvasActions({
       if (!args.itemId || !args.itemId.trim()) {
         return { ok: false, error: "itemId is required" }
       }
+      const itemId = args.itemId.trim()
+      const targetItem = items.find((candidate) => candidate.id === itemId)
 
       const updates: Record<string, unknown> = {}
       if (args.position) {
@@ -857,9 +918,27 @@ export function useCopilotCanvasActions({
       }
       if (typeof args.url === "string") updates.url = args.url
       if (typeof args.src === "string") updates.src = args.src
-      if (typeof args.source === "string") updates.source = args.source
+      if (typeof args.source === "string") {
+        if (targetItem?.type === "html") {
+          updates.sourceHtml = args.source
+          updates.sourceMode = "inline"
+        } else {
+          updates.source = args.source
+        }
+      }
+      if (typeof args.sourceHtml === "string") {
+        updates.sourceHtml = args.sourceHtml
+        if (!args.sourceMode) updates.sourceMode = "inline"
+      }
+      if (typeof args.sourceReact === "string") {
+        updates.sourceReact = args.sourceReact
+        if (!args.sourceMode) updates.sourceMode = "react"
+      }
+      if (typeof args.sourceCss === "string") updates.sourceCss = args.sourceCss
+      if (typeof args.sourceMode === "string") updates.sourceMode = args.sourceMode
       if (typeof args.name === "string") updates.name = args.name
       if (typeof args.title === "string") updates.title = args.title
+      if (typeof args.sandbox === "string") updates.sandbox = args.sandbox
       if (typeof args.mediaKind === "string") updates.mediaKind = args.mediaKind
       if (typeof args.mermaidTheme === "string") updates.mermaidTheme = args.mermaidTheme
       if (typeof args.sourceMermaid === "string") updates.sourceMermaid = args.sourceMermaid
@@ -871,8 +950,8 @@ export function useCopilotCanvasActions({
         return { ok: false, error: "No updates provided." }
       }
 
-      updateItem(args.itemId.trim(), updates as CanvasItemUpdate)
-      return { ok: true, itemId: args.itemId.trim() }
+      updateItem(itemId, updates as CanvasItemUpdate)
+      return { ok: true, itemId }
     },
   })
 
@@ -1786,6 +1865,11 @@ export function useCopilotCanvasActions({
             type: "component",
             required: ["componentId"],
             optional: ["variantIndex", "position", "size", "parentId", "order"],
+          },
+          {
+            type: "html",
+            required: ["sourceHtml, sourceReact, or src"],
+            optional: ["title", "sourceMode", "sourceCss", "background", "position", "size", "parentId", "order"],
           },
           {
             type: "embed",

@@ -51,6 +51,7 @@ interface CanvasToolbarProps {
   onToggleScenes: () => void
   onToggleLayers: () => void
   onToggleLibraryPanel: () => void
+  onCreateComponentFromPaste?: () => void
   onToggleInteractMode: () => void
   onAddArtboard: () => void
   onImportFromPaper?: () => void
@@ -92,6 +93,7 @@ export function CanvasToolbar({
   onToggleScenes,
   onToggleLayers,
   onToggleLibraryPanel,
+  onCreateComponentFromPaste,
   onToggleInteractMode,
   onAddArtboard,
   onImportFromPaper,
@@ -395,6 +397,20 @@ export function CanvasToolbar({
           <Package className="h-5 w-5" />
         </Button>
       </Tooltip>
+
+      {onCreateComponentFromPaste && (
+        <Tooltip content="New component from paste">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCreateComponentFromPaste}
+            className={iconButtonClass}
+            aria-label="New component from paste"
+          >
+            <Copy className="h-5 w-5" />
+          </Button>
+        </Tooltip>
+      )}
 
       {/* Theme */}
       <Tooltip content="Theme + tokens panel">

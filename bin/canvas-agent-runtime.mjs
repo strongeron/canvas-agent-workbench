@@ -473,6 +473,71 @@ export async function scanProjectCanvasHtmlBundles(context, rootPath) {
   return payload?.result ?? null
 }
 
+export async function loadCanvasSourceFile(context, filePath) {
+  return postAgentNativeJson(context, '/api/canvas/ast/load', { filePath })
+}
+
+export async function readCanvasHtmlNode(context, input) {
+  const filePath = typeof input?.filePath === 'string' && input.filePath.trim() ? input.filePath.trim() : ''
+  let sourceHtml = typeof input?.sourceHtml === 'string' ? input.sourceHtml : ''
+  let mtimeMs = null
+  if (filePath) {
+    const loaded = await loadCanvasSourceFile(context, filePath)
+    sourceHtml = loaded?.sourceHtml || loaded?.source || ''
+    mtimeMs = typeof loaded?.mtimeMs === 'number' ? loaded.mtimeMs : null
+  }
+  const payload = await postAgentNativeJson(context, '/api/canvas/ast/read', {
+    sourceHtml,
+    canvasId: input?.canvasId,
+    sourceId: input?.sourceId || filePath,
+  })
+  return {
+    ...payload,
+    filePath: filePath || null,
+    mtimeMs,
+  }
+}
+
+export async function updateCanvasHtmlNode(context, input) {
+  const filePath = typeof input?.filePath === 'string' && input.filePath.trim() ? input.filePath.trim() : ''
+  return postAgentNativeJson(context, '/api/canvas/ast/write', {
+    filePath: filePath || undefined,
+    sourceHtml: filePath ? undefined : input?.sourceHtml,
+    canvasId: input?.canvasId,
+    sourceId: input?.sourceId || filePath,
+    mutations: Array.isArray(input?.mutations) ? input.mutations : [],
+    mtimeMs: typeof input?.mtimeMs === 'number' ? input.mtimeMs : undefined,
+  })
+}
+
+export async function listDesignTokens(context, projectId = context.projectId) {
+  return postAgentNativeJson(context, '/api/canvas/tokens/list', { projectId })
+}
+
+export async function updateDesignToken(context, input) {
+  return postAgentNativeJson(context, '/api/canvas/tokens/write', {
+    projectId: input?.projectId || context.projectId,
+    mutation: {
+      type: 'set',
+      name: input?.name,
+      value: input?.value,
+    },
+    mtimeMs: typeof input?.mtimeMs === 'number' ? input.mtimeMs : undefined,
+  })
+}
+
+export async function createComponentFromSource(context, input) {
+  return postAgentNativeJson(context, '/api/canvas/component/create', {
+    projectId: input?.projectId || context.projectId,
+    name: input?.name,
+    format: input?.format,
+    sourceHtml: input?.sourceHtml,
+    sourceCss: input?.sourceCss,
+    sourceTsx: input?.sourceTsx,
+    description: input?.description,
+  })
+}
+
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
   return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
 }
