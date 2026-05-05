@@ -95,6 +95,7 @@ Use these when you want the agent to manage the file library itself:
 - `update_html_node`
 - `create_component_from_html`
 - `create_component_from_tsx`
+- `promote_to_component`
 - `list_primitives`
 - `get_primitive`
 - `create_artboard`
@@ -142,6 +143,7 @@ Web-native editing tools:
 - `read_html_node` reads tag, attributes, classes, and text for a selected HTML element. Use `filePath` for file-backed components or `sourceHtml` for inline components.
 - `update_html_node` accepts literal mutations like `setClassName`, `setAttribute`, and `setTextContent`. File-backed writes require the current `mtimeMs`.
 - `create_component_from_html` and `create_component_from_tsx` write under `projects/<projectId>/components/`, append a matching `registry.json` entry, and create a preview node unless `createItem: false` is passed.
+- `promote_to_component` extracts an HTML subtree (by `canvasId`) from a canvas item and saves it as a new project component. The original item is unchanged; the new primitive appears in the registry and library panel for re-use.
 
 Screenshot note:
 
@@ -332,6 +334,42 @@ Use MCP only. First call scan_html_bundles on the local source root to discover 
 ```text
 Use MCP only. Read workspace://surface/canvas/state first and identify the existing html node id you want to keep on the board. Then call import_html_bundle with the stored Canvas file path, the new bundle payload, and targetItemId set to that html node id. Do not create a second html node. After the call, read workspace://surface/canvas/state again, inspect workspace://surface/canvas/debug if needed, and call capture_canvas_items_screenshot for that html node id to verify the iframe updated in place.
 ```
+
+### Designing with the agent — web-native track
+
+End-to-end workflow for tweaking colors, fonts, layout, and components in a project. Mirrors what a human does in the canvas UI; every step is an MCP tool call.
+
+**1. Tweak project tokens** (color, typography, spacing, radius, shadow):
+
+```text
+Use MCP only. Call list_design_tokens with the active projectId to read all CSS custom properties from projects/<projectId>/tokens.css. Then call update_design_token with the token name (e.g. --color-brand-500), the new value, and the mtimeMs from the previous list call. Re-list to confirm the write landed. The token cascade refreshes inside every open canvas iframe via the existing parent → iframe broadcast — no manual reload needed.
+```
+
+**2. Edit a primitive's HTML element by clicking it on canvas:**
+
+```text
+Use MCP only. Read workspace://surface/canvas/selection to get the selected element's canvasId and sourceId. Call read_html_node with sourceHtml (or filePath + mtimeMs for file-backed components) plus the canvasId to inspect the tag, attributes, classes, and text. Then call update_html_node with mutations like setClassName, setAttribute, or setTextContent. For file-backed writes, pass the same mtimeMs so the writer can guard against external edits.
+```
+
+**3. Bring an existing component into the project (paste flow):**
+
+```text
+Use MCP only. Call create_component_from_html with the projectId, a name, sourceHtml, and optional sourceCss. The endpoint writes projects/<projectId>/components/<Name>.html (and .css), appends a kind=html registry entry, and creates a preview canvas node. Use create_component_from_tsx with sourceTsx for React components. Pass createItem: false if you only want the file write without a canvas node.
+```
+
+**4. Promote a region from a canvas board into a reusable primitive:**
+
+```text
+Use MCP only. Read the canvas item's sourceHtml and the selection's canvasId. Call promote_to_component with name, sourceHtml, canvasId, sourceId, and an optional description. The endpoint extracts the matched element + descendants (data-canvas-id stripped), writes the new component file under projects/<projectId>/components/, and registers it. The original canvas item is unchanged; the new primitive is now in the library panel for re-instantiation.
+```
+
+**5. Compose a new layout from primitives:**
+
+```text
+Use MCP only. Call list_primitives to see the registry, then create_primitive_item or create_items to drop primitives onto the board. Use update_item to position them, and update_html_node on the new instances to tweak text/classes. Call capture_canvas_items_screenshot to verify the layout.
+```
+
+The whole loop — generate / bring / compose / edit / sync / iterate — runs through MCP without ever leaving the agent surface. The same endpoints back the UI, so any edit lands in source files identically whether driven by a human or the agent.
 
 ### Canvas
 
