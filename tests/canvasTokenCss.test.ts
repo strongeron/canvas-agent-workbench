@@ -84,4 +84,51 @@ describe("canvas token CSS", () => {
     expect(result.tokens).toEqual([])
     expect(result.mtimeMs).toBeNull()
   })
+
+  it("classifies typography tokens including line-height and font-weight", () => {
+    const tokens = parseDesignTokens(`:root {
+  --font-family-sans: "Inter", sans-serif;
+  --font-size-base: 1rem;
+  --line-height-base: 1.5;
+  --font-weight-sans-medium: 500;
+  --letter-spacing-wide: 0.05em;
+}`)
+
+    expect(tokens.every((t) => t.category === "typography")).toBe(true)
+    expect(tokens.map((t) => t.name)).toEqual([
+      "--font-family-sans",
+      "--font-size-base",
+      "--line-height-base",
+      "--font-weight-sans-medium",
+      "--letter-spacing-wide",
+    ])
+  })
+
+  it("classifies spacing tokens including --space-* and --size-control-*", () => {
+    const tokens = parseDesignTokens(`:root {
+  --space-300: 0.75rem;
+  --size-control-md: 2.25rem;
+}`)
+
+    expect(tokens).toEqual([
+      { name: "--space-300", value: "0.75rem", category: "spacing" },
+      { name: "--size-control-md", value: "2.25rem", category: "spacing" },
+    ])
+  })
+
+  it("classifies radius and shadow tokens", () => {
+    const tokens = parseDesignTokens(`:root {
+  --radius-lg: 0.75rem;
+  --shadow-card: 0 2px 8px -1px rgba(22, 22, 20, 0.08);
+}`)
+
+    expect(tokens).toEqual([
+      { name: "--radius-lg", value: "0.75rem", category: "radius" },
+      {
+        name: "--shadow-card",
+        value: "0 2px 8px -1px rgba(22, 22, 20, 0.08)",
+        category: "shadow",
+      },
+    ])
+  })
 })

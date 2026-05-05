@@ -257,10 +257,24 @@ function normalizeTokenMutation(input: unknown): CanvasTokenWriteInput | null {
 
 function inferTokenCategory(name: string, value: string): CanvasDesignToken["category"] {
   if (name.startsWith("--color-") || /^(#|rgb\(|rgba\(|hsl\(|hsla\(|oklch\(|color\()/.test(value)) return "color"
-  if (name.includes("font") || name.includes("type") || (/rem|em|px/.test(value) && name.includes("text"))) {
+  if (
+    name.includes("font") ||
+    name.includes("type") ||
+    name.includes("line-height") ||
+    name.includes("letter-spacing") ||
+    (/rem|em|px/.test(value) && name.includes("text"))
+  ) {
     return "typography"
   }
-  if (name.includes("space") || name.includes("spacing") || name.includes("gap")) return "spacing"
+  if (
+    name.includes("space") ||
+    name.includes("spacing") ||
+    name.includes("gap") ||
+    name.includes("size-control") ||
+    name.startsWith("--size-")
+  ) {
+    return "spacing"
+  }
   if (name.includes("radius")) return "radius"
   if (name.includes("shadow")) return "shadow"
   return "other"

@@ -1,4 +1,5 @@
 :root {
+  /* color */
   --color-surface: rgb(252, 254, 253);
   --color-surface-dim: rgb(247, 251, 249);
   --color-foreground: rgb(42, 42, 40);
@@ -9,4 +10,60 @@
   --color-brand-600: rgb(37, 71, 53);
   --color-inverse: rgb(255, 255, 255);
   --color-error: rgb(206, 82, 62);
+
+  /* typography — families */
+  --font-family-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-family-display: "Poppins", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* typography — sizes */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+  --font-size-4xl: 2.25rem;
+
+  /* typography — line heights */
+  --line-height-xs: 1.5;
+  --line-height-sm: 1.5;
+  --line-height-base: 1.5;
+  --line-height-lg: 1.5;
+  --line-height-xl: 1.4;
+  --line-height-2xl: 1.3;
+  --line-height-3xl: 1.2;
+  --line-height-4xl: 1.2;
+
+  /* typography — weights */
+  --font-weight-sans-regular: 400;
+  --font-weight-sans-medium: 500;
+  --font-weight-display-bold: 700;
+
+  /* spacing */
+  --space-100: 0.25rem;
+  --space-200: 0.5rem;
+  --space-300: 0.75rem;
+  --space-400: 1rem;
+  --space-500: 1.5rem;
+  --space-600: 2rem;
+
+  /* sizes — controls */
+  --size-control-sm: 1.75rem;
+  --size-control-md: 2.25rem;
+  --size-control-lg: 2.75rem;
+
+  /* radius */
+  --radius-sm: 0.25rem;
+  --radius: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* shadow */
+  --shadow-sm: 0 1px 3px rgba(22, 22, 20, 0.08), 0 1px 2px rgba(22, 22, 20, 0.06);
+  --shadow: 0 1px 3px rgba(22, 22, 20, 0.08), 0 1px 2px rgba(22, 22, 20, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(22, 22, 20, 0.10), 0 2px 4px -2px rgba(22, 22, 20, 0.08);
+  --shadow-lg: 0 10px 15px -3px rgba(22, 22, 20, 0.12), 0 4px 6px -4px rgba(22, 22, 20, 0.08);
+  --shadow-card: 0 2px 8px -1px rgba(22, 22, 20, 0.08), 0 1px 3px -1px rgba(22, 22, 20, 0.06);
 }
