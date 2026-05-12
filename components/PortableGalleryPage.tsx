@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useLayoutEffect, useMemo, useState } from "react"
-import { Search, Grid, List, Palette, Camera } from "lucide-react"
+import { Search, Grid, Palette, Camera } from "lucide-react"
 
 import { useGalleryAdapter } from "../core/GalleryContext"
 import type { GalleryEntry, ComponentStatus, ComponentLayoutSize } from "../core/types"
@@ -24,7 +24,7 @@ let originalScrollIntoView: typeof Element.prototype.scrollIntoView | null = nul
 function installGalleryPreviewGuards() {
   if (galleryPreviewCount === 0) {
     originalScrollIntoView = Element.prototype.scrollIntoView
-    Element.prototype.scrollIntoView = function (...args: Parameters<Element["scrollIntoView"]>) {
+    Element.prototype.scrollIntoView = function () {
       return
     }
   }
@@ -173,14 +173,12 @@ function CategorySidebar({
   selectedCategory,
   onSelect,
   entriesByCategory,
-  isCompact,
   stickyOffset,
 }: {
   categories: string[]
   selectedCategory: string
   onSelect: (category: string) => void
   entriesByCategory: Record<string, GalleryEntry[]>
-  isCompact: boolean
   stickyOffset: number
 }) {
   return (
@@ -234,8 +232,6 @@ function ComponentGrid({
   searchQuery: string
   statusFilter: ComponentStatus | "all"
 }) {
-  const adapter = useGalleryAdapter()
-
   // Filter entries
   const filteredEntries = useMemo(() => {
     return entries.filter((entry) => {
@@ -489,7 +485,6 @@ export function PortableGalleryPage({
               selectedCategory={selectedCategory}
               onSelect={setSelectedCategory}
               entriesByCategory={entriesByCategory}
-              isCompact={isCompact}
               stickyOffset={sidebarOffset}
             />
             <main className="flex-1 p-6">

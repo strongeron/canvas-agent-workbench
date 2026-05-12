@@ -10,7 +10,7 @@ import { Component as ReactComponent, useCallback, useEffect, useState } from "r
 import type { ComponentType, ReactNode } from "react"
 
 import { useGalleryAdapter } from "../core/GalleryContext"
-import type { ComponentVariant, InteractivePropsSchema } from "../core/types"
+import type { ComponentVariant } from "../core/types"
 import { InteractivePropsPanel } from "./InteractivePropsPanel"
 import { ModalPreview } from "./ModalPreview"
 import { SonnerPreview } from "../demo-thicket/SonnerPreview"
