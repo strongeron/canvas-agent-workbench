@@ -1,10 +1,22 @@
 import fs from "node:fs"
 import path from "node:path"
+import { readLocalScanProjects } from "./utils/localScanConfig.js"
 
 const themePath = path.resolve("demo-thicket/theme.css")
 const themeCss = fs.existsSync(themePath)
   ? fs.readFileSync(themePath, "utf8")
   : ""
+
+function readLocalScanContentGlobs() {
+  return readLocalScanProjects().flatMap(({ repoPath }) => {
+    const roots = ["app/frontend", "src", "stories"]
+      .map((segment) => path.join(repoPath, segment))
+      .filter((candidate) => fs.existsSync(candidate))
+
+    const scanRoots = roots.length > 0 ? roots : [repoPath]
+    return scanRoots.map((root) => `${root.replace(/\\/g, "/")}/**/*.{ts,tsx,js,jsx}`)
+  })
+}
 
 const colors = {}
 const borderColor = {}
@@ -47,6 +59,7 @@ export default {
     "./components/oklch-picker-portable/src/**/*.{ts,tsx}",
     "./core/**/*.{ts,tsx}",
     "./projects/**/*.{ts,tsx}",
+    ...readLocalScanContentGlobs(),
   ],
   theme: {
     extend: {

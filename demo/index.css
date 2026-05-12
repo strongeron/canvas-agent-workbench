@@ -4,6 +4,41 @@
 @import "../demo-thicket/vars.css";
 @import "../demo-thicket/utilities.css";
 
+/* Tailwind v4 gradient compat: scanned repos may use bg-linear-to-* (v4 naming)
+   while this project runs Tailwind v3 which ships bg-gradient-to-*.
+   Remove these after upgrading to Tailwind v4. */
+.bg-linear-to-t {
+  background-image: linear-gradient(to top, var(--tw-gradient-stops));
+}
+
+.bg-linear-to-tr {
+  background-image: linear-gradient(to top right, var(--tw-gradient-stops));
+}
+
+.bg-linear-to-r {
+  background-image: linear-gradient(to right, var(--tw-gradient-stops));
+}
+
+.bg-linear-to-br {
+  background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
+}
+
+.bg-linear-to-b {
+  background-image: linear-gradient(to bottom, var(--tw-gradient-stops));
+}
+
+.bg-linear-to-bl {
+  background-image: linear-gradient(to bottom left, var(--tw-gradient-stops));
+}
+
+.bg-linear-to-l {
+  background-image: linear-gradient(to left, var(--tw-gradient-stops));
+}
+
+.bg-linear-to-tl {
+  background-image: linear-gradient(to top left, var(--tw-gradient-stops));
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -16,10 +51,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Hide toast notifications in gallery preview mode */
 body[data-gallery-preview="true"] [data-sonner-toaster],
 body[data-gallery-preview="true"] [data-sonner-toast],
 body[data-gallery-preview="true"] [data-sonner-toast-list],
 body[data-gallery-preview="true"] [data-sonner-toast-container],
 body[data-gallery-preview="true"] [aria-label="Notifications"] {
-  display: none !important;
+  display: none;
+  visibility: hidden;
+  pointer-events: none;
 }
