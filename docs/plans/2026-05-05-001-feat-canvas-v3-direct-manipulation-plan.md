@@ -7,6 +7,37 @@ origin: docs/specs/2026-05-05-canvas-v3-direct-manipulation.md
 deepened: 2026-05-05
 ---
 
+## Progress log
+
+Tracks what has actually shipped against this plan. Dates are commit dates.
+
+### 2026-05-13 — branch prep + foundation units
+
+Branch `feat/canvas-figma-like-editing` was cleaned of stale uncommitted state, then three foundation units of v3 shipped behind it. Test suite at 291/291; lint and typecheck clean throughout.
+
+**Cleanup (precondition):**
+- `be7fc7c` HEAD repair — committed local-scan source files (`utils/localScanConfig.js`, `components/local-scan/*`, `demo/favicon.svg`) that committed config already imported but were never staged
+- `13003c2` Wired Tailwind content scan, favicon, and Tailwind v4 `bg-linear-to-*` compat shim
+- `41fd5f7` Canvas selected-state polish + token consistency in props panel
+- `5ae7616` `.gitignore` expansion (machine-local scan output, caches, review screenshots)
+- `226afb8` Seeded `projects/demo/canvases/**` as starter fixture
+- `d045232` Dead-import cleanup in `PortableComponentRenderer` / `PortableGalleryPage`
+
+**v3 foundation shipped:**
+- `22a8e6a` **U4a — pure coordinate math.** `utils/canvasIframeCoordinates.ts` with `screenDeltaToIframeLocal`, `screenPointToIframeLocal`, `iframeLocalPointToScreen`, `iframeLocalRectToScreen`. 15 golden tests cover `s ∈ {0.5, 1, 2} × t ∈ {0.5, 1, 2}` and the pan-invariance of deltas. Rotation explicitly excluded.
+- `8cf8de2` **U13 — bidirectional bridge.** `utils/canvasReactNodeBridge.ts` extended with three new inbound handlers (`canvas/refresh-rect`, `canvas/edit-start`, `canvas/edit-commit`) plus two new outbound message types (`canvas/rect-update`, `canvas/edit-result`). New v3 handlers gate on marker + version + origin; legacy `canvas/request-select` / `canvas/request-clear` keep their permissive contract for U8 MCP back-compat. Module also exports `buildRefreshRectRequest` / `buildEditStartRequest` / `buildEditCommitRequest` builders so consumers don't reach into the wire format. 11 new bridge tests.
+- `145c266` **U4a — overlay UI.** `components/canvas/CanvasIframeOverlay.tsx` is a pure-render component: takes a screen-coord rect, draws 8 corner/edge resize handles + a center move handle, captures pointer events via `setPointerCapture` so drag survives iframe boundaries, and emits screen-coord deltas through `onDragPreview` / `onDragCommit`. 8 render + pointer tests.
+
+**U4a split (decision made during implementation):**
+The plan's single U4a unit was split into three slices for cleaner review and test isolation:
+1. **Math** (`22a8e6a`) — pure functions, no DOM, no React.
+2. **Overlay UI** (`145c266`) — pure render, no coordinate-system knowledge, no writer integration.
+3. **Wiring** (in progress) — `CanvasHtmlFrame` hosts the overlay, subscribes to `canvas/rect-update`, plumbs `canvasScale` from `CanvasTab`, and translates the overlay's screen-delta into a writer mutation (delta → class-snap or inline style → `canvasAstWriter` / `canvasHtmlEditor`).
+
+The wiring slice may itself be split further (visual integration without writer first; then snap table + writer) — exact shape decided once `CanvasHtmlFrame` surface is read carefully.
+
+---
+
 ## Post-review revisions (round 1)
 
 This plan was reviewed via `ce-doc-review` (6 personas: coherence, feasibility, design, security, scope-guardian, adversarial). Material changes applied below:
@@ -392,7 +423,7 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 ---
 
-- U13. **Bidirectional bridge protocol (parent → iframe handlers)**
+- U13. **Bidirectional bridge protocol (parent → iframe handlers)**  *(shipped `8cf8de2`)*
 
 **Goal:** Extend `canvasReactNodeBridge` so the parent can send messages *into* the iframe: `canvas/refresh-rect` (re-emit a rect for a given canvasId), `canvas/edit-start` (set contenteditable on the matched element), `canvas/edit-commit` (release contenteditable). The injected bridge script gains a `window.addEventListener("message", ...)` block with the same versioning + origin filtering as outbound messages.
 
@@ -454,7 +485,7 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 ---
 
-- U4a. **CanvasIframeOverlay — resize + move handles (de-risked, ships first)**
+- U4a. **CanvasIframeOverlay — resize + move handles (de-risked, ships first)**  *(math: shipped `22a8e6a`; overlay UI: shipped `145c266`; wiring: in progress)*
 
 **Goal:** Render 8 resize anchors + 1 drag handle on the parent canvas, anchored to the selected iframe element's rect. Pointer events on the overlay translate (with scale-aware math, including pan offset) into mutations using the **existing** `setClassName` / `setStyle` writers (no structural mutations needed). Lands first to de-risk the coordinate math, which is the highest-risk piece of the overlay system.
 
