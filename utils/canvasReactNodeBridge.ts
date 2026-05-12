@@ -57,10 +57,38 @@ export interface CanvasReactNodeReadyMessage extends CanvasReactNodeBaseMessage 
   type: "canvas/ready"
 }
 
+/**
+ * Emitted by the iframe in response to a parent-driven `canvas/refresh-rect`
+ * request. Used by the overlay (U4a) to re-anchor handles after a recompile
+ * — selection survives the recompile because canvasIds are stable across the
+ * AST-id rebase, but the rect needs a fresh measurement.
+ *
+ * `rect: null` signals the canvasId is no longer in the DOM (element was
+ * removed by a structural mutation that didn't preserve its id).
+ */
+export interface CanvasReactNodeRectUpdateMessage extends CanvasReactNodeBaseMessage {
+  type: "canvas/rect-update"
+  canvasId: string
+  rect: CanvasReactNodeRect | null
+}
+
+/**
+ * Emitted by the iframe after a parent-driven `canvas/edit-commit`, carrying
+ * the new text content of the element. Markdown/text writers (U6, U10) read
+ * this to round-trip the edit back into source.
+ */
+export interface CanvasReactNodeEditResultMessage extends CanvasReactNodeBaseMessage {
+  type: "canvas/edit-result"
+  canvasId: string
+  text: string
+}
+
 export type CanvasReactNodeMessage =
   | CanvasReactNodeSelectMessage
   | CanvasReactNodeHoverMessage
   | CanvasReactNodeReadyMessage
+  | CanvasReactNodeRectUpdateMessage
+  | CanvasReactNodeEditResultMessage
 
 /** Type guard for messages from this bridge. Validates the marker AND the
  *  discriminator so consumers get correct narrowing on `message.type`. */
@@ -69,7 +97,13 @@ export function isCanvasReactNodeMessage(value: unknown): value is CanvasReactNo
   const candidate = value as Record<string, unknown>
   if (candidate[CANVAS_NODE_BRIDGE_MARKER] !== true) return false
   const type = candidate.type
-  return type === "canvas/select" || type === "canvas/hover" || type === "canvas/ready"
+  return (
+    type === "canvas/select" ||
+    type === "canvas/hover" ||
+    type === "canvas/ready" ||
+    type === "canvas/rect-update" ||
+    type === "canvas/edit-result"
+  )
 }
 
 /** Walks up from `start`, returning the nearest ancestor with `data-canvas-id`. */
@@ -124,6 +158,59 @@ export function buildHoverMessage(
     canvasId: target.dataset.canvasId ?? null,
     rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     fileHint,
+  }
+}
+
+/**
+ * Parent → iframe request messages. The parent posts these into the iframe
+ * via `iframe.contentWindow.postMessage(msg, iframe.contentWindow.origin)`.
+ * The iframe-side runtime validates marker + version before acting.
+ */
+export interface CanvasReactNodeRefreshRectRequest {
+  __canvasReactNodeBridge: true
+  version: number
+  type: "canvas/refresh-rect"
+  canvasId: string
+}
+
+export interface CanvasReactNodeEditStartRequest {
+  __canvasReactNodeBridge: true
+  version: number
+  type: "canvas/edit-start"
+  canvasId: string
+}
+
+export interface CanvasReactNodeEditCommitRequest {
+  __canvasReactNodeBridge: true
+  version: number
+  type: "canvas/edit-commit"
+  canvasId: string
+}
+
+export function buildRefreshRectRequest(canvasId: string): CanvasReactNodeRefreshRectRequest {
+  return {
+    [CANVAS_NODE_BRIDGE_MARKER]: true,
+    version: CANVAS_NODE_BRIDGE_VERSION,
+    type: "canvas/refresh-rect",
+    canvasId,
+  }
+}
+
+export function buildEditStartRequest(canvasId: string): CanvasReactNodeEditStartRequest {
+  return {
+    [CANVAS_NODE_BRIDGE_MARKER]: true,
+    version: CANVAS_NODE_BRIDGE_VERSION,
+    type: "canvas/edit-start",
+    canvasId,
+  }
+}
+
+export function buildEditCommitRequest(canvasId: string): CanvasReactNodeEditCommitRequest {
+  return {
+    [CANVAS_NODE_BRIDGE_MARKER]: true,
+    version: CANVAS_NODE_BRIDGE_VERSION,
+    type: "canvas/edit-commit",
+    canvasId,
   }
 }
 
@@ -283,26 +370,92 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
   )
 
   // Inbound channel: the parent can drive selection/hover programmatically
-  // (used by U8's MCP tools and by the property panel's keyboard navigation).
-  // Mirrors the `__canvasShim: 'forceFire'` precedent in iframeProxyShims.ts.
+  // (used by U8's MCP tools and by the property panel's keyboard navigation),
+  // and as of v3/U13 drive rect re-anchoring + inline-edit start/commit.
   // Messages are filtered by the same marker as our outbound traffic so
-  // unrelated postMessages don't trigger anything.
+  // unrelated postMessages don't trigger anything; new (v3) handlers also
+  // gate on origin so cross-window leaks can't drive contenteditable on
+  // somebody else's iframe.
+  function findById(id: string): HTMLElement | null {
+    if (!id) return null
+    const escaped = (window as unknown as { CSS?: { escape?: (s: string) => string } }).CSS?.escape
+      ? (window as unknown as { CSS: { escape: (s: string) => string } }).CSS.escape(id)
+      : id.replace(/(["\\])/g, "\\$1")
+    const el = document.querySelector(`[data-canvas-id="${escaped}"]`)
+    return el instanceof HTMLElement ? el : null
+  }
+
+  function postRectUpdate(canvasId: string, el: HTMLElement | null): void {
+    const rect = el?.getBoundingClientRect()
+    window.parent.postMessage(
+      {
+        [options.marker]: true,
+        version: options.version,
+        type: "canvas/rect-update",
+        canvasId,
+        rect: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
+        fileHint: options.fileHint,
+      },
+      targetOrigin
+    )
+  }
+
+  function postEditResult(canvasId: string, text: string): void {
+    window.parent.postMessage(
+      {
+        [options.marker]: true,
+        version: options.version,
+        type: "canvas/edit-result",
+        canvasId,
+        text,
+        fileHint: options.fileHint,
+      },
+      targetOrigin
+    )
+  }
+
   window.addEventListener("message", function (event) {
     const data = event.data as Record<string, unknown> | null
     if (!data || data[options.marker] !== true) return
     const type = data.type
+    // v3 inbound handlers require version match + origin allowlist (parent
+    // origin only). Legacy handlers (request-select/request-clear) keep
+    // their permissive contract for backwards compatibility with U8 MCP.
+    const isV3Handler =
+      type === "canvas/refresh-rect" ||
+      type === "canvas/edit-start" ||
+      type === "canvas/edit-commit"
+    if (isV3Handler) {
+      if (data.version !== options.version) return
+      if (event.origin && event.origin !== targetOrigin) return
+    }
+
     if (type === "canvas/request-select") {
       const id = typeof data.canvasId === "string" ? data.canvasId : ""
-      if (!id) return
-      const escaped = (window as unknown as { CSS?: { escape?: (s: string) => string } }).CSS?.escape
-        ? (window as unknown as { CSS: { escape: (s: string) => string } }).CSS.escape(id)
-        : id.replace(/(["\\])/g, "\\$1")
-      const el = document.querySelector(`[data-canvas-id="${escaped}"]`)
-      if (el instanceof HTMLElement) postSelect(el)
+      const el = findById(id)
+      if (el) postSelect(el)
     } else if (type === "canvas/request-clear") {
       lastHoverId = null
       pendingMoveTarget = null
       postHover(null)
+    } else if (type === "canvas/refresh-rect") {
+      const id = typeof data.canvasId === "string" ? data.canvasId : ""
+      if (!id) return
+      postRectUpdate(id, findById(id))
+    } else if (type === "canvas/edit-start") {
+      const id = typeof data.canvasId === "string" ? data.canvasId : ""
+      const el = findById(id)
+      if (!el) return
+      el.contentEditable = "true"
+      el.focus()
+    } else if (type === "canvas/edit-commit") {
+      const id = typeof data.canvasId === "string" ? data.canvasId : ""
+      const el = findById(id)
+      if (!el) return
+      const text = el.textContent ?? ""
+      el.contentEditable = "false"
+      el.blur()
+      postEditResult(id, text)
     }
   })
 }

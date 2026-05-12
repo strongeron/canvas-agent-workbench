@@ -6,7 +6,10 @@ import {
   CANVAS_NODE_BRIDGE_MARKER,
   CANVAS_NODE_BRIDGE_VERSION,
   buildBridgeScript,
+  buildEditCommitRequest,
+  buildEditStartRequest,
   buildHoverMessage,
+  buildRefreshRectRequest,
   buildSelectMessage,
   findNearestCanvasIdAncestor,
   installBridgeForTesting,
@@ -48,6 +51,40 @@ describe("isCanvasReactNodeMessage", () => {
     expect(isCanvasReactNodeMessage(null)).toBe(false)
     expect(isCanvasReactNodeMessage("hi")).toBe(false)
     expect(isCanvasReactNodeMessage(42)).toBe(false)
+  })
+
+  it("accepts v3 outbound message types (rect-update, edit-result)", () => {
+    expect(
+      isCanvasReactNodeMessage({
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        type: "canvas/rect-update",
+      })
+    ).toBe(true)
+    expect(
+      isCanvasReactNodeMessage({
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        type: "canvas/edit-result",
+      })
+    ).toBe(true)
+  })
+})
+
+describe("parent → iframe request builders", () => {
+  it("buildRefreshRectRequest emits canvasId + marker + version", () => {
+    expect(buildRefreshRectRequest("abc:1")).toEqual({
+      [CANVAS_NODE_BRIDGE_MARKER]: true,
+      version: CANVAS_NODE_BRIDGE_VERSION,
+      type: "canvas/refresh-rect",
+      canvasId: "abc:1",
+    })
+  })
+
+  it("buildEditStartRequest emits canvasId + marker + version", () => {
+    expect(buildEditStartRequest("abc:1").type).toBe("canvas/edit-start")
+  })
+
+  it("buildEditCommitRequest emits canvasId + marker + version", () => {
+    expect(buildEditCommitRequest("abc:1").type).toBe("canvas/edit-commit")
   })
 })
 
@@ -362,6 +399,139 @@ describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
     expect(hoverCall).toBeDefined()
     expect(hoverCall![0].canvasId).toBeNull()
     expect(hoverCall![0].rect).toBeNull()
+  })
+
+  it("responds to canvas/refresh-rect with canvas/rect-update for the matching element", () => {
+    installBridgeForTesting(window, "fileA")
+    const button = makeEl("button", { "data-canvas-id": "abc:1.2" }, "x")
+    document.body.appendChild(button)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildRefreshRectRequest("abc:1.2"),
+        origin: window.location.origin,
+      })
+    )
+    const updateCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/rect-update"
+    )
+    expect(updateCall).toBeDefined()
+    expect(updateCall![0].canvasId).toBe("abc:1.2")
+    expect(updateCall![0].rect).toMatchObject({
+      x: expect.any(Number),
+      width: expect.any(Number),
+    })
+  })
+
+  it("posts canvas/rect-update with rect=null when canvasId is gone", () => {
+    installBridgeForTesting(window, "fileA")
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildRefreshRectRequest("no-such-id"),
+        origin: window.location.origin,
+      })
+    )
+    const updateCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/rect-update"
+    )
+    expect(updateCall).toBeDefined()
+    expect(updateCall![0].canvasId).toBe("no-such-id")
+    expect(updateCall![0].rect).toBeNull()
+  })
+
+  it("canvas/edit-start makes the element contenteditable and focuses it", () => {
+    installBridgeForTesting(window, "fileA")
+    const h2 = makeEl("h2", { "data-canvas-id": "abc:1.2" }, "Title")
+    document.body.appendChild(h2)
+    // Spy on focus instead of checking document.activeElement — jsdom doesn't
+    // route focus to contenteditable elements without an explicit tabindex,
+    // but the production behavior we care about is that .focus() gets called.
+    const focusSpy = vi.spyOn(h2, "focus")
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildEditStartRequest("abc:1.2"),
+        origin: window.location.origin,
+      })
+    )
+    expect(h2.contentEditable).toBe("true")
+    expect(focusSpy).toHaveBeenCalled()
+  })
+
+  it("canvas/edit-commit posts canvas/edit-result with current text and clears contenteditable", () => {
+    installBridgeForTesting(window, "fileA")
+    const h2 = makeEl("h2", { "data-canvas-id": "abc:1.2" }, "Original")
+    document.body.appendChild(h2)
+    // Simulate the start → user-edits → commit cycle.
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildEditStartRequest("abc:1.2"),
+        origin: window.location.origin,
+      })
+    )
+    h2.textContent = "Edited"
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildEditCommitRequest("abc:1.2"),
+        origin: window.location.origin,
+      })
+    )
+    const resultCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/edit-result"
+    )
+    expect(resultCall).toBeDefined()
+    expect(resultCall![0].canvasId).toBe("abc:1.2")
+    expect(resultCall![0].text).toBe("Edited")
+    expect(h2.contentEditable).toBe("false")
+  })
+
+  it("canvas/edit-commit is a no-op when the element is gone", () => {
+    installBridgeForTesting(window, "fileA")
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildEditCommitRequest("no-such-id"),
+        origin: window.location.origin,
+      })
+    )
+    const resultCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/edit-result"
+    )
+    expect(resultCall).toBeUndefined()
+  })
+
+  it("v3 inbound handlers reject messages with mismatched version", () => {
+    installBridgeForTesting(window, "fileA")
+    const h2 = makeEl("h2", { "data-canvas-id": "abc:1.2" }, "Title")
+    document.body.appendChild(h2)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          [CANVAS_NODE_BRIDGE_MARKER]: true,
+          version: CANVAS_NODE_BRIDGE_VERSION + 99,
+          type: "canvas/edit-start",
+          canvasId: "abc:1.2",
+        },
+        origin: window.location.origin,
+      })
+    )
+    expect(h2.contentEditable).not.toBe("true")
+  })
+
+  it("v3 inbound handlers reject messages from foreign origins", () => {
+    installBridgeForTesting(window, "fileA")
+    const h2 = makeEl("h2", { "data-canvas-id": "abc:1.2" }, "Title")
+    document.body.appendChild(h2)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildEditStartRequest("abc:1.2"),
+        origin: "https://evil.example",
+      })
+    )
+    expect(h2.contentEditable).not.toBe("true")
   })
 
   it("does not install when window.parent === window (top-level page)", () => {
