@@ -8,7 +8,21 @@ dist
 .canvas-agent/
 .canvas-media/
 .codex/
+.context/
 .playwright-mcp/
 canvas-state.png
 projects/appsignal-local/
+projects/app-signal-mobile/
+projects/**/canvases/.canvas-index.json
 tests/visual-baselines/.tmp/
+
+# Personal reference canvas at repo root (not gallery-poc schema)
+/icon-libraries.canvas
+
+# Review / QA / debug screenshots dropped at repo root
+/canvas-*-smoke.png
+/canvas-v2-smoke.png
+/dogfood-*.png
+/iframe-debug-*.png
+/review-*.png
+/ux-critique-*.png
