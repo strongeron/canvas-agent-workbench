@@ -6,6 +6,7 @@ import {
   isCanvasReactNodeMessage,
   type CanvasReactNodeRect,
 } from "../../utils/canvasReactNodeBridge"
+import { CanvasIframeOverlay } from "./CanvasIframeOverlay"
 
 export interface CanvasReactNodeSelection {
   itemId: string
@@ -53,6 +54,10 @@ export function CanvasHtmlFrame({
   const [compileError, setCompileError] = useState("")
   const [hoverRect, setHoverRect] = useState<CanvasReactNodeRect | null>(null)
   const [selectionRect, setSelectionRect] = useState<CanvasReactNodeRect | null>(null)
+  // Tracks which canvasId the selectionRect belongs to, so rect-update
+  // messages can be filtered to "is this still my selection?" before applying.
+  // The id is only read inside setter callbacks; render uses selectionRect.
+  const [, setSelectedCanvasId] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   // U2: the sourceId that drives data-canvas-id injection and the bridge's
   // fileHint. For v1 we use the canvas item id; once registry-backed nodes
@@ -183,6 +188,7 @@ export function CanvasHtmlFrame({
       const message = event.data
       if (message.type === "canvas/select") {
         setSelectionRect(message.rect)
+        setSelectedCanvasId(message.canvasId || null)
         if (onReactNodeSelect && message.canvasId) {
           onReactNodeSelect({
             itemId: item.id,
@@ -195,6 +201,20 @@ export function CanvasHtmlFrame({
         }
       } else if (message.type === "canvas/hover") {
         setHoverRect(message.rect)
+      } else if (message.type === "canvas/rect-update") {
+        // U13: iframe re-emitted the rect for a previously-selected element
+        // (typically after a recompile). Only apply if it still matches the
+        // current selection; ignore stale updates for elements the user has
+        // moved on from. rect=null signals the element was removed.
+        setSelectedCanvasId((currentId) => {
+          if (currentId !== message.canvasId) return currentId
+          if (!message.rect) {
+            setSelectionRect(null)
+            return null
+          }
+          setSelectionRect(message.rect)
+          return currentId
+        })
       }
     }
     window.addEventListener("message", handler)
@@ -203,8 +223,11 @@ export function CanvasHtmlFrame({
 
   // Clear selection when the source changes — the canvasId references an
   // AST node from the previous compile and may not exist in the new one.
+  // (Once U3 canvasIdMap rebase lands, this clears to a stable-id placeholder
+  // and U13's canvas/refresh-rect re-anchors the overlay to the new rect.)
   useEffect(() => {
     setSelectionRect(null)
+    setSelectedCanvasId(null)
     setHoverRect(null)
   }, [sourceHtml, sourceReact, sourceCss, sourceId])
 
@@ -281,10 +304,20 @@ export function CanvasHtmlFrame({
                 }}
               />
             )}
-            {(shouldRenderReact || shouldRenderInline) && selectionRect && (
+            {(shouldRenderReact || shouldRenderInline) && selectionRect && !interactMode && (
               <div
                 className="pointer-events-none absolute rounded-sm ring-2 ring-brand-500"
                 style={{
+                  left: selectionRect.x,
+                  top: selectionRect.y,
+                  width: selectionRect.width,
+                  height: selectionRect.height,
+                }}
+              />
+            )}
+            {(shouldRenderReact || shouldRenderInline) && selectionRect && interactMode && (
+              <CanvasIframeOverlay
+                rect={{
                   left: selectionRect.x,
                   top: selectionRect.y,
                   width: selectionRect.width,

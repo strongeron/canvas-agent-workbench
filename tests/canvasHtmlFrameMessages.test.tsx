@@ -286,6 +286,121 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     expect(onGenerationChange).toHaveBeenCalledWith("item-1", 2)
   })
 
+  async function selectInIframe(
+    iframe: HTMLIFrameElement,
+    canvasId: string,
+    rect = { x: 10, y: 20, width: 100, height: 40 }
+  ): Promise<void> {
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/select",
+        canvasId,
+        tag: "button",
+        rect,
+        fileHint: "item-1",
+      })
+    })
+  }
+
+  it("renders CanvasIframeOverlay (8 handles + move) when interactMode is on and an element is selected", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={vi.fn()} />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await selectInIframe(iframe, "abc:0")
+    expect(
+      harness.container.querySelectorAll("[data-canvas-overlay-handle]").length
+    ).toBe(9)
+  })
+
+  it("renders the plain selection ring (no overlay) when interactMode is off", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} onReactNodeSelect={vi.fn()} />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await selectInIframe(iframe, "abc:0")
+    expect(
+      harness.container.querySelectorAll("[data-canvas-overlay-handle]").length
+    ).toBe(0)
+    // The static ring uses ring-2 ring-brand-500; assert its class is present.
+    expect(
+      harness.container.querySelector(".ring-brand-500")
+    ).not.toBeNull()
+  })
+
+  it("applies canvas/rect-update to selectionRect when canvasId matches the active selection", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={vi.fn()} />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await selectInIframe(iframe, "abc:0", { x: 10, y: 20, width: 100, height: 40 })
+    // The overlay anchors to the rect via inline style on the testid element.
+    let overlay = harness.container.querySelector(
+      "[data-testid='canvas-iframe-overlay']"
+    ) as HTMLElement
+    expect(overlay.style.width).toBe("100px")
+
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/rect-update",
+        canvasId: "abc:0",
+        rect: { x: 12, y: 24, width: 150, height: 50 },
+      })
+    })
+
+    overlay = harness.container.querySelector(
+      "[data-testid='canvas-iframe-overlay']"
+    ) as HTMLElement
+    expect(overlay.style.width).toBe("150px")
+    expect(overlay.style.height).toBe("50px")
+    expect(overlay.style.left).toBe("12px")
+  })
+
+  it("ignores canvas/rect-update for a canvasId that is not the active selection", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={vi.fn()} />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await selectInIframe(iframe, "abc:0", { x: 10, y: 20, width: 100, height: 40 })
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/rect-update",
+        canvasId: "different-id",
+        rect: { x: 999, y: 999, width: 999, height: 999 },
+      })
+    })
+    const overlay = harness.container.querySelector(
+      "[data-testid='canvas-iframe-overlay']"
+    ) as HTMLElement
+    expect(overlay.style.width).toBe("100px")
+  })
+
+  it("clears the selection when canvas/rect-update arrives with rect=null for the active id", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={vi.fn()} />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await selectInIframe(iframe, "abc:0")
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/rect-update",
+        canvasId: "abc:0",
+        rect: null,
+      })
+    })
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-overlay']")
+    ).toBeNull()
+  })
+
   it("does not attach the message listener for bundle/url item modes", async () => {
     const onSelect = vi.fn()
     harness = await mount(
