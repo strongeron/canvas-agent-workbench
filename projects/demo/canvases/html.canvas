@@ -1,0 +1,70 @@
+{
+  "kind": "gallery-poc.canvas",
+  "schemaVersion": 1,
+  "surface": "canvas",
+  "meta": {
+    "id": "canvas_1776021086755_u7jm5j",
+    "title": "html",
+    "slug": "html",
+    "projectId": "demo",
+    "createdAt": "2026-04-12T19:11:26.755Z",
+    "updatedAt": "2026-04-16T00:37:37.744Z",
+    "tags": [],
+    "favorite": false,
+    "archived": false
+  },
+  "document": {
+    "items": [
+      {
+        "type": "html",
+        "src": "/api/projects/demo/canvases/assets/file?path=html.canvas&asset=html%2Fcareer-launchpad-2026-mnwdd63e-xom3%2Fcareer-launchpad-2026.html",
+        "title": "career-launchpad-2026",
+        "sandbox": "allow-scripts allow-same-origin allow-forms allow-modals",
+        "entryAsset": "html/career-launchpad-2026-mnwdd63e-xom3/career-launchpad-2026.html",
+        "sourceImportedAt": "2026-04-12T23:02:50.906Z",
+        "position": {
+          "x": 762.1791318482175,
+          "y": 2548.9686455378455
+        },
+        "size": {
+          "width": 1125.620223829721,
+          "height": 1122.5666912153993
+        },
+        "rotation": 0,
+        "id": "canvas-item-1776034970989-di6qb0j",
+        "zIndex": 19
+      },
+      {
+        "type": "html",
+        "src": "/api/projects/demo/canvases/assets/file?path=html.canvas&asset=html%2Fcareer-launchpad-2026-mnwdd63e-xom3%2Fcareer-launchpad-2026.html",
+        "title": "career-launchpad-2026",
+        "sandbox": "allow-scripts allow-same-origin allow-forms allow-modals",
+        "entryAsset": "html/career-launchpad-2026-mnwdd63e-xom3/career-launchpad-2026.html",
+        "sourceImportedAt": "2026-04-12T23:02:50.906Z",
+        "position": {
+          "x": 1956.8713642263692,
+          "y": 2548.8884364373644
+        },
+        "size": {
+          "width": 1125.620223829721,
+          "height": 1122.5666912153993
+        },
+        "rotation": 0,
+        "id": "canvas-item-1776294559190-0-gd9jskz",
+        "zIndex": 24
+      }
+    ],
+    "groups": [],
+    "nextZIndex": 25,
+    "selectedIds": []
+  },
+  "view": {
+    "transform": {
+      "scale": 0.11384505647191068,
+      "offset": {
+        "x": 228.3250416469528,
+        "y": 262.8592363427345
+      }
+    }
+  }
+}
