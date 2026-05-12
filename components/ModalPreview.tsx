@@ -1,4 +1,4 @@
-import { Eye } from "lucide-react"
+import { Eye, X } from "lucide-react"
 import { useState } from "react"
 
 interface ModalPreviewProps {
@@ -6,16 +6,9 @@ interface ModalPreviewProps {
   props: any
   title: string
   subtitle?: string
-  size?: "small" | "medium" | "large"
 }
 
-const sizeClasses = {
-  small: "max-w-md",
-  medium: "max-w-lg",
-  large: "max-w-3xl",
-}
-
-export function ModalPreview({ Component, props, title, subtitle, size = "medium" }: ModalPreviewProps) {
+export function ModalPreview({ Component, props, title, subtitle }: ModalPreviewProps) {
   const [showLiveDemo, setShowLiveDemo] = useState(false)
 
   return (
@@ -30,10 +23,7 @@ export function ModalPreview({ Component, props, title, subtitle, size = "medium
               )}
             </div>
             <div className="text-muted shrink-0 rounded-lg bg-white p-1.5">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
+              <X className="h-4 w-4" />
             </div>
           </div>
           <div className="bg-surface-50 px-4 py-8 text-center">

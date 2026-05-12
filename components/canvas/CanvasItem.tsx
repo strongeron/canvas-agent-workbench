@@ -296,7 +296,7 @@ export function CanvasItem({
       return "border-2 border-violet-500 ring-4 ring-violet-500/20"
     }
     if (isSelected) {
-      return "border-2 border-brand-500 ring-4 ring-brand-500/20"
+      return "border border-brand-400 ring-2 ring-brand-400/15 shadow-sm"
     }
     return "border border-default hover:shadow-md"
   }

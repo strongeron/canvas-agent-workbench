@@ -138,7 +138,7 @@ export function CanvasArtboardPropsPanel({
         <div className="space-y-4">
           {themes && themes.length > 0 && (
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Theme</label>
+              <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Theme</label>
               <select
                 value={themeId || ""}
                 onChange={(e) =>
@@ -178,7 +178,7 @@ export function CanvasArtboardPropsPanel({
           )}
 
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Name</label>
+            <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Name</label>
             <input
               type="text"
               value={name}
@@ -188,7 +188,7 @@ export function CanvasArtboardPropsPanel({
           </div>
 
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Background</label>
+            <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Background</label>
             <div className="flex items-center gap-2">
               <input
                 type="color"
@@ -330,8 +330,8 @@ export function CanvasArtboardPropsPanel({
                       onClick={() => onImportKindChange(kind)}
                       className={`flex-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
                         importKind === kind
-                          ? "bg-gray-900 text-white"
-                          : "text-gray-600 hover:bg-surface-100"
+                          ? "bg-foreground text-white"
+                          : "text-muted-foreground hover:bg-surface-100"
                       }`}
                     >
                       {kind}
@@ -351,7 +351,7 @@ export function CanvasArtboardPropsPanel({
           )}
 
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Layout</label>
+            <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Layout</label>
             <div className="flex gap-2">
               {(["flex", "grid"] as const).map((value) => (
                 <button
@@ -373,7 +373,7 @@ export function CanvasArtboardPropsPanel({
           {layout.display === "flex" && (
             <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
                   Direction
                 </label>
                 <div className="flex gap-2">
@@ -397,7 +397,7 @@ export function CanvasArtboardPropsPanel({
               </div>
 
               <div>
-                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
                   Align Items
                 </label>
                 <select
@@ -418,7 +418,7 @@ export function CanvasArtboardPropsPanel({
               </div>
 
               <div>
-                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
                   Justify Content
                 </label>
                 <select
@@ -445,7 +445,7 @@ export function CanvasArtboardPropsPanel({
 
           {layout.display === "grid" && (
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
                 Columns
               </label>
               <input
@@ -469,7 +469,7 @@ export function CanvasArtboardPropsPanel({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Gap</label>
+              <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Gap</label>
               <input
                 type="number"
                 min={0}
@@ -484,7 +484,7 @@ export function CanvasArtboardPropsPanel({
               <p className="mt-1 text-[11px] text-muted-foreground">Maps to `gap-*`.</p>
             </div>
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+              <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
                 Padding
               </label>
               <input

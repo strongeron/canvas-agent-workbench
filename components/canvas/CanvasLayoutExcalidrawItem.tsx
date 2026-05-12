@@ -64,7 +64,7 @@ export function CanvasLayoutExcalidrawItem({
   }, [dragStart.x, dragStart.y, initialSize.height, initialSize.width, isResizing, onUpdate, scale])
 
   const borderClass = isSelected
-    ? "border-2 border-brand-500 ring-4 ring-brand-500/20"
+    ? "border border-brand-400 ring-2 ring-brand-400/15 shadow-sm"
     : "border border-default"
 
   return (

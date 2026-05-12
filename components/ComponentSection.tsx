@@ -151,7 +151,7 @@ export function ComponentSection({
     <section className="pt-6">
       <div className="mb-6 flex items-center gap-3">
         <div className="h-1 w-12 rounded-full bg-brand-500" />
-        <h2 className="font-display text-foreground text-2xl font-bold">{category}</h2>
+        <h2 className="text-foreground text-2xl font-bold">{category}</h2>
         <span className="text-muted rounded-full bg-surface-200 px-3 py-1 text-sm font-medium">
           {filteredComponents.length} {filteredComponents.length === 1 ? "component" : "components"}
         </span>
@@ -171,7 +171,7 @@ export function ComponentSection({
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="mb-2 flex items-center gap-3">
-                      <h3 className="font-display text-foreground text-xl font-bold">{component.name}</h3>
+                      <h3 className="text-foreground text-xl font-bold">{component.name}</h3>
                         {Button && Link && getPreviewPath && 'id' in component && typeof component.id === 'string' && component.variants.length > 0 && (
                           <Link href={getPreviewPath(component.id)}>
                             <Button variant="ghost" size="sm" className="gap-1.5 h-7 text-xs">

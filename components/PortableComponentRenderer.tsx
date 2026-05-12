@@ -290,7 +290,6 @@ export function PortableComponentRenderer({
           props={currentProps}
           title={(currentProps?.title as string) || "Modal Preview"}
           subtitle={currentProps?.subtitle as string | undefined}
-          size={currentProps?.size as "small" | "medium" | "large" | undefined}
         />
       )
     }
