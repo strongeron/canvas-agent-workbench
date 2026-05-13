@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { CanvasHtmlItem } from "../../types/canvas"
 import { screenDeltaToIframeLocal } from "../../utils/canvasIframeCoordinates"
 import {
+  buildRefreshRectRequest,
   isCanvasReactNodeMessage,
   type CanvasReactNodeRect,
 } from "../../utils/canvasReactNodeBridge"
@@ -45,6 +46,7 @@ export interface CanvasReactNodeResizeEvent {
 interface CanvasHtmlFrameProps {
   item: CanvasHtmlItem
   interactMode: boolean
+  activeSelection?: CanvasReactNodeSelection | null
   /**
    * Called when the user selects an element inside a React TSX preview node
    * (via the U2 click bridge). The canvas wires this up to the property
@@ -70,6 +72,7 @@ interface CanvasHtmlFrameProps {
 export function CanvasHtmlFrame({
   item,
   interactMode,
+  activeSelection = null,
   onReactNodeSelect,
   onReactCompileGenerationChange,
   canvasScale = 1,
@@ -208,6 +211,16 @@ export function CanvasHtmlFrame({
   // `event.source === iframeRef.current.contentWindow` so messages from
   // other React preview nodes on the canvas don't cross-talk.
   useEffect(() => {
+    if (!activeSelection || activeSelection.itemId !== item.id) {
+      setSelectionRect(null)
+      setSelectedCanvasId(null)
+      return
+    }
+    setSelectedCanvasId(activeSelection.canvasId)
+    setSelectionRect(activeSelection.rect)
+  }, [activeSelection, item.id])
+
+  useEffect(() => {
     if (!shouldRenderReact && !shouldRenderInline) return
     const handler = (event: MessageEvent) => {
       const iframe = iframeRef.current
@@ -256,21 +269,29 @@ export function CanvasHtmlFrame({
     return () => window.removeEventListener("message", handler)
   }, [shouldRenderInline, shouldRenderReact, onReactNodeSelect, item.id])
 
-  // Clear selection when the source changes — the canvasId references an
-  // AST node from the previous compile and may not exist in the new one.
-  // (Once U3 canvasIdMap rebase lands, this clears to a stable-id placeholder
-  // and U13's canvas/refresh-rect re-anchors the overlay to the new rect.)
+  // Source changes invalidate the old measured rect, but the parent may
+  // already have rebased the selection id via canvasIdMap. Keep the id if
+  // the parent still considers this node selected, clear only the stale
+  // geometry, and let U13's refresh-rect request re-anchor after compile.
   useEffect(() => {
-    setSelectionRect(null)
-    setSelectedCanvasId(null)
+    setSelectionRect(activeSelection?.itemId === item.id ? activeSelection.rect : null)
+    setSelectedCanvasId(activeSelection?.itemId === item.id ? activeSelection.canvasId : null)
     setHoverRect(null)
-  }, [sourceHtml, sourceReact, sourceCss, sourceId])
+  }, [activeSelection, item.id, sourceHtml, sourceReact, sourceCss, sourceId])
 
   const frameSource = useMemo(() => {
     if (shouldRenderReact) return compiledReactHtml
     if (shouldRenderInline) return injectedInlineHtml || sourceHtml
     return ""
   }, [compiledReactHtml, injectedInlineHtml, shouldRenderInline, shouldRenderReact, sourceHtml])
+
+  useEffect(() => {
+    if (compileStatus !== "ready" || !selectedCanvasId) return
+    const iframe = iframeRef.current
+    const targetWindow = iframe?.contentWindow
+    if (!targetWindow) return
+    targetWindow.postMessage(buildRefreshRectRequest(selectedCanvasId), window.location.origin)
+  }, [compileStatus, selectedCanvasId, frameSource])
   const hasRenderableSource = shouldRenderReact
     ? compileStatus === "ready" && Boolean(compiledReactHtml)
     : shouldRenderInline

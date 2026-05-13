@@ -24,6 +24,7 @@ interface CanvasHtmlItemProps {
   onBringToFront: () => void
   scale: number
   interactMode: boolean
+  activeReactNodeSelection?: CanvasReactNodeSelection | null
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
@@ -55,6 +56,7 @@ export function CanvasHtmlItem({
   onBringToFront,
   scale,
   interactMode,
+  activeReactNodeSelection = null,
   onReactNodeSelect,
   onReactCompileGenerationChange,
   onReactNodeResize,
@@ -250,6 +252,7 @@ export function CanvasHtmlItem({
         <CanvasHtmlFrame
           item={item}
           interactMode={interactMode}
+          activeSelection={activeReactNodeSelection?.itemId === item.id ? activeReactNodeSelection : null}
           canvasScale={scale}
           onReactNodeSelect={onReactNodeSelect}
           onReactCompileGenerationChange={onReactCompileGenerationChange}

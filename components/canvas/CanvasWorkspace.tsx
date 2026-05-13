@@ -77,6 +77,7 @@ interface CanvasWorkspaceProps {
     files: File[]
     position: { x: number; y: number }
   }) => void | Promise<void>
+  activeReactNodeSelection?: CanvasReactNodeSelection | null
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
@@ -103,6 +104,7 @@ export function CanvasWorkspace({
   Renderer,
   getComponentById,
   onDropMediaFiles,
+  activeReactNodeSelection = null,
   onReactNodeSelect,
   onReactCompileGenerationChange,
   onReactNodeResize,
@@ -274,6 +276,7 @@ export function CanvasWorkspace({
               onUpdate={(updates) => onUpdateItem(child.id, updates)}
               scale={transform.scale}
               interactMode={interactMode}
+              activeReactNodeSelection={activeReactNodeSelection}
               onReactNodeSelect={onReactNodeSelect}
               onReactCompileGenerationChange={onReactCompileGenerationChange}
               onReactNodeResize={onReactNodeResize}
@@ -363,6 +366,7 @@ export function CanvasWorkspace({
       )
     },
     [
+      activeReactNodeSelection,
       selectedIds,
       interactMode,
       onSelectItem,
@@ -740,6 +744,7 @@ export function CanvasWorkspace({
                 onUpdate={(updates: Partial<Omit<CanvasHtmlItemType, "id">>) =>
                   onUpdateItem(item.id, updates)
                 }
+                activeReactNodeSelection={activeReactNodeSelection}
                 onReactNodeSelect={onReactNodeSelect}
                 onReactCompileGenerationChange={onReactCompileGenerationChange}
                 onReactNodeResize={onReactNodeResize}

@@ -30,6 +30,8 @@ export type CanvasAstWriteResponse =
       sourceReact?: string
       sourceHtml?: string
       appliedMutations: number
+      canvasIdMap?: Record<string, string | null>
+      prevSourceSnapshot?: string
       mtimeMs: number | null
       filePath: string | null
       kind: "tsx" | "html"
@@ -45,9 +47,10 @@ export async function applyCanvasAstWriteRequest(
   body: CanvasAstWriteBody,
   options: CanvasAstWriteOptions
 ): Promise<CanvasAstWriteResponse> {
-  const canvasId = typeof body.canvasId === "string" ? body.canvasId : ""
   const sourceId = typeof body.sourceId === "string" ? body.sourceId : ""
   const mutations = normalizeMutations(body.mutations)
+  const canvasId =
+    (typeof body.canvasId === "string" ? body.canvasId : "") || inferMutationCanvasId(mutations)
   const filePath = typeof body.filePath === "string" && body.filePath.trim() ? body.filePath.trim() : null
 
   if (!canvasId || !sourceId || mutations.length === 0) {
@@ -74,6 +77,8 @@ export async function applyCanvasAstWriteRequest(
       ok: true,
       sourceHtml: result.source,
       appliedMutations: result.appliedMutations,
+      canvasIdMap: result.canvasIdMap,
+      prevSourceSnapshot: result.prevSourceSnapshot,
       mtimeMs: null,
       filePath: null,
       kind: "html",
@@ -97,6 +102,8 @@ export async function applyCanvasAstWriteRequest(
     ok: true,
     sourceReact: result.source,
     appliedMutations: result.appliedMutations,
+    canvasIdMap: result.canvasIdMap,
+    prevSourceSnapshot: result.prevSourceSnapshot,
     mtimeMs: null,
     filePath: null,
     kind: "tsx",
@@ -168,6 +175,8 @@ async function writeFileBackedSource(
     ok: true,
     ...(kind === "html" ? { sourceHtml: result.source } : { sourceReact: result.source }),
     appliedMutations: result.appliedMutations,
+    canvasIdMap: result.canvasIdMap,
+    prevSourceSnapshot: result.prevSourceSnapshot,
     mtimeMs: nextStat.mtimeMs,
     filePath: path.relative(options.workspaceRoot, resolved),
     kind,
@@ -235,7 +244,68 @@ function normalizeMutations(input: unknown): Array<CanvasAstMutation | CanvasHtm
           valueKind,
         }
       }
+      if (
+        mutation.type === "insertChild" &&
+        typeof mutation.position === "number" &&
+        typeof mutation.childSource === "string"
+      ) {
+        return {
+          type: "insertChild",
+          parentCanvasId:
+            typeof mutation.parentCanvasId === "string" ? mutation.parentCanvasId : undefined,
+          position: mutation.position,
+          childSource: mutation.childSource,
+        }
+      }
+      if (mutation.type === "removeNode") {
+        return {
+          type: "removeNode",
+          canvasId: typeof mutation.canvasId === "string" ? mutation.canvasId : undefined,
+        }
+      }
+      if (
+        mutation.type === "reorderSibling" &&
+        (mutation.direction === "up" || mutation.direction === "down")
+      ) {
+        return {
+          type: "reorderSibling",
+          canvasId: typeof mutation.canvasId === "string" ? mutation.canvasId : undefined,
+          direction: mutation.direction,
+        }
+      }
+      if (mutation.type === "wrapSelection" && typeof mutation.wrapperTag === "string") {
+        return {
+          type: "wrapSelection",
+          canvasId: typeof mutation.canvasId === "string" ? mutation.canvasId : undefined,
+          wrapperTag: mutation.wrapperTag,
+        }
+      }
+      if (mutation.type === "unwrap") {
+        return {
+          type: "unwrap",
+          canvasId: typeof mutation.canvasId === "string" ? mutation.canvasId : undefined,
+        }
+      }
+      if (mutation.type === "swapTag" && typeof mutation.newTag === "string") {
+        return {
+          type: "swapTag",
+          canvasId: typeof mutation.canvasId === "string" ? mutation.canvasId : undefined,
+          newTag: mutation.newTag,
+        }
+      }
       return null
     })
     .filter((entry): entry is CanvasAstMutation | CanvasHtmlMutation => Boolean(entry))
+}
+
+function inferMutationCanvasId(mutations: Array<CanvasAstMutation | CanvasHtmlMutation>): string {
+  for (const mutation of mutations) {
+    if ("parentCanvasId" in mutation && typeof mutation.parentCanvasId === "string") {
+      return mutation.parentCanvasId
+    }
+    if ("canvasId" in mutation && typeof mutation.canvasId === "string") {
+      return mutation.canvasId
+    }
+  }
+  return ""
 }

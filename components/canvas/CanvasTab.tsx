@@ -809,6 +809,12 @@ export function CanvasTab({
       if (current[itemId] === generation) return current
       return { ...current, [itemId]: generation }
     })
+    setReactNodeSelection((current) => {
+      if (!current || current.itemId !== itemId || current.compileGeneration === generation) {
+        return current
+      }
+      return { ...current, compileGeneration: generation }
+    })
   }, [])
 
   const handleReactNodeResize = useCallback(
@@ -3187,6 +3193,7 @@ export function CanvasTab({
             onDimensionsChange={handleDimensionsChange}
             getGroupBounds={getGroupBounds}
             onDropMediaFiles={handleDropMediaFiles}
+            activeReactNodeSelection={reactNodeSelection}
             onReactNodeSelect={(selection) => {
               selectItem(selection.itemId, false)
               setReactNodeSelection(selection)
@@ -3398,6 +3405,7 @@ export function CanvasTab({
                     : {}),
                 } satisfies Partial<Omit<CanvasHtmlItem, "id">>)
               }
+              onSelectionChange={setReactNodeSelection}
               onOpenSourceMode={() => setReactNodeSelection(null)}
               onClose={() => {
                 setReactNodeSelection(null)

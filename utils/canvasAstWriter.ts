@@ -1,8 +1,17 @@
 import * as ts from "typescript"
 
 import { findNodeByCanvasId, parseTsxSource } from "./canvasAstPath"
+import {
+  type CanvasStructuralWriteResult,
+  insertJsxChild,
+  removeJsxNode,
+  reorderJsxSibling,
+  swapJsxTag,
+  unwrapJsxNode,
+  wrapJsxNode,
+} from "./canvasAstStructural"
 
-export type CanvasAstMutation =
+export type CanvasAstLiteralMutation =
   | { type: "setTextChild"; value: string }
   | { type: "setClassName"; value: string }
   | {
@@ -12,11 +21,23 @@ export type CanvasAstMutation =
       valueKind?: "string" | "number" | "boolean" | "identifier"
     }
 
+export type CanvasAstStructuralMutation =
+  | { type: "insertChild"; parentCanvasId?: string; position: number; childSource: string }
+  | { type: "removeNode"; canvasId?: string }
+  | { type: "reorderSibling"; canvasId?: string; direction: "up" | "down" }
+  | { type: "wrapSelection"; canvasId?: string; wrapperTag: string }
+  | { type: "unwrap"; canvasId?: string }
+  | { type: "swapTag"; canvasId?: string; newTag: string }
+
+export type CanvasAstMutation = CanvasAstLiteralMutation | CanvasAstStructuralMutation
+
 export type CanvasAstWriteResult =
   | {
       ok: true
       source: string
       appliedMutations: number
+      canvasIdMap: Record<string, string | null>
+      prevSourceSnapshot: string
     }
   | {
       ok: false
@@ -28,6 +49,7 @@ export type CanvasAstWriteResult =
         | "unsupported-mutation"
         | "unsupported-expression"
         | "overlap"
+        | "parse-error"
     }
 
 interface Replacement {
@@ -53,6 +75,30 @@ export function writeCanvasAstNode(
   }
   if (!Array.isArray(mutations) || mutations.length === 0) {
     return { ok: false, code: "bad-input", error: "At least one mutation is required" }
+  }
+
+  if (mutations.some(isStructuralMutation)) {
+    if (mutations.length !== 1) {
+      return {
+        ok: false,
+        code: "unsupported-mutation",
+        error: "Structural mutations must be applied one at a time",
+      }
+    }
+    const structural = applyStructuralMutation(
+      tsxSource,
+      canvasId,
+      mutations[0] as CanvasAstStructuralMutation,
+      options
+    )
+    if (!structural.ok) return structural
+    return {
+      ok: true,
+      source: structural.source,
+      appliedMutations: structural.source === tsxSource ? 0 : 1,
+      canvasIdMap: structural.canvasIdMap,
+      prevSourceSnapshot: tsxSource,
+    }
   }
 
   const sourceFile = parseTsxSource(tsxSource)
@@ -85,7 +131,13 @@ export function writeCanvasAstNode(
   }
 
   const source = applyReplacements(tsxSource, replacements)
-  return { ok: true, source, appliedMutations: replacements.length }
+  return {
+    ok: true,
+    source,
+    appliedMutations: replacements.length,
+    canvasIdMap: {},
+    prevSourceSnapshot: tsxSource,
+  }
 }
 
 function buildReplacement(
@@ -154,6 +206,52 @@ function buildReplacement(
   }
 
   return { ok: false, code: "unsupported-mutation", error: "Unsupported mutation type" }
+}
+
+function isStructuralMutation(mutation: CanvasAstMutation): mutation is CanvasAstStructuralMutation {
+  return (
+    mutation.type === "insertChild" ||
+    mutation.type === "removeNode" ||
+    mutation.type === "reorderSibling" ||
+    mutation.type === "wrapSelection" ||
+    mutation.type === "unwrap" ||
+    mutation.type === "swapTag"
+  )
+}
+
+function applyStructuralMutation(
+  tsxSource: string,
+  fallbackCanvasId: string,
+  mutation: CanvasAstStructuralMutation,
+  options: { sourceId: string }
+): CanvasStructuralWriteResult {
+  if (mutation.type === "insertChild") {
+    return insertJsxChild(
+      tsxSource,
+      mutation.parentCanvasId ?? fallbackCanvasId,
+      mutation.position,
+      mutation.childSource,
+      options
+    )
+  }
+  if (mutation.type === "removeNode") {
+    return removeJsxNode(tsxSource, mutation.canvasId ?? fallbackCanvasId, options)
+  }
+  if (mutation.type === "reorderSibling") {
+    return reorderJsxSibling(
+      tsxSource,
+      mutation.canvasId ?? fallbackCanvasId,
+      mutation.direction,
+      options
+    )
+  }
+  if (mutation.type === "wrapSelection") {
+    return wrapJsxNode(tsxSource, mutation.canvasId ?? fallbackCanvasId, mutation.wrapperTag, options)
+  }
+  if (mutation.type === "unwrap") {
+    return unwrapJsxNode(tsxSource, mutation.canvasId ?? fallbackCanvasId, options)
+  }
+  return swapJsxTag(tsxSource, mutation.canvasId ?? fallbackCanvasId, mutation.newTag, options)
 }
 
 function findJsxAttribute(

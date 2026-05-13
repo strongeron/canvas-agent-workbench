@@ -18,6 +18,7 @@ export interface CanvasReactNodePropertyPanelProps {
   onClose: () => void
   onSourceReactChange: (sourceReact: string, mtimeMs?: number) => void
   onSourceHtmlChange?: (sourceHtml: string, mtimeMs?: number) => void
+  onSelectionChange?: (selection: CanvasReactNodeSelection | null) => void
   onOpenSourceMode?: () => void
 }
 
@@ -41,6 +42,7 @@ export function CanvasReactNodePropertyPanel({
   onClose,
   onSourceReactChange,
   onSourceHtmlChange,
+  onSelectionChange,
   onOpenSourceMode,
 }: CanvasReactNodePropertyPanelProps) {
   const [fetchState, setFetchState] = useState<FetchState>(initialFetchState)
@@ -125,6 +127,7 @@ export function CanvasReactNodePropertyPanel({
           ok?: boolean
           sourceReact?: string
           sourceHtml?: string
+          canvasIdMap?: Record<string, string | null>
           mtimeMs?: number | null
           error?: string
           code?: string
@@ -144,6 +147,15 @@ export function CanvasReactNodePropertyPanel({
         } else {
           onSourceReactChange(nextSource, nextMtime)
         }
+        const rebasedCanvasId = payload.canvasIdMap?.[selection.canvasId]
+        if (rebasedCanvasId === null) {
+          onSelectionChange?.(null)
+        } else if (typeof rebasedCanvasId === "string" && rebasedCanvasId !== selection.canvasId) {
+          onSelectionChange?.({
+            ...selection,
+            canvasId: rebasedCanvasId,
+          })
+        }
         setWriteState({ status: "idle", error: "" })
       } catch (error) {
         setWriteState({
@@ -155,7 +167,8 @@ export function CanvasReactNodePropertyPanel({
     [
       onSourceReactChange,
       onSourceHtmlChange,
-      selection.canvasId,
+      onSelectionChange,
+      selection,
       sourceFileMtime,
       sourceFilePath,
       sourceId,

@@ -56,6 +56,8 @@ export type CanvasHtmlWriteResult =
       ok: true
       source: string
       appliedMutations: number
+      canvasIdMap?: Record<string, string | null>
+      prevSourceSnapshot?: string
     }
   | {
       ok: false

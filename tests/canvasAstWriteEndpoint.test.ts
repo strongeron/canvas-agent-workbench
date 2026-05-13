@@ -68,6 +68,57 @@ describe("applyCanvasAstWriteRequest (file-backed)", () => {
     expect(onDisk).not.toContain(">Hi<")
   })
 
+  it("writes structural mutations to disk and returns canvasIdMap metadata", async () => {
+    const root = await createTempDir("canvas-ast-write-endpoint-")
+    const absolute = path.join(root, RELATIVE_PATH)
+    await fs.mkdir(path.dirname(absolute), { recursive: true })
+    await fs.writeFile(absolute, SOURCE, "utf8")
+    const initialStat = await fs.stat(absolute)
+
+    const canvasId = findButtonId(SOURCE)
+    const result = await applyCanvasAstWriteRequest(
+      {
+        filePath: RELATIVE_PATH,
+        canvasId,
+        sourceId: RELATIVE_PATH,
+        mtimeMs: initialStat.mtimeMs,
+        mutations: [{ type: "wrapSelection", wrapperTag: "section" }],
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.appliedMutations).toBe(1)
+    expect(result.sourceReact).toContain("<section><button")
+    expect(result.prevSourceSnapshot).toBe(SOURCE)
+    expect(result.canvasIdMap?.[canvasId]).toBeTruthy()
+  })
+
+  it("infers canvasId from a structural mutation payload when top-level canvasId is omitted", async () => {
+    const root = await createTempDir("canvas-ast-write-endpoint-")
+    const absolute = path.join(root, RELATIVE_PATH)
+    await fs.mkdir(path.dirname(absolute), { recursive: true })
+    await fs.writeFile(absolute, SOURCE, "utf8")
+    const initialStat = await fs.stat(absolute)
+
+    const canvasId = findButtonId(SOURCE)
+    const result = await applyCanvasAstWriteRequest(
+      {
+        filePath: RELATIVE_PATH,
+        sourceId: RELATIVE_PATH,
+        mtimeMs: initialStat.mtimeMs,
+        mutations: [{ type: "wrapSelection", canvasId, wrapperTag: "section" }],
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.sourceReact).toContain("<section><button")
+    expect(result.canvasIdMap?.[canvasId]).toBeTruthy()
+  })
+
   it("rejects writes when the file changed externally (mtime conflict)", async () => {
     const root = await createTempDir("canvas-ast-write-endpoint-")
     const absolute = path.join(root, RELATIVE_PATH)

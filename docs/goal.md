@@ -29,9 +29,9 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 |---|---|---|
 | U4a | ✅ complete (8 slices, see plan) | iframe overlay drag → class snap → AST write |
 | U13 | ✅ complete | bidirectional bridge (refresh-rect, edit-start, edit-commit) |
-| U1 | 🟡 in progress | TSX structural mutations — `removeJsxNode` shipped `897c112` (offset surgery + canvasIdMap); insert / reorder / wrap / unwrap / swapTag remain |
+| U1 | ✅ complete | TSX structural mutations — all 6 helper mutations are implemented; writer/API structural dispatch returns `canvasIdMap` + `prevSourceSnapshot` |
 | U2 | not started | same 6 mutations on the HTML side via parse5 |
-| U3 | not started | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
+| U3 | 🟡 local wiring in progress | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
 | U4b | not started | drop targets + structural drag (depends on U1+U2+U4a+U13) |
 | U5 | not started | mutation log + undo/redo |
 | U6 | not started | markdown direct edit (block + inline) |
@@ -40,7 +40,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 ## Open gates before claiming v3 demo "shippable"
 
 1. **Visual verification** of U4a end-to-end in a real browser (drag a button corner, confirm file rewrites + overlay re-anchors). Logic is unit-tested but no human has driven it yet.
-2. **U1 + U3** so a wrap/insert/remove preserves the user's selection across the recompile (currently the canvasId would simply disappear after a structural mutation).
+2. **Finish U3 follow-through** so a wrap/insert/remove preserves the user's selection and overlay rect continuously across the recompile on every active surface.
 3. **Inline-style fallback** for U4a when an element has no `w-*/h-*` class today (currently no-op; plan calls for inline `style="width: Npx"`).
 
 ## Next slice (active)
@@ -70,8 +70,12 @@ First slice: `utils/canvasAstStructural.ts` with `removeJsxNode` + tests. Subseq
 
 ### U1 progress (2026-05-13)
 
-- `897c112` **removeJsxNode** — splice `[node.getStart(), node.getEnd()]`, return new source + canvasIdMap that pairs every JSX element's old↔new id (or null for removed). 9 unit tests. Validates the architecture end-to-end before the other 5 mutations land.
-- Remaining: `insertChild`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag` — each reuses `findNodeByCanvasId` + `applyReplacements` + `buildJsxCanvasIdMap` with its own splice geometry.
+- `897c112` **removeJsxNode** — shipped and committed. Validated the offset-surgery + positional `canvasIdMap` architecture end-to-end.
+- `e62c145` completes the remaining TSX structural mutation set in `utils/canvasAstStructural.ts`: `insertChild`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag`, each covered by focused unit tests.
+- `insertChild` validates `childSource` as a single JSX expression instead of permissive fragment-wrapped parse-only acceptance.
+- `writeCanvasAstNode` and `/api/canvas/ast/write` now route one structural mutation at a time through the helper and return `canvasIdMap` + `prevSourceSnapshot`.
+- The React node property panel consumes `canvasIdMap` and rebases or clears its active selection after structural writes; `CanvasTab` advances the selection's compile generation on recompile so the rebased id survives the next iframe refresh.
+- Remaining work has shifted out of U1 and into U3/UI follow-through: selection rect refresh / overlay re-anchor after structural recompile across all active surfaces.
 
 ## Out of scope for v3
 

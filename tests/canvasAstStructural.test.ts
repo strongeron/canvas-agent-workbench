@@ -2,7 +2,14 @@ import * as ts from "typescript"
 import { describe, expect, it } from "vitest"
 
 import { hashSourceId, parseTsxSource } from "../utils/canvasAstPath"
-import { removeJsxNode } from "../utils/canvasAstStructural"
+import {
+  insertJsxChild,
+  removeJsxNode,
+  reorderJsxSibling,
+  swapJsxTag,
+  unwrapJsxNode,
+  wrapJsxNode,
+} from "../utils/canvasAstStructural"
 
 const SOURCE_ID = "test:fixture-1"
 
@@ -159,6 +166,291 @@ export default function Card() {
     expect(mainNewId).not.toBeNull()
     expect(canvasIdOfNthJsx(result.source, "main")).toBe(mainNewId)
   })
+
+  it("inserts a JSX child at the given position", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const result = insertJsxChild(fixture, divId, 1, "<span>Inserted</span>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toMatch(/<h1[^>]*>Hello<\/h1>\s+<span>Inserted<\/span>\s+<p>World<\/p>/)
+  })
+
+  it("appends a JSX child when position equals children.length", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const result = insertJsxChild(fixture, divId, 3, "<footer>end</footer>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toMatch(/<button[^>]*>Click<\/button>\s+<footer>end<\/footer>/)
+  })
+
+  it("prepends a JSX child at position 0", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const result = insertJsxChild(fixture, divId, 0, "<header>top</header>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const divOpenIdx = result.source.indexOf("<div")
+    const headerIdx = result.source.indexOf("<header>top</header>")
+    const h1Idx = result.source.indexOf("<h1")
+    expect(divOpenIdx).toBeLessThan(headerIdx)
+    expect(headerIdx).toBeLessThan(h1Idx)
+  })
+
+  it("inserts into an empty JSX parent (no existing children)", () => {
+    const source = `export default function P() {
+  return (
+    <div className="empty">
+    </div>
+  )
+}
+`
+    const divId = canvasIdOfNthJsx(source, "div")
+    const result = insertJsxChild(source, divId, 0, "<span>only</span>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toContain("<span>only</span>")
+    expect(result.source).toMatch(/<div className="empty">[\s\S]*<span>only<\/span>[\s\S]*<\/div>/)
+  })
+
+  it("rejects childSource that does not parse as JSX (parse-error)", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const result = insertJsxChild(fixture, divId, 0, "this is not jsx <<<", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("parse-error")
+  })
+
+  it("rejects childSource with multiple sibling JSX expressions", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const result = insertJsxChild(fixture, divId, 0, "<span>A</span><span>B</span>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("parse-error")
+  })
+
+  it("rejects childSource that is not a JSX expression", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const result = insertJsxChild(fixture, divId, 0, 'import x from "y"', {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("parse-error")
+  })
+
+  it("rejects position out of range", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const result = insertJsxChild(fixture, divId, 99, "<span>x</span>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("bad-input")
+  })
+
+  it("rejects empty childSource", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const result = insertJsxChild(fixture, divId, 0, "   ", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("bad-input")
+  })
+
+  it("rejects insertion into a self-closing element", () => {
+    const source = `export default function P() { return (<div><img src="x" /></div>) }`
+    const imgId = canvasIdOfNthJsx(source, "img")
+    const result = insertJsxChild(source, imgId, 0, "<span>nope</span>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("unsupported-node")
+  })
+
+  it("produces a canvasIdMap that pairs old↔new for siblings around the insertion", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const h1Id = canvasIdOfNthJsx(fixture, "h1")
+    const buttonOldId = canvasIdOfNthJsx(fixture, "button")
+    const result = insertJsxChild(fixture, divId, 1, "<span>mid</span>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // h1 sits before the insertion → canvasId unchanged.
+    expect(result.canvasIdMap[h1Id]).toBe(h1Id)
+    // button shifted (one more sibling before it) → new id.
+    const buttonNewId = result.canvasIdMap[buttonOldId]
+    expect(buttonNewId).not.toBeNull()
+    expect(buttonNewId).not.toBe(buttonOldId)
+    expect(canvasIdOfNthJsx(result.source, "button")).toBe(buttonNewId)
+  })
+
+  it("reorders a JSX child upward by one rendered sibling", () => {
+    const pId = canvasIdOfNthJsx(fixture, "p")
+    const h1OldId = canvasIdOfNthJsx(fixture, "h1")
+    const pOldId = pId
+    const result = reorderJsxSibling(fixture, pId, "up", { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toMatch(/<p>World<\/p>\s+<h1[^>]*>Hello<\/h1>/)
+    const pNewId = result.canvasIdMap[pOldId]
+    const h1NewId = result.canvasIdMap[h1OldId]
+    expect(pNewId).not.toBeNull()
+    expect(h1NewId).not.toBeNull()
+    expect(pNewId).not.toBe(pOldId)
+    expect(h1NewId).not.toBe(h1OldId)
+    expect(canvasIdOfNthJsx(result.source, "p")).toBe(pNewId)
+    expect(canvasIdOfNthJsx(result.source, "h1")).toBe(h1NewId)
+  })
+
+  it("reorders a JSX child downward by one rendered sibling", () => {
+    const pId = canvasIdOfNthJsx(fixture, "p")
+    const buttonOldId = canvasIdOfNthJsx(fixture, "button")
+    const result = reorderJsxSibling(fixture, pId, "down", { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toMatch(/<button[^>]*>Click<\/button>\s+<p>World<\/p>/)
+    const pNewId = result.canvasIdMap[pId]
+    const buttonNewId = result.canvasIdMap[buttonOldId]
+    expect(pNewId).not.toBeNull()
+    expect(buttonNewId).not.toBeNull()
+    expect(pNewId).not.toBe(pId)
+    expect(buttonNewId).not.toBe(buttonOldId)
+    expect(canvasIdOfNthJsx(result.source, "p")).toBe(pNewId)
+    expect(canvasIdOfNthJsx(result.source, "button")).toBe(buttonNewId)
+  })
+
+  it("rejects moving the first rendered sibling upward", () => {
+    const h1Id = canvasIdOfNthJsx(fixture, "h1")
+    const result = reorderJsxSibling(fixture, h1Id, "up", { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("bad-input")
+  })
+
+  it("rejects moving the last rendered sibling downward", () => {
+    const buttonId = canvasIdOfNthJsx(fixture, "button")
+    const result = reorderJsxSibling(fixture, buttonId, "down", { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("bad-input")
+  })
+
+  it("wraps a JSX node and rebases the wrapped subtree ids", () => {
+    const pId = canvasIdOfNthJsx(fixture, "p")
+    const result = wrapJsxNode(fixture, pId, "section", { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toContain("<section><p>World</p></section>")
+    const pNewId = result.canvasIdMap[pId]
+    expect(pNewId).not.toBeNull()
+    expect(pNewId).not.toBe(pId)
+    expect(canvasIdOfNthJsx(result.source, "p")).toBe(pNewId)
+  })
+
+  it("rejects wrapping with an invalid JSX tag name", () => {
+    const pId = canvasIdOfNthJsx(fixture, "p")
+    const result = wrapJsxNode(fixture, pId, "bad tag", { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("bad-input")
+  })
+
+  it("unwraps a JSX node, removes the wrapper id, and rebases child ids", () => {
+    const source = `export default function P() {
+  return (
+    <div>
+      <section>
+        <p>World</p>
+        <button>Click</button>
+      </section>
+    </div>
+  )
+}
+`
+    const sectionId = canvasIdOfNthJsx(source, "section")
+    const pOldId = canvasIdOfNthJsx(source, "p")
+    const buttonOldId = canvasIdOfNthJsx(source, "button")
+    const result = unwrapJsxNode(source, sectionId, { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).not.toContain("<section>")
+    expect(result.canvasIdMap[sectionId]).toBeNull()
+    const pNewId = result.canvasIdMap[pOldId]
+    const buttonNewId = result.canvasIdMap[buttonOldId]
+    expect(pNewId).not.toBeNull()
+    expect(buttonNewId).not.toBeNull()
+    expect(canvasIdOfNthJsx(result.source, "p")).toBe(pNewId)
+    expect(canvasIdOfNthJsx(result.source, "button")).toBe(buttonNewId)
+  })
+
+  it("rejects unwrapping a self-closing node", () => {
+    const source = `export default function P() { return (<div><img src="x" /></div>) }`
+    const imgId = canvasIdOfNthJsx(source, "img")
+    const result = unwrapJsxNode(source, imgId, { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("unsupported-node")
+  })
+
+  it("swaps an element tag while preserving children and rebasing descendants", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const buttonOldId = canvasIdOfNthJsx(fixture, "button")
+    const result = swapJsxTag(fixture, divId, "section", { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toContain('<section className="p-4">')
+    expect(result.source).toContain("</section>")
+    expect(result.source).not.toContain('<div className="p-4">')
+    const buttonNewId = result.canvasIdMap[buttonOldId]
+    expect(buttonNewId).toBe(buttonOldId)
+    expect(canvasIdOfNthJsx(result.source, "button")).toBe(buttonNewId)
+  })
+
+  it("swaps a self-closing element tag", () => {
+    const source = `export default function P() { return (<div><img src="x" /></div>) }`
+    const imgId = canvasIdOfNthJsx(source, "img")
+    const result = swapJsxTag(source, imgId, "video", { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toContain("<video src=\"x\" />")
+  })
+
+  it("rejects swapping to an invalid tag name", () => {
+    const divId = canvasIdOfNthJsx(fixture, "div")
+    const result = swapJsxTag(fixture, divId, "bad tag", { sourceId: SOURCE_ID })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("bad-input")
+  })
+})
+
+describe("removeJsxNode (stale-id semantic)", () => {
+  const fixture = `import React from "react"
+
+export default function Card() {
+  return (
+    <div className="p-4">
+      <h1 className="text-lg">Hello</h1>
+      <p>World</p>
+      <button className="bg-blue-500">Click</button>
+    </div>
+  )
+}
+`
 
   // canvasIds are position-based (see canvasAstPath.ts:21 — "paths are
   // stable under edits that don't change AST shape between root and the

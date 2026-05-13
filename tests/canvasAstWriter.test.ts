@@ -126,4 +126,25 @@ export default function P() {
     if (result.ok) return
     expect(result.code).toBe("not-found")
   })
+
+  it("dispatches structural insertChild mutations through the writer envelope", () => {
+    const src = `export default function P() {
+  return (
+    <div>
+      <p>World</p>
+    </div>
+  )
+}`
+
+    const result = writeByTag(src, "div", [
+      { type: "insertChild", position: 0, childSource: "<span>Hello</span>" },
+    ])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toMatch(/<div>[\s\S]*<span>Hello<\/span>[\s\S]*<p>World<\/p>/)
+    expect(result.appliedMutations).toBe(1)
+    expect(result.prevSourceSnapshot).toBe(src)
+    expect(Object.keys(result.canvasIdMap).length).toBeGreaterThan(0)
+  })
 })

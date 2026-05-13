@@ -14,6 +14,7 @@ interface CanvasLayoutHtmlItemProps {
   onUpdate: (updates: Partial<Omit<CanvasHtmlItemType, "id">>) => void
   scale: number
   interactMode: boolean
+  activeReactNodeSelection?: CanvasReactNodeSelection | null
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
@@ -29,6 +30,7 @@ export function CanvasLayoutHtmlItem({
   onUpdate,
   scale,
   interactMode,
+  activeReactNodeSelection = null,
   onReactNodeSelect,
   onReactCompileGenerationChange,
   onReactNodeResize,
@@ -90,6 +92,7 @@ export function CanvasLayoutHtmlItem({
       <CanvasHtmlFrame
         item={item}
         interactMode={interactMode}
+        activeSelection={activeReactNodeSelection?.itemId === item.id ? activeReactNodeSelection : null}
         canvasScale={scale}
         onReactNodeSelect={onReactNodeSelect}
         onReactCompileGenerationChange={onReactCompileGenerationChange}
