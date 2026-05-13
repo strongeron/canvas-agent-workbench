@@ -29,7 +29,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 |---|---|---|
 | U4a | ✅ complete (8 slices, see plan) | iframe overlay drag → class snap → AST write |
 | U13 | ✅ complete | bidirectional bridge (refresh-rect, edit-start, edit-commit) |
-| U1 | ⏳ next | TSX structural mutations (insert / remove / reorder / wrap / unwrap / swapTag) — unblocks U3, U4b |
+| U1 | 🟡 in progress | TSX structural mutations — `removeJsxNode` shipped `897c112` (offset surgery + canvasIdMap); insert / reorder / wrap / unwrap / swapTag remain |
 | U2 | not started | same 6 mutations on the HTML side via parse5 |
 | U3 | not started | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
 | U4b | not started | drop targets + structural drag (depends on U1+U2+U4a+U13) |
@@ -66,7 +66,12 @@ All 6 structural mutations are expressible as offset splicing:
 
 Options 1 (recast + position-bridge), 2 (TS-factory + ts.createPrinter), and 3 (recast-native canvasIds) were considered and rejected.
 
-First slice: `utils/canvasAstStructural.ts` with `removeNode` + tests. Subsequent slices add `insertChild`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag`. Each uses the same `{ start, end, text }` replacement shape the existing writer already returns from `applyReplacements`.
+First slice: `utils/canvasAstStructural.ts` with `removeJsxNode` + tests. Subsequent slices add `insertChild`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag`. Each uses the same `{ start, end, text }` replacement shape the existing writer already returns from `applyReplacements`.
+
+### U1 progress (2026-05-13)
+
+- `897c112` **removeJsxNode** — splice `[node.getStart(), node.getEnd()]`, return new source + canvasIdMap that pairs every JSX element's old↔new id (or null for removed). 9 unit tests. Validates the architecture end-to-end before the other 5 mutations land.
+- Remaining: `insertChild`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag` — each reuses `findNodeByCanvasId` + `applyReplacements` + `buildJsxCanvasIdMap` with its own splice geometry.
 
 ## Out of scope for v3
 
