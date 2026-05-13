@@ -2,11 +2,15 @@ import { Code2, ExternalLink } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import type { CanvasHtmlItem } from "../../types/canvas"
+import { screenDeltaToIframeLocal } from "../../utils/canvasIframeCoordinates"
 import {
   isCanvasReactNodeMessage,
   type CanvasReactNodeRect,
 } from "../../utils/canvasReactNodeBridge"
-import { CanvasIframeOverlay } from "./CanvasIframeOverlay"
+import {
+  CanvasIframeOverlay,
+  type CanvasOverlayDragKind,
+} from "./CanvasIframeOverlay"
 
 export interface CanvasReactNodeSelection {
   itemId: string
@@ -23,6 +27,21 @@ export interface CanvasReactNodeSelection {
   compileGeneration: number
 }
 
+/**
+ * Emitted on overlay drag commit (resize handle or move). The delta is in
+ * iframe-document units (canvas scale already removed), so the dispatcher
+ * can compare it directly against current width/height to compute a snap or
+ * inline style mutation.
+ */
+export interface CanvasReactNodeResizeEvent {
+  itemId: string
+  canvasId: string
+  kind: CanvasOverlayDragKind
+  deltaIframe: { dx: number; dy: number }
+  /** The element's rect at drag-start, in iframe-document coordinates. */
+  rect: CanvasReactNodeRect
+}
+
 interface CanvasHtmlFrameProps {
   item: CanvasHtmlItem
   interactMode: boolean
@@ -33,6 +52,19 @@ interface CanvasHtmlFrameProps {
    */
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
+  /**
+   * Canvas zoom (CanvasTab.transform.scale). Used to translate the overlay's
+   * viewport-pixel drag delta into iframe-document units. Defaults to 1 so
+   * existing call sites and tests keep working until they plumb scale through.
+   */
+  canvasScale?: number
+  /**
+   * Called once on pointer-up of an overlay drag (resize/move). Delta is
+   * already in iframe-document coordinates. The dispatcher decides whether
+   * to round to a Tailwind class or emit inline style and posts the
+   * resulting setClassName / setStyle mutation through the AST writer.
+   */
+  onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
 }
 
 export function CanvasHtmlFrame({
@@ -40,6 +72,8 @@ export function CanvasHtmlFrame({
   interactMode,
   onReactNodeSelect,
   onReactCompileGenerationChange,
+  canvasScale = 1,
+  onReactNodeResize,
 }: CanvasHtmlFrameProps) {
   const title = item.title?.trim() || "HTML bundle"
   const sourceHtml = item.sourceHtml?.trim() || ""
@@ -54,10 +88,11 @@ export function CanvasHtmlFrame({
   const [compileError, setCompileError] = useState("")
   const [hoverRect, setHoverRect] = useState<CanvasReactNodeRect | null>(null)
   const [selectionRect, setSelectionRect] = useState<CanvasReactNodeRect | null>(null)
-  // Tracks which canvasId the selectionRect belongs to, so rect-update
-  // messages can be filtered to "is this still my selection?" before applying.
-  // The id is only read inside setter callbacks; render uses selectionRect.
-  const [, setSelectedCanvasId] = useState<string | null>(null)
+  // Tracks which canvasId the selectionRect belongs to. Read by the overlay's
+  // drag-commit callback (so the dispatched resize event carries the right
+  // id) and by the rect-update filter (apply only when the message id still
+  // matches the active selection).
+  const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   // U2: the sourceId that drives data-canvas-id injection and the bridge's
   // fileHint. For v1 we use the canvas item id; once registry-backed nodes
@@ -322,6 +357,25 @@ export function CanvasHtmlFrame({
                   top: selectionRect.y,
                   width: selectionRect.width,
                   height: selectionRect.height,
+                }}
+                onDragCommit={(kind, deltaScreen) => {
+                  if (!onReactNodeResize || !selectionRect || !selectedCanvasId) return
+                  // iframeZoom is 1 for v3 (the iframe document is not zoomed
+                  // internally); canvasScale captures the parent canvas's
+                  // own transform.
+                  const deltaIframe = screenDeltaToIframeLocal(
+                    deltaScreen.dx,
+                    deltaScreen.dy,
+                    canvasScale,
+                    1
+                  )
+                  onReactNodeResize({
+                    itemId: item.id,
+                    canvasId: selectedCanvasId,
+                    kind,
+                    deltaIframe,
+                    rect: selectionRect,
+                  })
                 }}
               />
             )}

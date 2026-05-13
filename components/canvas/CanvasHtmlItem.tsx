@@ -244,6 +244,7 @@ export function CanvasHtmlItem({
         <CanvasHtmlFrame
           item={item}
           interactMode={interactMode}
+          canvasScale={scale}
           onReactNodeSelect={onReactNodeSelect}
           onReactCompileGenerationChange={onReactCompileGenerationChange}
         />

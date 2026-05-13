@@ -84,6 +84,7 @@ export function CanvasLayoutHtmlItem({
       <CanvasHtmlFrame
         item={item}
         interactMode={interactMode}
+        canvasScale={scale}
         onReactNodeSelect={onReactNodeSelect}
         onReactCompileGenerationChange={onReactCompileGenerationChange}
       />

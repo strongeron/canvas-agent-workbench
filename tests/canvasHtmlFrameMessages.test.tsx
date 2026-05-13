@@ -401,6 +401,95 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     ).toBeNull()
   })
 
+  async function dragOverlayHandle(
+    container: HTMLDivElement,
+    handleKind: string,
+    start: { x: number; y: number },
+    end: { x: number; y: number }
+  ): Promise<void> {
+    const handle = container.querySelector(
+      `[data-canvas-overlay-handle="${handleKind}"]`
+    ) as HTMLElement
+    if (!handle) throw new Error(`handle "${handleKind}" not in DOM`)
+    handle.setPointerCapture = vi.fn()
+    handle.hasPointerCapture = vi.fn(() => true)
+    handle.releasePointerCapture = vi.fn()
+    function fire(type: "pointerdown" | "pointerup", x: number, y: number) {
+      const ev = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+      }) as MouseEvent & { pointerId: number; pointerType: string }
+      Object.defineProperty(ev, "pointerId", { value: 1 })
+      Object.defineProperty(ev, "pointerType", { value: "mouse" })
+      handle.dispatchEvent(ev)
+    }
+    await act(async () => {
+      fire("pointerdown", start.x, start.y)
+      fire("pointerup", end.x, end.y)
+    })
+  }
+
+  it("emits onReactNodeResize with iframe-local delta on overlay drag commit (canvasScale=1)", async () => {
+    const onResize = vi.fn()
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem()}
+        interactMode
+        onReactNodeSelect={vi.fn()}
+        onReactNodeResize={onResize}
+      />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await selectInIframe(iframe, "abc:0", { x: 10, y: 20, width: 100, height: 40 })
+    await dragOverlayHandle(harness.container, "se", { x: 110, y: 60 }, { x: 130, y: 80 })
+    expect(onResize).toHaveBeenCalledTimes(1)
+    expect(onResize).toHaveBeenCalledWith({
+      itemId: "item-1",
+      canvasId: "abc:0",
+      kind: "se",
+      deltaIframe: { dx: 20, dy: 20 },
+      rect: { x: 10, y: 20, width: 100, height: 40 },
+    })
+  })
+
+  it("scales the drag delta by 1/canvasScale (zoomed-out canvas = larger iframe delta)", async () => {
+    const onResize = vi.fn()
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem()}
+        interactMode
+        canvasScale={0.5}
+        onReactNodeSelect={vi.fn()}
+        onReactNodeResize={onResize}
+      />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await selectInIframe(iframe, "abc:0", { x: 0, y: 0, width: 100, height: 100 })
+    await dragOverlayHandle(harness.container, "e", { x: 100, y: 50 }, { x: 110, y: 50 })
+    expect(onResize).toHaveBeenCalledTimes(1)
+    // 10px on screen at 0.5 canvas zoom = 20px in iframe document.
+    expect(onResize.mock.calls[0][0].deltaIframe).toEqual({ dx: 20, dy: 0 })
+  })
+
+  it("does nothing on drag commit when no element is selected", async () => {
+    const onResize = vi.fn()
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem()}
+        interactMode
+        onReactNodeSelect={vi.fn()}
+        onReactNodeResize={onResize}
+      />
+    )
+    // No selection sent — overlay should not render, so handle query will fail.
+    expect(
+      harness.container.querySelector("[data-canvas-overlay-handle='se']")
+    ).toBeNull()
+    expect(onResize).not.toHaveBeenCalled()
+  })
+
   it("does not attach the message listener for bundle/url item modes", async () => {
     const onSelect = vi.fn()
     harness = await mount(
