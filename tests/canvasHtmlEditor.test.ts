@@ -109,6 +109,159 @@ describe("canvas HTML editor", () => {
     expect(removed.source).toBe(`<input placeholder="Email">`)
   })
 
+  it("removes an HTML element and rebases sibling ids", () => {
+    const source = `<div><h2>Hello</h2><p>World</p><button>Click</button></div>`
+    const pId = findIdByTag(source, "p")
+    const buttonOldId = findIdByTag(source, "button")
+
+    const result = writeCanvasHtmlNode(source, pId, [{ type: "removeNode" }], {
+      sourceId: SOURCE_ID,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toBe(`<div><h2>Hello</h2><button>Click</button></div>`)
+    expect(result.canvasIdMap?.[pId]).toBeNull()
+    const buttonNewId = result.canvasIdMap?.[buttonOldId]
+    expect(buttonNewId).toBeTruthy()
+    expect(buttonNewId).not.toBe(buttonOldId)
+  })
+
+  it("inserts HTML child elements at the requested position", () => {
+    const source = `<div><p>World</p><button>Click</button></div>`
+    const divId = findIdByTag(source, "div")
+
+    const result = writeCanvasHtmlNode(
+      source,
+      divId,
+      [{ type: "insertChild", position: 1, childSource: `<span>A</span><span>B</span>` }],
+      { sourceId: SOURCE_ID }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toBe(`<div><p>World</p><span>A</span><span>B</span><button>Click</button></div>`)
+    expect(result.prevSourceSnapshot).toBe(source)
+    expect(Object.keys(result.canvasIdMap ?? {}).length).toBeGreaterThan(0)
+  })
+
+  it("rejects insertChild HTML with top-level non-element content", () => {
+    const source = `<div><p>World</p></div>`
+    const divId = findIdByTag(source, "div")
+
+    const result = writeCanvasHtmlNode(
+      source,
+      divId,
+      [{ type: "insertChild", position: 0, childSource: `hello<span>A</span>` }],
+      { sourceId: SOURCE_ID }
+    )
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("parse-error")
+  })
+
+  it("rejects insertChild HTML with script tags", () => {
+    const source = `<div><p>World</p></div>`
+    const divId = findIdByTag(source, "div")
+
+    const result = writeCanvasHtmlNode(
+      source,
+      divId,
+      [{ type: "insertChild", position: 0, childSource: `<script>alert(1)</script>` }],
+      { sourceId: SOURCE_ID }
+    )
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("parse-error")
+  })
+
+  it("rejects insertChild HTML when position is out of range", () => {
+    const source = `<div><p>World</p></div>`
+    const divId = findIdByTag(source, "div")
+
+    const result = writeCanvasHtmlNode(
+      source,
+      divId,
+      [{ type: "insertChild", position: 9, childSource: `<span>A</span>` }],
+      { sourceId: SOURCE_ID }
+    )
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("bad-input")
+  })
+
+  it("reorders an HTML element upward by one sibling", () => {
+    const source = `<div><h2>Hello</h2><p>World</p><button>Click</button></div>`
+    const pId = findIdByTag(source, "p")
+
+    const result = writeCanvasHtmlNode(source, pId, [{ type: "reorderSibling", direction: "up" }], {
+      sourceId: SOURCE_ID,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toBe(`<div><p>World</p><h2>Hello</h2><button>Click</button></div>`)
+  })
+
+  it("wraps and unwraps an HTML element while rebasing ids", () => {
+    const source = `<div><p>World</p><button>Click</button></div>`
+    const pId = findIdByTag(source, "p")
+
+    const wrapped = writeCanvasHtmlNode(source, pId, [{ type: "wrapSelection", wrapperTag: "section" }], {
+      sourceId: SOURCE_ID,
+    })
+    expect(wrapped.ok).toBe(true)
+    if (!wrapped.ok) return
+    expect(wrapped.source).toBe(`<div><section><p>World</p></section><button>Click</button></div>`)
+    const wrappedPId = wrapped.canvasIdMap?.[pId]
+    expect(wrappedPId).toBeTruthy()
+    expect(wrappedPId).not.toBe(pId)
+
+    const sectionId = findIdByTag(wrapped.source, "section")
+    const unwrapped = writeCanvasHtmlNode(wrapped.source, sectionId, [{ type: "unwrap" }], {
+      sourceId: SOURCE_ID,
+    })
+    expect(unwrapped.ok).toBe(true)
+    if (!unwrapped.ok) return
+    expect(unwrapped.source).toBe(`<div><p>World</p><button>Click</button></div>`)
+    expect(unwrapped.canvasIdMap?.[sectionId]).toBeNull()
+  })
+
+  it("swaps an HTML tag name in place", () => {
+    const source = `<div><p>World</p></div>`
+    const pId = findIdByTag(source, "p")
+
+    const result = writeCanvasHtmlNode(source, pId, [{ type: "swapTag", newTag: "span" }], {
+      sourceId: SOURCE_ID,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toBe(`<div><span>World</span></div>`)
+  })
+
+  it("rejects invalid wrapper and swap tags", () => {
+    const source = `<div><p>World</p></div>`
+    const pId = findIdByTag(source, "p")
+
+    const wrapped = writeCanvasHtmlNode(source, pId, [{ type: "wrapSelection", wrapperTag: "bad tag" }], {
+      sourceId: SOURCE_ID,
+    })
+    expect(wrapped.ok).toBe(false)
+    if (wrapped.ok) return
+    expect(wrapped.code).toBe("bad-input")
+
+    const swapped = writeCanvasHtmlNode(source, pId, [{ type: "swapTag", newTag: "script" }], {
+      sourceId: SOURCE_ID,
+    })
+    expect(swapped.ok).toBe(false)
+    if (swapped.ok) return
+    expect(swapped.code).toBe("bad-input")
+  })
+
   it("rejects stale ids from another source", () => {
     const source = `<button>Save</button>`
     const result = writeCanvasHtmlNode(source, `${HASH}:9.9`, [{ type: "setTextContent", value: "Nope" }], {

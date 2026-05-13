@@ -2,12 +2,13 @@ import * as parse5 from "parse5"
 
 import { hashSourceId } from "./canvasAstPath"
 import { buildBridgeScript } from "./canvasReactNodeBridge"
-import type { CanvasAstMutation } from "./canvasAstWriter"
+import type { CanvasAstMutation, CanvasAstStructuralMutation } from "./canvasAstWriter"
 
 type HtmlNode = parse5.DefaultTreeAdapterMap["node"]
 type HtmlElement = parse5.DefaultTreeAdapterMap["element"]
 type HtmlChildNode = parse5.DefaultTreeAdapterMap["childNode"]
 type HtmlParentNode = parse5.DefaultTreeAdapterMap["parentNode"]
+const HTML_TAG_NAME_RE = /^[A-Za-z][A-Za-z0-9-]*$/
 
 export type CanvasHtmlMutation =
   | CanvasAstMutation
@@ -153,6 +154,30 @@ export function writeCanvasHtmlNode(
     return { ok: false, code: "bad-input", error: "At least one mutation is required" }
   }
 
+  if (mutations.some(isHtmlStructuralMutation)) {
+    if (mutations.length !== 1) {
+      return {
+        ok: false,
+        code: "unsupported-mutation",
+        error: "Structural HTML mutations must be applied one at a time",
+      }
+    }
+    const structural = applyHtmlStructuralMutation(
+      sourceHtml,
+      canvasId,
+      mutations[0] as CanvasAstStructuralMutation,
+      options
+    )
+    if (!structural.ok) return structural
+    return {
+      ok: true,
+      source: structural.source,
+      appliedMutations: structural.source === sourceHtml ? 0 : 1,
+      canvasIdMap: structural.canvasIdMap,
+      prevSourceSnapshot: sourceHtml,
+    }
+  }
+
   const resolved = resolveCanvasHtmlElement(sourceHtml, canvasId, options)
   if (!resolved.ok) return resolved
 
@@ -276,6 +301,114 @@ function buildHtmlReplacement(
   return { ok: false, code: "unsupported-mutation", error: "Unsupported HTML mutation type" }
 }
 
+function isHtmlStructuralMutation(mutation: CanvasHtmlMutation): mutation is CanvasAstStructuralMutation {
+  return (
+    mutation.type === "insertChild" ||
+    mutation.type === "removeNode" ||
+    mutation.type === "reorderSibling" ||
+    mutation.type === "wrapSelection" ||
+    mutation.type === "unwrap" ||
+    mutation.type === "swapTag"
+  )
+}
+
+function applyHtmlStructuralMutation(
+  sourceHtml: string,
+  fallbackCanvasId: string,
+  mutation: CanvasAstStructuralMutation,
+  options: { sourceId: string }
+):
+  | {
+      ok: true
+      source: string
+      canvasIdMap: Record<string, string | null>
+    }
+  | Extract<CanvasHtmlWriteResult, { ok: false }> {
+  const targetCanvasId =
+    mutation.type === "insertChild"
+      ? mutation.parentCanvasId ?? fallbackCanvasId
+      : mutation.canvasId ?? fallbackCanvasId
+
+  let fragment: HtmlParentNode
+  try {
+    fragment = parseHtmlFragment(sourceHtml, true)
+  } catch (error) {
+    return {
+      ok: false,
+      code: "parse-error",
+      error: error instanceof Error ? error.message : "Failed to parse HTML.",
+    }
+  }
+
+  const resolved = resolveCanvasHtmlElementFromFragment(fragment, targetCanvasId, options)
+  if (!resolved.ok) return resolved
+  const oldCanvasIds = collectElementCanvasIds(fragment, options.sourceId)
+
+  try {
+    if (mutation.type === "removeNode") {
+      const parent = resolved.element.parentNode
+      if (!parent || !hasChildNodes(parent)) {
+        return {
+          ok: false,
+          code: "unsupported-node",
+          error: "Resolved element has no removable parent",
+        }
+      }
+      removeChildNode(parent, resolved.element)
+    } else if (mutation.type === "insertChild") {
+      const validated = parseValidatedHtmlChildFragment(mutation.childSource)
+      if (!validated.ok) return validated
+      if (
+        !Number.isInteger(mutation.position) ||
+        mutation.position < 0 ||
+        mutation.position > getMeaningfulChildren(resolved.element).filter(isElementNode).length
+      ) {
+        return {
+          ok: false,
+          code: "bad-input",
+          error: "position is out of range for the parent's children",
+        }
+      }
+      insertHtmlChildren(resolved.element, mutation.position, validated.nodes)
+    } else if (mutation.type === "reorderSibling") {
+      reorderHtmlSibling(resolved.element, mutation.direction)
+    } else if (mutation.type === "wrapSelection") {
+      if (!isValidStructuralHtmlTag(mutation.wrapperTag)) {
+        return { ok: false, code: "bad-input", error: "wrapperTag must be a valid HTML tag name" }
+      }
+      const wrapper = createHtmlElement(mutation.wrapperTag)
+      wrapHtmlNode(resolved.element, wrapper)
+    } else if (mutation.type === "unwrap") {
+      unwrapHtmlNode(resolved.element)
+    } else if (mutation.type === "swapTag") {
+      if (!isValidStructuralHtmlTag(mutation.newTag)) {
+        return { ok: false, code: "bad-input", error: "newTag must be a valid HTML tag name" }
+      }
+      swapHtmlTag(resolved.element, mutation.newTag)
+    } else {
+      return {
+        ok: false,
+        code: "unsupported-mutation",
+        error: "Structural HTML mutation is not implemented yet",
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Structural HTML mutation failed"
+    return {
+      ok: false,
+      code: message.includes("out of range") ? "bad-input" : "unsupported-node",
+      error: message,
+    }
+  }
+
+  const nextSource = parse5.serialize(fragment)
+  return {
+    ok: true,
+    source: nextSource,
+    canvasIdMap: buildHtmlCanvasIdMap(fragment, options.sourceId, oldCanvasIds),
+  }
+}
+
 function replaceHtmlAttribute(
   sourceHtml: string,
   element: HtmlElement,
@@ -337,6 +470,46 @@ function parseHtmlFragment(sourceHtml: string, sourceCodeLocationInfo: boolean):
   return parse5.parseFragment(sourceHtml, { sourceCodeLocationInfo }) as HtmlParentNode
 }
 
+function parseValidatedHtmlChildFragment(
+  childSource: string
+): { ok: true; nodes: HtmlChildNode[] } | Extract<CanvasHtmlWriteResult, { ok: false }> {
+  if (typeof childSource !== "string" || childSource.trim() === "") {
+    return { ok: false, code: "bad-input", error: "childSource must not be empty" }
+  }
+
+  let fragment: HtmlParentNode
+  try {
+    fragment = parseHtmlFragment(childSource, false)
+  } catch (error) {
+    return {
+      ok: false,
+      code: "parse-error",
+      error: error instanceof Error ? error.message : "Failed to parse childSource HTML.",
+    }
+  }
+
+  const meaningfulChildren = getMeaningfulChildren(fragment)
+  if (meaningfulChildren.length === 0 || meaningfulChildren.some((node) => !isElementNode(node))) {
+    return {
+      ok: false,
+      code: "parse-error",
+      error: "childSource must contain one or more top-level HTML elements",
+    }
+  }
+  for (const child of meaningfulChildren) {
+    if (!isElementNode(child)) continue
+    if (child.tagName === "script" || child.tagName === "iframe") {
+      return {
+        ok: false,
+        code: "parse-error",
+        error: `childSource cannot contain <${child.tagName}> elements`,
+      }
+    }
+  }
+
+  return { ok: true, nodes: meaningfulChildren }
+}
+
 function resolveHtmlPath(root: HtmlParentNode, path: string): HtmlChildNode | null {
   if (!path) return null
   const parts = path.split(".")
@@ -352,6 +525,156 @@ function resolveHtmlPath(root: HtmlParentNode, path: string): HtmlChildNode | nu
     current = child
   }
   return null
+}
+
+function resolveCanvasHtmlElementFromFragment(
+  fragment: HtmlParentNode,
+  canvasId: string,
+  options: { sourceId: string }
+):
+  | { ok: true; element: HtmlElement }
+  | Extract<CanvasHtmlWriteResult, { ok: false }> {
+  const expectedPrefix = hashSourceId(options.sourceId)
+  const colonIdx = canvasId.indexOf(":")
+  const prefix = canvasId.slice(0, colonIdx)
+  const path = canvasId.slice(colonIdx + 1)
+  if (prefix !== expectedPrefix) {
+    return { ok: false, code: "not-found", error: "canvasId source hash does not match sourceId" }
+  }
+  const node = resolveHtmlPath(fragment, path)
+  if (!node) {
+    return { ok: false, code: "not-found", error: "canvasId did not resolve to an HTML element" }
+  }
+  if (!isElementNode(node)) {
+    return { ok: false, code: "unsupported-node", error: "Resolved node is not an HTML element" }
+  }
+  return { ok: true, element: node }
+}
+
+function collectElementCanvasIds(root: HtmlParentNode, sourceId: string): Map<HtmlElement, string> {
+  const prefix = hashSourceId(sourceId)
+  const ids = new Map<HtmlElement, string>()
+  walkElementChildren(root, "", (element, path) => {
+    ids.set(element, `${prefix}:${path}`)
+  })
+  return ids
+}
+
+function buildHtmlCanvasIdMap(
+  root: HtmlParentNode,
+  sourceId: string,
+  oldCanvasIds: Map<HtmlElement, string>
+): Record<string, string | null> {
+  const nextCanvasIds = collectElementCanvasIds(root, sourceId)
+  const result: Record<string, string | null> = {}
+  for (const [element, oldId] of oldCanvasIds) {
+    result[oldId] = nextCanvasIds.get(element) ?? null
+  }
+  return result
+}
+
+function removeChildNode(parent: HtmlParentNode, child: HtmlChildNode): void {
+  parent.childNodes = (parent.childNodes ?? []).filter((node) => node !== child)
+}
+
+function insertHtmlChildren(parent: HtmlElement, position: number, nodes: HtmlChildNode[]): void {
+  const renderedChildren = getMeaningfulChildren(parent).filter(isElementNode)
+  const nextChildren = [...(parent.childNodes ?? [])]
+  const insertAt =
+    position === renderedChildren.length
+      ? nextChildren.length
+      : nextChildren.findIndex((node) => node === renderedChildren[position])
+  const normalizedInsertAt = insertAt < 0 ? nextChildren.length : insertAt
+
+  for (const node of nodes) {
+    node.parentNode = parent
+  }
+  nextChildren.splice(normalizedInsertAt, 0, ...nodes)
+  parent.childNodes = nextChildren
+}
+
+function reorderHtmlSibling(element: HtmlElement, direction: "up" | "down"): void {
+  const parent = element.parentNode
+  if (!parent || !hasChildNodes(parent)) {
+    throw new Error("selected HTML element does not have a reorderable parent")
+  }
+  const renderedChildren = getMeaningfulChildren(parent).filter(isElementNode)
+  const currentIndex = renderedChildren.findIndex((child) => child === element)
+  const neighborIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1
+  if (currentIndex < 0 || neighborIndex < 0 || neighborIndex >= renderedChildren.length) {
+    throw new Error("direction moves the node out of range for its rendered siblings")
+  }
+
+  const allChildren = [...(parent.childNodes ?? [])]
+  const currentChildIndex = allChildren.findIndex((child) => child === element)
+  const neighborChildIndex = allChildren.findIndex((child) => child === renderedChildren[neighborIndex])
+  const [removed] = allChildren.splice(currentChildIndex, 1)
+  const insertionIndex =
+    direction === "up"
+      ? neighborChildIndex
+      : neighborChildIndex > currentChildIndex
+        ? neighborChildIndex
+        : neighborChildIndex + 1
+  allChildren.splice(insertionIndex, 0, removed)
+  parent.childNodes = allChildren
+}
+
+function wrapHtmlNode(element: HtmlElement, wrapper: HtmlElement): void {
+  const parent = element.parentNode
+  if (!parent || !hasChildNodes(parent)) {
+    throw new Error("selected HTML element does not have a wrappable parent")
+  }
+  const children = [...(parent.childNodes ?? [])]
+  const index = children.findIndex((child) => child === element)
+  if (index < 0) {
+    throw new Error("selected HTML element is not attached to its parent")
+  }
+  wrapper.parentNode = parent
+  wrapper.childNodes = [element]
+  element.parentNode = wrapper
+  children.splice(index, 1, wrapper)
+  parent.childNodes = children
+}
+
+function unwrapHtmlNode(element: HtmlElement): void {
+  const parent = element.parentNode
+  if (!parent || !hasChildNodes(parent)) {
+    throw new Error("selected HTML element does not have an unwrap parent")
+  }
+  const children = [...(parent.childNodes ?? [])]
+  const index = children.findIndex((child) => child === element)
+  if (index < 0) {
+    throw new Error("selected HTML element is not attached to its parent")
+  }
+  const lifted = [...(element.childNodes ?? [])]
+  for (const child of lifted) {
+    child.parentNode = parent
+  }
+  children.splice(index, 1, ...lifted)
+  parent.childNodes = children
+}
+
+function swapHtmlTag(element: HtmlElement, newTag: string): void {
+  element.tagName = newTag
+  element.nodeName = newTag
+}
+
+function isValidStructuralHtmlTag(tagName: string): boolean {
+  const normalized = tagName.toLowerCase()
+  return (
+    HTML_TAG_NAME_RE.test(tagName) &&
+    normalized !== "script" &&
+    normalized !== "iframe"
+  )
+}
+
+function createHtmlElement(tagName: string): HtmlElement {
+  const fragment = parseHtmlFragment(`<${tagName}></${tagName}>`, false)
+  const element = getMeaningfulChildren(fragment).find(isElementNode)
+  if (!element) {
+    throw new Error(`Failed to create HTML wrapper <${tagName}>`)
+  }
+  return element
 }
 
 function walkElementChildren(

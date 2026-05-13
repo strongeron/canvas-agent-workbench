@@ -30,7 +30,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U4a | ✅ complete (8 slices, see plan) | iframe overlay drag → class snap → AST write |
 | U13 | ✅ complete | bidirectional bridge (refresh-rect, edit-start, edit-commit) |
 | U1 | ✅ complete | TSX structural mutations — all 6 helper mutations are implemented; writer/API structural dispatch returns `canvasIdMap` + `prevSourceSnapshot` |
-| U2 | not started | same 6 mutations on the HTML side via parse5 |
+| U2 | 🟡 local writer complete | same 6 mutations on the HTML side via parse5; endpoint path is locally exercised, broader consumer wiring still pending |
 | U3 | 🟡 local wiring in progress | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
 | U4b | not started | drop targets + structural drag (depends on U1+U2+U4a+U13) |
 | U5 | not started | mutation log + undo/redo |
@@ -76,6 +76,13 @@ First slice: `utils/canvasAstStructural.ts` with `removeJsxNode` + tests. Subseq
 - `writeCanvasAstNode` and `/api/canvas/ast/write` now route one structural mutation at a time through the helper and return `canvasIdMap` + `prevSourceSnapshot`.
 - The React node property panel consumes `canvasIdMap` and rebases or clears its active selection after structural writes; `CanvasTab` advances the selection's compile generation on recompile so the rebased id survives the next iframe refresh.
 - Remaining work has shifted out of U1 and into U3/UI follow-through: selection rect refresh / overlay re-anchor after structural recompile across all active surfaces.
+
+### U2 progress (2026-05-14)
+
+- Local worktree extends `writeCanvasHtmlNode` with all 6 structural HTML mutations: `insertChild`, `removeNode`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag`.
+- HTML structural mutations use parse5 tree mutation plus object-identity-based `canvasIdMap` rebasing inside a single parsed fragment, then serialize back to source.
+- `/api/canvas/ast/write` is already compatible with the structural HTML shapes; focused endpoint tests now exercise file-backed HTML structural writes and return `canvasIdMap` + `prevSourceSnapshot`.
+- Remaining work for U2 is commit/cleanup of this local slice, then UI-level consumers where HTML structural mutations should participate in the same selection/overlay continuity path as TSX.
 
 ## Out of scope for v3
 

@@ -198,4 +198,37 @@ describe("applyCanvasAstWriteRequest (file-backed)", () => {
     expect(onDisk).toBe(result.sourceHtml)
     expect(onDisk).not.toContain("data-canvas-id")
   })
+
+  it("dispatches file-backed HTML structural mutations and returns canvasIdMap metadata", async () => {
+    const root = await createTempDir("canvas-html-write-endpoint-")
+    const relativePath = "components/Card.html"
+    const absolute = path.join(root, relativePath)
+    const source = `<article class="card"><p>Hello</p></article>`
+    await fs.mkdir(path.dirname(absolute), { recursive: true })
+    await fs.writeFile(absolute, source, "utf8")
+    const initialStat = await fs.stat(absolute)
+    const canvasId = injectCanvasHtmlElementIds(source, {
+      sourceId: relativePath,
+      injectBridge: false,
+    }).ids[0]?.canvasId
+
+    const result = await applyCanvasAstWriteRequest(
+      {
+        filePath: relativePath,
+        canvasId,
+        sourceId: relativePath,
+        mtimeMs: initialStat.mtimeMs,
+        mutations: [{ type: "insertChild", position: 1, childSource: "<button>CTA</button>" }],
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.kind).toBe("html")
+    expect(result.appliedMutations).toBe(1)
+    expect(result.sourceHtml).toBe(`<article class="card"><p>Hello</p><button>CTA</button></article>`)
+    expect(result.prevSourceSnapshot).toBe(source)
+    expect(Object.keys(result.canvasIdMap ?? {}).length).toBeGreaterThan(0)
+  })
 })
