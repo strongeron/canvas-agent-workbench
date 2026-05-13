@@ -96,7 +96,7 @@ First slice: `utils/canvasAstStructural.ts` with `removeJsxNode` + tests. Subseq
   - applying a text edit through that panel round-trips back into the iframe while keeping the node selected.
   - the TSX fixture compiles, receives injected `data-canvas-id` markers, opens the `React node` panel on iframe click, and round-trips a text edit back into the compiled preview while keeping the node selected.
 - `CanvasReactNodePropertyPanel` now has focused tests for `canvasIdMap` rebasing and `null` clear semantics, so the U3 selection handoff is covered directly instead of only through endpoint tests.
-- `CanvasReactNodePropertyPanel` now exposes the first structural controls on the live surface: `Wrap`, `Swap tag`, `Unwrap`, and `Delete node`.
+- `CanvasReactNodePropertyPanel` now exposes the first structural controls on the live surface: `Wrap`, `Swap tag`, `Move up`, `Move down`, `Unwrap`, and `Delete node`.
 - Browser-verified on the TSX fixture that `Wrap` survives the structural recompile: the iframe's injected node count increases, the item stays selected, and the `React node` panel remains open.
 - `CanvasHtmlFrame` now re-requests `canvas/refresh-rect` after **inline HTML** source refreshes under an active selection, and the frame message suite covers that path explicitly.
 - Remaining U3 work is structural-mutation continuity: verify that wrap/insert/remove rebase the active node and refresh overlay rects without dropping the user's selection.

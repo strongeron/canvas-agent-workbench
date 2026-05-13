@@ -389,4 +389,62 @@ describe("CanvasReactNodePropertyPanel", () => {
     const writeBody = JSON.parse(String(writeInit.body))
     expect(writeBody.mutations).toEqual([{ type: "removeNode" }])
   })
+
+  it("dispatches reorderSibling from the structure section", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          node: {
+            canvasId: "abc:0",
+            tag: "button",
+            isHostElement: true,
+            attributes: [],
+            textChildren: "Click",
+            hasNonTextChildren: false,
+            editableInV1: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          sourceHtml: "<div><button>Click</button></div>",
+          canvasIdMap: {
+            "abc:0": "abc:1",
+          },
+        }),
+      })
+
+    harness = await mount(
+      <CanvasReactNodePropertyPanel
+        selection={makeSelection()}
+        sourceReact=""
+        sourceHtml="<div><button>Click</button></div>"
+        sourceKind="html"
+        currentCompileGeneration={1}
+        sourceId="item-1"
+        onClose={() => {}}
+        onSourceReactChange={() => {}}
+        onSourceHtmlChange={() => {}}
+        onSelectionChange={() => {}}
+      />
+    )
+
+    const moveUpButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Move up"
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      moveUpButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const [, writeInit] = fetchMock.mock.calls[1]
+    const writeBody = JSON.parse(String(writeInit.body))
+    expect(writeBody.mutations).toEqual([{ type: "reorderSibling", direction: "up" }])
+  })
 })

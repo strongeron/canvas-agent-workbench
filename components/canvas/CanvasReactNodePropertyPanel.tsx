@@ -418,6 +418,26 @@ function StructureEditor({
           </button>
         </div>
         <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onApplyMutations([{ type: "reorderSibling", direction: "up" }])}
+              disabled={disabled}
+              className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Move up
+            </button>
+            <button
+              type="button"
+              onClick={() => onApplyMutations([{ type: "reorderSibling", direction: "down" }])}
+              disabled={disabled}
+              className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Move down
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => onApplyMutations([{ type: "unwrap" }])}
