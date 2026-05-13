@@ -45,7 +45,23 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 
 ## Next slice (active)
 
-**U1 — structural TSX mutations.** First atomic step: add `recast` dependency, scaffold the structural mutation module, ship the simplest mutation (`removeNode`) end-to-end with tests. Subsequent slices iterate to `insertChild`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag`.
+**U1 — structural TSX mutations.** `recast` installed (`158e208`). Spike confirmed trivia round-trip works on this codebase's TSX, modulo one auto-inserted `;` on `return (...)`.
+
+### Architectural choice surfaced before U1 implementation
+
+The plan has an internal tension between its post-review revisions ("threads `data-canvas-stable-id` through ts.factory") and U1's body ("recast.parse with typescriptParser"). They imply different ASTs — TypeScript AST vs Babel AST — and the existing reader/writer's `canvasId` resolution lives in TS-AST land (`canvasAstPath.ts` walks `ts.forEachChild`).
+
+Options:
+
+1. **Recast (Babel) + position-based bridge** *(proposed direction)* — keep the existing TS-AST canvasId resolution untouched. For each structural mutation: resolve the canvasId via the existing `findNodeByCanvasId` to get a `ts.Node`, read its `pos`/`end`, then locate the same JSXElement in the Babel AST by source position (Babel nodes carry `loc.start`/`loc.end`). Mutate via recast → re-print. Pro: trivia preservation as the plan wants; existing reader/writer untouched. Con: small position-bridge adapter to build and test.
+
+2. **TS-factory only** — use `ts.factory.update*` + accept `ts.createPrinter`'s reformatting. Pro: stays in one AST world. Con: the plan explicitly rejected this for trivia reasons.
+
+3. **Recast-native canvasIds** — drop the existing TS-AST path scheme for structural mutations and assign Babel-AST-based stable ids. Pro: clean single source of truth. Con: breaking change; two parallel id namespaces during transition.
+
+**Choosing (1).** It matches the plan's "recast" call, preserves trivia, doesn't break existing canvasId resolution, and the position-bridge is a small adapter testable in isolation.
+
+First slice will land: position-bridge module (resolve TS-AST canvasId → Babel JSXElement) + `removeNode` mutation + tests. Subsequent slices add insert / reorder / wrap / unwrap / swapTag.
 
 ## Out of scope for v3
 
