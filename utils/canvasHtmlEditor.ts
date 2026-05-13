@@ -176,6 +176,8 @@ export function writeCanvasHtmlNode(
     ok: true,
     source: applyReplacements(sourceHtml, replacements),
     appliedMutations: replacements.length,
+    canvasIdMap: {},
+    prevSourceSnapshot: sourceHtml,
   }
 }
 

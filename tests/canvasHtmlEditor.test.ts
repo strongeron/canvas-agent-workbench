@@ -80,6 +80,8 @@ describe("canvas HTML editor", () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.source).toBe(`<button class="btn btn-primary" type="submit">Send</button>`)
+    expect(result.prevSourceSnapshot).toBe(source)
+    expect(result.canvasIdMap).toEqual({})
   })
 
   it("adds and removes attributes", () => {
