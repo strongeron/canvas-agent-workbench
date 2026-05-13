@@ -89,10 +89,12 @@ First slice: `utils/canvasAstStructural.ts` with `removeJsxNode` + tests. Subseq
 - Fixed a real `srcDoc` bridge bug: the injected iframe runtime was posting `canvas/select` to target origin `"null"`, so source-backed inline HTML previews could emit bridge events without the parent ever receiving them.
 - The bridge now resolves parent origin from `document.referrer` first, then falls back safely; focused bridge tests cover the runtime branch and message handler suite remains green.
 - Added `projects/demo/canvases/source-backed-inline.canvas` as a stable source-backed verification fixture.
+- Added `projects/demo/canvases/source-backed-react.canvas` as a stable TSX-backed verification fixture.
 - Browser-verified on `localhost:5182` that:
   - the inline fixture receives injected `data-canvas-id` markers,
   - clicking an iframe element opens the right-hand `HTML node` panel,
   - applying a text edit through that panel round-trips back into the iframe while keeping the node selected.
+  - the TSX fixture compiles, receives injected `data-canvas-id` markers, opens the `React node` panel on iframe click, and round-trips a text edit back into the compiled preview while keeping the node selected.
 - `CanvasReactNodePropertyPanel` now has focused tests for `canvasIdMap` rebasing and `null` clear semantics, so the U3 selection handoff is covered directly instead of only through endpoint tests.
 - `CanvasHtmlFrame` now re-requests `canvas/refresh-rect` after **inline HTML** source refreshes under an active selection, and the frame message suite covers that path explicitly.
 - Remaining U3 work is structural-mutation continuity: verify that wrap/insert/remove rebase the active node and refresh overlay rects without dropping the user's selection.

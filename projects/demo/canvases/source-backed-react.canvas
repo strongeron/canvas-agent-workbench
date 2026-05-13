@@ -1,0 +1,54 @@
+{
+  "kind": "gallery-poc.canvas",
+  "schemaVersion": 1,
+  "surface": "canvas",
+  "meta": {
+    "id": "canvas_source_backed_react_demo",
+    "title": "source-backed-react",
+    "slug": "source-backed-react",
+    "projectId": "demo",
+    "createdAt": "2026-05-14T00:00:00.000Z",
+    "updatedAt": "2026-05-14T00:00:00.000Z",
+    "tags": [
+      "fixture",
+      "source-backed",
+      "react"
+    ],
+    "favorite": false,
+    "archived": false
+  },
+  "document": {
+    "items": [
+      {
+        "id": "canvas-item-source-backed-react-card",
+        "type": "html",
+        "title": "Source-backed React card",
+        "sourceMode": "react",
+        "sourceReact": "export default function PreviewCard() {\n  return (\n    <main style={{ minHeight: '100vh', margin: 0, display: 'grid', placeItems: 'center', background: '#f8fafc', fontFamily: 'Inter, system-ui, sans-serif' }}>\n      <article style={{ width: 'min(420px, calc(100vw - 48px))', padding: 24, border: '1px solid #cbd5e1', borderRadius: 16, background: '#ffffff', boxShadow: '0 20px 40px rgb(15 23 42 / 0.08)' }}>\n        <h1 style={{ margin: '0 0 12px', fontSize: 28, lineHeight: 1.1 }}>Hello</h1>\n        <p style={{ margin: '0 0 16px', color: '#475569', lineHeight: 1.5 }}>React bridge verification target</p>\n        <button className=\"cta\">Click</button>\n      </article>\n    </main>\n  )\n}\n",
+        "sandbox": "allow-scripts allow-same-origin allow-forms allow-modals allow-popups",
+        "position": {
+          "x": 320,
+          "y": 220
+        },
+        "size": {
+          "width": 720,
+          "height": 480
+        },
+        "rotation": 0,
+        "zIndex": 1
+      }
+    ],
+    "groups": [],
+    "nextZIndex": 2,
+    "selectedIds": []
+  },
+  "view": {
+    "transform": {
+      "scale": 1,
+      "offset": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  }
+}
