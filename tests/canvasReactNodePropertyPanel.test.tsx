@@ -447,4 +447,74 @@ describe("CanvasReactNodePropertyPanel", () => {
     const writeBody = JSON.parse(String(writeInit.body))
     expect(writeBody.mutations).toEqual([{ type: "reorderSibling", direction: "up" }])
   })
+
+  it("dispatches insertChild from the structure section", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          node: {
+            canvasId: "abc:0",
+            tag: "button",
+            isHostElement: true,
+            attributes: [],
+            textChildren: "Click",
+            hasNonTextChildren: false,
+            editableInV1: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          sourceHtml: "<button><span>New</span>Click</button>",
+          canvasIdMap: {
+            "abc:0": "abc:1",
+          },
+        }),
+      })
+
+    harness = await mount(
+      <CanvasReactNodePropertyPanel
+        selection={makeSelection()}
+        sourceReact=""
+        sourceHtml="<button>Click</button>"
+        sourceKind="html"
+        currentCompileGeneration={1}
+        sourceId="item-1"
+        onClose={() => {}}
+        onSourceReactChange={() => {}}
+        onSourceHtmlChange={() => {}}
+        onSelectionChange={() => {}}
+      />
+    )
+
+    const childTextarea = Array.from(harness.container.querySelectorAll("textarea")).at(-1) as HTMLTextAreaElement
+    const positionInput = Array.from(harness.container.querySelectorAll("input")).find(
+      (input) => (input as HTMLInputElement).type === "number"
+    ) as HTMLInputElement
+    const insertButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Insert child"
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      setTextareaValue(childTextarea, "<span>New</span>")
+      setInputValue(positionInput, "0")
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      insertButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const [, writeInit] = fetchMock.mock.calls[1]
+    const writeBody = JSON.parse(String(writeInit.body))
+    expect(writeBody.mutations).toEqual([
+      { type: "insertChild", position: 0, childSource: "<span>New</span>" },
+    ])
+  })
 })

@@ -367,6 +367,8 @@ function StructureEditor({
 }) {
   const [wrapTag, setWrapTag] = useState("div")
   const [swapTag, setSwapTag] = useState(node.isHostElement ? node.tag : "div")
+  const [childSource, setChildSource] = useState("<span>New</span>")
+  const [insertPosition, setInsertPosition] = useState("0")
 
   useEffect(() => {
     setSwapTag(node.isHostElement ? node.tag : "div")
@@ -374,6 +376,8 @@ function StructureEditor({
 
   const normalizedWrapTag = wrapTag.trim()
   const normalizedSwapTag = swapTag.trim()
+  const normalizedChildSource = childSource.trim()
+  const normalizedInsertPosition = Number.parseInt(insertPosition, 10)
 
   return (
     <div>
@@ -434,6 +438,42 @@ function StructureEditor({
               className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Move down
+            </button>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <textarea
+            value={childSource}
+            onChange={(event) => setChildSource(event.target.value)}
+            disabled={disabled}
+            rows={3}
+            spellCheck={false}
+            className="w-full resize-y rounded border border-default bg-white px-2 py-1 font-mono text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              value={insertPosition}
+              onChange={(event) => setInsertPosition(event.target.value)}
+              disabled={disabled}
+              min={0}
+              className="w-16 rounded border border-default bg-white px-2 py-1 font-mono text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+            />
+            <button
+              type="button"
+              onClick={() =>
+                onApplyMutations([
+                  {
+                    type: "insertChild",
+                    position: Number.isFinite(normalizedInsertPosition) ? normalizedInsertPosition : 0,
+                    childSource: normalizedChildSource,
+                  },
+                ])
+              }
+              disabled={disabled || !normalizedChildSource}
+              className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Insert child
             </button>
           </div>
         </div>
