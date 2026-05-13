@@ -1,0 +1,242 @@
+// @vitest-environment jsdom
+
+import React, { act } from "react"
+import { createRoot, type Root } from "react-dom/client"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+
+import { CanvasReactNodePropertyPanel } from "../components/canvas/CanvasReactNodePropertyPanel"
+import type { CanvasReactNodeSelection } from "../components/canvas/CanvasHtmlFrame"
+
+const originalActEnvironmentDescriptor = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "IS_REACT_ACT_ENVIRONMENT"
+)
+
+beforeAll(() => {
+  Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
+    configurable: true,
+    writable: true,
+    value: true,
+  })
+})
+
+afterAll(() => {
+  if (originalActEnvironmentDescriptor) {
+    Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", originalActEnvironmentDescriptor)
+  } else {
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: unknown }).IS_REACT_ACT_ENVIRONMENT
+  }
+})
+
+interface Harness {
+  container: HTMLDivElement
+  root: Root
+  cleanup: () => void
+}
+
+function makeSelection(overrides: Partial<CanvasReactNodeSelection> = {}): CanvasReactNodeSelection {
+  return {
+    itemId: "item-1",
+    canvasId: "abc:0",
+    tag: "button",
+    rect: { x: 1, y: 2, width: 80, height: 24 },
+    compileGeneration: 1,
+    ...overrides,
+  }
+}
+
+async function mount(element: React.ReactElement): Promise<Harness> {
+  const container = document.createElement("div")
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  await act(async () => {
+    root.render(element)
+  })
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+  return {
+    container,
+    root,
+    cleanup: () => {
+      act(() => {
+        root.unmount()
+      })
+      container.remove()
+    },
+  }
+}
+
+function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set
+  setter?.call(textarea, value)
+  textarea.dispatchEvent(
+    new InputEvent("input", {
+      bubbles: true,
+      data: value,
+      inputType: "insertText",
+    })
+  )
+  textarea.dispatchEvent(new Event("change", { bubbles: true }))
+}
+
+describe("CanvasReactNodePropertyPanel", () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  let harness: Harness | null = null
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+  })
+
+  afterEach(() => {
+    if (harness) {
+      harness.cleanup()
+      harness = null
+    }
+    vi.unstubAllGlobals()
+  })
+
+  it("rebases selection when write returns a new canvasId", async () => {
+    const onSourceHtmlChange = vi.fn()
+    const onSelectionChange = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          node: {
+            canvasId: "abc:0",
+            tag: "button",
+            isHostElement: true,
+            attributes: [],
+            textChildren: "Click",
+            hasNonTextChildren: false,
+            editableInV1: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          sourceHtml: "<button>Pressed</button>",
+          canvasIdMap: {
+            "abc:0": "abc:1",
+          },
+        }),
+      })
+
+    harness = await mount(
+      <CanvasReactNodePropertyPanel
+        selection={makeSelection()}
+        sourceReact=""
+        sourceHtml="<button>Click</button>"
+        sourceKind="html"
+        currentCompileGeneration={1}
+        sourceId="item-1"
+        onClose={() => {}}
+        onSourceReactChange={() => {}}
+        onSourceHtmlChange={onSourceHtmlChange}
+        onSelectionChange={onSelectionChange}
+      />
+    )
+
+    const textarea = harness.container.querySelector("textarea") as HTMLTextAreaElement
+    const applyButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Apply text"
+    ) as HTMLButtonElement
+    expect(textarea).toBeTruthy()
+    expect(applyButton).toBeTruthy()
+
+    await act(async () => {
+      setTextareaValue(textarea, "Pressed")
+      await Promise.resolve()
+    })
+    expect(applyButton.disabled).toBe(false)
+
+    await act(async () => {
+      applyButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onSourceHtmlChange).toHaveBeenCalledWith("<button>Pressed</button>", undefined)
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemId: "item-1",
+        canvasId: "abc:1",
+        tag: "button",
+      })
+    )
+    const [, writeInit] = fetchMock.mock.calls[1]
+    const writeBody = JSON.parse(String(writeInit.body))
+    expect(writeBody.canvasId).toBe("abc:0")
+    expect(writeBody.sourceHtml).toBe("<button>Click</button>")
+    expect(writeBody.mutations).toEqual([{ type: "setTextChild", value: "Pressed" }])
+  })
+
+  it("clears selection when write returns canvasIdMap[selectedId] = null", async () => {
+    const onSelectionChange = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          node: {
+            canvasId: "abc:0",
+            tag: "button",
+            isHostElement: true,
+            attributes: [],
+            textChildren: "Click",
+            hasNonTextChildren: false,
+            editableInV1: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          sourceHtml: "<div />",
+          canvasIdMap: {
+            "abc:0": null,
+          },
+        }),
+      })
+
+    harness = await mount(
+      <CanvasReactNodePropertyPanel
+        selection={makeSelection()}
+        sourceReact=""
+        sourceHtml="<button>Click</button>"
+        sourceKind="html"
+        currentCompileGeneration={1}
+        sourceId="item-1"
+        onClose={() => {}}
+        onSourceReactChange={() => {}}
+        onSourceHtmlChange={() => {}}
+        onSelectionChange={onSelectionChange}
+      />
+    )
+
+    const textarea = harness.container.querySelector("textarea") as HTMLTextAreaElement
+    const applyButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Apply text"
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      setTextareaValue(textarea, "Removed")
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      applyButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onSelectionChange).toHaveBeenCalledWith(null)
+  })
+})
