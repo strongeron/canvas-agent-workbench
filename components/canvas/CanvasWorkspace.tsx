@@ -28,7 +28,7 @@ import { CanvasLayoutMediaItem } from "./CanvasLayoutMediaItem"
 import { CanvasLayoutMermaidItem } from "./CanvasLayoutMermaidItem"
 import { CanvasLayoutMarkdownItem } from "./CanvasLayoutMarkdownItem"
 import { CanvasExcalidrawItem as CanvasExcalidrawItemComponent } from "./CanvasExcalidrawItem"
-import type { CanvasReactNodeSelection } from "./CanvasHtmlFrame"
+import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 import { CanvasMarkdownItem as CanvasMarkdownItemComponent } from "./CanvasMarkdownItem"
 import { CanvasMermaidItem as CanvasMermaidItemComponent } from "./CanvasMermaidItem"
 import { CanvasMediaItem as CanvasMediaItemComponent } from "./CanvasMediaItem"
@@ -79,6 +79,7 @@ interface CanvasWorkspaceProps {
   }) => void | Promise<void>
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
+  onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
 }
 
 export function CanvasWorkspace({
@@ -104,6 +105,7 @@ export function CanvasWorkspace({
   onDropMediaFiles,
   onReactNodeSelect,
   onReactCompileGenerationChange,
+  onReactNodeResize,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -274,6 +276,7 @@ export function CanvasWorkspace({
               interactMode={interactMode}
               onReactNodeSelect={onReactNodeSelect}
               onReactCompileGenerationChange={onReactCompileGenerationChange}
+              onReactNodeResize={onReactNodeResize}
             />
           </div>
         )
@@ -366,6 +369,7 @@ export function CanvasWorkspace({
       onUpdateItem,
       onReactCompileGenerationChange,
       onReactNodeSelect,
+      onReactNodeResize,
       Renderer,
       getComponentById,
       transform.scale,
@@ -738,6 +742,7 @@ export function CanvasWorkspace({
                 }
                 onReactNodeSelect={onReactNodeSelect}
                 onReactCompileGenerationChange={onReactCompileGenerationChange}
+                onReactNodeResize={onReactNodeResize}
               />
             )
           }

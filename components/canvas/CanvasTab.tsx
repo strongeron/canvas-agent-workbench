@@ -35,7 +35,8 @@ import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
 import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "./CanvasFileDialogs"
 import { CanvasHtmlPropsPanel } from "./CanvasHtmlPropsPanel"
 import { CanvasReactNodePropertyPanel } from "./CanvasReactNodePropertyPanel"
-import type { CanvasReactNodeSelection } from "./CanvasHtmlFrame"
+import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./CanvasHtmlFrame"
+import { dispatchCanvasResize } from "../../utils/canvasResizeDispatch"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
@@ -809,6 +810,48 @@ export function CanvasTab({
       return { ...current, [itemId]: generation }
     })
   }, [])
+
+  const handleReactNodeResize = useCallback(
+    async (event: CanvasReactNodeResizeEvent) => {
+      const item = items.find((candidate) => candidate.id === event.itemId)
+      if (!item || item.type !== "html") return
+      const htmlItem = item as CanvasHtmlItem
+      const isHtmlMode = htmlItem.sourceMode === "inline"
+      await dispatchCanvasResize(event, {
+        sourceKind: isHtmlMode ? "html" : "tsx",
+        sourceId:
+          htmlItem.sourcePath ||
+          htmlItem.sourceHtmlFilePath ||
+          htmlItem.sourceReactFilePath ||
+          htmlItem.id,
+        sourceReact: htmlItem.sourceReact,
+        sourceHtml: htmlItem.sourceHtml,
+        filePath: isHtmlMode
+          ? htmlItem.sourceHtmlFilePath
+          : htmlItem.sourceReactFilePath,
+        mtimeMs: isHtmlMode
+          ? htmlItem.sourceHtmlFileMtime
+          : htmlItem.sourceReactFileMtime,
+        onSourceReactChange: (sourceReact, mtimeMs) =>
+          updateItem(event.itemId, {
+            sourceMode: "react",
+            sourceReact,
+            ...(typeof mtimeMs === "number"
+              ? { sourceReactFileMtime: mtimeMs }
+              : {}),
+          } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+        onSourceHtmlChange: (sourceHtml, mtimeMs) =>
+          updateItem(event.itemId, {
+            sourceMode: "inline",
+            sourceHtml,
+            ...(typeof mtimeMs === "number"
+              ? { sourceHtmlFileMtime: mtimeMs }
+              : {}),
+          } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+      })
+    },
+    [items, updateItem]
+  )
 
   const applyCanvasAgentOperation = useCallback(
     (operation: CanvasRemoteOperation) => {
@@ -3150,6 +3193,7 @@ export function CanvasTab({
               setPropsPanelVisible(true)
             }}
             onReactCompileGenerationChange={handleReactCompileGenerationChange}
+            onReactNodeResize={handleReactNodeResize}
           />
 
           {/* Right sidebar - Props Panel (single selection only) */}
