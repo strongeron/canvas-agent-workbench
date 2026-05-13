@@ -337,7 +337,7 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 ## Implementation Units
 
-- U1. **Structural AST mutations for TSX (recast + identity tracking)**
+- U1. **Structural AST mutations for TSX (recast + identity tracking)**  *(implementation revised 2026-05-13: offset-based TS-AST surgery chosen over recast — see `docs/goal.md` § U1 architectural decision. Existing `canvasAstWriter` already preserves trivia via `node.getStart()/getEnd()` + `applyReplacements`; structural mutations extend that pattern instead of introducing a Babel AST. The recast-based body below is preserved for context.)*
 
 **Goal:** Extend `canvasAstWriter` with `insertChild`, `removeNode`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag` mutations. Each returns a `canvasIdMap: Record<string, string | null>` mapping old→new ids and a `prevSourceSnapshot` for the mutation log. Existing offset-based literal-mutation path is unchanged; structural mutations use **recast** (preserves trivia for untouched siblings) + identity-based id tracking (`data-canvas-stable-id` threaded through factory mutations).
 

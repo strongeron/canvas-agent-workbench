@@ -45,23 +45,28 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 
 ## Next slice (active)
 
-**U1 — structural TSX mutations.** `recast` installed (`158e208`). Spike confirmed trivia round-trip works on this codebase's TSX, modulo one auto-inserted `;` on `return (...)`.
+**U1 — structural TSX mutations.**
 
-### Architectural choice surfaced before U1 implementation
+### Architectural decision (2026-05-13)
 
-The plan has an internal tension between its post-review revisions ("threads `data-canvas-stable-id` through ts.factory") and U1's body ("recast.parse with typescriptParser"). They imply different ASTs — TypeScript AST vs Babel AST — and the existing reader/writer's `canvasId` resolution lives in TS-AST land (`canvasAstPath.ts` walks `ts.forEachChild`).
+The plan's call for `recast` was the wrong frame. The existing `canvasAstWriter` already solves the trivia-preservation problem the plan attributed to `ts.createPrinter` — it does **offset-based string surgery** using `node.getStart()` / `node.getEnd()`, never reprints the AST, leaves everything outside the splice byte-identical. The plan rejected TS-AST because of `ts.createPrinter`, but `ts.createPrinter` is a strawman — there's a third option the plan didn't surface.
 
-Options:
+All 6 structural mutations are expressible as offset splicing:
 
-1. **Recast (Babel) + position-based bridge** *(proposed direction)* — keep the existing TS-AST canvasId resolution untouched. For each structural mutation: resolve the canvasId via the existing `findNodeByCanvasId` to get a `ts.Node`, read its `pos`/`end`, then locate the same JSXElement in the Babel AST by source position (Babel nodes carry `loc.start`/`loc.end`). Mutate via recast → re-print. Pro: trivia preservation as the plan wants; existing reader/writer untouched. Con: small position-bridge adapter to build and test.
+| Mutation | Offset operation |
+|---|---|
+| `removeNode` | Splice out `[node.getStart(), node.getEnd()]` |
+| `insertChild` | Splice new text at parent's `openingElement.getEnd()` (or before `closingElement.getStart()`) |
+| `reorderSibling` | Two extract-and-replace splices on adjacent slices |
+| `wrapSelection` | Two splices: opening wrapper at `getStart`, closing at `getEnd` |
+| `unwrap` | Replace wrapper's `[getStart, getEnd]` with inner content's range |
+| `swapTag` | Splice tag name in both `openingElement.tagName` and `closingElement.tagName` |
 
-2. **TS-factory only** — use `ts.factory.update*` + accept `ts.createPrinter`'s reformatting. Pro: stays in one AST world. Con: the plan explicitly rejected this for trivia reasons.
+**Chosen: TS-AST + offset-based structural mutations.** Mirrors the existing `canvasAstWriter`'s pattern. Trivia preservation is perfect by construction (no reprint at all). No new dependencies. One AST world. `recast` install reverted.
 
-3. **Recast-native canvasIds** — drop the existing TS-AST path scheme for structural mutations and assign Babel-AST-based stable ids. Pro: clean single source of truth. Con: breaking change; two parallel id namespaces during transition.
+Options 1 (recast + position-bridge), 2 (TS-factory + ts.createPrinter), and 3 (recast-native canvasIds) were considered and rejected.
 
-**Choosing (1).** It matches the plan's "recast" call, preserves trivia, doesn't break existing canvasId resolution, and the position-bridge is a small adapter testable in isolation.
-
-First slice will land: position-bridge module (resolve TS-AST canvasId → Babel JSXElement) + `removeNode` mutation + tests. Subsequent slices add insert / reorder / wrap / unwrap / swapTag.
+First slice: `utils/canvasAstStructural.ts` with `removeNode` + tests. Subsequent slices add `insertChild`, `reorderSibling`, `wrapSelection`, `unwrap`, `swapTag`. Each uses the same `{ start, end, text }` replacement shape the existing writer already returns from `applyReplacements`.
 
 ## Out of scope for v3
 
