@@ -232,10 +232,12 @@ describe("buildBridgeScript", () => {
 describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
   let parentMock: { postMessage: ReturnType<typeof vi.fn> }
   let originalParent: typeof window.parent
+  let originalReferrerDescriptor: PropertyDescriptor | undefined
 
   beforeEach(() => {
     parentMock = { postMessage: vi.fn() }
     originalParent = window.parent
+    originalReferrerDescriptor = Object.getOwnPropertyDescriptor(document, "referrer")
     Object.defineProperty(window, "parent", {
       configurable: true,
       get: () => parentMock,
@@ -250,6 +252,11 @@ describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
       configurable: true,
       value: originalParent,
     })
+    if (originalReferrerDescriptor) {
+      Object.defineProperty(document, "referrer", originalReferrerDescriptor)
+    } else {
+      delete (document as unknown as { referrer?: string }).referrer
+    }
   })
 
   it("posts canvas/ready on install", () => {
@@ -274,6 +281,12 @@ describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
     expect(selectCall![0].canvasId).toBe("abc:1.2")
     expect(selectCall![0].tag).toBe("button")
     expect(selectCall![0].fileHint).toBe("fileA")
+  })
+
+  it("serialized runtime prefers document.referrer when resolving parent origin", () => {
+    const out = buildBridgeScript("fileA")
+    expect(out).toContain("document.referrer")
+    expect(out).toContain("new URL(document.referrer, window.location.href).origin")
   })
 
   it("walks up to the nearest tagged ancestor on click", () => {

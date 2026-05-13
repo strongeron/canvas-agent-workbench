@@ -256,10 +256,32 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
     return null
   }
 
-  // Same-origin only: the iframe inherits the parent's origin via
-  // allow-same-origin sandbox, so window.location.origin equals the parent
-  // origin. Targeting it explicitly prevents leakage to embedding frames.
-  const targetOrigin = window.location.origin
+  // Outbound postMessage target:
+  // - srcDoc previews can report `window.location.origin === "null"` even
+  //   when they were injected by our same-origin app, so prefer the
+  //   parent's URL from document.referrer.
+  // - If referrer is absent, fall back to the current origin when usable.
+  // - Final fallback is "*" so the bridge still functions in odd sandboxed
+  //   environments, while inbound v3 handlers stay version-gated.
+  let targetOrigin = "*"
+  if (document.referrer) {
+    try {
+      targetOrigin = new URL(document.referrer, window.location.href).origin
+    } catch {
+      targetOrigin = "*"
+    }
+  } else if (window.location.origin && window.location.origin !== "null") {
+    targetOrigin = window.location.origin
+  } else {
+    try {
+      const parentOrigin = (window.parent as Window).location?.origin
+      if (parentOrigin && parentOrigin !== "null") {
+        targetOrigin = parentOrigin
+      }
+    } catch {
+      targetOrigin = "*"
+    }
+  }
 
   function postSelect(el: HTMLElement) {
     const rect = el.getBoundingClientRect()
@@ -427,7 +449,7 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
       type === "canvas/edit-commit"
     if (isV3Handler) {
       if (data.version !== options.version) return
-      if (event.origin && event.origin !== targetOrigin) return
+      if (targetOrigin !== "*" && event.origin && event.origin !== targetOrigin) return
     }
 
     if (type === "canvas/request-select") {

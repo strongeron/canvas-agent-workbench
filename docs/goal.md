@@ -84,6 +84,17 @@ First slice: `utils/canvasAstStructural.ts` with `removeJsxNode` + tests. Subseq
 - `/api/canvas/ast/write` is already compatible with the structural HTML shapes; focused endpoint tests now exercise file-backed HTML structural writes and return `canvasIdMap` + `prevSourceSnapshot`.
 - Remaining work for U2 is commit/cleanup of this local slice, then UI-level consumers where HTML structural mutations should participate in the same selection/overlay continuity path as TSX.
 
+### U3 progress (2026-05-14)
+
+- Fixed a real `srcDoc` bridge bug: the injected iframe runtime was posting `canvas/select` to target origin `"null"`, so source-backed inline HTML previews could emit bridge events without the parent ever receiving them.
+- The bridge now resolves parent origin from `document.referrer` first, then falls back safely; focused bridge tests cover the runtime branch and message handler suite remains green.
+- Added `projects/demo/canvases/source-backed-inline.canvas` as a stable source-backed verification fixture.
+- Browser-verified on `localhost:5182` that:
+  - the inline fixture receives injected `data-canvas-id` markers,
+  - clicking an iframe element opens the right-hand `HTML node` panel,
+  - applying a text edit through that panel round-trips back into the iframe while keeping the node selected.
+- Remaining U3 work is structural-mutation continuity: verify that wrap/insert/remove rebase the active node and refresh overlay rects without dropping the user's selection.
+
 ## Out of scope for v3
 
 - Rotation (assumed never in canvas transform)
