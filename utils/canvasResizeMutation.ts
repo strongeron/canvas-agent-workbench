@@ -23,7 +23,6 @@
 //   - Position class snap (top-*, left-*, etc.) for move
 //   - Multi-class composition (e.g. responsive prefixes like md:w-4)
 
-import type { CanvasAstMutation } from "./canvasAstWriter"
 import {
   TAILWIND_DEFAULT_SIZE_SCALE,
   type TailwindSnapEntry,
@@ -32,6 +31,12 @@ import {
 } from "./tailwindSnapTable"
 
 import type { CanvasOverlayDragKind } from "../components/canvas/CanvasIframeOverlay"
+
+/** Narrow shape of the only mutation computeResizeMutation produces today. */
+export interface CanvasSetClassNameMutation {
+  type: "setClassName"
+  value: string
+}
 
 export interface ResizeMutationInput {
   kind: CanvasOverlayDragKind
@@ -63,7 +68,7 @@ const HANDLE_HEIGHT_SIGN: Record<CanvasOverlayDragKind, 1 | -1 | 0> = {
 export function computeResizeMutation(
   input: ResizeMutationInput,
   scale: ReadonlyArray<TailwindSnapEntry> = TAILWIND_DEFAULT_SIZE_SCALE
-): CanvasAstMutation | null {
+): CanvasSetClassNameMutation | null {
   if (input.kind === "move") return null
   if (!Number.isFinite(input.delta.dx) || !Number.isFinite(input.delta.dy)) return null
 
