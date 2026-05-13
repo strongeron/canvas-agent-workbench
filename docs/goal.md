@@ -93,6 +93,8 @@ First slice: `utils/canvasAstStructural.ts` with `removeJsxNode` + tests. Subseq
   - the inline fixture receives injected `data-canvas-id` markers,
   - clicking an iframe element opens the right-hand `HTML node` panel,
   - applying a text edit through that panel round-trips back into the iframe while keeping the node selected.
+- `CanvasReactNodePropertyPanel` now has focused tests for `canvasIdMap` rebasing and `null` clear semantics, so the U3 selection handoff is covered directly instead of only through endpoint tests.
+- `CanvasHtmlFrame` now re-requests `canvas/refresh-rect` after **inline HTML** source refreshes under an active selection, and the frame message suite covers that path explicitly.
 - Remaining U3 work is structural-mutation continuity: verify that wrap/insert/remove rebase the active node and refresh overlay rects without dropping the user's selection.
 
 ## Out of scope for v3

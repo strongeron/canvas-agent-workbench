@@ -285,13 +285,19 @@ export function CanvasHtmlFrame({
     return ""
   }, [compiledReactHtml, injectedInlineHtml, shouldRenderInline, shouldRenderReact, sourceHtml])
 
+  const canRefreshSelectionRect = shouldRenderReact
+    ? compileStatus === "ready" && Boolean(compiledReactHtml)
+    : shouldRenderInline
+      ? Boolean(frameSource)
+      : false
+
   useEffect(() => {
-    if (compileStatus !== "ready" || !selectedCanvasId) return
+    if (!canRefreshSelectionRect || !selectedCanvasId) return
     const iframe = iframeRef.current
     const targetWindow = iframe?.contentWindow
     if (!targetWindow) return
     targetWindow.postMessage(buildRefreshRectRequest(selectedCanvasId), window.location.origin)
-  }, [compileStatus, selectedCanvasId, frameSource])
+  }, [canRefreshSelectionRect, selectedCanvasId, frameSource])
   const hasRenderableSource = shouldRenderReact
     ? compileStatus === "ready" && Boolean(compiledReactHtml)
     : shouldRenderInline

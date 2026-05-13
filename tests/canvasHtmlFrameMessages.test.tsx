@@ -9,6 +9,7 @@ import type { CanvasHtmlItem } from "../types/canvas"
 import {
   CANVAS_NODE_BRIDGE_MARKER,
   CANVAS_NODE_BRIDGE_VERSION,
+  buildRefreshRectRequest,
 } from "../utils/canvasReactNodeBridge"
 
 // React 18+ requires this global to silence "act not configured" warnings
@@ -284,6 +285,67 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     })
 
     expect(onGenerationChange).toHaveBeenCalledWith("item-1", 2)
+  })
+
+  it("requests canvas/refresh-rect after inline source changes when an active selection exists", async () => {
+    fetchMock.mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body || "{}"))
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true,
+          html: String(body.sourceHtml || ""),
+        }),
+      }
+    })
+    const activeSelection = {
+      itemId: "item-1",
+      canvasId: "abc:0",
+      tag: "button",
+      rect: { x: 10, y: 20, width: 100, height: 40 },
+      compileGeneration: 1,
+    }
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem({
+          sourceMode: "inline",
+          sourceHtml: "<button>Click</button>",
+          sourceReact: undefined,
+        })}
+        interactMode
+        activeSelection={activeSelection}
+      />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    const targetWindow = iframe.contentWindow as Window
+    const postMessageSpy = vi.fn()
+    Object.defineProperty(targetWindow, "postMessage", {
+      configurable: true,
+      value: postMessageSpy,
+    })
+
+    await act(async () => {
+      harness?.root.render(
+        <CanvasHtmlFrame
+          item={makeItem({
+            sourceMode: "inline",
+            sourceHtml: "<button>Pressed</button>",
+            sourceReact: undefined,
+          })}
+          interactMode
+          activeSelection={activeSelection}
+        />
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      buildRefreshRectRequest("abc:0"),
+      window.location.origin
+    )
   })
 
   async function selectInIframe(
