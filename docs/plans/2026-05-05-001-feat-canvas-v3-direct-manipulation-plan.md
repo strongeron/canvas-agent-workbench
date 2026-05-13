@@ -29,12 +29,17 @@ Branch `feat/canvas-figma-like-editing` was cleaned of stale uncommitted state, 
 - `145c266` **U4a — overlay UI.** `components/canvas/CanvasIframeOverlay.tsx` is a pure-render component: takes a screen-coord rect, draws 8 corner/edge resize handles + a center move handle, captures pointer events via `setPointerCapture` so drag survives iframe boundaries, and emits screen-coord deltas through `onDragPreview` / `onDragCommit`. 8 render + pointer tests.
 
 **U4a split (decision made during implementation):**
-The plan's single U4a unit was split into three slices for cleaner review and test isolation:
-1. **Math** (`22a8e6a`) — pure functions, no DOM, no React.
-2. **Overlay UI** (`145c266`) — pure render, no coordinate-system knowledge, no writer integration.
-3. **Wiring** (in progress) — `CanvasHtmlFrame` hosts the overlay, subscribes to `canvas/rect-update`, plumbs `canvasScale` from `CanvasTab`, and translates the overlay's screen-delta into a writer mutation (delta → class-snap or inline style → `canvasAstWriter` / `canvasHtmlEditor`).
+The plan's single U4a unit was split into eight slices for cleaner review and test isolation:
+1. **Math** (`22a8e6a`) — pure functions, no DOM, no React. 15 golden tests.
+2. **Overlay UI** (`145c266`) — pure render, no coordinate-system knowledge, no writer integration. 8 render/pointer tests.
+3. **Frame integration** (`f3aac50`) — CanvasHtmlFrame hosts the overlay in interact mode, applies `canvas/rect-update` to re-anchor.
+4. **canvasScale + delta plumb** (`5a53545`) — overlay → iframe-local delta translation; new `onReactNodeResize` typed callback.
+5. **Snap table** (`3aa4dab`) — pure Tailwind v3 size scale + `nearestSnap(px)` resolver. 12 tests.
+6. **Delta translator** (`2f39979`) — `computeResizeMutation` produces a `setClassName` or null no-op. 16 tests.
+7. **Dispatcher** (`e4c6bbc`) — `dispatchCanvasResize` orchestrates read → translate → write through existing endpoints. 9 mocked-fetch tests.
+8. **End-to-end wiring** (`1416c78`) — props threaded through `CanvasWorkspace → items → frame`; `CanvasTab.handleReactNodeResize` mirrors the existing property-panel source-state pattern.
 
-The wiring slice may itself be split further (visual integration without writer first; then snap table + writer) — exact shape decided once `CanvasHtmlFrame` surface is read carefully.
+**End-to-end flow now closed.** User drag → overlay screen delta → iframe-local delta → AST read → snap → AST write → source rewrite → iframe recompile → bridge re-emits rect → overlay re-anchors. Pending visual verification in a browser.
 
 ---
 
@@ -485,7 +490,7 @@ docs/CANVAS_AGENT_MCP_COMMANDS.md     (modify — direct-manipulation workflows)
 
 ---
 
-- U4a. **CanvasIframeOverlay — resize + move handles (de-risked, ships first)**  *(math: shipped `22a8e6a`; overlay UI: shipped `145c266`; wiring: in progress)*
+- U4a. **CanvasIframeOverlay — resize + move handles (de-risked, ships first)**  *(complete: math `22a8e6a`; overlay UI `145c266`; frame integration `f3aac50`; canvasScale plumbing `5a53545`; snap table `3aa4dab`; delta translator `2f39979`; dispatcher `e4c6bbc`; end-to-end wiring `1416c78`)*
 
 **Goal:** Render 8 resize anchors + 1 drag handle on the parent canvas, anchored to the selected iframe element's rect. Pointer events on the overlay translate (with scale-aware math, including pan offset) into mutations using the **existing** `setClassName` / `setStyle` writers (no structural mutations needed). Lands first to de-risk the coordinate math, which is the highest-risk piece of the overlay system.
 
