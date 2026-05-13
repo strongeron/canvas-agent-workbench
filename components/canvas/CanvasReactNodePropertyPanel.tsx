@@ -343,6 +343,99 @@ function NodeBody({
           <p className="text-[11px] italic text-muted-foreground">(empty)</p>
         )}
       </div>
+
+      <StructureEditor
+        node={node}
+        sourceKind={sourceKind}
+        disabled={writeState.status === "saving"}
+        onApplyMutations={onApplyMutations}
+      />
+    </div>
+  )
+}
+
+function StructureEditor({
+  node,
+  sourceKind,
+  disabled,
+  onApplyMutations,
+}: {
+  node: AstNodeInfo
+  sourceKind: "tsx" | "html"
+  disabled: boolean
+  onApplyMutations: (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => void
+}) {
+  const [wrapTag, setWrapTag] = useState("div")
+  const [swapTag, setSwapTag] = useState(node.isHostElement ? node.tag : "div")
+
+  useEffect(() => {
+    setSwapTag(node.isHostElement ? node.tag : "div")
+  }, [node.isHostElement, node.tag])
+
+  const normalizedWrapTag = wrapTag.trim()
+  const normalizedSwapTag = swapTag.trim()
+
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Structure
+      </div>
+      <div className="space-y-2 rounded-md border border-default bg-white p-2">
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={wrapTag}
+            onChange={(event) => setWrapTag(event.target.value)}
+            disabled={disabled}
+            placeholder={sourceKind === "html" ? "section" : "Wrapper"}
+            className="min-w-0 flex-1 rounded border border-default bg-white px-2 py-1 font-mono text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+          <button
+            type="button"
+            onClick={() => onApplyMutations([{ type: "wrapSelection", wrapperTag: normalizedWrapTag }])}
+            disabled={disabled || !normalizedWrapTag}
+            className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Wrap
+          </button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={swapTag}
+            onChange={(event) => setSwapTag(event.target.value)}
+            disabled={disabled}
+            placeholder={sourceKind === "html" ? "span" : "Button"}
+            className="min-w-0 flex-1 rounded border border-default bg-white px-2 py-1 font-mono text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+          <button
+            type="button"
+            onClick={() => onApplyMutations([{ type: "swapTag", newTag: normalizedSwapTag }])}
+            disabled={disabled || !normalizedSwapTag}
+            className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Swap tag
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => onApplyMutations([{ type: "unwrap" }])}
+            disabled={disabled}
+            className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Unwrap
+          </button>
+          <button
+            type="button"
+            onClick={() => onApplyMutations([{ type: "removeNode" }])}
+            disabled={disabled}
+            className="rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Delete node
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

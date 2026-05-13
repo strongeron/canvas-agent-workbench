@@ -81,6 +81,19 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
   textarea.dispatchEvent(new Event("change", { bubbles: true }))
 }
 
+function setInputValue(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set
+  setter?.call(input, value)
+  input.dispatchEvent(
+    new InputEvent("input", {
+      bubbles: true,
+      data: value,
+      inputType: "insertText",
+    })
+  )
+  input.dispatchEvent(new Event("change", { bubbles: true }))
+}
+
 describe("CanvasReactNodePropertyPanel", () => {
   let fetchMock: ReturnType<typeof vi.fn>
   let harness: Harness | null = null
@@ -238,5 +251,142 @@ describe("CanvasReactNodePropertyPanel", () => {
     })
 
     expect(onSelectionChange).toHaveBeenCalledWith(null)
+  })
+
+  it("dispatches wrapSelection and rebases to the wrapped node id", async () => {
+    const onSourceHtmlChange = vi.fn()
+    const onSelectionChange = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          node: {
+            canvasId: "abc:0",
+            tag: "button",
+            isHostElement: true,
+            attributes: [],
+            textChildren: "Click",
+            hasNonTextChildren: false,
+            editableInV1: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          sourceHtml: "<section><button>Click</button></section>",
+          canvasIdMap: {
+            "abc:0": "abc:1",
+          },
+        }),
+      })
+
+    harness = await mount(
+      <CanvasReactNodePropertyPanel
+        selection={makeSelection()}
+        sourceReact=""
+        sourceHtml="<button>Click</button>"
+        sourceKind="html"
+        currentCompileGeneration={1}
+        sourceId="item-1"
+        onClose={() => {}}
+        onSourceReactChange={() => {}}
+        onSourceHtmlChange={onSourceHtmlChange}
+        onSelectionChange={onSelectionChange}
+      />
+    )
+
+    const wrapInput = Array.from(harness.container.querySelectorAll("input")).find(
+      (input) => (input as HTMLInputElement).value === "div"
+    ) as HTMLInputElement
+    const wrapButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Wrap"
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      setInputValue(wrapInput, "section")
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      wrapButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onSourceHtmlChange).toHaveBeenCalledWith(
+      "<section><button>Click</button></section>",
+      undefined
+    )
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvasId: "abc:1",
+      })
+    )
+    const [, writeInit] = fetchMock.mock.calls[1]
+    const writeBody = JSON.parse(String(writeInit.body))
+    expect(writeBody.mutations).toEqual([{ type: "wrapSelection", wrapperTag: "section" }])
+  })
+
+  it("dispatches removeNode from the structure section and clears selection", async () => {
+    const onSelectionChange = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          node: {
+            canvasId: "abc:0",
+            tag: "button",
+            isHostElement: true,
+            attributes: [],
+            textChildren: "Click",
+            hasNonTextChildren: false,
+            editableInV1: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          sourceHtml: "",
+          canvasIdMap: {
+            "abc:0": null,
+          },
+        }),
+      })
+
+    harness = await mount(
+      <CanvasReactNodePropertyPanel
+        selection={makeSelection()}
+        sourceReact=""
+        sourceHtml="<button>Click</button>"
+        sourceKind="html"
+        currentCompileGeneration={1}
+        sourceId="item-1"
+        onClose={() => {}}
+        onSourceReactChange={() => {}}
+        onSourceHtmlChange={() => {}}
+        onSelectionChange={onSelectionChange}
+      />
+    )
+
+    const deleteButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Delete node"
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      deleteButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onSelectionChange).toHaveBeenCalledWith(null)
+    const [, writeInit] = fetchMock.mock.calls[1]
+    const writeBody = JSON.parse(String(writeInit.body))
+    expect(writeBody.mutations).toEqual([{ type: "removeNode" }])
   })
 })
