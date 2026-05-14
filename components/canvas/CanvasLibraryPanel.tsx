@@ -5,6 +5,11 @@ import {
   buildPrimitiveSnippet,
   type CanvasRegistryPrimitive,
 } from "../../utils/canvasRegistry"
+import {
+  buildLibraryDragPayload,
+  writeLibraryDragPayload,
+  type CanvasLibraryDragPayload,
+} from "../../utils/canvasLibraryDrag"
 
 export interface CanvasLibraryPanelProps {
   projectId?: string
@@ -17,6 +22,8 @@ export interface CanvasLibraryPanelProps {
   }) => void | Promise<void>
   onCreateFromPaste?: () => void
   onClose: () => void
+  onPrimitiveDragStart?: (payload: CanvasLibraryDragPayload) => void
+  onPrimitiveDragEnd?: () => void
 }
 
 interface FetchState {
@@ -38,6 +45,8 @@ export function CanvasLibraryPanel({
   onInstantiate,
   onCreateFromPaste,
   onClose,
+  onPrimitiveDragStart,
+  onPrimitiveDragEnd,
 }: CanvasLibraryPanelProps) {
   const [fetchState, setFetchState] = useState<FetchState>(initialFetchState)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -185,7 +194,13 @@ export function CanvasLibraryPanel({
             Registry is empty. Add primitives in <code>registry.json</code>.
           </p>
         ) : (
-          <PrimitiveList primitives={fetchState.primitives} onInstantiate={instantiate} />
+          <PrimitiveList
+            primitives={fetchState.primitives}
+            projectId={projectId}
+            onInstantiate={instantiate}
+            onPrimitiveDragStart={onPrimitiveDragStart}
+            onPrimitiveDragEnd={onPrimitiveDragEnd}
+          />
         )}
 
         {fetchState.warnings.length > 0 && (
@@ -205,10 +220,16 @@ export function CanvasLibraryPanel({
 
 function PrimitiveList({
   primitives,
+  projectId,
   onInstantiate,
+  onPrimitiveDragStart,
+  onPrimitiveDragEnd,
 }: {
   primitives: CanvasRegistryPrimitive[]
+  projectId: string
   onInstantiate: (primitive: CanvasRegistryPrimitive) => void
+  onPrimitiveDragStart?: (payload: CanvasLibraryDragPayload) => void
+  onPrimitiveDragEnd?: () => void
 }) {
   const groups = new Map<string, CanvasRegistryPrimitive[]>()
   for (const primitive of primitives) {
@@ -229,9 +250,17 @@ function PrimitiveList({
               <li key={primitive.id}>
                 <button
                   type="button"
+                  draggable
                   onClick={() => void onInstantiate(primitive)}
-                  className="w-full rounded-md border border-default bg-white px-2.5 py-2 text-left text-[12px] hover:border-brand-300 hover:bg-brand-50"
+                  onDragStart={(event) => {
+                    const payload = buildLibraryDragPayload({ projectId, primitive })
+                    writeLibraryDragPayload(event.dataTransfer, payload)
+                    onPrimitiveDragStart?.(payload)
+                  }}
+                  onDragEnd={() => onPrimitiveDragEnd?.()}
+                  className="w-full cursor-grab rounded-md border border-default bg-white px-2.5 py-2 text-left text-[12px] hover:border-brand-300 hover:bg-brand-50 active:cursor-grabbing"
                   title={primitive.id}
+                  data-canvas-library-primitive={primitive.id}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-foreground">{primitive.displayName}</span>
