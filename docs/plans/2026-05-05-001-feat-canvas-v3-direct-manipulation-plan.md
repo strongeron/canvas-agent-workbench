@@ -41,6 +41,21 @@ The plan's single U4a unit was split into eight slices for cleaner review and te
 
 **End-to-end flow now closed.** User drag → overlay screen delta → iframe-local delta → AST read → snap → AST write → source rewrite → iframe recompile → bridge re-emits rect → overlay re-anchors. Pending visual verification in a browser.
 
+### 2026-05-14 — second-wave units land locally
+
+Eighteen commits on top of the foundation work pushed every remaining v3 unit from "not started" to at least "local progress shipped". Tests now at 450/450. Detailed per-unit state lives in `docs/goal.md`; commits referenced here for cross-link:
+
+- **U5 wiring** (`f351bdf`, `828c680`, `652d6b1`) — `utils/canvasMutationHistory.ts`, CanvasTab hosts the log, `/api/canvas/ast/write` accepts replay snapshots, Cmd-Z/Cmd-Shift-Z + toasts, markdown writes also flow into history, `isEditableEventTarget` centralizes the shortcut guard so undo doesn't fire inside text inputs.
+- **U4a fallback** (`06a87a9`) — first resize on an element with no `w-*`/`h-*` class now inserts a snapped class attribute. Computed `cn(...)` / ternary expressions still no-op (documented gap).
+- **U6 markdown** (`19de08b`, `9155452`, `a626182`, `eead520`) — `/api/canvas/markdown/write` endpoint, inline block editing, drag-to-reorder controls, B/I/List formatting toolbar.
+- **U7 components** (`9ef237b`, `54cd75d`, `f6f91a8`) — ArrowLeft / ArrowRight variant cycling, numeric prop scrub, pointer-lock-backed cumulative scrub.
+- **U8 media** (`99fac20`) — video clip start/end sliders in the inspector. Crop handles and on-canvas trim handles still pending.
+- **U9 artboards** (`dcf4340`, `53a273d`, `1ea1c8a`) — gap/padding sliders, live on-canvas gap scrub handle, child move controls.
+- **U10 mermaid** (`c45a4d4`) — node labels editable in the panel with source patch. Rendered-SVG direct edit still pending (fallback path documented in plan).
+- **U11 MCP wrappers** (`9ff2f11`, `418cb4f`) — explicit MCP tools for structural mutation, markdown block update, component variant cycling, artboard layout update, mermaid label update, and media crop/clip. Audit pass (docs + parity verification across every op) still pending.
+
+**Remaining unstarted units:** U4b (drop targets + structural drag from library) and U12 (shift-click multi-select). **Remaining verification gates:** browser-driven runs of U4a, U5, and U3 insert/remove continuity. **Remaining polish:** U2 HTML-structural panel parity audit, U8 direct crop/trim handles, U10 rendered-SVG label edit, U11 doc + parity audit.
+
 ---
 
 ## Post-review revisions (round 1)
