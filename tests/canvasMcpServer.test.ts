@@ -189,9 +189,24 @@ describe("canvas MCP server", () => {
                 rotation: 0,
                 zIndex: 5,
               },
+              {
+                id: "media-1",
+                type: "media",
+                src: "video.mp4",
+                mediaKind: "video",
+                position: { x: 1080, y: 80 },
+                size: { width: 360, height: 220 },
+                rotation: 0,
+                zIndex: 6,
+                controls: true,
+                muted: true,
+                clipStartSec: 2,
+                clipEndSec: 10,
+                objectFit: "cover",
+              },
             ],
             groups: [],
-            nextZIndex: 6,
+            nextZIndex: 7,
             selectedIds: [],
           },
           themeSnapshot: {
@@ -1068,6 +1083,44 @@ describe("canvas MCP server", () => {
       })
       const mermaidLabelUpdate = await mermaidLabelPromise
       expect(mermaidLabelUpdate.result?.structuredContent?.changed).toBe(true)
+
+      const mediaCropPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-media-crop",
+        method: "tools/call",
+        params: {
+          name: "update_media_crop",
+          arguments: {
+            itemId: "media-1",
+            updates: {
+              clipStartSec: 4.5,
+              clipEndSec: 12,
+              objectFit: "contain",
+            },
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedMediaCrop = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedMediaCrop.request).toMatchObject({
+        toolName: "update_media_crop",
+        operation: {
+          type: "update_item",
+          id: "media-1",
+          updates: {
+            clipStartSec: 4.5,
+            clipEndSec: 12,
+            objectFit: "contain",
+          },
+        },
+      })
+      await queuedMediaCrop.respond({
+        ok: true,
+        updatedAt: "2026-05-14T20:00:04.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const mediaCropUpdate = await mediaCropPromise
+      expect(mediaCropUpdate.result?.structuredContent?.updates?.objectFit).toBe("contain")
 
       const createdHtmlComponentPromise = sendRpc({
         jsonrpc: "2.0",

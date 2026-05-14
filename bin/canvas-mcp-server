@@ -402,6 +402,33 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'update_media_crop',
+    description:
+      'Patch live media trim/display fields through the same canvas-state path as the media inspector. Current slice covers clip start/end and object-fit style.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        updates: {
+          type: 'object',
+          properties: {
+            clipStartSec: { type: 'number' },
+            clipEndSec: { type: 'number' },
+            objectFit: { type: 'string', enum: ['cover', 'contain', 'fill'] },
+            poster: { type: 'string' },
+            controls: { type: 'boolean' },
+            autoplay: { type: 'boolean' },
+            muted: { type: 'boolean' },
+            loop: { type: 'boolean' },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['itemId', 'updates'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'update_mermaid_label',
     description:
       'Update one Mermaid node label on a live Mermaid item by patching the item source inline.',
@@ -1749,6 +1776,8 @@ async function callTool(name, args) {
       return runCycleComponentVariant(args)
     case 'update_artboard_layout':
       return runUpdateArtboardLayout(args)
+    case 'update_media_crop':
+      return runUpdateMediaCrop(args)
     case 'update_mermaid_label':
       return runUpdateMermaidLabel(args)
     case 'create_component_from_html': {
@@ -2394,6 +2423,27 @@ async function runUpdateArtboardLayout(args) {
     {
       itemId,
       layout,
+    }
+  )
+}
+
+async function runUpdateMediaCrop(args) {
+  const itemId = normalizeString(args.itemId)
+  if (!itemId) return asToolError('itemId is required.')
+  if (!args.updates || typeof args.updates !== 'object') {
+    return asToolError('updates is required.')
+  }
+
+  const state = await readCanvasAgentState(context)
+  const item = Array.isArray(state?.items) ? state.items.find((entry) => entry?.id === itemId) : null
+  if (!item || item.type !== 'media') return asToolError(`Media item not found: ${itemId}`)
+
+  return applyOperation(
+    'update_media_crop',
+    createUpdateItemOperation(itemId, args.updates),
+    {
+      itemId,
+      updates: args.updates,
     }
   )
 }

@@ -189,10 +189,11 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
   - `update_markdown_block`
   - `cycle_component_variant`
   - `update_artboard_layout`
+  - `update_media_crop`
   - `update_mermaid_label`
 - `tests/canvasMcpServer.test.ts` now exercises each wrapper over the stdio MCP harness, including endpoint-backed markdown/structural writes and queue-backed canvas item updates.
 - `docs/CANVAS_AGENT_MCP_COMMANDS.md` and `utils/agentNativeManifest.ts` now advertise the new wrapper surface.
-- Remaining U11 work is the rest of the parity audit: decide whether media needs its own explicit MCP wrapper before crop state exists, and document any direct-manip gaps that still rely on generic `update_item`.
+- Remaining U11 work is the rest of the parity audit: document any direct-manip gaps that still rely on generic `update_item`, and decide whether later direct crop-handle state deserves a narrower wrapper than the current media trim/display tool.
 
 ## Remaining v3 surface
 

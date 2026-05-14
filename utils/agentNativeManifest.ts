@@ -204,6 +204,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "update_media_crop",
+        title: "Update media crop / trim",
+        description: "Patch media trim/display fields such as clip start, clip end, or object-fit through an explicit MCP wrapper.",
+        status: "ready",
+      },
+      {
         id: "update_mermaid_label",
         title: "Update Mermaid label",
         description: "Patch one Mermaid node label by rewriting the live Mermaid item source.",

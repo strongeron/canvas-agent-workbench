@@ -97,6 +97,7 @@ Use these when you want the agent to manage the file library itself:
 - `update_markdown_block`
 - `cycle_component_variant`
 - `update_artboard_layout`
+- `update_media_crop`
 - `update_mermaid_label`
 - `create_component_from_html`
 - `create_component_from_tsx`
@@ -130,6 +131,7 @@ What this surface supports:
 - update markdown blocks and keep live markdown items in sync with file-backed or inline source
 - cycle component variants through the same state path as keyboard variant switching
 - patch artboard layout fields such as gap and padding through explicit MCP wrappers
+- patch media trim/display fields such as clip start, clip end, and object-fit through an explicit MCP wrapper
 - patch Mermaid node labels through a source-backed item rewrite
 - create new source-backed HTML or TSX components from pasted/generated code
 - inspect registered primitives and their metadata
@@ -156,6 +158,7 @@ Web-native editing tools:
 - `update_markdown_block` targets a live markdown item by `itemId`, calls the markdown writer, then enqueues an `update_item` so the canvas state stays aligned with the new markdown source and file `mtimeMs`.
 - `cycle_component_variant` targets a live component item by `itemId`, clamps to the registered primitive variant count, and clears `customProps` the same way the canvas UI does when a variant changes.
 - `update_artboard_layout` targets a live artboard by `itemId` and merges layout keys such as `gap`, `padding`, `direction`, `align`, `justify`, and `columns`.
+- `update_media_crop` targets a live media item by `itemId` and patches the current trim/display fields through the same queued canvas-state path as the media inspector. This slice covers `clipStartSec`, `clipEndSec`, `objectFit`, and the current playback/display booleans; it does not expose live crop handles yet.
 - `update_mermaid_label` targets a live Mermaid item by `itemId`, patches one node label in source form, and updates the item through the normal canvas queue path.
 - `create_component_from_html` and `create_component_from_tsx` write under `projects/<projectId>/components/`, append a matching `registry.json` entry, and create a preview node unless `createItem: false` is passed.
 - `promote_to_component` extracts an HTML subtree (by `canvasId`) from a canvas item and saves it as a new project component. The original item is unchanged; the new primitive appears in the registry and library panel for re-use.
