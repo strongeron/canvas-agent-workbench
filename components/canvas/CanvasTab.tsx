@@ -34,7 +34,10 @@ import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
 import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "./CanvasFileDialogs"
 import { CanvasHtmlPropsPanel } from "./CanvasHtmlPropsPanel"
-import { CanvasReactNodePropertyPanel } from "./CanvasReactNodePropertyPanel"
+import {
+  CanvasReactNodePropertyPanel,
+  type CanvasReactNodeWriteSuccess,
+} from "./CanvasReactNodePropertyPanel"
 import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 import { dispatchCanvasResize } from "../../utils/canvasResizeDispatch"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
@@ -72,6 +75,23 @@ import {
   getApcaStatus,
   parseColor,
 } from "../../utils/apca"
+import {
+  createMutationLogState,
+  pushEntry,
+  redo,
+  undo,
+  type CanvasMutationLogEntry,
+  type CanvasMutationLogState,
+} from "../../utils/canvasMutationLog"
+import {
+  applySourceSnapshotToItems,
+  inferSourceKindFromFilePath,
+  invertCanvasIdMap,
+  resolveSourceFileMtime,
+  selectionMatchesLoggedFile,
+  summarizeSourceMutations,
+  type CanvasSourceMutation,
+} from "../../utils/canvasMutationHistory"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
 
 /** Props for injected Renderer component */
@@ -244,6 +264,12 @@ const DEFAULT_THEMES: ThemeOption[] = [
     groupId: "thicket",
   },
 ]
+
+interface CanvasHistoryToast {
+  id: number
+  tone: "info" | "error"
+  message: string
+}
 
 const DEFAULT_THEME_TOKENS: ThemeToken[] = [
   { label: "Brand 600", cssVar: "--color-brand-600", category: "color", subcategory: "brand" },
@@ -682,6 +708,11 @@ export function CanvasTab({
   const [propsPanelVisible, setPropsPanelVisible] = useState(true)
   const [reactNodeSelection, setReactNodeSelection] = useState<CanvasReactNodeSelection | null>(null)
   const [reactCompileGenerations, setReactCompileGenerations] = useState<Record<string, number>>({})
+  const [mutationLogState, setMutationLogState] = useState<CanvasMutationLogState<CanvasSourceMutation>>(() =>
+    createMutationLogState<CanvasSourceMutation>()
+  )
+  const [mutationHistoryBusy, setMutationHistoryBusy] = useState(false)
+  const [historyToast, setHistoryToast] = useState<CanvasHistoryToast | null>(null)
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
   const [layersPanelVisible, setLayersPanelVisible] = useState(false)
   const [libraryPanelVisible, setLibraryPanelVisible] = useState(false)
@@ -816,6 +847,160 @@ export function CanvasTab({
       return { ...current, compileGeneration: generation }
     })
   }, [])
+
+  useEffect(() => {
+    if (!historyToast) return
+    const timeout = window.setTimeout(() => setHistoryToast(null), 1500)
+    return () => window.clearTimeout(timeout)
+  }, [historyToast])
+
+  const handleReactNodeWriteSuccess = useCallback((result: CanvasReactNodeWriteSuccess) => {
+    if (!result.filePath || !result.prevSourceSnapshot || result.appliedMutations <= 0) return
+    const filePath = result.filePath
+    const prevSourceSnapshot = result.prevSourceSnapshot
+    setMutationLogState((current) =>
+      pushEntry(current, {
+        id: `canvas-mutation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        timestamp: Date.now(),
+        filePath,
+        mutations: result.mutations,
+        prevSourceSnapshot,
+        postSourceSnapshot: result.nextSourceSnapshot,
+        canvasIdMap: result.canvasIdMap,
+        summary: summarizeSourceMutations(result.mutations),
+      })
+    )
+  }, [])
+
+  const applyMutationHistoryEntry = useCallback(
+    async (entry: CanvasMutationLogEntry<CanvasSourceMutation>, direction: "undo" | "redo") => {
+      const kind = inferSourceKindFromFilePath(entry.filePath)
+      const htmlItems = items.filter((item): item is CanvasHtmlItem => item.type === "html")
+      const expectedMtime = resolveSourceFileMtime(htmlItems, entry.filePath, kind)
+      const sourceSnapshot =
+        direction === "undo" ? entry.prevSourceSnapshot : entry.postSourceSnapshot
+
+      const response = await fetch("/api/canvas/ast/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filePath: entry.filePath,
+          sourceSnapshot,
+          mtimeMs: expectedMtime,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean
+        kind?: "tsx" | "html"
+        sourceReact?: string
+        sourceHtml?: string
+        mtimeMs?: number | null
+        error?: string
+        code?: string
+      }
+      const nextKind = payload.kind ?? kind
+      const nextSource = nextKind === "html" ? payload.sourceHtml : payload.sourceReact
+      if (!response.ok || !payload.ok || typeof nextSource !== "string") {
+        const errorMessage = payload.error || `Failed to ${direction} source edit.`
+        throw new Error(
+          payload.code === "mtime-conflict"
+            ? `${errorMessage} The file changed on disk since it was loaded.`
+            : errorMessage
+        )
+      }
+
+      const nextMtime = typeof payload.mtimeMs === "number" ? payload.mtimeMs : undefined
+      const nextItemsResult = applySourceSnapshotToItems(htmlItems, entry.filePath, nextKind, nextSource, nextMtime)
+      if (nextItemsResult.changed) {
+        const rewrittenItems = items.map((item) =>
+          item.type === "html"
+            ? nextItemsResult.items.find((candidate) => candidate.id === item.id) ?? item
+            : item
+        )
+        replaceState({ items: rewrittenItems, groups, nextZIndex, selectedIds })
+      }
+
+      setReactNodeSelection((current) => {
+        if (!current) return current
+        if (!selectionMatchesLoggedFile(current, htmlItems, entry.filePath, nextKind)) {
+          return current
+        }
+        const canvasIdMap =
+          direction === "undo"
+            ? invertCanvasIdMap(entry.canvasIdMap ?? {})
+            : (entry.canvasIdMap ?? {})
+        const rebasedCanvasId = canvasIdMap[current.canvasId]
+        if (rebasedCanvasId === null) return null
+        if (typeof rebasedCanvasId === "string" && rebasedCanvasId !== current.canvasId) {
+          return { ...current, canvasId: rebasedCanvasId }
+        }
+        return current
+      })
+      setHistoryToast({
+        id: Date.now(),
+        tone: "info",
+        message: `${direction === "undo" ? "Undid" : "Redid"}: ${entry.summary ?? "source edit"}`,
+      })
+    },
+    [groups, items, nextZIndex, replaceState, selectedIds]
+  )
+
+  const handleUndoMutation = useCallback(async () => {
+    if (mutationHistoryBusy) return
+    const next = undo(mutationLogState)
+    if (!next.entry) return
+    setMutationHistoryBusy(true)
+    try {
+      await applyMutationHistoryEntry(next.entry, "undo")
+      setMutationLogState(next.state)
+    } catch (error) {
+      setHistoryToast({
+        id: Date.now(),
+        tone: "error",
+        message: error instanceof Error ? error.message : "Failed to undo source edit.",
+      })
+    } finally {
+      setMutationHistoryBusy(false)
+    }
+  }, [applyMutationHistoryEntry, mutationHistoryBusy, mutationLogState])
+
+  const handleRedoMutation = useCallback(async () => {
+    if (mutationHistoryBusy) return
+    const next = redo(mutationLogState)
+    if (!next.entry) return
+    setMutationHistoryBusy(true)
+    try {
+      await applyMutationHistoryEntry(next.entry, "redo")
+      setMutationLogState(next.state)
+    } catch (error) {
+      setHistoryToast({
+        id: Date.now(),
+        tone: "error",
+        message: error instanceof Error ? error.message : "Failed to redo source edit.",
+      })
+    } finally {
+      setMutationHistoryBusy(false)
+    }
+  }, [applyMutationHistoryEntry, mutationHistoryBusy, mutationLogState])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isMod = event.metaKey || event.ctrlKey
+      if (!isMod || event.altKey || event.key.toLowerCase() !== "z") return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return
+      }
+      event.preventDefault()
+      if (event.shiftKey) {
+        void handleRedoMutation()
+        return
+      }
+      void handleUndoMutation()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [handleRedoMutation, handleUndoMutation])
 
   const handleReactNodeResize = useCallback(
     async (event: CanvasReactNodeResizeEvent) => {
@@ -3406,6 +3591,7 @@ export function CanvasTab({
                 } satisfies Partial<Omit<CanvasHtmlItem, "id">>)
               }
               onSelectionChange={setReactNodeSelection}
+              onWriteSuccess={handleReactNodeWriteSuccess}
               onOpenSourceMode={() => setReactNodeSelection(null)}
               onClose={() => {
                 setReactNodeSelection(null)
@@ -3663,6 +3849,20 @@ export function CanvasTab({
         onClose={handleCloseCanvasFileDeleteModal}
         onConfirm={handleConfirmCanvasFileDelete}
       />
+
+      {historyToast ? (
+        <div className="pointer-events-none absolute bottom-4 left-1/2 z-30 -translate-x-1/2">
+          <div
+            className={`rounded-md border px-3 py-2 text-xs shadow-sm ${
+              historyToast.tone === "error"
+                ? "border-red-200 bg-red-50 text-red-700"
+                : "border-default bg-white text-foreground"
+            }`}
+          >
+            {historyToast.message}
+          </div>
+        </div>
+      ) : null}
 
       {/* Help overlay */}
       {showHelp && <CanvasHelpOverlay shortcuts={CANVAS_SHORTCUTS} onClose={toggleHelp} />}

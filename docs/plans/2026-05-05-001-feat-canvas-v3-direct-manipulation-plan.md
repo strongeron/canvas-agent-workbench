@@ -13,7 +13,7 @@ Tracks what has actually shipped against this plan. Dates are commit dates.
 
 ### 2026-05-13 — branch prep + foundation units
 
-Branch `feat/canvas-figma-like-editing` was cleaned of stale uncommitted state, then three foundation units of v3 shipped behind it. Test suite at 291/291; lint and typecheck clean throughout.
+Branch `feat/canvas-figma-like-editing` was cleaned of stale uncommitted state, then three foundation units of v3 shipped behind it. Test suite at 291/291 on this date; lint and typecheck clean throughout. (As of 2026-05-14, after U1/U2/U3/U5/U6 slices landed, the suite is at 413/413.)
 
 **Cleanup (precondition):**
 - `be7fc7c` HEAD repair — committed local-scan source files (`utils/localScanConfig.js`, `components/local-scan/*`, `demo/favicon.svg`) that committed config already imported but were never staged

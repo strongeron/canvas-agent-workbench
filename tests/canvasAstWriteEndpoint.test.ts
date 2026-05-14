@@ -95,6 +95,33 @@ describe("applyCanvasAstWriteRequest (file-backed)", () => {
     expect(result.canvasIdMap?.[canvasId]).toBeTruthy()
   })
 
+  it("rewrites a file-backed snapshot through the AST write endpoint", async () => {
+    const root = await createTempDir("canvas-ast-write-endpoint-")
+    const absolute = path.join(root, RELATIVE_PATH)
+    await fs.mkdir(path.dirname(absolute), { recursive: true })
+    await fs.writeFile(absolute, SOURCE, "utf8")
+    const initialStat = await fs.stat(absolute)
+    const nextSource = `export default function Button() {\n  return <button className="p-4">Undo</button>\n}\n`
+
+    const result = await applyCanvasAstWriteRequest(
+      {
+        filePath: RELATIVE_PATH,
+        sourceSnapshot: nextSource,
+        mtimeMs: initialStat.mtimeMs,
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.kind).toBe("tsx")
+    expect(result.sourceReact).toBe(nextSource)
+    expect(result.prevSourceSnapshot).toBe(SOURCE)
+    expect(result.appliedMutations).toBe(1)
+    expect(result.canvasIdMap).toEqual({})
+    expect(await fs.readFile(absolute, "utf8")).toBe(nextSource)
+  })
+
   it("infers canvasId from a structural mutation payload when top-level canvasId is omitted", async () => {
     const root = await createTempDir("canvas-ast-write-endpoint-")
     const absolute = path.join(root, RELATIVE_PATH)

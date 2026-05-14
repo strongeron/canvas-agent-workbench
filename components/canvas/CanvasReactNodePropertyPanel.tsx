@@ -19,7 +19,19 @@ export interface CanvasReactNodePropertyPanelProps {
   onSourceReactChange: (sourceReact: string, mtimeMs?: number) => void
   onSourceHtmlChange?: (sourceHtml: string, mtimeMs?: number) => void
   onSelectionChange?: (selection: CanvasReactNodeSelection | null) => void
+  onWriteSuccess?: (result: CanvasReactNodeWriteSuccess) => void
   onOpenSourceMode?: () => void
+}
+
+export interface CanvasReactNodeWriteSuccess {
+  sourceKind: "tsx" | "html"
+  filePath?: string
+  mtimeMs?: number
+  mutations: Array<CanvasAstMutation | CanvasHtmlMutation>
+  appliedMutations: number
+  canvasIdMap?: Record<string, string | null>
+  prevSourceSnapshot?: string
+  nextSourceSnapshot: string
 }
 
 interface FetchState {
@@ -43,6 +55,7 @@ export function CanvasReactNodePropertyPanel({
   onSourceReactChange,
   onSourceHtmlChange,
   onSelectionChange,
+  onWriteSuccess,
   onOpenSourceMode,
 }: CanvasReactNodePropertyPanelProps) {
   const [fetchState, setFetchState] = useState<FetchState>(initialFetchState)
@@ -127,7 +140,9 @@ export function CanvasReactNodePropertyPanel({
           ok?: boolean
           sourceReact?: string
           sourceHtml?: string
+          appliedMutations?: number
           canvasIdMap?: Record<string, string | null>
+          prevSourceSnapshot?: string
           mtimeMs?: number | null
           error?: string
           code?: string
@@ -156,6 +171,16 @@ export function CanvasReactNodePropertyPanel({
             canvasId: rebasedCanvasId,
           })
         }
+        onWriteSuccess?.({
+          sourceKind,
+          filePath: sourceFilePath,
+          mtimeMs: nextMtime,
+          mutations,
+          appliedMutations: typeof payload.appliedMutations === "number" ? payload.appliedMutations : 0,
+          canvasIdMap: payload.canvasIdMap,
+          prevSourceSnapshot: payload.prevSourceSnapshot,
+          nextSourceSnapshot: nextSource,
+        })
         setWriteState({ status: "idle", error: "" })
       } catch (error) {
         setWriteState({
@@ -168,6 +193,7 @@ export function CanvasReactNodePropertyPanel({
       onSourceReactChange,
       onSourceHtmlChange,
       onSelectionChange,
+      onWriteSuccess,
       selection,
       sourceFileMtime,
       sourceFilePath,

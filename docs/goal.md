@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14
+updated: 2026-05-14 (refresh: U5 host wiring landed locally)
 ---
 
 # Running goal
@@ -33,7 +33,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U2 | 🟡 local writer complete | same 6 mutations on the HTML side via parse5; endpoint path is locally exercised, broader consumer wiring still pending |
 | U3 | 🟡 local wiring in progress | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
 | U4b | not started | drop targets + structural drag (depends on U1+U2+U4a+U13) |
-| U5 | 🟡 module shipped | mutation log + undo/redo — pure module `52df964`; CanvasTab wiring + Cmd-Z/Cmd-Shift-Z + toast remaining |
+| U5 | 🟡 local host wiring landed | mutation log + undo/redo — pure module `52df964`; CanvasTab now logs file-backed writes, replays stored snapshots via `/api/canvas/ast/write`, wires Cmd-Z/Cmd-Shift-Z, and shows undo/redo toasts |
 | U6 | 🟡 writer shipped | markdown direct edit — pure block writer `69b1379` (list / update / remove / reorder); endpoint + U13 bridge wiring + CanvasMarkdownItem UI remaining |
 | U7–U12 | not started | component variant cycling, media crop, artboard reorder, mermaid label edit, MCP audit pass, drop targets, multi-select |
 
@@ -42,6 +42,19 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 1. **Visual verification** of U4a end-to-end in a real browser (drag a button corner, confirm file rewrites + overlay re-anchors). Logic is unit-tested but no human has driven it yet.
 2. **Finish U3 follow-through** so a wrap/insert/remove preserves the user's selection and overlay rect continuously across the recompile on every active surface.
 3. **Inline-style fallback** for U4a when an element has no `w-*/h-*` class today (currently no-op; plan calls for inline `style="width: Npx"`).
+
+## Next slice ordering (set 2026-05-14)
+
+Three roughly-independent threads to pick from, prioritized by leverage:
+
+1. **Close the demo gate on the live surface.** Sequence:
+   - Browser-verify U5 undo/redo on the source-backed TSX + inline HTML fixtures.
+   - Browser-verify U3 continuity for **insert** and **remove** on TSX (wrap is already verified).
+   - U4a inline-style fallback when no `w-*`/`h-*` class is present (emit inline `style="width: Npx"` rather than no-op).
+2. **Finish U6 markdown.** Endpoint (`vite/api/canvasMarkdownWrite.ts` with `resolveWorkspacePath` guard + mtime) → U13 bridge wire-up (`canvas/edit-start`/`-commit`/`-result`) → `CanvasMarkdownItem` inline-edit UI + drag-to-reorder. Independent of thread 1.
+3. **U4b drop targets.** All deps (U1, U2, U4a, U13) are green. Largest of the three but unblocked.
+
+U7 (variant cycle / numeric scrub), U8 (media crop/clip), U9 (artboard reorder/gap), U10 (mermaid label), U12 (multi-select) are smaller leaf units that can land in any order after thread 1. **U11 (MCP audit)** is gated on U5–U10 and should land last.
 
 ## Next slice (active)
 
@@ -112,7 +125,11 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - Hard caps enforced: 25 entries per filePath, 50MB total log byte size (size-aware FIFO eviction, oldest-and-largest-first).
 - Linear-undo semantics: push after undo truncates the redo stack.
 - 10 unit tests cover push/undo/redo, linear truncation, multi-file interleaved timeline, no-op edge cases, per-file cap, per-file cap independence, global byte-cap eviction.
-- Remaining U5 work is the CanvasTab wiring slice: host log state, wire Cmd-Z / Cmd-Shift-Z to undo/redo + re-write the file with the stored snapshot via the existing AST write endpoint, show a small "Undid: …" toast.
+- CanvasTab now hosts the in-memory log, records successful file-backed React/HTML node writes from the property panel, and replays exact stored snapshots back through `/api/canvas/ast/write` under the existing workspace + mtime guard.
+- Cmd-Z / Cmd-Shift-Z now drive undo/redo at the CanvasTab level, and the shell shows a small toast (`Undid: …` / `Redid: …`) after a successful replay.
+- `/api/canvas/ast/write` accepts file-backed `sourceSnapshot` rewrites in addition to mutation payloads, so U5 does not need a second file-write endpoint.
+- Focused coverage now includes the new host helpers (`tests/canvasMutationHistory.test.ts`), snapshot endpoint replay (`tests/canvasAstWriteEndpoint.test.ts`), and the property-panel success callback used to feed the host log (`tests/canvasReactNodePropertyPanel.test.tsx`).
+- Remaining U5 work is proof, not plumbing: browser-verify undo/redo on the stable source-backed fixtures and decide whether mod+Z should intentionally bypass focused text inputs or continue yielding to field-local undo.
 
 ### U6 progress (2026-05-14) — markdown writer foundation
 

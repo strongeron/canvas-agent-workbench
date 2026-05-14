@@ -14,6 +14,7 @@ interface CanvasAstWriteBody {
   sourceReact?: unknown
   sourceHtml?: unknown
   filePath?: unknown
+  sourceSnapshot?: unknown
   canvasId?: unknown
   sourceId?: unknown
   mutations?: unknown
@@ -47,11 +48,16 @@ export async function applyCanvasAstWriteRequest(
   body: CanvasAstWriteBody,
   options: CanvasAstWriteOptions
 ): Promise<CanvasAstWriteResponse> {
+  const filePath = typeof body.filePath === "string" && body.filePath.trim() ? body.filePath.trim() : null
+  const sourceSnapshot = typeof body.sourceSnapshot === "string" ? body.sourceSnapshot : null
+  if (filePath && sourceSnapshot !== null) {
+    return writeFileBackedSnapshot({ filePath, sourceSnapshot, mtimeMs: body.mtimeMs }, options)
+  }
+
   const sourceId = typeof body.sourceId === "string" ? body.sourceId : ""
   const mutations = normalizeMutations(body.mutations)
   const canvasId =
     (typeof body.canvasId === "string" ? body.canvasId : "") || inferMutationCanvasId(mutations)
-  const filePath = typeof body.filePath === "string" && body.filePath.trim() ? body.filePath.trim() : null
 
   if (!canvasId || !sourceId || mutations.length === 0) {
     return {
@@ -177,6 +183,69 @@ async function writeFileBackedSource(
     appliedMutations: result.appliedMutations,
     canvasIdMap: result.canvasIdMap,
     prevSourceSnapshot: result.prevSourceSnapshot,
+    mtimeMs: nextStat.mtimeMs,
+    filePath: path.relative(options.workspaceRoot, resolved),
+    kind,
+  }
+}
+
+async function writeFileBackedSnapshot(
+  input: {
+    filePath: string
+    sourceSnapshot: string
+    mtimeMs: unknown
+  },
+  options: CanvasAstWriteOptions
+): Promise<CanvasAstWriteResponse> {
+  const resolved = resolveWorkspacePath(input.filePath, options.workspaceRoot, [".tsx", ".jsx", ".html"])
+  if (!resolved) {
+    return {
+      ok: false,
+      status: 403,
+      code: "bad-path",
+      error: "filePath must resolve inside the workspace.",
+    }
+  }
+
+  const stat = await fs.stat(resolved)
+  const expectedMtime = typeof input.mtimeMs === "number" ? input.mtimeMs : null
+  if (expectedMtime !== null && Math.abs(stat.mtimeMs - expectedMtime) > 1) {
+    return {
+      ok: false,
+      status: 409,
+      code: "mtime-conflict",
+      error: "File changed externally; reload to continue editing.",
+    }
+  }
+
+  const currentSource = await fs.readFile(resolved, "utf8")
+  if (currentSource !== input.sourceSnapshot) {
+    const tmpPath = `${resolved}.${process.pid}.${Date.now()}.tmp`
+    try {
+      await fs.writeFile(tmpPath, input.sourceSnapshot, "utf8")
+      await fs.rename(tmpPath, resolved)
+    } catch (error) {
+      await fs.rm(tmpPath, { force: true }).catch(() => undefined)
+      return {
+        ok: false,
+        status: 500,
+        code: "write-failed",
+        error: error instanceof Error ? error.message : "Failed to write source file.",
+      }
+    }
+  }
+
+  const nextStat = await fs.stat(resolved)
+  const extension = path.extname(resolved).toLowerCase()
+  const kind = extension === ".html" ? "html" : "tsx"
+  return {
+    ok: true,
+    ...(kind === "html"
+      ? { sourceHtml: input.sourceSnapshot }
+      : { sourceReact: input.sourceSnapshot }),
+    appliedMutations: currentSource === input.sourceSnapshot ? 0 : 1,
+    canvasIdMap: {},
+    prevSourceSnapshot: currentSource,
     mtimeMs: nextStat.mtimeMs,
     filePath: path.relative(options.workspaceRoot, resolved),
     kind,

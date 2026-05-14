@@ -253,6 +253,88 @@ describe("CanvasReactNodePropertyPanel", () => {
     expect(onSelectionChange).toHaveBeenCalledWith(null)
   })
 
+  it("reports successful file-backed writes for CanvasTab history logging", async () => {
+    const onSourceHtmlChange = vi.fn()
+    const onWriteSuccess = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          node: {
+            canvasId: "abc:0",
+            tag: "button",
+            isHostElement: true,
+            attributes: [],
+            textChildren: "Click",
+            hasNonTextChildren: false,
+            editableInV1: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          sourceHtml: "<button>Undo</button>",
+          appliedMutations: 1,
+          canvasIdMap: {
+            "abc:0": "abc:1",
+          },
+          prevSourceSnapshot: "<button>Click</button>",
+          mtimeMs: 1234,
+        }),
+      })
+
+    harness = await mount(
+      <CanvasReactNodePropertyPanel
+        selection={makeSelection()}
+        sourceReact=""
+        sourceHtml="<button>Click</button>"
+        sourceKind="html"
+        currentCompileGeneration={1}
+        sourceId="item-1"
+        sourceFilePath="components/Button.html"
+        sourceFileMtime={1200}
+        onClose={() => {}}
+        onSourceReactChange={() => {}}
+        onSourceHtmlChange={onSourceHtmlChange}
+        onSelectionChange={() => {}}
+        onWriteSuccess={onWriteSuccess}
+      />
+    )
+
+    const textarea = harness.container.querySelector("textarea") as HTMLTextAreaElement
+    const applyButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Apply text"
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      setTextareaValue(textarea, "Undo")
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      applyButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onSourceHtmlChange).toHaveBeenCalledWith("<button>Undo</button>", 1234)
+    expect(onWriteSuccess).toHaveBeenCalledWith({
+      sourceKind: "html",
+      filePath: "components/Button.html",
+      mtimeMs: 1234,
+      mutations: [{ type: "setTextChild", value: "Undo" }],
+      appliedMutations: 1,
+      canvasIdMap: {
+        "abc:0": "abc:1",
+      },
+      prevSourceSnapshot: "<button>Click</button>",
+      nextSourceSnapshot: "<button>Undo</button>",
+    })
+  })
+
   it("dispatches wrapSelection and rebases to the wrapped node id", async () => {
     const onSourceHtmlChange = vi.fn()
     const onSelectionChange = vi.fn()
