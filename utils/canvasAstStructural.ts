@@ -134,8 +134,8 @@ export function insertJsxChild(
     return { ok: false, code: "bad-input", error: "position is out of range for the parent's children" }
   }
 
-  const parentIndent = readChildIndent(tsxSource, parent, oldSourceFile)
-  const childWithIndent = applyIndent(trimmedChild, parentIndent)
+  const { indent: parentIndent, inline } = readChildIndent(tsxSource, parent, oldSourceFile)
+  const childWithIndent = inline ? trimmedChild : applyIndent(trimmedChild, parentIndent)
 
   let insertionOffset: number
   if (renderedChildren.length === 0) {
@@ -149,12 +149,22 @@ export function insertJsxChild(
     insertionOffset = renderedChildren[position].getStart(oldSourceFile)
   }
 
-  const insertedText =
-    renderedChildren.length === 0
-      ? `\n${parentIndent}${childWithIndent}\n${parentIndent.slice(0, -2)}`
-      : position === renderedChildren.length
-        ? `\n${parentIndent}${childWithIndent}`
-        : `${childWithIndent}\n${parentIndent}`
+  let insertedText: string
+  if (renderedChildren.length === 0) {
+    insertedText = inline
+      ? trimmedChild
+      : `\n${parentIndent}${childWithIndent}\n${parentIndent.slice(0, -2)}`
+  } else if (inline) {
+    // Parent's content is laid out on the same line as its opening tag
+    // (e.g. <button>Click</button>). Splice inline without injecting
+    // newlines or "indent" — that would produce a duplicate opening tag
+    // because readChildIndent's per-line slice picks up the parent's tag.
+    insertedText = trimmedChild
+  } else if (position === renderedChildren.length) {
+    insertedText = `\n${parentIndent}${childWithIndent}`
+  } else {
+    insertedText = `${childWithIndent}\n${parentIndent}`
+  }
 
   const newSource = `${tsxSource.slice(0, insertionOffset)}${insertedText}${tsxSource.slice(insertionOffset)}`
 
@@ -473,20 +483,44 @@ function readChildIndent(
   source: string,
   parent: ts.JsxElement,
   sourceFile: ts.SourceFile
-): string {
-  // Look at the first rendered child's leading whitespace, or fall back to
-  // the opening tag's indent + 2 spaces (matches the dominant project style).
+): { indent: string; inline: boolean } {
+  // Look at the first rendered child. If it sits on the same source line as
+  // the opening tag's end (`<button>Click...`), the parent is laid out
+  // inline — the per-line indent slice would include the opening tag and
+  // re-injecting it as "indent" duplicates the tag. Signal that to the
+  // caller so the splice stays single-line.
   const rendered = parent.children.find(
     (c) => !(ts.isJsxText(c) && c.text.trim() === "")
   )
   if (rendered) {
+    const openingEnd = parent.openingElement.getEnd()
     const childStart = rendered.getStart(sourceFile)
+    const openingLine = ts.getLineAndCharacterOfPosition(sourceFile, openingEnd - 1).line
+    const childLine = ts.getLineAndCharacterOfPosition(sourceFile, childStart).line
+    if (openingLine === childLine) {
+      return { indent: "", inline: true }
+    }
     const lineStart = source.lastIndexOf("\n", childStart - 1) + 1
-    return source.slice(lineStart, childStart)
+    return { indent: source.slice(lineStart, childStart), inline: false }
   }
+  // Empty parent — derive indent from the opening tag's line + 2 spaces
+  // (matches the dominant project style for block layouts). If the parent's
+  // opening and closing tags sit on the same line (single-line empty
+  // element), keep insertions inline so we don't reformat the surrounding
+  // source.
   const openingStart = parent.openingElement.getStart(sourceFile)
+  const openingLine = ts.getLineAndCharacterOfPosition(sourceFile, openingStart).line
+  if (parent.closingElement) {
+    const closingLine = ts.getLineAndCharacterOfPosition(
+      sourceFile,
+      parent.closingElement.getStart(sourceFile)
+    ).line
+    if (openingLine === closingLine) {
+      return { indent: "", inline: true }
+    }
+  }
   const lineStart = source.lastIndexOf("\n", openingStart - 1) + 1
-  return source.slice(lineStart, openingStart) + "  "
+  return { indent: source.slice(lineStart, openingStart) + "  ", inline: false }
 }
 
 function applyIndent(text: string, indent: string): string {

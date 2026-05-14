@@ -298,6 +298,80 @@ export default function Card() {
     expect(canvasIdOfNthJsx(result.source, "button")).toBe(buttonNewId)
   })
 
+  // Browser-surfaced bug: inserting into a parent whose first rendered child
+  // is JsxText on the same line as the opening tag (the inline-element case
+  // like `<button>Click</button>`) used to splice the parent's prefix text
+  // (including the opening tag) back into the source as "indent", producing
+  // duplicate `<button>` opens and a parse failure on the next compile.
+  it("inserts into an inline JSX parent (text child on same line as opening tag) without duplicating the opening tag", () => {
+    const inlineSource = `export default function P() {
+  return (
+    <div>
+      <button>Click</button>
+    </div>
+  )
+}
+`
+    const buttonId = canvasIdOfNthJsx(inlineSource, "button")
+    const result = insertJsxChild(inlineSource, buttonId, 0, "<span>x</span>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Output still parses (canvasIdMap built without crashing proves the new
+    // AST is valid, but assert structurally too).
+    expect(result.source).toMatch(/<button><span>x<\/span>Click<\/button>/)
+    // Defensive: only one <button> and one </button> in the file.
+    expect(result.source.match(/<button\b/g)?.length).toBe(1)
+    expect(result.source.match(/<\/button>/g)?.length).toBe(1)
+  })
+
+  it("appends into an inline JSX parent without splicing the opening tag back in", () => {
+    const inlineSource = `export default function P() { return <div><button>Click</button></div> }
+`
+    const buttonId = canvasIdOfNthJsx(inlineSource, "button")
+    const result = insertJsxChild(inlineSource, buttonId, 1, "<span>x</span>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toMatch(/<button>Click<span>x<\/span><\/button>/)
+    expect(result.source.match(/<button\b/g)?.length).toBe(1)
+    expect(result.source.match(/<\/button>/g)?.length).toBe(1)
+  })
+
+  // Compositional bug surfaced in the browser (wrap → insert sequence):
+  // wrapJsxNode emits inline `<Wrapper><button>x</button></Wrapper>` (no
+  // newlines), then inserting into the rebased button hits the inline-parent
+  // path. End-to-end this is the workflow that broke; pin it.
+  it("wrap-then-insert: wrapping a button then inserting into the rebased button still produces parseable source", () => {
+    const source = `export default function P() {
+  return (
+    <div>
+      <button>Click</button>
+    </div>
+  )
+}
+`
+    const buttonOldId = canvasIdOfNthJsx(source, "button")
+    const wrapped = wrapJsxNode(source, buttonOldId, "Wrapper", { sourceId: SOURCE_ID })
+    expect(wrapped.ok).toBe(true)
+    if (!wrapped.ok) return
+    const buttonNewId = wrapped.canvasIdMap[buttonOldId]
+    expect(buttonNewId).not.toBeNull()
+    if (!buttonNewId) return
+    const inserted = insertJsxChild(wrapped.source, buttonNewId, 0, "<span>x</span>", {
+      sourceId: SOURCE_ID,
+    })
+    expect(inserted.ok).toBe(true)
+    if (!inserted.ok) return
+    expect(inserted.source).toContain("<Wrapper>")
+    expect(inserted.source).toContain("</Wrapper>")
+    expect(inserted.source.match(/<button\b/g)?.length).toBe(1)
+    expect(inserted.source.match(/<\/button>/g)?.length).toBe(1)
+    expect(inserted.source).toMatch(/<button><span>x<\/span>Click<\/button>/)
+  })
+
   it("reorders a JSX child upward by one rendered sibling", () => {
     const pId = canvasIdOfNthJsx(fixture, "p")
     const h1OldId = canvasIdOfNthJsx(fixture, "h1")
