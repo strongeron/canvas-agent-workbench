@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-13
+updated: 2026-05-14
 ---
 
 # Running goal
@@ -33,8 +33,8 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U2 | 🟡 local writer complete | same 6 mutations on the HTML side via parse5; endpoint path is locally exercised, broader consumer wiring still pending |
 | U3 | 🟡 local wiring in progress | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
 | U4b | not started | drop targets + structural drag (depends on U1+U2+U4a+U13) |
-| U5 | not started | mutation log + undo/redo |
-| U6 | not started | markdown direct edit (block + inline) |
+| U5 | 🟡 module shipped | mutation log + undo/redo — pure module `52df964`; CanvasTab wiring + Cmd-Z/Cmd-Shift-Z + toast remaining |
+| U6 | 🟡 writer shipped | markdown direct edit — pure block writer `69b1379` (list / update / remove / reorder); endpoint + U13 bridge wiring + CanvasMarkdownItem UI remaining |
 | U7–U12 | not started | component variant cycling, media crop, artboard reorder, mermaid label edit, MCP audit pass, drop targets, multi-select |
 
 ## Open gates before claiming v3 demo "shippable"
@@ -100,6 +100,46 @@ First slice: `utils/canvasAstStructural.ts` with `removeJsxNode` + tests. Subseq
 - Browser-verified on the TSX fixture that `Wrap` survives the structural recompile: the iframe's injected node count increases, the item stays selected, and the `React node` panel remains open.
 - `CanvasHtmlFrame` now re-requests `canvas/refresh-rect` after **inline HTML** source refreshes under an active selection, and the frame message suite covers that path explicitly.
 - Remaining U3 work is structural-mutation continuity: verify that wrap/insert/remove rebase the active node and refresh overlay rects without dropping the user's selection.
+
+### Bug fix — insertJsxChild duplicates opening tag on inline parents (2026-05-14, `8d94854`)
+
+Browser verification of "wrap then insert child into rebased button" surfaced a real bug. `readChildIndent` was slicing per-line whitespace before the first rendered child, but for inline JSX (`<button>Click</button>`) the first rendered child is JsxText sitting on the same line as the opening tag. The slice picked up `  <button>` as "indent" and re-injected it into the spliced output, producing a duplicate opening tag and a parse failure on recompile. Fix: `readChildIndent` now returns `{ indent, inline }`; `insertJsxChild` branches on `inline` to splice without surrounding newlines. 3 new regression tests pin both inline-parent paths and the wrap-then-insert composition.
+
+### U5 progress (2026-05-14) — mutation log + undo/redo
+
+- `52df964` ships the pure `canvasMutationLog` module with reducer-shape API: `createMutationLogState`, `pushEntry`, `undo`, `redo`, `peek`, `canUndo`, `canRedo`.
+- Each entry holds `prevSourceSnapshot` + `postSourceSnapshot`, so undo/redo is uniform across every mutation kind (literal + structural) — no inverse-mutation computation.
+- Hard caps enforced: 25 entries per filePath, 50MB total log byte size (size-aware FIFO eviction, oldest-and-largest-first).
+- Linear-undo semantics: push after undo truncates the redo stack.
+- 10 unit tests cover push/undo/redo, linear truncation, multi-file interleaved timeline, no-op edge cases, per-file cap, per-file cap independence, global byte-cap eviction.
+- Remaining U5 work is the CanvasTab wiring slice: host log state, wire Cmd-Z / Cmd-Shift-Z to undo/redo + re-write the file with the stored snapshot via the existing AST write endpoint, show a small "Undid: …" toast.
+
+### U6 progress (2026-05-14) — markdown writer foundation
+
+- `69b1379` ships the pure `canvasMarkdownWriter` module via remark-parse + remark-stringify.
+- API: `listMarkdownBlocks`, `updateMarkdownBlock` (paragraph→heading promotion supported by re-parsing newText), `removeMarkdownBlock`, `reorderMarkdownBlocks`.
+- Round-trip strategy is parse → mutate top-level mdast children → remark-stringify with stable options. Tests assert structural equivalence, not byte-identity (remark-stringify normalizes whitespace).
+- New deps: `unified` ^11, `remark-parse` ^11, `remark-stringify` ^11 (~150KB minified, called out in plan U6).
+- 12 unit tests cover happy paths, promotion behaviour, empty-newText collapse, out-of-range / negative input rejection, remove, reorder.
+- Remaining U6 work: new endpoint `vite/api/canvasMarkdownWrite.ts` with `resolveWorkspacePath` guard + mtime check; U13 bridge wiring (`canvas/edit-start` / `canvas/edit-commit` / `canvas/edit-result`) so the rendered markdown blocks become inline-editable; CanvasMarkdownItem inline-edit UI + drag-to-reorder.
+
+## Remaining v3 surface
+
+To complete the headline goal ("every node type editable like Figma + agent parity"), the still-needed slices are:
+
+| Unit | Scope of remaining work |
+|---|---|
+| **U2** (UI consumers) | wire HTML structural mutations into CanvasReactNodePropertyPanel + CanvasHtmlFrame the way TSX is wired today |
+| **U3** (continuity) | verify wrap/insert/remove rebase the active selection + refresh overlay rect on every surface, especially after iframe recompile |
+| **U4b** (structural drag) | drop targets between siblings, drag-to-insert at index N — uses U1/U2 mutations |
+| **U5** (CanvasTab wiring) | host the log state, wire Cmd-Z / Cmd-Shift-Z + toast, route undo/redo through the existing AST writer endpoint |
+| **U6** (endpoint + UI) | markdown write endpoint, U13 bridge wiring for inline edit, CanvasMarkdownItem affordances |
+| **U7** | component variant cycling (keyboard arrow when component selected) + numeric prop scrub |
+| **U8** | image crop handles, video clip-trim handles, aspect-ratio drag |
+| **U9** | artboard child reorder + gap drag (both canvas-state only via `update_item`) |
+| **U10** | mermaid click-to-edit-label via U13 bridge into rendered SVG |
+| **U11** | MCP audit pass — verify every new direct-manipulation op is exposed as an MCP tool; agent workflow docs |
+| **U12** | shift-click multi-select primitives within one iframe |
 
 ## Out of scope for v3
 
