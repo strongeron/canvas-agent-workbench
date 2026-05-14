@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14 (refresh: U10 mermaid label panel landed locally)
+updated: 2026-05-14 (refresh: U8 media trim sliders landed locally)
 ---
 
 # Running goal
@@ -36,7 +36,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U5 | 🟡 local host wiring landed | mutation log + undo/redo — pure module `52df964`; CanvasTab now logs file-backed writes, replays stored snapshots via `/api/canvas/ast/write`, wires Cmd-Z/Cmd-Shift-Z, and shows undo/redo toasts |
 | U6 | 🟡 local edit controls landed | markdown direct edit — pure block writer `69b1379`, local `/api/canvas/markdown/write` endpoint, rendered block inline edit in markdown items, block reorder controls, and basic formatting buttons (`B`, `I`, `List`) |
 | U7 | 🟡 local variant cycling + scrub landed | selected component items now cycle variants with ArrowLeft / ArrowRight, and numeric prop inputs now expose horizontal scrub controls |
-| U8 | not started | media crop and clip handles |
+| U8 | 🟡 local panel trim sliders landed | video clip start/end sliders are in the inspector; crop handles and on-canvas trim handles remain |
 | U9 | 🟡 local gap + reorder controls landed | artboard gap/padding sliders are in the inspector, selected artboards expose a live gap scrub handle, and selected artboard children now expose move controls |
 | U10 | 🟡 local panel label edit landed | mermaid node labels are surfaced in the props panel and patch source inline; rendered-SVG direct edit remains |
 | U11–U12 | not started | MCP audit pass, drop targets, multi-select |
@@ -58,7 +58,7 @@ Three roughly-independent threads to pick from, prioritized by leverage:
 2. **Finish U6 markdown.** The endpoint, inline block edit, block reorder, and basic formatting controls are in; remaining work is polish and deciding whether markdown needs any bridge-style edit protocol at all, given it does not render in an iframe today. Independent of thread 1.
 3. **U4b drop targets.** All deps (U1, U2, U4a, U13) are green. Largest of the three but unblocked.
 
-U8 (media crop/clip) and U12 (multi-select) are smaller leaf units that can land in any order after thread 1. U9 now has panel sliders plus live gap/reorder controls; full drag-sort remains optional follow-through, not a missing state primitive. U10 now has source-backed panel label edits; rendered-SVG direct edit still remains. **U11 (MCP audit)** is gated on U5–U10 and should land last.
+U12 (multi-select) is still a small leaf unit that can land independently after thread 1. U8 now has panel trim sliders but still lacks direct crop/trim handles. U9 now has panel sliders plus live gap/reorder controls; full drag-sort remains optional follow-through, not a missing state primitive. U10 now has source-backed panel label edits; rendered-SVG direct edit still remains. **U11 (MCP audit)** is gated on U5–U10 and should land last.
 
 ## Implementation notes and progress log
 
@@ -175,6 +175,12 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - Focused coverage in `tests/mermaidLabelEditor.test.ts` and `tests/canvasMermaidPropsPanel.test.tsx` asserts label extraction, source patching, and panel wiring.
 - Remaining U10 work is the direct-manip half from the plan: click a rendered SVG label and edit it in place on the canvas surface.
 
+### U8 progress (2026-05-14) — media panel trim sliders
+
+- `CanvasMediaPropsPanel` now renders slider-backed `clipStartSec` and `clipEndSec` controls for video items alongside the existing numeric inputs.
+- Focused coverage in `tests/canvasMediaPropsPanel.test.tsx` asserts both slider paths wire cleanly into `onChange`.
+- Remaining U8 work is still the direct-manip half from the plan: visible crop handles for images and live trim handles on the media surface itself.
+
 ## Remaining v3 surface
 
 To complete the headline goal ("every node type editable like Figma + agent parity"), the still-needed slices are:
@@ -187,7 +193,7 @@ To complete the headline goal ("every node type editable like Figma + agent pari
 | **U5** (CanvasTab wiring) | host the log state, wire Cmd-Z / Cmd-Shift-Z + toast, route undo/redo through the existing AST writer endpoint |
 | **U6** (endpoint + UI) | markdown write endpoint, U13 bridge wiring for inline edit, CanvasMarkdownItem affordances |
 | **U7** | browser-verify numeric prop scrub on a real component panel now that PointerLock + fallback wiring is in |
-| **U8** | image crop handles, video clip-trim handles, aspect-ratio drag |
+| **U8** | image crop handles and live video trim handles remain; panel-side trim sliders are already in |
 | **U9** | optional drag-sort polish remains; panel-side gap/padding sliders, live gap scrub, and live child reorder controls are already in |
 | **U10** | rendered-SVG direct label edit via click/bridge remains; source-backed panel label edit is already in |
 | **U11** | MCP audit pass — verify every new direct-manipulation op is exposed as an MCP tool; agent workflow docs |

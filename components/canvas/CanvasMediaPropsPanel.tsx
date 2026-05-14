@@ -215,6 +215,40 @@ export function CanvasMediaPropsPanel({
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-foreground">
                 Clip range (seconds)
               </div>
+              <div className="mb-3 space-y-3">
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+                    <span>Start trim</span>
+                    <span>{typeof clipStartSec === "number" ? clipStartSec.toFixed(1) : "0.0"}s</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={120}
+                    step={0.1}
+                    value={typeof clipStartSec === "number" ? clipStartSec : 0}
+                    aria-label="Clip start slider"
+                    onChange={(e) => onChange({ clipStartSec: parseSeconds(e.target.value) })}
+                    className="w-full accent-brand-600"
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+                    <span>End trim</span>
+                    <span>{typeof clipEndSec === "number" ? clipEndSec.toFixed(1) : "Off"}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={120}
+                    step={0.1}
+                    value={typeof clipEndSec === "number" ? clipEndSec : 120}
+                    aria-label="Clip end slider"
+                    onChange={(e) => onChange({ clipEndSec: parseSeconds(e.target.value) })}
+                    className="w-full accent-brand-600"
+                  />
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Start</label>
