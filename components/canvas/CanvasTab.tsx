@@ -92,6 +92,7 @@ import {
   summarizeSourceMutations,
   type CanvasSourceMutation,
 } from "../../utils/canvasMutationHistory"
+import { cycleVariantIndex } from "../../utils/canvasVariantCycle"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
 
 /** Props for injected Renderer component */
@@ -1001,6 +1002,28 @@ export function CanvasTab({
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [handleRedoMutation, handleUndoMutation])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!selectedComponentItem || !selectedComponent) return
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return
+      }
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+      const nextIndex = cycleVariantIndex(
+        selectedComponentItem.variantIndex,
+        selectedComponent.variants.length,
+        event.key === "ArrowLeft" ? "previous" : "next"
+      )
+      if (nextIndex === selectedComponentItem.variantIndex) return
+      event.preventDefault()
+      updateItem(selectedComponentItem.id, { variantIndex: nextIndex })
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [selectedComponent, selectedComponentItem, updateItem])
 
   const handleReactNodeResize = useCallback(
     async (event: CanvasReactNodeResizeEvent) => {
