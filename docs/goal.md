@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14 (refresh: U7 variant cycling landed locally)
+updated: 2026-05-14 (refresh: U7 numeric prop scrub landed locally)
 ---
 
 # Running goal
@@ -35,7 +35,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U4b | not started | drop targets + structural drag (depends on U1+U2+U4a+U13) |
 | U5 | 🟡 local host wiring landed | mutation log + undo/redo — pure module `52df964`; CanvasTab now logs file-backed writes, replays stored snapshots via `/api/canvas/ast/write`, wires Cmd-Z/Cmd-Shift-Z, and shows undo/redo toasts |
 | U6 | 🟡 local edit controls landed | markdown direct edit — pure block writer `69b1379`, local `/api/canvas/markdown/write` endpoint, rendered block inline edit in markdown items, block reorder controls, and basic formatting buttons (`B`, `I`, `List`) |
-| U7 | 🟡 local variant cycling landed | selected component items now cycle variants with ArrowLeft / ArrowRight; numeric prop scrub remains |
+| U7 | 🟡 local variant cycling + scrub landed | selected component items now cycle variants with ArrowLeft / ArrowRight, and numeric prop inputs now expose horizontal scrub controls |
 | U8–U12 | not started | media crop, artboard reorder, mermaid label edit, MCP audit pass, drop targets, multi-select |
 
 ## Open gates before claiming v3 demo "shippable"
@@ -55,9 +55,9 @@ Three roughly-independent threads to pick from, prioritized by leverage:
 2. **Finish U6 markdown.** The endpoint, inline block edit, block reorder, and basic formatting controls are in; remaining work is polish and deciding whether markdown needs any bridge-style edit protocol at all, given it does not render in an iframe today. Independent of thread 1.
 3. **U4b drop targets.** All deps (U1, U2, U4a, U13) are green. Largest of the three but unblocked.
 
-U7 numeric prop scrub, U8 (media crop/clip), U9 (artboard reorder/gap), U10 (mermaid label), U12 (multi-select) are smaller leaf units that can land in any order after thread 1. **U11 (MCP audit)** is gated on U5–U10 and should land last.
+U8 (media crop/clip), U9 (artboard reorder/gap), U10 (mermaid label), U12 (multi-select) are smaller leaf units that can land in any order after thread 1. **U11 (MCP audit)** is gated on U5–U10 and should land last.
 
-## Next slice (active)
+## Implementation notes and progress log
 
 **U1 — structural TSX mutations.**
 
@@ -150,6 +150,13 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - Focused UI coverage now lives in `tests/canvasMarkdownItem.test.tsx`.
 - Remaining U6 work is polish on the editing ergonomics and then a judgment call on whether any of the U13 `canvas/edit-*` protocol belongs on markdown at all, since the current markdown renderer is direct DOM, not iframe content.
 
+### U7 progress (2026-05-14) — component variant cycling + numeric prop scrub
+
+- Selected component items now cycle variants with `ArrowLeft` / `ArrowRight` in `CanvasTab`, covered by focused unit tests.
+- Generic numeric prop controls now render a dedicated scrub affordance with an `ew-resize` cursor and document-level horizontal drag handling in `PropControl`.
+- Focused coverage now asserts scrub delta application, schema bound clamping, and non-numeric controls omitting the scrub affordance in `tests/propControl.test.tsx`.
+- Remaining U7 work is proof, not plumbing: browser-verify scrub behavior on a real component panel and decide whether the current document-level drag is sufficient or should be upgraded to PointerLock polish.
+
 ## Remaining v3 surface
 
 To complete the headline goal ("every node type editable like Figma + agent parity"), the still-needed slices are:
@@ -161,7 +168,7 @@ To complete the headline goal ("every node type editable like Figma + agent pari
 | **U4b** (structural drag) | drop targets between siblings, drag-to-insert at index N — uses U1/U2 mutations |
 | **U5** (CanvasTab wiring) | host the log state, wire Cmd-Z / Cmd-Shift-Z + toast, route undo/redo through the existing AST writer endpoint |
 | **U6** (endpoint + UI) | markdown write endpoint, U13 bridge wiring for inline edit, CanvasMarkdownItem affordances |
-| **U7** | component variant cycling (keyboard arrow when component selected) + numeric prop scrub |
+| **U7** | browser-verify numeric prop scrub on a real component panel and decide whether PointerLock polish is needed beyond the current document-level drag |
 | **U8** | image crop handles, video clip-trim handles, aspect-ratio drag |
 | **U9** | artboard child reorder + gap drag (both canvas-state only via `update_item`) |
 | **U10** | mermaid click-to-edit-label via U13 bridge into rendered SVG |

@@ -4,7 +4,8 @@
  * Renders the appropriate control based on PropSchema type.
  */
 
-import { ChevronDown } from "lucide-react"
+import { ChevronDown, MoveHorizontal } from "lucide-react"
+import { useEffect, useState } from "react"
 
 import type { PropSchema } from "../core/types"
 
@@ -160,22 +161,79 @@ function NumberControl({
   max,
   step = 1,
 }: NumberControlProps) {
+  const [scrubState, setScrubState] = useState<{
+    active: boolean
+    startX: number
+    startValue: number
+  }>({
+    active: false,
+    startX: 0,
+    startValue: typeof value === "number" ? value : 0,
+  })
+
+  useEffect(() => {
+    if (!scrubState.active) return
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const delta = event.clientX - scrubState.startX
+      const increments = Math.round(delta / 12)
+      const nextValue = clampNumber(scrubState.startValue + increments * step, min, max)
+      onChange(nextValue)
+    }
+
+    const handleMouseUp = () => {
+      setScrubState((current) => ({ ...current, active: false }))
+    }
+
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [max, min, onChange, scrubState.active, scrubState.startValue, scrubState.startX, step])
+
   return (
     <div className="space-y-1">
       <label className="block text-[11px] font-medium text-muted-foreground">
         {label}
       </label>
-      <input
-        type="number"
-        value={value ?? ""}
-        onChange={(e) => onChange(Number(e.target.value))}
-        min={min}
-        max={max}
-        step={step}
-        className="h-8 w-full rounded-md border border-default bg-white px-2.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-      />
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          value={value ?? ""}
+          onChange={(e) => onChange(Number(e.target.value))}
+          min={min}
+          max={max}
+          step={step}
+          className="h-8 w-full rounded-md border border-default bg-white px-2.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+        />
+        <button
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault()
+            setScrubState({
+              active: true,
+              startX: event.clientX,
+              startValue: typeof value === "number" ? value : 0,
+            })
+          }}
+          className="flex h-8 w-8 cursor-ew-resize items-center justify-center rounded-md border border-default bg-white text-muted-foreground hover:bg-surface-50 hover:text-foreground"
+          aria-label={`Scrub ${label}`}
+          title={`Scrub ${label}`}
+        >
+          <MoveHorizontal className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   )
+}
+
+function clampNumber(value: number, min?: number, max?: number) {
+  let next = value
+  if (typeof min === "number") next = Math.max(min, next)
+  if (typeof max === "number") next = Math.min(max, next)
+  return next
 }
 
 interface BooleanControlProps {
