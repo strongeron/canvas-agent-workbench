@@ -6,6 +6,7 @@ import {
   CANVAS_NODE_BRIDGE_MARKER,
   CANVAS_NODE_BRIDGE_VERSION,
   buildBridgeScript,
+  buildDropTargetHitTestRequest,
   buildEditCommitRequest,
   buildEditStartRequest,
   buildHoverMessage,
@@ -30,6 +31,14 @@ function makeEl(tag: string, attrs: Record<string, string> = {}, text?: string):
 
 function clearBody(): void {
   while (document.body.firstChild) document.body.removeChild(document.body.firstChild)
+}
+
+// jsdom (24.x at time of writing) does not implement Document.elementFromPoint,
+// so vi.spyOn rejects it. We install a stub directly and the tests that need
+// it call setElementFromPoint(el) to control what gets returned.
+function setElementFromPoint(target: Element | null): void {
+  ;(document as unknown as { elementFromPoint: (x: number, y: number) => Element | null })
+    .elementFromPoint = () => target
 }
 
 describe("isCanvasReactNodeMessage", () => {
@@ -67,6 +76,15 @@ describe("isCanvasReactNodeMessage", () => {
       })
     ).toBe(true)
   })
+
+  it("accepts canvas/drop-target-result outbound messages", () => {
+    expect(
+      isCanvasReactNodeMessage({
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        type: "canvas/drop-target-result",
+      })
+    ).toBe(true)
+  })
 })
 
 describe("parent → iframe request builders", () => {
@@ -85,6 +103,17 @@ describe("parent → iframe request builders", () => {
 
   it("buildEditCommitRequest emits canvasId + marker + version", () => {
     expect(buildEditCommitRequest("abc:1").type).toBe("canvas/edit-commit")
+  })
+
+  it("buildDropTargetHitTestRequest emits requestId, x, y, marker, version", () => {
+    expect(buildDropTargetHitTestRequest({ requestId: "r-1", x: 12.5, y: 34 })).toEqual({
+      [CANVAS_NODE_BRIDGE_MARKER]: true,
+      version: CANVAS_NODE_BRIDGE_VERSION,
+      type: "canvas/drop-target-hit-test",
+      requestId: "r-1",
+      x: 12.5,
+      y: 34,
+    })
   })
 })
 
@@ -560,5 +589,140 @@ describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
     document.body.appendChild(button)
     button.dispatchEvent(new MouseEvent("click", { bubbles: true }))
     expect(parentMock.postMessage).not.toHaveBeenCalled()
+  })
+
+  it("canvas/drop-target-hit-test resolves the hovered parent + sibling rects", () => {
+    installBridgeForTesting(window, "fileA")
+    const parent = makeEl("div", { "data-canvas-id": "parent:0" })
+    const childA = makeEl("button", { "data-canvas-id": "child:0" }, "A")
+    const childB = makeEl("button", { "data-canvas-id": "child:1" }, "B")
+    parent.appendChild(childA)
+    parent.appendChild(childB)
+    document.body.appendChild(parent)
+    // User hovers in the gap between siblings — elementFromPoint returns the
+    // parent container directly. findAncestor returns parent, siblings are
+    // collected from parent's children.
+    setElementFromPoint(parent)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildDropTargetHitTestRequest({ requestId: "req-1", x: 10, y: 10 }),
+        origin: window.location.origin,
+      })
+    )
+    const resultCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/drop-target-result"
+    )
+    expect(resultCall).toBeDefined()
+    expect(resultCall![0].requestId).toBe("req-1")
+    expect(resultCall![0].parentCanvasId).toBe("parent:0")
+    expect(resultCall![0].leaf).toBe(false)
+    expect(resultCall![0].siblings).toHaveLength(2)
+    expect(resultCall![0].siblings[0].canvasId).toBe("child:0")
+    expect(resultCall![0].siblings[1].canvasId).toBe("child:1")
+  })
+
+  it("canvas/drop-target-hit-test reports leaf: true when parent has no tagged children", () => {
+    installBridgeForTesting(window, "fileA")
+    const parent = makeEl("button", { "data-canvas-id": "leaf:0" }, "Click")
+    document.body.appendChild(parent)
+    setElementFromPoint(parent)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildDropTargetHitTestRequest({ requestId: "req-2", x: 10, y: 10 }),
+        origin: window.location.origin,
+      })
+    )
+    const resultCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/drop-target-result"
+    )
+    expect(resultCall).toBeDefined()
+    expect(resultCall![0].parentCanvasId).toBe("leaf:0")
+    expect(resultCall![0].leaf).toBe(true)
+    expect(resultCall![0].siblings).toEqual([])
+  })
+
+  it("canvas/drop-target-hit-test reports parentCanvasId: null when no ancestor is tagged", () => {
+    installBridgeForTesting(window, "fileA")
+    const wrapper = makeEl("div")
+    const inner = makeEl("span", {}, "hi")
+    wrapper.appendChild(inner)
+    document.body.appendChild(wrapper)
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(inner)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildDropTargetHitTestRequest({ requestId: "req-3", x: 5, y: 5 }),
+        origin: window.location.origin,
+      })
+    )
+    const resultCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/drop-target-result"
+    )
+    expect(resultCall).toBeDefined()
+    expect(resultCall![0].requestId).toBe("req-3")
+    expect(resultCall![0].parentCanvasId).toBeNull()
+    expect(resultCall![0].parentRect).toBeNull()
+    expect(resultCall![0].siblings).toEqual([])
+    expect(resultCall![0].leaf).toBe(false)
+  })
+
+  it("canvas/drop-target-hit-test rejects mismatched version", () => {
+    installBridgeForTesting(window, "fileA")
+    const parent = makeEl("div", { "data-canvas-id": "parent:0" })
+    document.body.appendChild(parent)
+    setElementFromPoint(parent)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          [CANVAS_NODE_BRIDGE_MARKER]: true,
+          version: CANVAS_NODE_BRIDGE_VERSION + 99,
+          type: "canvas/drop-target-hit-test",
+          requestId: "req-bad-version",
+          x: 1,
+          y: 1,
+        },
+        origin: window.location.origin,
+      })
+    )
+    const resultCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/drop-target-result"
+    )
+    expect(resultCall).toBeUndefined()
+  })
+
+  it("canvas/drop-target-hit-test rejects foreign origins", () => {
+    installBridgeForTesting(window, "fileA")
+    const parent = makeEl("div", { "data-canvas-id": "parent:0" })
+    document.body.appendChild(parent)
+    setElementFromPoint(parent)
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildDropTargetHitTestRequest({ requestId: "req-evil", x: 1, y: 1 }),
+        origin: "https://evil.example",
+      })
+    )
+    const resultCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/drop-target-result"
+    )
+    expect(resultCall).toBeUndefined()
+  })
+
+  it("canvas/drop-target-hit-test ignores requests with non-finite x/y", () => {
+    installBridgeForTesting(window, "fileA")
+    parentMock.postMessage.mockClear()
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: buildDropTargetHitTestRequest({ requestId: "req-nan", x: NaN, y: 0 }),
+        origin: window.location.origin,
+      })
+    )
+    const resultCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/drop-target-result"
+    )
+    expect(resultCall).toBeUndefined()
   })
 })

@@ -83,12 +83,44 @@ export interface CanvasReactNodeEditResultMessage extends CanvasReactNodeBaseMes
   text: string
 }
 
+/**
+ * One sibling element inside the hovered drop-target parent. `index` is the
+ * position in the parent's element-children list (text nodes ignored) and is
+ * the position the consumer would pass to an `insertChild` mutation to place a
+ * dropped node immediately before this sibling.
+ */
+export interface CanvasReactNodeDropTargetSibling {
+  canvasId: string
+  rect: CanvasReactNodeRect
+  index: number
+}
+
+/**
+ * Emitted by the iframe in response to a parent-driven
+ * `canvas/drop-target-hit-test`. `parentCanvasId: null` means no ancestor at
+ * (x, y) carried a `data-canvas-id`. `leaf: true` means the resolved parent
+ * has no element children — the consumer should render a "wrap" affordance
+ * (wrapSelection mutation) rather than insert-between siblings.
+ *
+ * `requestId` echoes the request — drop-target hit-tests fire on every
+ * `dragover` and the parent needs to discard stale responses.
+ */
+export interface CanvasReactNodeDropTargetResultMessage extends CanvasReactNodeBaseMessage {
+  type: "canvas/drop-target-result"
+  requestId: string
+  parentCanvasId: string | null
+  parentRect: CanvasReactNodeRect | null
+  siblings: CanvasReactNodeDropTargetSibling[]
+  leaf: boolean
+}
+
 export type CanvasReactNodeMessage =
   | CanvasReactNodeSelectMessage
   | CanvasReactNodeHoverMessage
   | CanvasReactNodeReadyMessage
   | CanvasReactNodeRectUpdateMessage
   | CanvasReactNodeEditResultMessage
+  | CanvasReactNodeDropTargetResultMessage
 
 /** Type guard for messages from this bridge. Validates the marker AND the
  *  discriminator so consumers get correct narrowing on `message.type`. */
@@ -102,7 +134,8 @@ export function isCanvasReactNodeMessage(value: unknown): value is CanvasReactNo
     type === "canvas/hover" ||
     type === "canvas/ready" ||
     type === "canvas/rect-update" ||
-    type === "canvas/edit-result"
+    type === "canvas/edit-result" ||
+    type === "canvas/drop-target-result"
   )
 }
 
@@ -187,6 +220,25 @@ export interface CanvasReactNodeEditCommitRequest {
   canvasId: string
 }
 
+/**
+ * Parent → iframe drop-target hit-test, used by U4b when the user is dragging
+ * a library primitive over the iframe. `x` and `y` are in iframe-local
+ * coordinates (CanvasIframeOverlay translates screen → iframe-local before
+ * sending). The iframe finds the nearest canvas-id ancestor at that point,
+ * collects its element children, and posts back a `drop-target-result`.
+ *
+ * `requestId` is echoed back; the parent fires one of these per `dragover`
+ * and must drop stale responses.
+ */
+export interface CanvasReactNodeDropTargetHitTestRequest {
+  __canvasReactNodeBridge: true
+  version: number
+  type: "canvas/drop-target-hit-test"
+  requestId: string
+  x: number
+  y: number
+}
+
 export function buildRefreshRectRequest(canvasId: string): CanvasReactNodeRefreshRectRequest {
   return {
     [CANVAS_NODE_BRIDGE_MARKER]: true,
@@ -211,6 +263,21 @@ export function buildEditCommitRequest(canvasId: string): CanvasReactNodeEditCom
     version: CANVAS_NODE_BRIDGE_VERSION,
     type: "canvas/edit-commit",
     canvasId,
+  }
+}
+
+export function buildDropTargetHitTestRequest(input: {
+  requestId: string
+  x: number
+  y: number
+}): CanvasReactNodeDropTargetHitTestRequest {
+  return {
+    [CANVAS_NODE_BRIDGE_MARKER]: true,
+    version: CANVAS_NODE_BRIDGE_VERSION,
+    type: "canvas/drop-target-hit-test",
+    requestId: input.requestId,
+    x: input.x,
+    y: input.y,
   }
 }
 
@@ -436,6 +503,77 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
     )
   }
 
+  function postDropTargetResult(input: {
+    requestId: string
+    parentEl: HTMLElement | null
+  }): void {
+    const parentEl = input.parentEl
+    if (!parentEl) {
+      window.parent.postMessage(
+        {
+          [options.marker]: true,
+          version: options.version,
+          type: "canvas/drop-target-result",
+          requestId: input.requestId,
+          parentCanvasId: null,
+          parentRect: null,
+          siblings: [],
+          leaf: false,
+          fileHint: options.fileHint,
+        },
+        targetOrigin
+      )
+      return
+    }
+    const parentRect = parentEl.getBoundingClientRect()
+    const siblings: Array<{
+      canvasId: string
+      rect: { x: number; y: number; width: number; height: number }
+      index: number
+    }> = []
+    let index = 0
+    let child: Element | null = parentEl.firstElementChild
+    while (child) {
+      if (child instanceof HTMLElement) {
+        const id = child.dataset.canvasId
+        if (id) {
+          const childRect = child.getBoundingClientRect()
+          siblings.push({
+            canvasId: id,
+            rect: {
+              x: childRect.x,
+              y: childRect.y,
+              width: childRect.width,
+              height: childRect.height,
+            },
+            index,
+          })
+        }
+      }
+      child = child.nextElementSibling
+      index += 1
+    }
+    window.parent.postMessage(
+      {
+        [options.marker]: true,
+        version: options.version,
+        type: "canvas/drop-target-result",
+        requestId: input.requestId,
+        parentCanvasId: parentEl.dataset.canvasId ?? null,
+        parentRect: {
+          x: parentRect.x,
+          y: parentRect.y,
+          width: parentRect.width,
+          height: parentRect.height,
+        },
+        siblings,
+        leaf: siblings.length === 0,
+        fileHint: options.fileHint,
+      },
+      targetOrigin
+    )
+  }
+
   window.addEventListener("message", function (event) {
     const data = event.data as Record<string, unknown> | null
     if (!data || data[options.marker] !== true) return
@@ -446,7 +584,8 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
     const isV3Handler =
       type === "canvas/refresh-rect" ||
       type === "canvas/edit-start" ||
-      type === "canvas/edit-commit"
+      type === "canvas/edit-commit" ||
+      type === "canvas/drop-target-hit-test"
     if (isV3Handler) {
       if (data.version !== options.version) return
       if (targetOrigin !== "*" && event.origin && event.origin !== targetOrigin) return
@@ -478,6 +617,13 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
       el.contentEditable = "false"
       el.blur()
       postEditResult(id, text)
+    } else if (type === "canvas/drop-target-hit-test") {
+      const requestId = typeof data.requestId === "string" ? data.requestId : ""
+      const x = typeof data.x === "number" ? data.x : NaN
+      const y = typeof data.y === "number" ? data.y : NaN
+      if (!requestId || !Number.isFinite(x) || !Number.isFinite(y)) return
+      const hit = document.elementFromPoint(x, y)
+      postDropTargetResult({ requestId, parentEl: findAncestor(hit) })
     }
   })
 }
@@ -532,6 +678,7 @@ function assertSelfContainedRuntime(runtimeText: string): void {
     "buildSelectMessage",
     "buildHoverMessage",
     "buildBridgeScript",
+    "buildDropTargetHitTestRequest",
     "installBridgeForTesting",
     "escapeScriptInterop",
     "assertSelfContainedRuntime",
