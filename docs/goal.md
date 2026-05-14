@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14 (refresh: U9 live reorder controls landed locally)
+updated: 2026-05-14 (refresh: U10 mermaid label panel landed locally)
 ---
 
 # Running goal
@@ -38,7 +38,8 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U7 | 🟡 local variant cycling + scrub landed | selected component items now cycle variants with ArrowLeft / ArrowRight, and numeric prop inputs now expose horizontal scrub controls |
 | U8 | not started | media crop and clip handles |
 | U9 | 🟡 local gap + reorder controls landed | artboard gap/padding sliders are in the inspector, selected artboards expose a live gap scrub handle, and selected artboard children now expose move controls |
-| U10–U12 | not started | mermaid label edit, MCP audit pass, drop targets, multi-select |
+| U10 | 🟡 local panel label edit landed | mermaid node labels are surfaced in the props panel and patch source inline; rendered-SVG direct edit remains |
+| U11–U12 | not started | MCP audit pass, drop targets, multi-select |
 
 ## Open gates before claiming v3 demo "shippable"
 
@@ -57,7 +58,7 @@ Three roughly-independent threads to pick from, prioritized by leverage:
 2. **Finish U6 markdown.** The endpoint, inline block edit, block reorder, and basic formatting controls are in; remaining work is polish and deciding whether markdown needs any bridge-style edit protocol at all, given it does not render in an iframe today. Independent of thread 1.
 3. **U4b drop targets.** All deps (U1, U2, U4a, U13) are green. Largest of the three but unblocked.
 
-U8 (media crop/clip), U10 (mermaid label), U12 (multi-select) are smaller leaf units that can land in any order after thread 1. U9 now has panel sliders plus live gap/reorder controls; full drag-sort remains optional follow-through, not a missing state primitive. **U11 (MCP audit)** is gated on U5–U10 and should land last.
+U8 (media crop/clip) and U12 (multi-select) are smaller leaf units that can land in any order after thread 1. U9 now has panel sliders plus live gap/reorder controls; full drag-sort remains optional follow-through, not a missing state primitive. U10 now has source-backed panel label edits; rendered-SVG direct edit still remains. **U11 (MCP audit)** is gated on U5–U10 and should land last.
 
 ## Implementation notes and progress log
 
@@ -167,6 +168,13 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - Focused coverage in `tests/canvasArtboardPropsPanel.test.tsx`, `tests/canvasArtboardItem.test.tsx`, and `tests/canvasWorkspace.test.tsx` asserts slider-driven updates, live scrub updates, zero clamping, and child reorder callback wiring; the existing delete-affordance suite stays green.
 - Remaining U9 work is optional polish around drag-sort ergonomics if the current live move controls prove insufficient.
 
+### U10 progress (2026-05-14) — mermaid panel label edit
+
+- Mermaid node labels are now extracted from simple source forms (`A[Label]`, `B{Label}`, `C(Label)`) by `utils/mermaidLabelEditor.ts`.
+- `CanvasMermaidPropsPanel` now renders those labels as editable inputs and patches the backing Mermaid source inline as labels change.
+- Focused coverage in `tests/mermaidLabelEditor.test.ts` and `tests/canvasMermaidPropsPanel.test.tsx` asserts label extraction, source patching, and panel wiring.
+- Remaining U10 work is the direct-manip half from the plan: click a rendered SVG label and edit it in place on the canvas surface.
+
 ## Remaining v3 surface
 
 To complete the headline goal ("every node type editable like Figma + agent parity"), the still-needed slices are:
@@ -181,7 +189,7 @@ To complete the headline goal ("every node type editable like Figma + agent pari
 | **U7** | browser-verify numeric prop scrub on a real component panel now that PointerLock + fallback wiring is in |
 | **U8** | image crop handles, video clip-trim handles, aspect-ratio drag |
 | **U9** | optional drag-sort polish remains; panel-side gap/padding sliders, live gap scrub, and live child reorder controls are already in |
-| **U10** | mermaid click-to-edit-label via U13 bridge into rendered SVG |
+| **U10** | rendered-SVG direct label edit via click/bridge remains; source-backed panel label edit is already in |
 | **U11** | MCP audit pass — verify every new direct-manipulation op is exposed as an MCP tool; agent workflow docs |
 | **U12** | shift-click multi-select primitives within one iframe |
 

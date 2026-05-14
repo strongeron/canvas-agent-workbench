@@ -1,6 +1,7 @@
 import { Trash2, X } from "lucide-react"
 
 import type { CanvasMermaidItem } from "../../types/canvas"
+import { listMermaidNodeLabels, updateMermaidNodeLabel } from "../../utils/mermaidLabelEditor"
 
 interface CanvasMermaidPropsPanelProps {
   source: string
@@ -30,6 +31,8 @@ export function CanvasMermaidPropsPanel({
   onDelete,
   onClose,
 }: CanvasMermaidPropsPanelProps) {
+  const nodeLabels = listMermaidNodeLabels(source)
+
   return (
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
       <div className="flex items-center justify-between border-b border-default px-4 py-3">
@@ -118,6 +121,34 @@ export function CanvasMermaidPropsPanel({
         )}
 
         <div>
+          {nodeLabels.length > 0 && (
+            <div className="mb-3 rounded-md border border-default bg-surface-50 p-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Node Labels
+              </div>
+              <div className="space-y-2">
+                {nodeLabels.map((node) => (
+                  <label key={node.id} className="block">
+                    <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+                      <span>{node.id}</span>
+                      <span>Label</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={node.label}
+                      onChange={(event) =>
+                        onChange({
+                          source: updateMermaidNodeLabel(source, node.id, event.target.value),
+                        })
+                      }
+                      className="w-full rounded-md border border-default bg-white px-3 py-2 text-sm text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mb-1 flex items-center justify-between">
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Mermaid Source
