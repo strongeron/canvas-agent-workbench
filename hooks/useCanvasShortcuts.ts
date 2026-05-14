@@ -1,5 +1,7 @@
 import { useEffect, useCallback } from "react"
 
+import { isEditableEventTarget } from "../utils/isEditableEventTarget"
+
 interface CanvasShortcutsConfig {
   onToggleSidebar: () => void
   onZoomIn: () => void
@@ -59,12 +61,7 @@ export function useCanvasShortcuts({
       if (!enabled) return
 
       // Don't trigger shortcuts when typing in inputs
-      const target = e.target as HTMLElement
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      ) {
+      if (isEditableEventTarget(e.target)) {
         return
       }
 

@@ -94,6 +94,7 @@ import {
   type CanvasSourceMutation,
 } from "../../utils/canvasMutationHistory"
 import { cycleVariantIndex } from "../../utils/canvasVariantCycle"
+import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
 
@@ -183,13 +184,6 @@ async function serializeHtmlBundleFileEntries(
     }))
   )
   return serialized.filter((file) => file.relativePath.trim())
-}
-
-function isEditablePasteTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false
-  if (target.isContentEditable) return true
-  const tag = target.tagName
-  return tag === "INPUT" || tag === "TEXTAREA" || !!target.closest("[contenteditable='true']")
 }
 
 function extensionForClipboardMime(mime: string) {
@@ -1055,7 +1049,7 @@ export function CanvasTab({
       const isMod = event.metaKey || event.ctrlKey
       if (!isMod || event.altKey || event.key.toLowerCase() !== "z") return
       const target = event.target as HTMLElement | null
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+      if (isEditableEventTarget(target)) {
         return
       }
       event.preventDefault()
@@ -1074,7 +1068,7 @@ export function CanvasTab({
       if (!selectedComponentItem || !selectedComponent) return
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       const target = event.target as HTMLElement | null
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+      if (isEditableEventTarget(target)) {
         return
       }
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
@@ -2513,7 +2507,7 @@ export function CanvasTab({
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
-      if (isEditablePasteTarget(event.target)) return
+      if (isEditableEventTarget(event.target)) return
       const clipboard = event.clipboardData
       if (!clipboard) return
 

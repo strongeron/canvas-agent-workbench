@@ -134,7 +134,8 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - Cmd-Z / Cmd-Shift-Z now drive undo/redo at the CanvasTab level, and the shell shows a small toast (`Undid: …` / `Redid: …`) after a successful replay.
 - `/api/canvas/ast/write` accepts file-backed `sourceSnapshot` rewrites for TSX/HTML, and `/api/canvas/markdown/write` now accepts the same snapshot-replay path for file-backed markdown history.
 - Focused coverage now includes the host helpers (`tests/canvasMutationHistory.test.ts`), snapshot endpoint replay for both AST and markdown (`tests/canvasAstWriteEndpoint.test.ts`, `tests/canvasMarkdownWriteEndpoint.test.ts`), the HTML property-panel success callback (`tests/canvasReactNodePropertyPanel.test.tsx`), and markdown item success logging (`tests/canvasMarkdownItem.test.tsx`).
-- Remaining U5 work is now narrower: browser-verify undo/redo on the stable source-backed TSX + inline HTML fixtures, and decide whether mod+Z should intentionally bypass focused text inputs or continue yielding to field-local undo. Mermaid and raw props-panel markdown source edits still bypass the snapshot log.
+- The editable-target shortcut guard is now centralized and reused across CanvasTab, CanvasWorkspace, and `useCanvasShortcuts`, so global history/selection shortcuts intentionally yield to focused inputs, textareas, selects, and contenteditable editors.
+- Remaining U5 work is now narrower: browser-verify undo/redo on the stable source-backed TSX + inline HTML fixtures. Mermaid and raw props-panel markdown source edits still bypass the snapshot log.
 
 ### U6 progress (2026-05-14) — markdown writer foundation
 

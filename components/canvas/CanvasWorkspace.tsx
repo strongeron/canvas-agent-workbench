@@ -31,6 +31,7 @@ import { CanvasLayoutMarkdownItem } from "./CanvasLayoutMarkdownItem"
 import { CanvasExcalidrawItem as CanvasExcalidrawItemComponent } from "./CanvasExcalidrawItem"
 import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
+import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
 import { CanvasMarkdownItem as CanvasMarkdownItemComponent } from "./CanvasMarkdownItem"
 import { CanvasMermaidItem as CanvasMermaidItemComponent } from "./CanvasMermaidItem"
 import { CanvasMediaItem as CanvasMediaItemComponent } from "./CanvasMediaItem"
@@ -147,12 +148,7 @@ export function CanvasWorkspace({
       if (interactMode) return
       if (e.code === "Space" && !e.repeat) {
         // Don't trigger when typing in inputs
-        const target = e.target as HTMLElement
-        if (
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable
-        ) {
+        if (isEditableEventTarget(e.target)) {
           return
         }
         e.preventDefault()
