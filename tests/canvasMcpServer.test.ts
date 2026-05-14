@@ -149,9 +149,49 @@ describe("canvas MCP server", () => {
                 rotation: 0,
                 zIndex: 2,
               },
+              {
+                id: "artboard-1",
+                type: "artboard",
+                name: "Board",
+                position: { x: 40, y: 440 },
+                size: { width: 640, height: 360 },
+                rotation: 0,
+                zIndex: 3,
+                layout: {
+                  display: "flex",
+                  direction: "column",
+                  align: "stretch",
+                  justify: "start",
+                  gap: 16,
+                  padding: 24,
+                },
+              },
+              {
+                id: "markdown-1",
+                type: "markdown",
+                source: "# Hello\n\nParagraph",
+                title: "Notes",
+                position: { x: 720, y: 80 },
+                size: { width: 320, height: 240 },
+                rotation: 0,
+                zIndex: 4,
+                sourcePath: "projects/demo/content/notes.md",
+                sourceFileMtime: 700,
+              },
+              {
+                id: "mermaid-1",
+                type: "mermaid",
+                source: "flowchart LR\n  A[Start] --> B[Ship]",
+                title: "Flow",
+                mermaidTheme: "default",
+                position: { x: 720, y: 360 },
+                size: { width: 320, height: 220 },
+                rotation: 0,
+                zIndex: 5,
+              },
             ],
             groups: [],
-            nextZIndex: 4,
+            nextZIndex: 6,
             selectedIds: [],
           },
           themeSnapshot: {
@@ -170,6 +210,30 @@ describe("canvas MCP server", () => {
         2
       )
     )
+    await writeFile(
+      path.join(tempDir, "primitives.json"),
+      JSON.stringify(
+        [
+          {
+            primitiveId: "button",
+            entryId: "button",
+            name: "Button",
+            variants: [
+              { name: "Default", description: "", props: {}, category: "default" },
+              { name: "Secondary", description: "", props: {}, category: "default" },
+            ],
+          },
+          {
+            primitiveId: "card",
+            entryId: "card",
+            name: "Card",
+            variants: [{ name: "Default", description: "", props: {}, category: "default" }],
+          },
+        ],
+        null,
+        2
+      )
+    )
 
     const queuedOperations: unknown[] = []
     let importedHtmlBundleRequestBody: Record<string, any> | null = null
@@ -177,6 +241,7 @@ describe("canvas MCP server", () => {
     let tokenWriteRequestBody: Record<string, any> | null = null
     let htmlReadRequestBody: Record<string, any> | null = null
     let htmlWriteRequestBody: Record<string, any> | null = null
+    let markdownWriteRequestBody: Record<string, any> | null = null
     let componentCreateRequestBody: Record<string, any> | null = null
 
     server = createServer((req, res) => {
@@ -278,6 +343,26 @@ describe("canvas MCP server", () => {
               appliedMutations: 1,
               mtimeMs: 457,
               filePath: "projects/demo/components/Card.html",
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/markdown/write") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          markdownWriteRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              source: "# Hello\n\nUpdated paragraph",
+              mtimeMs: 701,
             })
           )
         })
@@ -816,6 +901,173 @@ describe("canvas MCP server", () => {
         mutations: [{ type: "setClassName", value: "card featured" }],
       })
       expect(updatedHtmlNode.result?.structuredContent?.sourceHtml).toContain("featured")
+
+      const structuralMutation = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-structural",
+        method: "tools/call",
+        params: {
+          name: "apply_structural_mutation",
+          arguments: {
+            filePath: "projects/demo/components/Card.html",
+            canvasId: "abc123:0",
+            mtimeMs: 456,
+            mutation: { type: "wrapSelection", wrapperTag: "section" },
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(htmlWriteRequestBody).toMatchObject({
+        filePath: "projects/demo/components/Card.html",
+        canvasId: "abc123:0",
+        mutations: [{ type: "wrapSelection", wrapperTag: "section" }],
+      })
+      expect(structuralMutation.result?.structuredContent?.appliedMutations).toBe(1)
+
+      const markdownUpdatePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-markdown-update",
+        method: "tools/call",
+        params: {
+          name: "update_markdown_block",
+          arguments: {
+            itemId: "markdown-1",
+            action: "update",
+            blockIndex: 1,
+            newText: "Updated paragraph",
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedMarkdownUpdate = await waitForQueuedCanvasOperation(tempDir)
+      expect(markdownWriteRequestBody).toMatchObject({
+        action: "update",
+        filePath: "projects/demo/content/notes.md",
+        mtimeMs: 700,
+        blockIndex: 1,
+        newText: "Updated paragraph",
+      })
+      expect(queuedMarkdownUpdate.request).toMatchObject({
+        toolName: "update_markdown_block",
+        operation: {
+          type: "update_item",
+          id: "markdown-1",
+          updates: {
+            source: "# Hello\n\nUpdated paragraph",
+            sourceFileMtime: 701,
+          },
+        },
+      })
+      await queuedMarkdownUpdate.respond({
+        ok: true,
+        updatedAt: "2026-05-14T20:00:00.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const markdownUpdate = await markdownUpdatePromise
+      expect(markdownUpdate.result?.structuredContent?.mtimeMs).toBe(701)
+
+      const cycleVariantPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-cycle-variant",
+        method: "tools/call",
+        params: {
+          name: "cycle_component_variant",
+          arguments: {
+            itemId: "item-1",
+            direction: "next",
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedVariantCycle = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedVariantCycle.request).toMatchObject({
+        toolName: "cycle_component_variant",
+        operation: {
+          type: "update_item",
+          id: "item-1",
+          updates: {
+            variantIndex: 1,
+          },
+        },
+      })
+      await queuedVariantCycle.respond({
+        ok: true,
+        updatedAt: "2026-05-14T20:00:01.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const cycledVariant = await cycleVariantPromise
+      expect(cycledVariant.result?.structuredContent?.variantIndex).toBe(1)
+
+      const artboardLayoutPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-artboard-layout",
+        method: "tools/call",
+        params: {
+          name: "update_artboard_layout",
+          arguments: {
+            itemId: "artboard-1",
+            layout: {
+              gap: 28,
+              padding: 32,
+            },
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedArtboardLayout = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedArtboardLayout.request).toMatchObject({
+        toolName: "update_artboard_layout",
+        operation: {
+          type: "update_item",
+          id: "artboard-1",
+          updates: {
+            layout: expect.objectContaining({
+              gap: 28,
+              padding: 32,
+            }),
+          },
+        },
+      })
+      await queuedArtboardLayout.respond({
+        ok: true,
+        updatedAt: "2026-05-14T20:00:02.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const artboardLayoutUpdate = await artboardLayoutPromise
+      expect(artboardLayoutUpdate.result?.structuredContent?.layout?.gap).toBe(28)
+
+      const mermaidLabelPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-mermaid-label",
+        method: "tools/call",
+        params: {
+          name: "update_mermaid_label",
+          arguments: {
+            itemId: "mermaid-1",
+            nodeId: "B",
+            label: "Review",
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedMermaidLabel = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedMermaidLabel.request).toMatchObject({
+        toolName: "update_mermaid_label",
+        operation: {
+          type: "update_item",
+          id: "mermaid-1",
+          updates: {
+            source: "flowchart LR\n  A[Start] --> B[Review]",
+          },
+        },
+      })
+      await queuedMermaidLabel.respond({
+        ok: true,
+        updatedAt: "2026-05-14T20:00:03.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const mermaidLabelUpdate = await mermaidLabelPromise
+      expect(mermaidLabelUpdate.result?.structuredContent?.changed).toBe(true)
 
       const createdHtmlComponentPromise = sendRpc({
         jsonrpc: "2.0",

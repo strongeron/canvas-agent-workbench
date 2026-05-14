@@ -4,7 +4,7 @@ This file is the real MCP reference for this repo's local stdio server:
 
 - [bin/canvas-mcp-server](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/bin/canvas-mcp-server)
 
-It reflects the current checked-in server surface on April 5, 2026.
+It reflects the current checked-in server surface on May 14, 2026.
 
 ## Use This With Claude or Codex
 
@@ -93,6 +93,11 @@ Use these when you want the agent to manage the file library itself:
 - `update_design_token`
 - `read_html_node`
 - `update_html_node`
+- `apply_structural_mutation`
+- `update_markdown_block`
+- `cycle_component_variant`
+- `update_artboard_layout`
+- `update_mermaid_label`
 - `create_component_from_html`
 - `create_component_from_tsx`
 - `promote_to_component`
@@ -121,6 +126,11 @@ What this surface supports:
 - inspect available canvas themes and current resolved theme tokens
 - list and update project-level `tokens.css` custom properties with mtime guards
 - read and mutate editable HTML nodes by `data-canvas-id`
+- apply structural HTML / TSX mutations through the same AST write path the live canvas uses
+- update markdown blocks and keep live markdown items in sync with file-backed or inline source
+- cycle component variants through the same state path as keyboard variant switching
+- patch artboard layout fields such as gap and padding through explicit MCP wrappers
+- patch Mermaid node labels through a source-backed item rewrite
 - create new source-backed HTML or TSX components from pasted/generated code
 - inspect registered primitives and their metadata
 - create/update/delete board items
@@ -142,6 +152,11 @@ Web-native editing tools:
 - `update_design_token` sets one CSS custom property. Pass `mtimeMs` from `list_design_tokens` when the file already exists.
 - `read_html_node` reads tag, attributes, classes, and text for a selected HTML element. Use `filePath` for file-backed components or `sourceHtml` for inline components.
 - `update_html_node` accepts literal mutations like `setClassName`, `setAttribute`, and `setTextContent`. File-backed writes require the current `mtimeMs`.
+- `apply_structural_mutation` is the explicit wrapper for structural mutations such as `insertChild`, `removeNode`, `reorderSibling`, `wrapSelection`, `unwrap`, and `swapTag`. It returns the same writer payload, including `canvasIdMap`, so agents can rebase ids across sequential mutations.
+- `update_markdown_block` targets a live markdown item by `itemId`, calls the markdown writer, then enqueues an `update_item` so the canvas state stays aligned with the new markdown source and file `mtimeMs`.
+- `cycle_component_variant` targets a live component item by `itemId`, clamps to the registered primitive variant count, and clears `customProps` the same way the canvas UI does when a variant changes.
+- `update_artboard_layout` targets a live artboard by `itemId` and merges layout keys such as `gap`, `padding`, `direction`, `align`, `justify`, and `columns`.
+- `update_mermaid_label` targets a live Mermaid item by `itemId`, patches one node label in source form, and updates the item through the normal canvas queue path.
 - `create_component_from_html` and `create_component_from_tsx` write under `projects/<projectId>/components/`, append a matching `registry.json` entry, and create a preview node unless `createItem: false` is passed.
 - `promote_to_component` extracts an HTML subtree (by `canvasId`) from a canvas item and saves it as a new project component. The original item is unchanged; the new primitive appears in the registry and library panel for re-use.
 

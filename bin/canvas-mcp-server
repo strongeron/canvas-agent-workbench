@@ -34,6 +34,7 @@ import {
   readCanvasAgentState,
   readCanvasAgentThemes,
   updateCanvasHtmlNode,
+  updateCanvasMarkdownDocument,
   updateDesignToken,
 } from './canvas-agent-runtime.mjs'
 import {
@@ -321,6 +322,97 @@ const TOOL_DEFINITIONS = [
         },
       },
       required: ['canvasId', 'mutations'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'apply_structural_mutation',
+    description:
+      'Apply one structural AST/HTML mutation by data-canvas-id to inline sourceHtml or a workspace-relative source file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string' },
+        sourceHtml: { type: 'string' },
+        canvasId: { type: 'string' },
+        sourceId: { type: 'string' },
+        mtimeMs: { type: 'number' },
+        mutation: { type: 'object' },
+      },
+      required: ['canvasId', 'mutation'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_markdown_block',
+    description:
+      'Update or reorder a markdown block on a live markdown canvas item and keep the item source in sync with the markdown writer.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        action: { type: 'string', enum: ['update', 'reorder'] },
+        blockIndex: { type: 'number' },
+        newText: { type: 'string' },
+        fromIndex: { type: 'number' },
+        toIndex: { type: 'number' },
+      },
+      required: ['itemId', 'action'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'cycle_component_variant',
+    description:
+      'Move a component item to the previous or next registered variant, mirroring the live keyboard cycling path.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        direction: { type: 'string', enum: ['previous', 'next'] },
+      },
+      required: ['itemId', 'direction'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_artboard_layout',
+    description:
+      'Patch an artboard layout (gap, padding, direction, align, justify, columns) through the same canvas-state path as the inspector and live artboard controls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        layout: {
+          type: 'object',
+          properties: {
+            display: { type: 'string', enum: ['flex', 'grid'] },
+            direction: { type: 'string', enum: ['row', 'column'] },
+            align: { type: 'string', enum: ['start', 'center', 'end', 'stretch'] },
+            justify: { type: 'string', enum: ['start', 'center', 'end', 'between'] },
+            gap: { type: 'number' },
+            columns: { type: 'number' },
+            padding: { type: 'number' },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['itemId', 'layout'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_mermaid_label',
+    description:
+      'Update one Mermaid node label on a live Mermaid item by patching the item source inline.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        nodeId: { type: 'string' },
+        label: { type: 'string' },
+      },
+      required: ['itemId', 'nodeId', 'label'],
       additionalProperties: false,
     },
   },
@@ -1634,6 +1726,31 @@ async function callTool(name, args) {
         })
       )
     }
+    case 'apply_structural_mutation': {
+      const canvasId = normalizeString(args.canvasId)
+      if (!canvasId) return asToolError('canvasId is required.')
+      if (!args.mutation || typeof args.mutation !== 'object') {
+        return asToolError('mutation is required.')
+      }
+      return asToolResult(
+        await updateCanvasHtmlNode(context, {
+          filePath: normalizeString(args.filePath) || undefined,
+          sourceHtml: typeof args.sourceHtml === 'string' ? args.sourceHtml : undefined,
+          canvasId,
+          sourceId: normalizeString(args.sourceId) || undefined,
+          mutations: [args.mutation],
+          mtimeMs: typeof args.mtimeMs === 'number' ? args.mtimeMs : undefined,
+        })
+      )
+    }
+    case 'update_markdown_block':
+      return runUpdateMarkdownBlock(args)
+    case 'cycle_component_variant':
+      return runCycleComponentVariant(args)
+    case 'update_artboard_layout':
+      return runUpdateArtboardLayout(args)
+    case 'update_mermaid_label':
+      return runUpdateMermaidLabel(args)
     case 'create_component_from_html': {
       const name = normalizeString(args.name)
       const sourceHtml = typeof args.sourceHtml === 'string' ? args.sourceHtml : ''
@@ -2149,6 +2266,173 @@ async function runUpdateItem(args) {
   return applyOperation('update_item', createUpdateItemOperation(id, args.updates))
 }
 
+async function runUpdateMarkdownBlock(args) {
+  const itemId = normalizeString(args.itemId)
+  const action = normalizeString(args.action)
+  if (!itemId) return asToolError('itemId is required.')
+  if (!action || !['update', 'reorder'].includes(action)) {
+    return asToolError('action must be update or reorder.')
+  }
+
+  const state = await readCanvasAgentState(context)
+  const item = Array.isArray(state?.items) ? state.items.find((entry) => entry?.id === itemId) : null
+  if (!item || item.type !== 'markdown') return asToolError(`Markdown item not found: ${itemId}`)
+
+  const request =
+    action === 'update'
+      ? {
+          action,
+          blockIndex: Number.isInteger(args.blockIndex) ? Number(args.blockIndex) : -1,
+          newText: typeof args.newText === 'string' ? args.newText : '',
+        }
+      : {
+          action,
+          fromIndex: Number.isInteger(args.fromIndex) ? Number(args.fromIndex) : -1,
+          toIndex: Number.isInteger(args.toIndex) ? Number(args.toIndex) : -1,
+        }
+
+  if (action === 'update' && request.blockIndex < 0) {
+    return asToolError('blockIndex is required for update.')
+  }
+  if (action === 'reorder' && (request.fromIndex < 0 || request.toIndex < 0)) {
+    return asToolError('fromIndex and toIndex are required for reorder.')
+  }
+
+  const writeResult = await updateCanvasMarkdownDocument(context, {
+    filePath: normalizeString(item.sourcePath) || undefined,
+    markdownSource: item.source,
+    mtimeMs: typeof item.sourceFileMtime === 'number' ? item.sourceFileMtime : undefined,
+    ...request,
+  })
+
+  const updates = {
+    source: writeResult.source,
+    ...(typeof writeResult.mtimeMs === 'number' ? { sourceFileMtime: writeResult.mtimeMs } : {}),
+  }
+
+  return applyOperation(
+    'update_markdown_block',
+    createUpdateItemOperation(itemId, updates),
+    {
+      itemId,
+      action,
+      source: writeResult.source,
+      ...(typeof writeResult.mtimeMs === 'number' ? { mtimeMs: writeResult.mtimeMs } : {}),
+    }
+  )
+}
+
+async function runCycleComponentVariant(args) {
+  const itemId = normalizeString(args.itemId)
+  const direction = normalizeString(args.direction)
+  if (!itemId) return asToolError('itemId is required.')
+  if (!direction || !['previous', 'next'].includes(direction)) {
+    return asToolError('direction must be previous or next.')
+  }
+
+  const state = await readCanvasAgentState(context)
+  const item = Array.isArray(state?.items) ? state.items.find((entry) => entry?.id === itemId) : null
+  if (!item || item.type !== 'component') return asToolError(`Component item not found: ${itemId}`)
+
+  const primitives = await readCanvasAgentPrimitives(context)
+  const primitive = Array.isArray(primitives)
+    ? primitives.find((entry) => entry?.entryId === item.componentId || entry?.primitiveId === item.componentId)
+    : null
+  const variantCount = Array.isArray(primitive?.variants) ? primitive.variants.length : 0
+  if (variantCount <= 0) {
+    return asToolError(`Primitive variants not found for component: ${item.componentId}`)
+  }
+
+  const nextVariantIndex = cycleVariantIndex(
+    Number.isInteger(item.variantIndex) ? item.variantIndex : 0,
+    variantCount,
+    direction
+  )
+
+  if (nextVariantIndex === item.variantIndex) {
+    return asToolResult({
+      ok: true,
+      itemId,
+      variantIndex: item.variantIndex,
+      changed: false,
+    })
+  }
+
+  return applyOperation(
+    'cycle_component_variant',
+    createUpdateItemOperation(itemId, {
+      variantIndex: nextVariantIndex,
+      customProps: undefined,
+    }),
+    {
+      itemId,
+      variantIndex: nextVariantIndex,
+      changed: true,
+    }
+  )
+}
+
+async function runUpdateArtboardLayout(args) {
+  const itemId = normalizeString(args.itemId)
+  if (!itemId) return asToolError('itemId is required.')
+  if (!args.layout || typeof args.layout !== 'object') {
+    return asToolError('layout is required.')
+  }
+
+  const state = await readCanvasAgentState(context)
+  const item = Array.isArray(state?.items) ? state.items.find((entry) => entry?.id === itemId) : null
+  if (!item || item.type !== 'artboard') return asToolError(`Artboard not found: ${itemId}`)
+
+  const layout = {
+    ...(item.layout && typeof item.layout === 'object' ? item.layout : {}),
+    ...args.layout,
+  }
+
+  return applyOperation(
+    'update_artboard_layout',
+    createUpdateItemOperation(itemId, { layout }),
+    {
+      itemId,
+      layout,
+    }
+  )
+}
+
+async function runUpdateMermaidLabel(args) {
+  const itemId = normalizeString(args.itemId)
+  const nodeId = normalizeString(args.nodeId)
+  const label = typeof args.label === 'string' ? args.label : ''
+  if (!itemId) return asToolError('itemId is required.')
+  if (!nodeId) return asToolError('nodeId is required.')
+  if (!label.trim()) return asToolError('label is required.')
+
+  const state = await readCanvasAgentState(context)
+  const item = Array.isArray(state?.items) ? state.items.find((entry) => entry?.id === itemId) : null
+  if (!item || item.type !== 'mermaid') return asToolError(`Mermaid item not found: ${itemId}`)
+
+  const nextSource = updateMermaidNodeLabelLocal(item.source, nodeId, label)
+  if (nextSource === item.source) {
+    return asToolResult({
+      ok: true,
+      itemId,
+      nodeId,
+      source: item.source,
+      changed: false,
+    })
+  }
+
+  return applyOperation(
+    'update_mermaid_label',
+    createUpdateItemOperation(itemId, { source: nextSource }),
+    {
+      itemId,
+      nodeId,
+      source: nextSource,
+      changed: true,
+    }
+  )
+}
+
 async function runUpdateGroup(args) {
   const id = normalizeString(args.id)
   if (!id) return asToolError('id is required.')
@@ -2455,6 +2739,35 @@ async function getPrimitiveById(primitiveId) {
   if (!primitiveId) return null
   const primitives = await readCanvasAgentPrimitives(context)
   return primitives.find((entry) => entry.primitiveId === primitiveId || entry.entryId === primitiveId) || null
+}
+
+function cycleVariantIndex(currentIndex, variantCount, direction) {
+  if (!Number.isInteger(currentIndex) || !Number.isInteger(variantCount) || variantCount <= 0) {
+    return 0
+  }
+  if (variantCount === 1) return 0
+  if (direction === 'previous') {
+    return Math.max(0, currentIndex - 1)
+  }
+  return Math.min(variantCount - 1, currentIndex + 1)
+}
+
+function updateMermaidNodeLabelLocal(source, nodeId, nextLabel) {
+  const trimmedLabel = typeof nextLabel === 'string' ? nextLabel.trim() : ''
+  if (!trimmedLabel) return source
+
+  const pattern = new RegExp(
+    `\\b(${escapeRegExpLocal(nodeId)})\\s*([[({])([^[\\]{}()]+?)([\\])}])`,
+    'g'
+  )
+
+  return String(source || '').replace(pattern, (_, id, open, _current, close) => {
+    return `${id}${open}${trimmedLabel}${close}`
+  })
+}
+
+function escapeRegExpLocal(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function flattenCanvasSummaryItems(summary) {

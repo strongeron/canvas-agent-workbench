@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14 (refresh: U8 media trim sliders landed locally)
+updated: 2026-05-14 (refresh: U11 MCP wrappers landed locally)
 ---
 
 # Running goal
@@ -39,7 +39,8 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U8 | 🟡 local panel trim sliders landed | video clip start/end sliders are in the inspector; crop handles and on-canvas trim handles remain |
 | U9 | 🟡 local gap + reorder controls landed | artboard gap/padding sliders are in the inspector, selected artboards expose a live gap scrub handle, and selected artboard children now expose move controls |
 | U10 | 🟡 local panel label edit landed | mermaid node labels are surfaced in the props panel and patch source inline; rendered-SVG direct edit remains |
-| U11–U12 | not started | MCP audit pass, drop targets, multi-select |
+| U11 | 🟡 local MCP wrappers landed | explicit MCP tools now wrap structural mutation, markdown block update, component variant cycling, artboard layout update, and Mermaid label update |
+| U12 | not started | drop targets and iframe multi-select |
 
 ## Open gates before claiming v3 demo "shippable"
 
@@ -58,7 +59,7 @@ Three roughly-independent threads to pick from, prioritized by leverage:
 2. **Finish U6 markdown.** The endpoint, inline block edit, block reorder, and basic formatting controls are in; remaining work is polish and deciding whether markdown needs any bridge-style edit protocol at all, given it does not render in an iframe today. Independent of thread 1.
 3. **U4b drop targets.** All deps (U1, U2, U4a, U13) are green. Largest of the three but unblocked.
 
-U12 (multi-select) is still a small leaf unit that can land independently after thread 1. U8 now has panel trim sliders but still lacks direct crop/trim handles. U9 now has panel sliders plus live gap/reorder controls; full drag-sort remains optional follow-through, not a missing state primitive. U10 now has source-backed panel label edits; rendered-SVG direct edit still remains. **U11 (MCP audit)** is gated on U5–U10 and should land last.
+U12 (multi-select) is still a small leaf unit that can land independently after thread 1. U8 now has panel trim sliders but still lacks direct crop/trim handles. U9 now has panel sliders plus live gap/reorder controls; full drag-sort remains optional follow-through, not a missing state primitive. U10 now has source-backed panel label edits; rendered-SVG direct edit still remains. U11 now has the first direct-manip MCP wrappers, but the audit is not complete until docs and any remaining missing tool parity are reconciled.
 
 ## Implementation notes and progress log
 
@@ -181,6 +182,18 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - Focused coverage in `tests/canvasMediaPropsPanel.test.tsx` asserts both slider paths wire cleanly into `onChange`.
 - Remaining U8 work is still the direct-manip half from the plan: visible crop handles for images and live trim handles on the media surface itself.
 
+### U11 progress (2026-05-14) — MCP wrapper audit, slice 1
+
+- `bin/canvas-mcp-server` now exposes explicit wrappers for landed direct-manip operations instead of forcing agents through only the generic item/html tools:
+  - `apply_structural_mutation`
+  - `update_markdown_block`
+  - `cycle_component_variant`
+  - `update_artboard_layout`
+  - `update_mermaid_label`
+- `tests/canvasMcpServer.test.ts` now exercises each wrapper over the stdio MCP harness, including endpoint-backed markdown/structural writes and queue-backed canvas item updates.
+- `docs/CANVAS_AGENT_MCP_COMMANDS.md` and `utils/agentNativeManifest.ts` now advertise the new wrapper surface.
+- Remaining U11 work is the rest of the parity audit: decide whether media needs its own explicit MCP wrapper before crop state exists, and document any direct-manip gaps that still rely on generic `update_item`.
+
 ## Remaining v3 surface
 
 To complete the headline goal ("every node type editable like Figma + agent parity"), the still-needed slices are:
@@ -196,7 +209,7 @@ To complete the headline goal ("every node type editable like Figma + agent pari
 | **U8** | image crop handles and live video trim handles remain; panel-side trim sliders are already in |
 | **U9** | optional drag-sort polish remains; panel-side gap/padding sliders, live gap scrub, and live child reorder controls are already in |
 | **U10** | rendered-SVG direct label edit via click/bridge remains; source-backed panel label edit is already in |
-| **U11** | MCP audit pass — verify every new direct-manipulation op is exposed as an MCP tool; agent workflow docs |
+| **U11** | complete the parity audit; first explicit MCP wrappers for landed direct-manip operations are already in |
 | **U12** | shift-click multi-select primitives within one iframe |
 
 ## Out of scope for v3

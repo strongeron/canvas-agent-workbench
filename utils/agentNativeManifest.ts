@@ -180,6 +180,36 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "apply_structural_mutation",
+        title: "Apply structural mutation",
+        description: "Apply one structural HTML/TSX mutation by canvasId through the AST write path.",
+        status: "ready",
+      },
+      {
+        id: "update_markdown_block",
+        title: "Update markdown block",
+        description: "Patch or reorder markdown blocks on a live markdown item and sync the item source.",
+        status: "ready",
+      },
+      {
+        id: "cycle_component_variant",
+        title: "Cycle component variant",
+        description: "Move a component item to the previous or next registered variant.",
+        status: "ready",
+      },
+      {
+        id: "update_artboard_layout",
+        title: "Update artboard layout",
+        description: "Patch artboard layout fields such as gap, padding, direction, or columns.",
+        status: "ready",
+      },
+      {
+        id: "update_mermaid_label",
+        title: "Update Mermaid label",
+        description: "Patch one Mermaid node label by rewriting the live Mermaid item source.",
+        status: "ready",
+      },
+      {
         id: "update_group",
         title: "Update group",
         description: "Patch an existing canvas group by id.",

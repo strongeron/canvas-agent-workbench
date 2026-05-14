@@ -510,6 +510,20 @@ export async function updateCanvasHtmlNode(context, input) {
   })
 }
 
+export async function updateCanvasMarkdownDocument(context, input) {
+  const filePath = typeof input?.filePath === 'string' && input.filePath.trim() ? input.filePath.trim() : ''
+  return postAgentNativeJson(context, '/api/canvas/markdown/write', {
+    action: input?.action,
+    filePath: filePath || undefined,
+    markdownSource: filePath ? undefined : input?.markdownSource,
+    mtimeMs: typeof input?.mtimeMs === 'number' ? input.mtimeMs : undefined,
+    blockIndex: Number.isInteger(input?.blockIndex) ? Number(input.blockIndex) : undefined,
+    newText: typeof input?.newText === 'string' ? input.newText : undefined,
+    fromIndex: Number.isInteger(input?.fromIndex) ? Number(input.fromIndex) : undefined,
+    toIndex: Number.isInteger(input?.toIndex) ? Number(input.toIndex) : undefined,
+  })
+}
+
 export async function listDesignTokens(context, projectId = context.projectId) {
   return postAgentNativeJson(context, '/api/canvas/tokens/list', { projectId })
 }
