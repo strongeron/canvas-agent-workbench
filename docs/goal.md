@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14 (refresh: U5 host wiring landed locally)
+updated: 2026-05-14 (refresh: U5 host wiring + resize class insertion fallback)
 ---
 
 # Running goal
@@ -41,7 +41,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 
 1. **Visual verification** of U4a end-to-end in a real browser (drag a button corner, confirm file rewrites + overlay re-anchors). Logic is unit-tested but no human has driven it yet.
 2. **Finish U3 follow-through** so a wrap/insert/remove preserves the user's selection and overlay rect continuously across the recompile on every active surface.
-3. **Inline-style fallback** for U4a when an element has no `w-*/h-*` class today (currently no-op; plan calls for inline `style="width: Npx"`).
+3. **Expression-backed resize fallback** for U4a when a TSX node's `className` is computed (`cn(...)`, ternaries, etc.). Missing class attrs now get a snapped `class` / `className` inserted on first resize; computed expressions still no-op.
 
 ## Next slice ordering (set 2026-05-14)
 
@@ -50,7 +50,7 @@ Three roughly-independent threads to pick from, prioritized by leverage:
 1. **Close the demo gate on the live surface.** Sequence:
    - Browser-verify U5 undo/redo on the source-backed TSX + inline HTML fixtures.
    - Browser-verify U3 continuity for **insert** and **remove** on TSX (wrap is already verified).
-   - U4a inline-style fallback when no `w-*`/`h-*` class is present (emit inline `style="width: Npx"` rather than no-op).
+   - Decide whether U4a should grow a true inline-style / style-prop fallback for computed class expressions, or whether those nodes stay source-only for resize in v3.
 2. **Finish U6 markdown.** Endpoint (`vite/api/canvasMarkdownWrite.ts` with `resolveWorkspacePath` guard + mtime) → U13 bridge wire-up (`canvas/edit-start`/`-commit`/`-result`) → `CanvasMarkdownItem` inline-edit UI + drag-to-reorder. Independent of thread 1.
 3. **U4b drop targets.** All deps (U1, U2, U4a, U13) are green. Largest of the three but unblocked.
 

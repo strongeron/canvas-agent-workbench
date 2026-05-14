@@ -61,6 +61,16 @@ describe("writeCanvasAstNode", () => {
     expect(result.source).toContain(`<div className="p-4 rounded">Hi</div>`)
   })
 
+  it("inserts className when the selected element has no existing className attr", () => {
+    const src = `export default function P() { return <div>Hi</div> }`
+
+    const result = writeByTag(src, "div", [{ type: "setClassName", value: "w-32 h-16" }])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toContain(`<div className="w-32 h-16">Hi</div>`)
+  })
+
   it("sets string, number, boolean, and identifier props", () => {
     const src = `export default function P() {
   return <Button variant="primary" count={1} disabled={false} tone={brandTone}>Hi</Button>

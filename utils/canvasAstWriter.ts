@@ -181,11 +181,7 @@ function buildReplacement(
   if (mutation.type === "setClassName") {
     const attr = findJsxAttribute(node, "className")
     if (!attr) {
-      return {
-        ok: false,
-        code: "unsupported-mutation",
-        error: "className attribute was not found on the selected element",
-      }
+      return insertStringAttribute(sourceFile, node, "className", mutation.value)
     }
     return replaceStringAttribute(sourceFile, attr, mutation.value, "className")
   }
@@ -285,6 +281,23 @@ function replaceStringAttribute(
       start: initializer.getStart(sourceFile),
       end: initializer.getEnd(),
       text: `"${escapeJsxAttribute(value)}"`,
+    },
+  }
+}
+
+function insertStringAttribute(
+  sourceFile: ts.SourceFile,
+  node: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  attrName: string,
+  value: string
+): { ok: true; replacement: Replacement | null } {
+  const insertAt = ts.isJsxSelfClosingElement(node) ? node.getEnd() - 2 : node.getEnd() - 1
+  return {
+    ok: true,
+    replacement: {
+      start: insertAt,
+      end: insertAt,
+      text: ` ${attrName}="${escapeJsxAttribute(value)}"`,
     },
   }
 }

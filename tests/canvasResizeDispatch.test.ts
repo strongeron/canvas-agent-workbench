@@ -45,21 +45,38 @@ describe("dispatchCanvasResize", () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it("returns no-op:no-class-attr when the element has no className", async () => {
+  it("inserts snapped size classes when the element has no className attr yet", async () => {
     const fetchImpl = mockFetchSequence(
       mockJson({
         ok: true,
         node: { canvasId: "abc:0", tag: "div", attributes: [], textChildren: "" },
+      }),
+      mockJson({
+        ok: true,
+        sourceReact: "export default function P() { return <div className='w-32 h-16'>x</div> }",
+        mtimeMs: 99,
       })
     )
+    const onSourceReactChange = vi.fn()
     const result = await dispatchCanvasResize(makeEvent(), {
       sourceKind: "tsx",
       sourceId: "item-1",
       sourceReact: "x",
       fetchImpl,
+      onSourceReactChange,
     })
-    expect(result).toEqual({ status: "no-op", reason: "no-class-attr" })
-    expect((fetchImpl as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1)
+    expect(result.status).toBe("applied")
+    if (result.status === "applied") {
+      expect(result.mutation).toEqual({ type: "setClassName", value: "w-32 h-16" })
+    }
+    expect(onSourceReactChange).toHaveBeenCalledWith(
+      "export default function P() { return <div className='w-32 h-16'>x</div> }",
+      99
+    )
+    const calls = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls
+    expect(calls).toHaveLength(2)
+    const writeBody = JSON.parse(calls[1]?.[1].body)
+    expect(writeBody.mutations).toEqual([{ type: "setClassName", value: "w-32 h-16" }])
   })
 
   it("returns no-op:non-literal-class when className is an expression (e.g. cn(...))", async () => {

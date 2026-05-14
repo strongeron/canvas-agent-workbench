@@ -43,7 +43,7 @@ export interface CanvasResizeDispatchDeps {
 
 export type CanvasResizeDispatchResult =
   | { status: "applied"; mutation: { type: "setClassName"; value: string } }
-  | { status: "no-op"; reason: "move-handle" | "sub-snap" | "no-class-attr" | "non-literal-class" }
+  | { status: "no-op"; reason: "move-handle" | "sub-snap" | "non-literal-class" }
   | { status: "error"; error: string }
 
 export async function dispatchCanvasResize(
@@ -81,13 +81,10 @@ export async function dispatchCanvasResize(
     const classNameAttr = readPayload.node.attributes.find(
       (a: AstAttributeInfo) => a.name === "className" || a.name === "class"
     )
-    if (!classNameAttr) {
-      return { status: "no-op", reason: "no-class-attr" }
-    }
     // Only literal-string className can be safely rewritten by setClassName
     // today. Expression className (e.g. cn("p-4", isOpen && "bg-red")) needs
     // a richer mutation; deferred.
-    if (classNameAttr.kind !== "literal-string") {
+    if (classNameAttr && classNameAttr.kind !== "literal-string") {
       return { status: "no-op", reason: "non-literal-class" }
     }
 
@@ -96,7 +93,7 @@ export async function dispatchCanvasResize(
       kind: event.kind,
       delta: event.deltaIframe,
       rect: { width: event.rect.width, height: event.rect.height },
-      className: classNameAttr.value,
+      className: classNameAttr?.value ?? "",
     })
     if (!mutation) {
       return { status: "no-op", reason: "sub-snap" }
