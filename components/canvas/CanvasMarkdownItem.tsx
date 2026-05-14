@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { CanvasMarkdownItem as CanvasMarkdownItemType } from "../../types/canvas"
 import { listMarkdownBlocks } from "../../utils/canvasMarkdownWriter"
-import { performCanvasMarkdownWrite } from "../../utils/canvasMarkdownWriteClient"
+import {
+  performCanvasMarkdownWrite,
+  type CanvasMarkdownWriteClientResult,
+} from "../../utils/canvasMarkdownWriteClient"
 import { CanvasContextMenu } from "./CanvasContextMenu"
 import { CanvasMarkdownPreview } from "./CanvasMarkdownPreview"
 import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
@@ -22,6 +25,7 @@ interface CanvasMarkdownItemProps {
   onBringToFront: () => void
   scale: number
   interactMode: boolean
+  onWriteSuccess?: (result: CanvasMarkdownWriteClientResult) => void
 }
 
 const MIN_WIDTH = 280
@@ -50,6 +54,7 @@ export function CanvasMarkdownItem({
   onBringToFront,
   scale,
   interactMode,
+  onWriteSuccess,
 }: CanvasMarkdownItemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -127,6 +132,7 @@ export function CanvasMarkdownItem({
         source: result.source,
         ...(typeof result.mtimeMs === "number" ? { sourceFileMtime: result.mtimeMs } : {}),
       })
+      onWriteSuccess?.(result)
       setWriteState({ status: "idle", error: "" })
       setEditingBlockIndex(null)
       setEditingValue("")
@@ -136,7 +142,7 @@ export function CanvasMarkdownItem({
         error: error instanceof Error ? error.message : "Failed to update markdown block.",
       })
     }
-  }, [editingBlockIndex, editingValue, item.source, item.sourceFileMtime, item.sourcePath, onUpdate])
+  }, [editingBlockIndex, editingValue, item.source, item.sourceFileMtime, item.sourcePath, onUpdate, onWriteSuccess])
 
   const cancelEditing = useCallback(() => {
     setEditingBlockIndex(null)
@@ -167,6 +173,7 @@ export function CanvasMarkdownItem({
           source: result.source,
           ...(typeof result.mtimeMs === "number" ? { sourceFileMtime: result.mtimeMs } : {}),
         })
+        onWriteSuccess?.(result)
         setActiveBlockIndex(targetIndex)
         setWriteState({ status: "idle", error: "" })
       } catch (error) {
@@ -176,7 +183,7 @@ export function CanvasMarkdownItem({
         })
       }
     },
-    [activeBlockIndex, blocks.length, item.source, item.sourceFileMtime, item.sourcePath, onUpdate]
+    [activeBlockIndex, blocks.length, item.source, item.sourceFileMtime, item.sourcePath, onUpdate, onWriteSuccess]
   )
 
   const handleResizeStart = useCallback(

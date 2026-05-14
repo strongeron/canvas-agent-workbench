@@ -30,6 +30,7 @@ import { CanvasLayoutMermaidItem } from "./CanvasLayoutMermaidItem"
 import { CanvasLayoutMarkdownItem } from "./CanvasLayoutMarkdownItem"
 import { CanvasExcalidrawItem as CanvasExcalidrawItemComponent } from "./CanvasExcalidrawItem"
 import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./CanvasHtmlFrame"
+import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { CanvasMarkdownItem as CanvasMarkdownItemComponent } from "./CanvasMarkdownItem"
 import { CanvasMermaidItem as CanvasMermaidItemComponent } from "./CanvasMermaidItem"
 import { CanvasMediaItem as CanvasMediaItemComponent } from "./CanvasMediaItem"
@@ -83,6 +84,7 @@ interface CanvasWorkspaceProps {
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
+  onMarkdownWriteSuccess?: (result: CanvasMarkdownWriteClientResult) => void
 }
 
 export function CanvasWorkspace({
@@ -111,6 +113,7 @@ export function CanvasWorkspace({
   onReactNodeSelect,
   onReactCompileGenerationChange,
   onReactNodeResize,
+  onMarkdownWriteSuccess,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -387,6 +390,7 @@ export function CanvasWorkspace({
               onUpdate={(updates) => onUpdateItem(child.id, updates)}
               scale={transform.scale}
               interactMode={interactMode}
+              onWriteSuccess={onMarkdownWriteSuccess}
             />
             {showReorderControls ? (
               <ArtboardChildReorderControls
@@ -438,6 +442,7 @@ export function CanvasWorkspace({
       onReactNodeSelect,
       onReactNodeResize,
       onMoveLayer,
+      onMarkdownWriteSuccess,
       Renderer,
       getComponentById,
       transform.scale,
@@ -867,6 +872,7 @@ export function CanvasWorkspace({
                 onUpdate={(updates: Partial<Omit<CanvasMarkdownItemType, "id">>) =>
                   onUpdateItem(item.id, updates)
                 }
+                onWriteSuccess={onMarkdownWriteSuccess}
               />
             )
           }

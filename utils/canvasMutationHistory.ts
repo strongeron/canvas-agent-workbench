@@ -1,8 +1,11 @@
-import type { CanvasHtmlItem } from "../types/canvas"
+import type { CanvasHtmlItem, CanvasMarkdownItem } from "../types/canvas"
 import type { CanvasAstMutation } from "./canvasAstWriter"
 import type { CanvasHtmlMutation } from "./canvasHtmlEditor"
+import type { CanvasMarkdownMutation } from "./canvasMarkdownWriteClient"
 
-export type CanvasSourceMutation = CanvasAstMutation | CanvasHtmlMutation
+export type CanvasSourceMutation = CanvasAstMutation | CanvasHtmlMutation | CanvasMarkdownMutation
+type CanvasSourceBackedItem = CanvasHtmlItem | CanvasMarkdownItem
+export type CanvasSourceKind = "tsx" | "html" | "markdown"
 
 export function summarizeSourceMutations(mutations: ReadonlyArray<CanvasSourceMutation>): string {
   const first = mutations[0]
@@ -24,36 +27,48 @@ export function summarizeSourceMutations(mutations: ReadonlyArray<CanvasSourceMu
                   ? "wrap node"
                   : first.type === "unwrap"
                     ? "unwrap node"
-                    : "swap tag"
+                    : first.type === "swapTag"
+                      ? "swap tag"
+                      : first.type === "updateMarkdownBlock"
+                        ? "markdown edit"
+                        : "reorder block"
   return mutations.length > 1 ? `${label} (+${mutations.length - 1})` : label
 }
 
-export function inferSourceKindFromFilePath(filePath: string): "tsx" | "html" {
-  return filePath.toLowerCase().endsWith(".html") ? "html" : "tsx"
+export function inferSourceKindFromFilePath(filePath: string): CanvasSourceKind {
+  const lower = filePath.toLowerCase()
+  if (lower.endsWith(".html")) return "html"
+  if (lower.endsWith(".md")) return "markdown"
+  return "tsx"
 }
 
 export function resolveSourceFileMtime(
-  items: CanvasHtmlItem[],
+  items: CanvasSourceBackedItem[],
   filePath: string,
-  kind: "tsx" | "html"
+  kind: CanvasSourceKind
 ): number | undefined {
-  const match = items.find((item) =>
-    kind === "html" ? item.sourceHtmlFilePath === filePath : item.sourceReactFilePath === filePath
-  )
-  return kind === "html" ? match?.sourceHtmlFileMtime : match?.sourceReactFileMtime
+  const match = items.find((item) => {
+    if (kind === "html") return item.type === "html" && item.sourceHtmlFilePath === filePath
+    if (kind === "markdown") return item.type === "markdown" && item.sourcePath === filePath
+    return item.type === "html" && item.sourceReactFilePath === filePath
+  })
+  if (!match) return undefined
+  if (kind === "html" && match.type === "html") return match.sourceHtmlFileMtime
+  if (kind === "markdown" && match.type === "markdown") return match.sourceFileMtime
+  return match.type === "html" ? match.sourceReactFileMtime : undefined
 }
 
 export function applySourceSnapshotToItems(
-  items: CanvasHtmlItem[],
+  items: CanvasSourceBackedItem[],
   filePath: string,
-  kind: "tsx" | "html",
+  kind: CanvasSourceKind,
   source: string,
   mtimeMs?: number
-): { items: CanvasHtmlItem[]; changed: boolean } {
+): { items: CanvasSourceBackedItem[]; changed: boolean } {
   let changed = false
   const nextItems = items.map((item) => {
     if (kind === "html") {
-      if (item.sourceHtmlFilePath !== filePath) return item
+      if (item.type !== "html" || item.sourceHtmlFilePath !== filePath) return item
       changed = true
       return {
         ...item,
@@ -62,7 +77,16 @@ export function applySourceSnapshotToItems(
         ...(typeof mtimeMs === "number" ? { sourceHtmlFileMtime: mtimeMs } : {}),
       }
     }
-    if (item.sourceReactFilePath !== filePath) return item
+    if (kind === "markdown") {
+      if (item.type !== "markdown" || item.sourcePath !== filePath) return item
+      changed = true
+      return {
+        ...item,
+        source,
+        ...(typeof mtimeMs === "number" ? { sourceFileMtime: mtimeMs } : {}),
+      }
+    }
+    if (item.type !== "html" || item.sourceReactFilePath !== filePath) return item
     changed = true
     return {
       ...item,
@@ -84,11 +108,13 @@ export function invertCanvasIdMap(canvasIdMap: Record<string, string | null>): R
 
 export function selectionMatchesLoggedFile(
   selection: { itemId: string },
-  items: CanvasHtmlItem[],
+  items: CanvasSourceBackedItem[],
   filePath: string,
-  kind: "tsx" | "html"
+  kind: CanvasSourceKind
 ): boolean {
   const item = items.find((candidate) => candidate.id === selection.itemId)
   if (!item) return false
-  return kind === "html" ? item.sourceHtmlFilePath === filePath : item.sourceReactFilePath === filePath
+  if (kind === "html") return item.type === "html" && item.sourceHtmlFilePath === filePath
+  if (kind === "markdown") return item.type === "markdown" && item.sourcePath === filePath
+  return item.type === "html" && item.sourceReactFilePath === filePath
 }

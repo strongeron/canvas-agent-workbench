@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 
 import type { CanvasMarkdownItem as CanvasMarkdownItemType } from "../../types/canvas"
 import { listMarkdownBlocks } from "../../utils/canvasMarkdownWriter"
-import { performCanvasMarkdownWrite } from "../../utils/canvasMarkdownWriteClient"
+import {
+  performCanvasMarkdownWrite,
+  type CanvasMarkdownWriteClientResult,
+} from "../../utils/canvasMarkdownWriteClient"
 import { CanvasMarkdownPreview } from "./CanvasMarkdownPreview"
 
 interface CanvasLayoutMarkdownItemProps {
@@ -12,6 +15,7 @@ interface CanvasLayoutMarkdownItemProps {
   onUpdate: (updates: Partial<Omit<CanvasMarkdownItemType, "id">>) => void
   scale: number
   interactMode: boolean
+  onWriteSuccess?: (result: CanvasMarkdownWriteClientResult) => void
 }
 
 const MIN_WIDTH = 280
@@ -24,6 +28,7 @@ export function CanvasLayoutMarkdownItem({
   onUpdate,
   scale,
   interactMode,
+  onWriteSuccess,
 }: CanvasLayoutMarkdownItemProps) {
   const [isResizing, setIsResizing] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
@@ -101,6 +106,7 @@ export function CanvasLayoutMarkdownItem({
         source: result.source,
         ...(typeof result.mtimeMs === "number" ? { sourceFileMtime: result.mtimeMs } : {}),
       })
+      onWriteSuccess?.(result)
       setWriteState({ status: "idle", error: "" })
       setEditingBlockIndex(null)
       setEditingValue("")
@@ -110,7 +116,7 @@ export function CanvasLayoutMarkdownItem({
         error: error instanceof Error ? error.message : "Failed to update markdown block.",
       })
     }
-  }, [editingBlockIndex, editingValue, item.source, item.sourceFileMtime, item.sourcePath, onUpdate])
+  }, [editingBlockIndex, editingValue, item.source, item.sourceFileMtime, item.sourcePath, onUpdate, onWriteSuccess])
 
   const cancelEditing = useCallback(() => {
     setEditingBlockIndex(null)
@@ -141,6 +147,7 @@ export function CanvasLayoutMarkdownItem({
           source: result.source,
           ...(typeof result.mtimeMs === "number" ? { sourceFileMtime: result.mtimeMs } : {}),
         })
+        onWriteSuccess?.(result)
         setActiveBlockIndex(targetIndex)
         setWriteState({ status: "idle", error: "" })
       } catch (error) {
@@ -150,7 +157,7 @@ export function CanvasLayoutMarkdownItem({
         })
       }
     },
-    [activeBlockIndex, blocks.length, item.source, item.sourceFileMtime, item.sourcePath, onUpdate]
+    [activeBlockIndex, blocks.length, item.source, item.sourceFileMtime, item.sourcePath, onUpdate, onWriteSuccess]
   )
 
   const borderClass = isSelected

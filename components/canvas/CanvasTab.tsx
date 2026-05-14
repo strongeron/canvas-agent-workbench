@@ -25,6 +25,7 @@ import type {
   CanvasMermaidItem,
   CanvasExcalidrawItem,
   CanvasHtmlItem,
+  CanvasMarkdownItem,
 } from "../../types/canvas"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
@@ -93,6 +94,7 @@ import {
   type CanvasSourceMutation,
 } from "../../utils/canvasMutationHistory"
 import { cycleVariantIndex } from "../../utils/canvasVariantCycle"
+import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
 
 /** Props for injected Renderer component */
@@ -873,48 +875,112 @@ export function CanvasTab({
     )
   }, [])
 
+  const handleMarkdownWriteSuccess = useCallback((result: CanvasMarkdownWriteClientResult) => {
+    if (!result.filePath || !result.prevSourceSnapshot || result.mutations.length === 0) return
+    const filePath = result.filePath
+    const prevSourceSnapshot = result.prevSourceSnapshot
+    setMutationLogState((current) =>
+      pushEntry(current, {
+        id: `canvas-mutation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        timestamp: Date.now(),
+        filePath,
+        mutations: result.mutations,
+        prevSourceSnapshot,
+        postSourceSnapshot: result.source,
+        canvasIdMap: {},
+        summary: summarizeSourceMutations(result.mutations),
+      })
+    )
+  }, [])
+
   const applyMutationHistoryEntry = useCallback(
     async (entry: CanvasMutationLogEntry<CanvasSourceMutation>, direction: "undo" | "redo") => {
       const kind = inferSourceKindFromFilePath(entry.filePath)
-      const htmlItems = items.filter((item): item is CanvasHtmlItem => item.type === "html")
-      const expectedMtime = resolveSourceFileMtime(htmlItems, entry.filePath, kind)
+      const sourceBackedItems = items.filter(
+        (item): item is CanvasHtmlItem | CanvasMarkdownItem =>
+          item.type === "html" || item.type === "markdown"
+      )
+      const expectedMtime = resolveSourceFileMtime(sourceBackedItems, entry.filePath, kind)
       const sourceSnapshot =
         direction === "undo" ? entry.prevSourceSnapshot : entry.postSourceSnapshot
 
-      const response = await fetch("/api/canvas/ast/write", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filePath: entry.filePath,
-          sourceSnapshot,
-          mtimeMs: expectedMtime,
-        }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as {
-        ok?: boolean
-        kind?: "tsx" | "html"
-        sourceReact?: string
-        sourceHtml?: string
-        mtimeMs?: number | null
-        error?: string
-        code?: string
-      }
-      const nextKind = payload.kind ?? kind
-      const nextSource = nextKind === "html" ? payload.sourceHtml : payload.sourceReact
-      if (!response.ok || !payload.ok || typeof nextSource !== "string") {
-        const errorMessage = payload.error || `Failed to ${direction} source edit.`
-        throw new Error(
-          payload.code === "mtime-conflict"
-            ? `${errorMessage} The file changed on disk since it was loaded.`
-            : errorMessage
-        )
+      let nextKind = kind
+      let nextSource: string | undefined
+      let nextMtime: number | undefined
+
+      if (kind === "markdown") {
+        const response = await fetch("/api/canvas/markdown/write", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filePath: entry.filePath,
+            sourceSnapshot,
+            mtimeMs: expectedMtime,
+          }),
+        })
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean
+          source?: string
+          mtimeMs?: number | null
+          error?: string
+          code?: string
+        }
+        if (!response.ok || !payload.ok || typeof payload.source !== "string") {
+          const errorMessage = payload.error || `Failed to ${direction} source edit.`
+          throw new Error(
+            payload.code === "mtime-conflict"
+              ? `${errorMessage} The file changed on disk since it was loaded.`
+              : errorMessage
+          )
+        }
+        nextSource = payload.source
+        nextMtime = typeof payload.mtimeMs === "number" ? payload.mtimeMs : undefined
+      } else {
+        const response = await fetch("/api/canvas/ast/write", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filePath: entry.filePath,
+            sourceSnapshot,
+            mtimeMs: expectedMtime,
+          }),
+        })
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean
+          kind?: "tsx" | "html"
+          sourceReact?: string
+          sourceHtml?: string
+          mtimeMs?: number | null
+          error?: string
+          code?: string
+        }
+        nextKind = payload.kind ?? kind
+        nextSource = nextKind === "html" ? payload.sourceHtml : payload.sourceReact
+        if (!response.ok || !payload.ok || typeof nextSource !== "string") {
+          const errorMessage = payload.error || `Failed to ${direction} source edit.`
+          throw new Error(
+            payload.code === "mtime-conflict"
+              ? `${errorMessage} The file changed on disk since it was loaded.`
+              : errorMessage
+          )
+        }
+        nextMtime = typeof payload.mtimeMs === "number" ? payload.mtimeMs : undefined
       }
 
-      const nextMtime = typeof payload.mtimeMs === "number" ? payload.mtimeMs : undefined
-      const nextItemsResult = applySourceSnapshotToItems(htmlItems, entry.filePath, nextKind, nextSource, nextMtime)
+      if (typeof nextSource !== "string") {
+        throw new Error(`Failed to ${direction} source edit.`)
+      }
+
+      const nextItemsResult = applySourceSnapshotToItems(
+        sourceBackedItems,
+        entry.filePath,
+        nextKind,
+        nextSource,
+        nextMtime
+      )
       if (nextItemsResult.changed) {
         const rewrittenItems = items.map((item) =>
-          item.type === "html"
+          item.type === "html" || item.type === "markdown"
             ? nextItemsResult.items.find((candidate) => candidate.id === item.id) ?? item
             : item
         )
@@ -923,7 +989,7 @@ export function CanvasTab({
 
       setReactNodeSelection((current) => {
         if (!current) return current
-        if (!selectionMatchesLoggedFile(current, htmlItems, entry.filePath, nextKind)) {
+        if (!selectionMatchesLoggedFile(current, sourceBackedItems, entry.filePath, nextKind)) {
           return current
         }
         const canvasIdMap =
@@ -3419,6 +3485,7 @@ export function CanvasTab({
             }}
             onReactCompileGenerationChange={handleReactCompileGenerationChange}
             onReactNodeResize={handleReactNodeResize}
+            onMarkdownWriteSuccess={handleMarkdownWriteSuccess}
           />
 
           {/* Right sidebar - Props Panel (single selection only) */}

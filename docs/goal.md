@@ -130,11 +130,11 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - Hard caps enforced: 25 entries per filePath, 50MB total log byte size (size-aware FIFO eviction, oldest-and-largest-first).
 - Linear-undo semantics: push after undo truncates the redo stack.
 - 10 unit tests cover push/undo/redo, linear truncation, multi-file interleaved timeline, no-op edge cases, per-file cap, per-file cap independence, global byte-cap eviction.
-- CanvasTab now hosts the in-memory log, records successful file-backed React/HTML node writes from the property panel, and replays exact stored snapshots back through `/api/canvas/ast/write` under the existing workspace + mtime guard.
+- CanvasTab now hosts the in-memory log, records successful file-backed React/HTML node writes from the property panel plus file-backed markdown inline/reorder writes from the canvas surface, and replays exact stored snapshots under the existing workspace + mtime guard.
 - Cmd-Z / Cmd-Shift-Z now drive undo/redo at the CanvasTab level, and the shell shows a small toast (`Undid: …` / `Redid: …`) after a successful replay.
-- `/api/canvas/ast/write` accepts file-backed `sourceSnapshot` rewrites in addition to mutation payloads, so U5 does not need a second file-write endpoint.
-- Focused coverage now includes the new host helpers (`tests/canvasMutationHistory.test.ts`), snapshot endpoint replay (`tests/canvasAstWriteEndpoint.test.ts`), and the property-panel success callback used to feed the host log (`tests/canvasReactNodePropertyPanel.test.tsx`).
-- Remaining U5 work is proof, not plumbing: browser-verify undo/redo on the stable source-backed fixtures and decide whether mod+Z should intentionally bypass focused text inputs or continue yielding to field-local undo.
+- `/api/canvas/ast/write` accepts file-backed `sourceSnapshot` rewrites for TSX/HTML, and `/api/canvas/markdown/write` now accepts the same snapshot-replay path for file-backed markdown history.
+- Focused coverage now includes the host helpers (`tests/canvasMutationHistory.test.ts`), snapshot endpoint replay for both AST and markdown (`tests/canvasAstWriteEndpoint.test.ts`, `tests/canvasMarkdownWriteEndpoint.test.ts`), the HTML property-panel success callback (`tests/canvasReactNodePropertyPanel.test.tsx`), and markdown item success logging (`tests/canvasMarkdownItem.test.tsx`).
+- Remaining U5 work is now narrower: browser-verify undo/redo on the stable source-backed TSX + inline HTML fixtures, and decide whether mod+Z should intentionally bypass focused text inputs or continue yielding to field-local undo. Mermaid and raw props-panel markdown source edits still bypass the snapshot log.
 
 ### U6 progress (2026-05-14) — markdown writer foundation
 

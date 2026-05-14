@@ -97,11 +97,14 @@ describe("CanvasMarkdownItem", () => {
   it("edits a rendered block inline and writes the updated markdown source", async () => {
     const onUpdate = vi.fn()
     const onSelect = vi.fn()
+    const onWriteSuccess = vi.fn()
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
         ok: true,
         source: "# Title\n\nUpdated paragraph.\n",
+        filePath: "docs/demo.md",
+        prevSourceSnapshot: "# Title\n\nParagraph text.",
         mtimeMs: 456,
       }),
     })
@@ -117,6 +120,7 @@ describe("CanvasMarkdownItem", () => {
         onBringToFront={() => {}}
         scale={1}
         interactMode={false}
+        onWriteSuccess={onWriteSuccess}
       />
     )
 
@@ -152,6 +156,13 @@ describe("CanvasMarkdownItem", () => {
     expect(onUpdate).toHaveBeenCalledWith({
       source: "# Title\n\nUpdated paragraph.\n",
       sourceFileMtime: 456,
+    })
+    expect(onWriteSuccess).toHaveBeenCalledWith({
+      source: "# Title\n\nUpdated paragraph.\n",
+      filePath: "docs/demo.md",
+      prevSourceSnapshot: "# Title\n\nParagraph text.",
+      mtimeMs: 456,
+      mutations: [{ type: "updateMarkdownBlock", blockIndex: 1, newText: "Updated paragraph." }],
     })
   })
 

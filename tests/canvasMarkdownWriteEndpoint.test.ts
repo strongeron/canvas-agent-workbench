@@ -99,6 +99,34 @@ describe("applyCanvasMarkdownWriteRequest", () => {
     expect(result.blocks.map((block) => block.type)).toEqual(["paragraph", "list", "heading"])
   })
 
+  it("rewrites a file-backed markdown snapshot for undo/redo replay", async () => {
+    const root = await createTempDir("canvas-markdown-write-endpoint-")
+    const relativePath = "docs/demo.md"
+    const absolute = path.join(root, relativePath)
+    await fs.mkdir(path.dirname(absolute), { recursive: true })
+    await fs.writeFile(absolute, SOURCE, "utf8")
+    const initialStat = await fs.stat(absolute)
+    const rewritten = "# Restored\n\nFrom history.\n"
+
+    const result = await applyCanvasMarkdownWriteRequest(
+      {
+        filePath: relativePath,
+        mtimeMs: initialStat.mtimeMs,
+        sourceSnapshot: rewritten,
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.action).toBe("rewrite")
+    expect(result.filePath).toBe(relativePath)
+    expect(result.prevSourceSnapshot).toBe(SOURCE)
+    expect(result.source).toBe(rewritten)
+    expect(await fs.readFile(absolute, "utf8")).toBe(rewritten)
+    expect(typeof result.mtimeMs).toBe("number")
+  })
+
   it("rejects file-backed writes on stale mtime", async () => {
     const root = await createTempDir("canvas-markdown-write-endpoint-")
     const relativePath = "docs/demo.md"

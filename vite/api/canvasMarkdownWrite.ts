@@ -15,6 +15,7 @@ interface CanvasMarkdownWriteBody {
   markdownSource?: unknown
   filePath?: unknown
   mtimeMs?: unknown
+  sourceSnapshot?: unknown
   blockIndex?: unknown
   newText?: unknown
   fromIndex?: unknown
@@ -28,11 +29,12 @@ interface CanvasMarkdownWriteOptions {
 export type CanvasMarkdownWriteResponse =
   | {
       ok: true
-      action: "list" | "update" | "remove" | "reorder"
+      action: "list" | "update" | "remove" | "reorder" | "rewrite"
       source: string
       blocks: MarkdownBlockInfo[]
       mtimeMs: number | null
       filePath: string | null
+      prevSourceSnapshot?: string
     }
   | {
       ok: false
@@ -45,6 +47,21 @@ export async function applyCanvasMarkdownWriteRequest(
   body: CanvasMarkdownWriteBody,
   options: CanvasMarkdownWriteOptions
 ): Promise<CanvasMarkdownWriteResponse> {
+  const filePath = typeof body.filePath === "string" && body.filePath.trim() ? body.filePath.trim() : null
+  const inlineSource = typeof body.markdownSource === "string" ? body.markdownSource : null
+  const sourceSnapshot = typeof body.sourceSnapshot === "string" ? body.sourceSnapshot : null
+
+  if (filePath && sourceSnapshot !== null) {
+    return applyFileBackedMarkdownRewrite(
+      {
+        filePath,
+        mtimeMs: body.mtimeMs,
+        sourceSnapshot,
+      },
+      options
+    )
+  }
+
   const action = normalizeAction(body.action)
   if (!action) {
     return {
@@ -54,9 +71,6 @@ export async function applyCanvasMarkdownWriteRequest(
       error: "action must be one of list, update, remove, or reorder.",
     }
   }
-
-  const filePath = typeof body.filePath === "string" && body.filePath.trim() ? body.filePath.trim() : null
-  const inlineSource = typeof body.markdownSource === "string" ? body.markdownSource : null
 
   if (filePath) {
     return applyFileBackedMarkdownWrite(
@@ -94,6 +108,74 @@ export async function applyCanvasMarkdownWriteRequest(
     null,
     null
   )
+}
+
+async function applyFileBackedMarkdownRewrite(
+  input: {
+    filePath: string
+    mtimeMs: unknown
+    sourceSnapshot: string
+  },
+  options: CanvasMarkdownWriteOptions
+): Promise<CanvasMarkdownWriteResponse> {
+  const resolved = resolveWorkspacePath(input.filePath, options.workspaceRoot, [".md"])
+  if (!resolved) {
+    return {
+      ok: false,
+      status: 403,
+      code: "bad-path",
+      error: "filePath must resolve inside the workspace and end in .md.",
+    }
+  }
+
+  const stat = await fs.stat(resolved)
+  const expectedMtime = typeof input.mtimeMs === "number" ? input.mtimeMs : null
+  if (expectedMtime !== null && Math.abs(stat.mtimeMs - expectedMtime) > 1) {
+    return {
+      ok: false,
+      status: 409,
+      code: "mtime-conflict",
+      error: "File changed externally; reload to continue editing.",
+    }
+  }
+
+  const previousSource = await fs.readFile(resolved, "utf8")
+  if (previousSource === input.sourceSnapshot) {
+    return {
+      ok: true,
+      action: "rewrite",
+      source: input.sourceSnapshot,
+      blocks: listMarkdownBlocks(input.sourceSnapshot),
+      mtimeMs: stat.mtimeMs,
+      filePath: path.relative(options.workspaceRoot, resolved),
+      prevSourceSnapshot: previousSource,
+    }
+  }
+
+  const tmpPath = `${resolved}.${process.pid}.${Date.now()}.tmp`
+  try {
+    await fs.writeFile(tmpPath, input.sourceSnapshot, "utf8")
+    await fs.rename(tmpPath, resolved)
+  } catch (error) {
+    await fs.rm(tmpPath, { force: true }).catch(() => undefined)
+    return {
+      ok: false,
+      status: 500,
+      code: "write-failed",
+      error: error instanceof Error ? error.message : "Failed to write markdown file.",
+    }
+  }
+
+  const nextStat = await fs.stat(resolved)
+  return {
+    ok: true,
+    action: "rewrite",
+    source: input.sourceSnapshot,
+    blocks: listMarkdownBlocks(input.sourceSnapshot),
+    mtimeMs: nextStat.mtimeMs,
+    filePath: path.relative(options.workspaceRoot, resolved),
+    prevSourceSnapshot: previousSource,
+  }
 }
 
 async function applyFileBackedMarkdownWrite(
@@ -208,6 +290,7 @@ function applyMarkdownAction(
     blocks: listMarkdownBlocks(result.source),
     mtimeMs,
     filePath,
+    prevSourceSnapshot: source,
   }
 }
 
