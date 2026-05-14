@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14 (refresh: U9 panel gap/padding sliders landed locally)
+updated: 2026-05-14 (refresh: U9 live gap scrub landed locally)
 ---
 
 # Running goal
@@ -37,7 +37,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U6 | 🟡 local edit controls landed | markdown direct edit — pure block writer `69b1379`, local `/api/canvas/markdown/write` endpoint, rendered block inline edit in markdown items, block reorder controls, and basic formatting buttons (`B`, `I`, `List`) |
 | U7 | 🟡 local variant cycling + scrub landed | selected component items now cycle variants with ArrowLeft / ArrowRight, and numeric prop inputs now expose horizontal scrub controls |
 | U8 | not started | media crop and clip handles |
-| U9 | 🟡 local panel sliders landed | artboard gap/padding sliders are in the inspector; child reorder and edge drag remain |
+| U9 | 🟡 local gap controls landed | artboard gap/padding sliders are in the inspector, and selected artboards now expose a live gap scrub handle; child reorder remains |
 | U10–U12 | not started | mermaid label edit, MCP audit pass, drop targets, multi-select |
 
 ## Open gates before claiming v3 demo "shippable"
@@ -57,7 +57,7 @@ Three roughly-independent threads to pick from, prioritized by leverage:
 2. **Finish U6 markdown.** The endpoint, inline block edit, block reorder, and basic formatting controls are in; remaining work is polish and deciding whether markdown needs any bridge-style edit protocol at all, given it does not render in an iframe today. Independent of thread 1.
 3. **U4b drop targets.** All deps (U1, U2, U4a, U13) are green. Largest of the three but unblocked.
 
-U8 (media crop/clip), U10 (mermaid label), U12 (multi-select) are smaller leaf units that can land in any order after thread 1. U9 is partly open now that panel sliders are in, but child reorder + edge drag still remain. **U11 (MCP audit)** is gated on U5–U10 and should land last.
+U8 (media crop/clip), U10 (mermaid label), U12 (multi-select) are smaller leaf units that can land in any order after thread 1. U9 is partly open now that panel sliders and live gap scrub are in, but child reorder still remains. **U11 (MCP audit)** is gated on U5–U10 and should land last.
 
 ## Implementation notes and progress log
 
@@ -159,11 +159,12 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - Focused coverage now asserts scrub delta application, schema bound clamping, and non-numeric controls omitting the scrub affordance in `tests/propControl.test.tsx`.
 - Remaining U7 work is proof, not plumbing: browser-verify scrub behavior on a real component panel now that PointerLock + fallback wiring is in.
 
-### U9 progress (2026-05-14) — artboard panel gap/padding sliders
+### U9 progress (2026-05-14) — artboard gap controls
 
 - `CanvasArtboardPropsPanel` now renders range sliders alongside the existing numeric inputs for `gap` and `padding`, giving the artboard inspector a faster panel-side layout adjustment path.
-- Focused coverage in `tests/canvasArtboardPropsPanel.test.tsx` asserts slider-driven `layout.gap` and `layout.padding` updates, and the existing delete-affordance suite stays green.
-- Remaining U9 work is the direct-manip half from the plan: child reorder inside an artboard and edge-driven gap scrubbing on the live surface.
+- `CanvasArtboardItem` now exposes a selected-state live gap scrub handle in the artboard chrome; horizontal drag updates `layout.gap` through the existing `updateItem` path.
+- Focused coverage in `tests/canvasArtboardPropsPanel.test.tsx` and `tests/canvasArtboardItem.test.tsx` asserts slider-driven updates, live scrub updates, and zero clamping; the existing delete-affordance suite stays green.
+- Remaining U9 work is child reorder inside an artboard.
 
 ## Remaining v3 surface
 
@@ -178,7 +179,7 @@ To complete the headline goal ("every node type editable like Figma + agent pari
 | **U6** (endpoint + UI) | markdown write endpoint, U13 bridge wiring for inline edit, CanvasMarkdownItem affordances |
 | **U7** | browser-verify numeric prop scrub on a real component panel now that PointerLock + fallback wiring is in |
 | **U8** | image crop handles, video clip-trim handles, aspect-ratio drag |
-| **U9** | artboard child reorder + live gap drag remain; panel-side gap/padding sliders are already in the inspector |
+| **U9** | artboard child reorder remains; panel-side gap/padding sliders and live gap scrub are already in |
 | **U10** | mermaid click-to-edit-label via U13 bridge into rendered SVG |
 | **U11** | MCP audit pass — verify every new direct-manipulation op is exposed as an MCP tool; agent workflow docs |
 | **U12** | shift-click multi-select primitives within one iframe |

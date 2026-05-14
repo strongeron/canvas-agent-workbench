@@ -1,4 +1,4 @@
-import { RotateCw } from "lucide-react"
+import { MoveHorizontal, RotateCw } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useDroppable } from "@dnd-kit/core"
 
@@ -24,6 +24,7 @@ interface CanvasArtboardItemProps {
 
 const MIN_WIDTH = 320
 const MIN_HEIGHT = 240
+const GAP_SCRUB_PIXELS_PER_UNIT = 4
 
 const HANDLE_POSITIONS: Record<ResizeHandle, { className: string; cursor: string }> = {
   n: { className: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2", cursor: "ns-resize" },
@@ -91,9 +92,11 @@ export function CanvasArtboardItem({
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const [isRotating, setIsRotating] = useState(false)
+  const [isGapScrubbing, setIsGapScrubbing] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null)
   const [initialState, setInitialState] = useState({ x: 0, y: 0, width: 0, height: 0, rotation: 0 })
+  const [gapScrubStart, setGapScrubStart] = useState({ x: 0, gap: 0 })
   const { contextMenu, handleContextMenu, closeContextMenu } = useCanvasItemContextMenu({
     isSelected,
     interactMode,
@@ -170,11 +173,38 @@ export function CanvasArtboardItem({
     [interactMode, item, onSelect]
   )
 
+  const handleGapScrubStart = useCallback(
+    (e: React.MouseEvent) => {
+      if (interactMode) return
+      e.stopPropagation()
+      e.preventDefault()
+      onSelect()
+      setIsGapScrubbing(true)
+      setGapScrubStart({
+        x: e.clientX,
+        gap: item.layout.gap ?? 12,
+      })
+    },
+    [interactMode, item.layout.gap, onSelect]
+  )
+
   useEffect(() => {
-    if (!isDragging && !isResizing && !isRotating) return
+    if (!isDragging && !isResizing && !isRotating && !isGapScrubbing) return
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
+      if (isGapScrubbing) {
+        const dx = (e.clientX - gapScrubStart.x) / scale
+        const nextGap = Math.max(
+          0,
+          gapScrubStart.gap + Math.round(dx / GAP_SCRUB_PIXELS_PER_UNIT)
+        )
+        onUpdate({
+          layout: {
+            ...item.layout,
+            gap: nextGap,
+          },
+        })
+      } else if (isDragging) {
         const dx = (e.clientX - dragStart.x) / scale
         const dy = (e.clientY - dragStart.y) / scale
         onUpdate({
@@ -232,6 +262,7 @@ export function CanvasArtboardItem({
       setIsDragging(false)
       setIsResizing(false)
       setIsRotating(false)
+      setIsGapScrubbing(false)
       setResizeHandle(null)
     }
 
@@ -242,7 +273,19 @@ export function CanvasArtboardItem({
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [isDragging, isResizing, isRotating, dragStart, initialState, resizeHandle, scale, onUpdate])
+  }, [
+    dragStart,
+    gapScrubStart,
+    initialState,
+    isDragging,
+    isGapScrubbing,
+    isResizing,
+    isRotating,
+    item.layout,
+    onUpdate,
+    resizeHandle,
+    scale,
+  ])
 
   const layout = item.layout
   const layoutClassName =
@@ -306,6 +349,19 @@ export function CanvasArtboardItem({
             <span className="rounded-full border border-default bg-white px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
               {item.themeId}
             </span>
+          )}
+          {isSelected && !interactMode && (
+            <button
+              type="button"
+              data-artboard-handle="true"
+              onMouseDown={handleGapScrubStart}
+              className="ml-1 flex cursor-ew-resize items-center gap-1 rounded-full border border-default bg-white px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+              aria-label="Scrub artboard gap"
+              title="Scrub artboard gap"
+            >
+              <MoveHorizontal className="h-3 w-3" />
+              Gap {Math.round(layout.gap ?? 12)}
+            </button>
           )}
         </div>
 
