@@ -2229,6 +2229,9 @@ export function CanvasTab({
       source?: string
       title?: string
       background?: string
+      sourcePath?: string
+      sourceImportedAt?: string
+      sourceFileMtime?: number
       position?: { x: number; y: number }
     }) => {
       const source = input?.source?.trim() || DEFAULT_MARKDOWN_SOURCE
@@ -2244,6 +2247,9 @@ export function CanvasTab({
         source,
         title: input?.title?.trim() || "Markdown note",
         background: input?.background || undefined,
+        sourcePath: input?.sourcePath,
+        sourceImportedAt: input?.sourceImportedAt,
+        sourceFileMtime: input?.sourceFileMtime,
         position: {
           x: Math.max(0, targetX - markdownWidth / 2),
           y: Math.max(0, targetY - markdownHeight / 2),
@@ -3093,6 +3099,9 @@ export function CanvasTab({
             source: item.source,
             title: item.title,
             background: item.background,
+            sourcePath: item.sourcePath,
+            sourceImportedAt: item.sourceImportedAt,
+            sourceFileMtime: item.sourceFileMtime,
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,

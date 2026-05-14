@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState, type KeyboardEventHandler, type ReactNode } from "react"
 
 import { renderMermaidSvg } from "./mermaidRenderer"
 
@@ -6,6 +6,14 @@ interface CanvasMarkdownPreviewProps {
   source: string
   title?: string
   background?: string
+  activeBlockIndex?: number | null
+  editingBlockIndex?: number | null
+  editingValue?: string
+  onEditingValueChange?: (value: string) => void
+  onEditingKeyDown?: KeyboardEventHandler<HTMLTextAreaElement>
+  onEditingBlur?: () => void
+  onBlockClick?: (index: number) => void
+  onBlockDoubleClick?: (index: number) => void
 }
 
 interface MarkdownMermaidBlockProps {
@@ -150,10 +158,67 @@ function isBlockBoundary(line: string) {
   )
 }
 
-function renderMarkdownBlocks(source: string) {
+function renderMarkdownBlocks(
+  source: string,
+  options: {
+    activeBlockIndex?: number | null
+    editingBlockIndex?: number | null
+    editingValue?: string
+    onEditingValueChange?: (value: string) => void
+    onEditingKeyDown?: KeyboardEventHandler<HTMLTextAreaElement>
+    onEditingBlur?: () => void
+    onBlockClick?: (index: number) => void
+    onBlockDoubleClick?: (index: number) => void
+  } = {}
+) {
   const lines = source.replace(/\r\n/g, "\n").split("\n")
   const blocks: ReactNode[] = []
   let i = 0
+  let blockIndex = 0
+
+  const pushBlock = (content: ReactNode) => {
+    const index = blockIndex
+    const isActive = options.activeBlockIndex === index
+    const isEditing = options.editingBlockIndex === index
+    blocks.push(
+      <div
+        key={`block-${index}`}
+        data-markdown-block-index={index}
+        data-markdown-block-interactive="true"
+        className={`rounded-md px-2 py-1 ${
+          isEditing
+            ? "ring-2 ring-brand-400/30 bg-brand-50/40"
+            : isActive
+              ? "ring-1 ring-brand-300/40 bg-brand-50/20"
+              : "hover:bg-surface-50"
+        }`}
+        onClick={(event) => {
+          event.stopPropagation()
+          options.onBlockClick?.(index)
+        }}
+        onDoubleClick={(event) => {
+          event.stopPropagation()
+          options.onBlockDoubleClick?.(index)
+        }}
+      >
+        {isEditing ? (
+          <textarea
+            autoFocus
+            value={options.editingValue ?? ""}
+            onChange={(event) => options.onEditingValueChange?.(event.target.value)}
+            onKeyDown={options.onEditingKeyDown}
+            onBlur={() => options.onEditingBlur?.()}
+            rows={Math.max(3, (options.editingValue ?? "").split("\n").length + 1)}
+            spellCheck={false}
+            className="min-h-[88px] w-full resize-y rounded border border-brand-300 bg-white px-2 py-1 font-mono text-xs text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          />
+        ) : (
+          content
+        )}
+      </div>
+    )
+    blockIndex += 1
+  }
 
   while (i < lines.length) {
     const current = lines[i] || ""
@@ -178,14 +243,11 @@ function renderMarkdownBlocks(source: string) {
       }
       const code = codeLines.join("\n")
       if (languageId === "mermaid" || languageId === "mmd") {
-        blocks.push(<MarkdownMermaidBlock key={`block-${blocks.length}`} source={code} />)
+        pushBlock(<MarkdownMermaidBlock source={code} />)
         continue
       }
-      blocks.push(
-        <pre
-          key={`block-${blocks.length}`}
-          className="overflow-x-auto rounded-md border border-default bg-surface-950/95 p-3 text-xs text-surface-50"
-        >
+      pushBlock(
+        <pre className="overflow-x-auto rounded-md border border-default bg-surface-950/95 p-3 text-xs text-surface-50">
           {language ? (
             <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-surface-300">
               {language}
@@ -209,17 +271,13 @@ function renderMarkdownBlocks(source: string) {
             : level === 3
               ? "text-base font-semibold text-foreground"
               : "text-sm font-semibold text-foreground"
-      blocks.push(
-        <div key={`block-${blocks.length}`} className={className}>
-          {renderInline(text)}
-        </div>
-      )
+      pushBlock(<div className={className}>{renderInline(text)}</div>)
       i += 1
       continue
     }
 
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
-      blocks.push(<hr key={`block-${blocks.length}`} className="border-default" />)
+      pushBlock(<hr className="border-default" />)
       i += 1
       continue
     }
@@ -230,11 +288,8 @@ function renderMarkdownBlocks(source: string) {
         quoteLines.push((lines[i] || "").replace(/^>\s?/, ""))
         i += 1
       }
-      blocks.push(
-        <blockquote
-          key={`block-${blocks.length}`}
-          className="border-l-2 border-brand-300 pl-3 text-sm text-muted-foreground"
-        >
+      pushBlock(
+        <blockquote className="border-l-2 border-brand-300 pl-3 text-sm text-muted-foreground">
           {renderInline(quoteLines.join(" "))}
         </blockquote>
       )
@@ -247,8 +302,8 @@ function renderMarkdownBlocks(source: string) {
         items.push((lines[i] || "").trim().replace(/^[-*+]\s+/, ""))
         i += 1
       }
-      blocks.push(
-        <ul key={`block-${blocks.length}`} className="list-disc space-y-1 pl-5 text-sm text-foreground">
+      pushBlock(
+        <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
           {items.map((item, itemIndex) => (
             <li key={`ul-item-${itemIndex}`}>{renderInline(item)}</li>
           ))}
@@ -263,8 +318,8 @@ function renderMarkdownBlocks(source: string) {
         items.push((lines[i] || "").trim().replace(/^\d+\.\s+/, ""))
         i += 1
       }
-      blocks.push(
-        <ol key={`block-${blocks.length}`} className="list-decimal space-y-1 pl-5 text-sm text-foreground">
+      pushBlock(
+        <ol className="list-decimal space-y-1 pl-5 text-sm text-foreground">
           {items.map((item, itemIndex) => (
             <li key={`ol-item-${itemIndex}`}>{renderInline(item)}</li>
           ))}
@@ -279,17 +334,25 @@ function renderMarkdownBlocks(source: string) {
       paragraphLines.push(lines[i] || "")
       i += 1
     }
-    blocks.push(
-      <p key={`block-${blocks.length}`} className="text-sm leading-6 text-foreground">
-        {renderInline(paragraphLines.join(" "))}
-      </p>
-    )
+    pushBlock(<p className="text-sm leading-6 text-foreground">{renderInline(paragraphLines.join(" "))}</p>)
   }
 
   return blocks
 }
 
-export function CanvasMarkdownPreview({ source, title, background }: CanvasMarkdownPreviewProps) {
+export function CanvasMarkdownPreview({
+  source,
+  title,
+  background,
+  activeBlockIndex = null,
+  editingBlockIndex = null,
+  editingValue = "",
+  onEditingValueChange,
+  onEditingKeyDown,
+  onEditingBlur,
+  onBlockClick,
+  onBlockDoubleClick,
+}: CanvasMarkdownPreviewProps) {
   if (!source.trim()) {
     return (
       <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
@@ -303,7 +366,18 @@ export function CanvasMarkdownPreview({ source, title, background }: CanvasMarkd
       className="relative h-full w-full overflow-auto"
       style={background ? { background } : undefined}
     >
-      <div className="space-y-3 p-3">{renderMarkdownBlocks(source)}</div>
+      <div className="space-y-3 p-3">
+        {renderMarkdownBlocks(source, {
+          activeBlockIndex,
+          editingBlockIndex,
+          editingValue,
+          onEditingValueChange,
+          onEditingKeyDown,
+          onEditingBlur,
+          onBlockClick,
+          onBlockDoubleClick,
+        })}
+      </div>
       <div className="pointer-events-none absolute right-2 top-2 rounded bg-surface-900/80 px-2 py-1 text-[10px] text-white">
         Markdown{title ? " · node" : ""}
       </div>

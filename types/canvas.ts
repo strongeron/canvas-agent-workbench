@@ -191,6 +191,9 @@ export interface CanvasMarkdownItem extends CanvasItemBase {
   source: string
   title?: string
   background?: string
+  sourcePath?: string
+  sourceImportedAt?: string
+  sourceFileMtime?: number
 }
 
 export interface CanvasArtboardItem extends CanvasItemBase {

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
 import type { CanvasMarkdownItem as CanvasMarkdownItemType } from "../../types/canvas"
+import { listMarkdownBlocks } from "../../utils/canvasMarkdownWriter"
 import { CanvasMarkdownPreview } from "./CanvasMarkdownPreview"
 
 interface CanvasLayoutMarkdownItemProps {
@@ -26,6 +27,14 @@ export function CanvasLayoutMarkdownItem({
   const [isResizing, setIsResizing] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [initialSize, setInitialSize] = useState({ width: 0, height: 0 })
+  const [activeBlockIndex, setActiveBlockIndex] = useState<number | null>(null)
+  const [editingBlockIndex, setEditingBlockIndex] = useState<number | null>(null)
+  const [editingValue, setEditingValue] = useState("")
+  const [writeState, setWriteState] = useState<{ status: "idle" | "saving" | "error"; error: string }>({
+    status: "idle",
+    error: "",
+  })
+  const blocks = useMemo(() => listMarkdownBlocks(item.source), [item.source])
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -63,6 +72,66 @@ export function CanvasLayoutMarkdownItem({
     }
   }, [dragStart.x, dragStart.y, initialSize.height, initialSize.width, isResizing, onUpdate, scale])
 
+  useEffect(() => {
+    if (editingBlockIndex === null) return
+    if (editingBlockIndex >= blocks.length) {
+      setEditingBlockIndex(null)
+      setEditingValue("")
+    }
+  }, [blocks.length, editingBlockIndex])
+
+  const commitEditing = useCallback(async () => {
+    if (editingBlockIndex === null) return
+    setWriteState({ status: "saving", error: "" })
+    try {
+      const response = await fetch("/api/canvas/markdown/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          markdownSource: item.sourcePath ? undefined : item.source,
+          filePath: item.sourcePath,
+          mtimeMs: item.sourceFileMtime,
+          blockIndex: editingBlockIndex,
+          newText: editingValue,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean
+        source?: string
+        mtimeMs?: number | null
+        error?: string
+        code?: string
+      }
+      if (!response.ok || !payload.ok || typeof payload.source !== "string") {
+        const errorMessage = payload.error || "Failed to update markdown block."
+        throw new Error(
+          payload.code === "mtime-conflict"
+            ? `${errorMessage} The file changed on disk since it was loaded.`
+            : errorMessage
+        )
+      }
+      onUpdate({
+        source: payload.source,
+        ...(typeof payload.mtimeMs === "number" ? { sourceFileMtime: payload.mtimeMs } : {}),
+      })
+      setWriteState({ status: "idle", error: "" })
+      setEditingBlockIndex(null)
+      setEditingValue("")
+    } catch (error) {
+      setWriteState({
+        status: "error",
+        error: error instanceof Error ? error.message : "Failed to update markdown block.",
+      })
+    }
+  }, [editingBlockIndex, editingValue, item.source, item.sourceFileMtime, item.sourcePath, onUpdate])
+
+  const cancelEditing = useCallback(() => {
+    setEditingBlockIndex(null)
+    setEditingValue("")
+    setWriteState({ status: "idle", error: "" })
+  }, [])
+
   const borderClass = isSelected
     ? "border border-brand-400 ring-2 ring-brand-400/15 shadow-sm"
     : "border border-default"
@@ -75,6 +144,10 @@ export function CanvasLayoutMarkdownItem({
       onMouseDown={(e) => {
         if (interactMode) return
         if (e.button !== 0) return
+        const target = e.target as HTMLElement | null
+        if (target?.closest("[data-markdown-block-interactive='true']")) {
+          return
+        }
         e.stopPropagation()
         if (!e.shiftKey) onSelect(false)
       }}
@@ -87,10 +160,44 @@ export function CanvasLayoutMarkdownItem({
       <div
         className={`relative h-full w-full overflow-hidden rounded-lg bg-white shadow-card ${borderClass}`}
       >
+        {writeState.status === "error" ? (
+          <div className="absolute left-3 right-3 top-3 z-10 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-700">
+            {writeState.error}
+          </div>
+        ) : null}
         <CanvasMarkdownPreview
           source={item.source}
           title={item.title}
           background={item.background}
+          activeBlockIndex={activeBlockIndex}
+          editingBlockIndex={editingBlockIndex}
+          editingValue={editingValue}
+          onEditingValueChange={setEditingValue}
+          onEditingBlur={() => {
+            void commitEditing()
+          }}
+          onEditingKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+              event.preventDefault()
+              void commitEditing()
+              return
+            }
+            if (event.key === "Escape") {
+              event.preventDefault()
+              cancelEditing()
+            }
+          }}
+          onBlockClick={(index) => {
+            onSelect(false)
+            setActiveBlockIndex(index)
+          }}
+          onBlockDoubleClick={(index) => {
+            onSelect(false)
+            setActiveBlockIndex(index)
+            setEditingBlockIndex(index)
+            setEditingValue(blocks[index]?.source || "")
+            setWriteState({ status: "idle", error: "" })
+          }}
         />
       </div>
 
