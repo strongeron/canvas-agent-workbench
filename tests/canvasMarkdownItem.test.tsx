@@ -212,4 +212,46 @@ describe("CanvasMarkdownItem", () => {
       sourceFileMtime: 789,
     })
   })
+
+  it("applies bold formatting to the current textarea selection during inline edit", async () => {
+    harness = await mount(
+      <CanvasMarkdownItem
+        item={makeItem({ source: "# Title\n\nParagraph text." })}
+        isSelected={true}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onRemove={() => {}}
+        onDuplicate={() => {}}
+        onBringToFront={() => {}}
+        scale={1}
+        interactMode={false}
+      />
+    )
+
+    const paragraphBlock = harness.container.querySelector('[data-markdown-block-index="1"]') as HTMLDivElement
+    await act(async () => {
+      paragraphBlock.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const textarea = harness.container.querySelector("textarea") as HTMLTextAreaElement
+    await act(async () => {
+      textarea.focus()
+      textarea.setSelectionRange(0, "Paragraph".length)
+      await Promise.resolve()
+    })
+
+    const boldButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "B"
+    ) as HTMLButtonElement
+    expect(boldButton).toBeTruthy()
+
+    await act(async () => {
+      boldButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(textarea.value.startsWith("**Paragraph**")).toBe(true)
+  })
 })

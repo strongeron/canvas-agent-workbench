@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEventHandler, type ReactNode } from "react"
+import { useEffect, useRef, useState, type KeyboardEventHandler, type ReactNode } from "react"
 
 import { renderMermaidSvg } from "./mermaidRenderer"
 
@@ -177,6 +177,8 @@ function renderMarkdownBlocks(
     onMoveBlockDown?: (index: number) => void
     canMoveBlockUp?: (index: number) => boolean
     canMoveBlockDown?: (index: number) => boolean
+    onApplyFormatting?: (kind: "bold" | "italic" | "bullets") => void
+    editingTextareaRef?: React.RefObject<HTMLTextAreaElement | null>
   } = {}
 ) {
   const lines = source.replace(/\r\n/g, "\n").split("\n")
@@ -210,16 +212,54 @@ function renderMarkdownBlocks(
         }}
       >
         {isEditing ? (
-          <textarea
-            autoFocus
-            value={options.editingValue ?? ""}
-            onChange={(event) => options.onEditingValueChange?.(event.target.value)}
-            onKeyDown={options.onEditingKeyDown}
-            onBlur={() => options.onEditingBlur?.()}
-            rows={Math.max(3, (options.editingValue ?? "").split("\n").length + 1)}
-            spellCheck={false}
-            className="min-h-[88px] w-full resize-y rounded border border-brand-300 bg-white px-2 py-1 font-mono text-xs text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-          />
+          <div className="space-y-1.5">
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  options.onApplyFormatting?.("bold")
+                }}
+                className="rounded border border-default bg-white px-1.5 py-0.5 text-[10px] font-semibold text-foreground hover:bg-surface-50"
+              >
+                B
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  options.onApplyFormatting?.("italic")
+                }}
+                className="rounded border border-default bg-white px-1.5 py-0.5 text-[10px] italic text-foreground hover:bg-surface-50"
+              >
+                I
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  options.onApplyFormatting?.("bullets")
+                }}
+                className="rounded border border-default bg-white px-1.5 py-0.5 text-[10px] text-foreground hover:bg-surface-50"
+              >
+                List
+              </button>
+            </div>
+            <textarea
+              ref={options.editingTextareaRef}
+              autoFocus
+              value={options.editingValue ?? ""}
+              onChange={(event) => options.onEditingValueChange?.(event.target.value)}
+              onKeyDown={options.onEditingKeyDown}
+              onBlur={() => options.onEditingBlur?.()}
+              rows={Math.max(3, (options.editingValue ?? "").split("\n").length + 1)}
+              spellCheck={false}
+              className="min-h-[88px] w-full resize-y rounded border border-brand-300 bg-white px-2 py-1 font-mono text-xs text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+          </div>
         ) : (
           <div className="relative">
             {isActive && !isEditing && (options.onMoveBlockUp || options.onMoveBlockDown) ? (
@@ -393,6 +433,51 @@ export function CanvasMarkdownPreview({
   canMoveBlockUp,
   canMoveBlockDown,
 }: CanvasMarkdownPreviewProps) {
+  const editingTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const applyFormatting = (kind: "bold" | "italic" | "bullets") => {
+    const textarea = editingTextareaRef.current
+    if (!textarea || !onEditingValueChange) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const current = editingValue
+    let next = current
+    let selectionStart = start
+    let selectionEnd = end
+
+    if (kind === "bold" || kind === "italic") {
+      const marker = kind === "bold" ? "**" : "_"
+      const selected = current.slice(start, end) || (kind === "bold" ? "bold" : "italic")
+      next = `${current.slice(0, start)}${marker}${selected}${marker}${current.slice(end)}`
+      selectionStart = start + marker.length
+      selectionEnd = selectionStart + selected.length
+    } else {
+      const selectionFrom = start === end ? current.lastIndexOf("\n", Math.max(0, start - 1)) + 1 : start
+      const selectionTo =
+        start === end
+          ? current.indexOf("\n", end) === -1
+            ? current.length
+            : current.indexOf("\n", end)
+          : end
+      const segment = current.slice(selectionFrom, selectionTo)
+      const transformed = segment
+        .split("\n")
+        .map((line) => (line.startsWith("- ") ? line : `- ${line}`))
+        .join("\n")
+      next = `${current.slice(0, selectionFrom)}${transformed}${current.slice(selectionTo)}`
+      selectionStart = selectionFrom
+      selectionEnd = selectionFrom + transformed.length
+    }
+
+    onEditingValueChange(next)
+    queueMicrotask(() => {
+      const node = editingTextareaRef.current
+      if (!node) return
+      node.focus()
+      node.setSelectionRange(selectionStart, selectionEnd)
+    })
+  }
+
   if (!source.trim()) {
     return (
       <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
@@ -420,6 +505,8 @@ export function CanvasMarkdownPreview({
           onMoveBlockDown,
           canMoveBlockUp,
           canMoveBlockDown,
+          onApplyFormatting: applyFormatting,
+          editingTextareaRef,
         })}
       </div>
       <div className="pointer-events-none absolute right-2 top-2 rounded bg-surface-900/80 px-2 py-1 text-[10px] text-white">
