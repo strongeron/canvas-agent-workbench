@@ -468,44 +468,69 @@ export function CanvasArtboardPropsPanel({
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Gap</label>
-              <input
-                type="number"
-                min={0}
-                value={layoutDefaults.gap}
-                onChange={(e) =>
-                  onChange({
-                    layout: { ...layoutDefaults, gap: Math.max(0, Number(e.target.value) || 0) },
-                  })
-                }
-                className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-              />
-              <p className="mt-1 text-[11px] text-muted-foreground">Maps to `gap-*`.</p>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
-                Padding
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={layoutDefaults.padding}
-                onChange={(e) =>
-                  onChange({
-                    layout: {
-                      ...layoutDefaults,
-                      padding: Math.max(0, Number(e.target.value) || 0),
-                    },
-                  })
-                }
-                className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-              />
-              <p className="mt-1 text-[11px] text-muted-foreground">Maps to `p-*`.</p>
-            </div>
+            <ArtboardSpacingField
+              label="Gap"
+              value={layoutDefaults.gap}
+              note="Maps to `gap-*`."
+              sliderLabel="Gap slider"
+              onChange={(gap) =>
+                onChange({
+                  layout: { ...layoutDefaults, gap },
+                })
+              }
+            />
+            <ArtboardSpacingField
+              label="Padding"
+              value={layoutDefaults.padding}
+              note="Maps to `p-*`."
+              sliderLabel="Padding slider"
+              onChange={(padding) =>
+                onChange({
+                  layout: { ...layoutDefaults, padding },
+                })
+              }
+            />
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ArtboardSpacingField({
+  label,
+  value,
+  note,
+  sliderLabel,
+  onChange,
+}: {
+  label: string
+  value: number
+  note: string
+  sliderLabel: string
+  onChange: (value: number) => void
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">{label}</label>
+      <input
+        type="number"
+        min={0}
+        value={value}
+        onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
+        className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+      />
+      <input
+        type="range"
+        min={0}
+        max={128}
+        step={1}
+        value={value}
+        aria-label={sliderLabel}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="mt-2 w-full accent-brand-600"
+      />
+      <p className="mt-1 text-[11px] text-muted-foreground">{note}</p>
     </div>
   )
 }
