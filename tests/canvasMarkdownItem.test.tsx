@@ -154,4 +154,62 @@ describe("CanvasMarkdownItem", () => {
       sourceFileMtime: 456,
     })
   })
+
+  it("reorders the active block through the markdown write endpoint", async () => {
+    const onUpdate = vi.fn()
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        source: "Paragraph text.\n\n# Title\n",
+        mtimeMs: 789,
+      }),
+    })
+
+    harness = await mount(
+      <CanvasMarkdownItem
+        item={makeItem({ source: "# Title\n\nParagraph text.", sourcePath: "docs/demo.md", sourceFileMtime: 123 })}
+        isSelected={true}
+        onSelect={() => {}}
+        onUpdate={onUpdate}
+        onRemove={() => {}}
+        onDuplicate={() => {}}
+        onBringToFront={() => {}}
+        scale={1}
+        interactMode={false}
+      />
+    )
+
+    const firstBlock = harness.container.querySelector('[data-markdown-block-index="0"]') as HTMLDivElement
+    await act(async () => {
+      firstBlock.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const downButton = Array.from(harness.container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Down"
+    ) as HTMLButtonElement
+    expect(downButton).toBeTruthy()
+
+    await act(async () => {
+      downButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, requestInit] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String(requestInit.body))
+    expect(body).toEqual({
+      action: "reorder",
+      filePath: "docs/demo.md",
+      mtimeMs: 123,
+      fromIndex: 0,
+      toIndex: 1,
+    })
+    expect(onUpdate).toHaveBeenCalledWith({
+      source: "Paragraph text.\n\n# Title\n",
+      sourceFileMtime: 789,
+    })
+  })
 })

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 
 import type { CanvasMarkdownItem as CanvasMarkdownItemType } from "../../types/canvas"
 import { listMarkdownBlocks } from "../../utils/canvasMarkdownWriter"
+import { performCanvasMarkdownWrite } from "../../utils/canvasMarkdownWriteClient"
 import { CanvasMarkdownPreview } from "./CanvasMarkdownPreview"
 
 interface CanvasLayoutMarkdownItemProps {
@@ -84,36 +85,21 @@ export function CanvasLayoutMarkdownItem({
     if (editingBlockIndex === null) return
     setWriteState({ status: "saving", error: "" })
     try {
-      const response = await fetch("/api/canvas/markdown/write", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const result = await performCanvasMarkdownWrite(
+        {
+          source: item.source,
+          sourcePath: item.sourcePath,
+          sourceFileMtime: item.sourceFileMtime,
+        },
+        {
           action: "update",
-          markdownSource: item.sourcePath ? undefined : item.source,
-          filePath: item.sourcePath,
-          mtimeMs: item.sourceFileMtime,
           blockIndex: editingBlockIndex,
           newText: editingValue,
-        }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as {
-        ok?: boolean
-        source?: string
-        mtimeMs?: number | null
-        error?: string
-        code?: string
-      }
-      if (!response.ok || !payload.ok || typeof payload.source !== "string") {
-        const errorMessage = payload.error || "Failed to update markdown block."
-        throw new Error(
-          payload.code === "mtime-conflict"
-            ? `${errorMessage} The file changed on disk since it was loaded.`
-            : errorMessage
-        )
-      }
+        }
+      )
       onUpdate({
-        source: payload.source,
-        ...(typeof payload.mtimeMs === "number" ? { sourceFileMtime: payload.mtimeMs } : {}),
+        source: result.source,
+        ...(typeof result.mtimeMs === "number" ? { sourceFileMtime: result.mtimeMs } : {}),
       })
       setWriteState({ status: "idle", error: "" })
       setEditingBlockIndex(null)
@@ -131,6 +117,41 @@ export function CanvasLayoutMarkdownItem({
     setEditingValue("")
     setWriteState({ status: "idle", error: "" })
   }, [])
+
+  const reorderBlock = useCallback(
+    async (direction: "up" | "down") => {
+      if (activeBlockIndex === null) return
+      const targetIndex = direction === "up" ? activeBlockIndex - 1 : activeBlockIndex + 1
+      if (targetIndex < 0 || targetIndex >= blocks.length) return
+      setWriteState({ status: "saving", error: "" })
+      try {
+        const result = await performCanvasMarkdownWrite(
+          {
+            source: item.source,
+            sourcePath: item.sourcePath,
+            sourceFileMtime: item.sourceFileMtime,
+          },
+          {
+            action: "reorder",
+            fromIndex: activeBlockIndex,
+            toIndex: targetIndex,
+          }
+        )
+        onUpdate({
+          source: result.source,
+          ...(typeof result.mtimeMs === "number" ? { sourceFileMtime: result.mtimeMs } : {}),
+        })
+        setActiveBlockIndex(targetIndex)
+        setWriteState({ status: "idle", error: "" })
+      } catch (error) {
+        setWriteState({
+          status: "error",
+          error: error instanceof Error ? error.message : "Failed to reorder markdown blocks.",
+        })
+      }
+    },
+    [activeBlockIndex, blocks.length, item.source, item.sourceFileMtime, item.sourcePath, onUpdate]
+  )
 
   const borderClass = isSelected
     ? "border border-brand-400 ring-2 ring-brand-400/15 shadow-sm"
@@ -198,6 +219,14 @@ export function CanvasLayoutMarkdownItem({
             setEditingValue(blocks[index]?.source || "")
             setWriteState({ status: "idle", error: "" })
           }}
+          onMoveBlockUp={() => {
+            void reorderBlock("up")
+          }}
+          onMoveBlockDown={() => {
+            void reorderBlock("down")
+          }}
+          canMoveBlockUp={(index) => index > 0 && writeState.status !== "saving"}
+          canMoveBlockDown={(index) => index < blocks.length - 1 && writeState.status !== "saving"}
         />
       </div>
 

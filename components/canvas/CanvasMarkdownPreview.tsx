@@ -14,6 +14,10 @@ interface CanvasMarkdownPreviewProps {
   onEditingBlur?: () => void
   onBlockClick?: (index: number) => void
   onBlockDoubleClick?: (index: number) => void
+  onMoveBlockUp?: (index: number) => void
+  onMoveBlockDown?: (index: number) => void
+  canMoveBlockUp?: (index: number) => boolean
+  canMoveBlockDown?: (index: number) => boolean
 }
 
 interface MarkdownMermaidBlockProps {
@@ -169,6 +173,10 @@ function renderMarkdownBlocks(
     onEditingBlur?: () => void
     onBlockClick?: (index: number) => void
     onBlockDoubleClick?: (index: number) => void
+    onMoveBlockUp?: (index: number) => void
+    onMoveBlockDown?: (index: number) => void
+    canMoveBlockUp?: (index: number) => boolean
+    canMoveBlockDown?: (index: number) => boolean
   } = {}
 ) {
   const lines = source.replace(/\r\n/g, "\n").split("\n")
@@ -213,7 +221,35 @@ function renderMarkdownBlocks(
             className="min-h-[88px] w-full resize-y rounded border border-brand-300 bg-white px-2 py-1 font-mono text-xs text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
         ) : (
-          content
+          <div className="relative">
+            {isActive && !isEditing && (options.onMoveBlockUp || options.onMoveBlockDown) ? (
+              <div className="absolute right-0 top-0 z-10 flex gap-1">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    options.onMoveBlockUp?.(index)
+                  }}
+                  disabled={options.canMoveBlockUp ? !options.canMoveBlockUp(index) : false}
+                  className="rounded border border-default bg-white px-1.5 py-0.5 text-[10px] text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Up
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    options.onMoveBlockDown?.(index)
+                  }}
+                  disabled={options.canMoveBlockDown ? !options.canMoveBlockDown(index) : false}
+                  className="rounded border border-default bg-white px-1.5 py-0.5 text-[10px] text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Down
+                </button>
+              </div>
+            ) : null}
+            {content}
+          </div>
         )}
       </div>
     )
@@ -352,6 +388,10 @@ export function CanvasMarkdownPreview({
   onEditingBlur,
   onBlockClick,
   onBlockDoubleClick,
+  onMoveBlockUp,
+  onMoveBlockDown,
+  canMoveBlockUp,
+  canMoveBlockDown,
 }: CanvasMarkdownPreviewProps) {
   if (!source.trim()) {
     return (
@@ -376,6 +416,10 @@ export function CanvasMarkdownPreview({
           onEditingBlur,
           onBlockClick,
           onBlockDoubleClick,
+          onMoveBlockUp,
+          onMoveBlockDown,
+          canMoveBlockUp,
+          canMoveBlockDown,
         })}
       </div>
       <div className="pointer-events-none absolute right-2 top-2 rounded bg-surface-900/80 px-2 py-1 text-[10px] text-white">

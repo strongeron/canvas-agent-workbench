@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14 (refresh: U6 markdown inline block edit landed locally)
+updated: 2026-05-14 (refresh: U6 markdown block edit + reorder landed locally)
 ---
 
 # Running goal
@@ -34,7 +34,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U3 | 🟡 local wiring in progress | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
 | U4b | not started | drop targets + structural drag (depends on U1+U2+U4a+U13) |
 | U5 | 🟡 local host wiring landed | mutation log + undo/redo — pure module `52df964`; CanvasTab now logs file-backed writes, replays stored snapshots via `/api/canvas/ast/write`, wires Cmd-Z/Cmd-Shift-Z, and shows undo/redo toasts |
-| U6 | 🟡 local inline edit landed | markdown direct edit — pure block writer `69b1379`, local `/api/canvas/markdown/write` endpoint, and rendered block inline edit in markdown items; drag-to-reorder remains |
+| U6 | 🟡 local block edit + reorder landed | markdown direct edit — pure block writer `69b1379`, local `/api/canvas/markdown/write` endpoint, rendered block inline edit in markdown items, and block reorder controls; formatting toolbar remains |
 | U7–U12 | not started | component variant cycling, media crop, artboard reorder, mermaid label edit, MCP audit pass, drop targets, multi-select |
 
 ## Open gates before claiming v3 demo "shippable"
@@ -51,7 +51,7 @@ Three roughly-independent threads to pick from, prioritized by leverage:
    - Browser-verify U5 undo/redo on the source-backed TSX + inline HTML fixtures.
    - Browser-verify U3 continuity for **insert** and **remove** on TSX (wrap is already verified).
    - Decide whether U4a should grow a true inline-style / style-prop fallback for computed class expressions, or whether those nodes stay source-only for resize in v3.
-2. **Finish U6 markdown.** The endpoint and inline block edit are in; remaining work is block drag-to-reorder and deciding whether markdown needs any bridge-style edit protocol at all, given it does not render in an iframe today. Independent of thread 1.
+2. **Finish U6 markdown.** The endpoint, inline block edit, and block reorder controls are in; remaining work is richer formatting affordances and deciding whether markdown needs any bridge-style edit protocol at all, given it does not render in an iframe today. Independent of thread 1.
 3. **U4b drop targets.** All deps (U1, U2, U4a, U13) are green. Largest of the three but unblocked.
 
 U7 (variant cycle / numeric scrub), U8 (media crop/clip), U9 (artboard reorder/gap), U10 (mermaid label), U12 (multi-select) are smaller leaf units that can land in any order after thread 1. **U11 (MCP audit)** is gated on U5–U10 and should land last.
@@ -143,9 +143,10 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - File-backed writes reuse the same temp-write + rename and `mtimeMs` conflict model as the AST writer, so markdown edits can share the same persistence semantics.
 - Focused endpoint coverage now lives in `tests/canvasMarkdownWriteEndpoint.test.ts`.
 - Rendered markdown blocks in both free-positioned and layout markdown items are now clickable and double-click editable; blur or Cmd/Ctrl+Enter commits through `/api/canvas/markdown/write`, Escape cancels.
+- The active block now exposes `Up` / `Down` reorder controls backed by the same endpoint's `reorder` action, so source order updates on the rendered surface without dropping back to the raw textarea panel.
 - Markdown items now carry optional `sourcePath` / `sourceImportedAt` / `sourceFileMtime` metadata so inline edits can use file-backed writes when a workspace markdown file exists, otherwise they fall back to inline `markdownSource`.
 - Focused UI coverage now lives in `tests/canvasMarkdownItem.test.tsx`.
-- Remaining U6 work is block drag-to-reorder and then a judgment call on whether any of the U13 `canvas/edit-*` protocol belongs on markdown at all, since the current markdown renderer is direct DOM, not iframe content.
+- Remaining U6 work is richer formatting affordances (bold/italic/list transforms) and then a judgment call on whether any of the U13 `canvas/edit-*` protocol belongs on markdown at all, since the current markdown renderer is direct DOM, not iframe content.
 
 ## Remaining v3 surface
 
