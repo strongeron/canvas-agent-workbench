@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp } from "lucide-react"
 import { useDroppable } from "@dnd-kit/core"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ComponentType } from "react"
@@ -64,6 +65,7 @@ interface CanvasWorkspaceProps {
   onRemoveSelected: () => void
   onDuplicateItem: (id: string) => void
   onBringToFront: (id: string) => void
+  onMoveLayer?: (id: string, direction: "up" | "down") => void
   onPan: (deltaX: number, deltaY: number) => void
   onWheel: (e: React.WheelEvent) => void
   onDimensionsChange?: (width: number, height: number) => void
@@ -97,6 +99,7 @@ export function CanvasWorkspace({
   onRemoveSelected,
   onDuplicateItem,
   onBringToFront,
+  onMoveLayer,
   onPan,
   onWheel,
   onDimensionsChange,
@@ -217,15 +220,19 @@ export function CanvasWorkspace({
         | CanvasMediaItemType
         | CanvasMermaidItemType
         | CanvasExcalidrawItemType
-        | CanvasMarkdownItemType
+        | CanvasMarkdownItemType,
+      index: number,
+      siblingCount: number
     ) => {
       const isSelected = selectedIds.includes(child.id)
+      const showReorderControls = isSelected && !interactMode && Boolean(onMoveLayer)
+      const childShellClassName = "relative"
 
       if (child.type === "embed") {
         return (
           <div
             key={child.id}
-            className="relative"
+            className={childShellClassName}
             style={{ width: child.size.width, height: child.size.height }}
             data-artboard-child="true"
           >
@@ -237,6 +244,14 @@ export function CanvasWorkspace({
               scale={transform.scale}
               interactMode={interactMode}
             />
+            {showReorderControls ? (
+              <ArtboardChildReorderControls
+                disableUp={index === 0}
+                disableDown={index === siblingCount - 1}
+                onMoveUp={() => onMoveLayer?.(child.id, "up")}
+                onMoveDown={() => onMoveLayer?.(child.id, "down")}
+              />
+            ) : null}
           </div>
         )
       }
@@ -245,7 +260,7 @@ export function CanvasWorkspace({
         return (
           <div
             key={child.id}
-            className="relative"
+            className={childShellClassName}
             style={{ width: child.size.width, height: child.size.height }}
             data-artboard-child="true"
           >
@@ -257,6 +272,14 @@ export function CanvasWorkspace({
               scale={transform.scale}
               interactMode={interactMode}
             />
+            {showReorderControls ? (
+              <ArtboardChildReorderControls
+                disableUp={index === 0}
+                disableDown={index === siblingCount - 1}
+                onMoveUp={() => onMoveLayer?.(child.id, "up")}
+                onMoveDown={() => onMoveLayer?.(child.id, "down")}
+              />
+            ) : null}
           </div>
         )
       }
@@ -265,7 +288,7 @@ export function CanvasWorkspace({
         return (
           <div
             key={child.id}
-            className="relative"
+            className={childShellClassName}
             style={{ width: child.size.width, height: child.size.height }}
             data-artboard-child="true"
           >
@@ -281,6 +304,14 @@ export function CanvasWorkspace({
               onReactCompileGenerationChange={onReactCompileGenerationChange}
               onReactNodeResize={onReactNodeResize}
             />
+            {showReorderControls ? (
+              <ArtboardChildReorderControls
+                disableUp={index === 0}
+                disableDown={index === siblingCount - 1}
+                onMoveUp={() => onMoveLayer?.(child.id, "up")}
+                onMoveDown={() => onMoveLayer?.(child.id, "down")}
+              />
+            ) : null}
           </div>
         )
       }
@@ -289,7 +320,7 @@ export function CanvasWorkspace({
         return (
           <div
             key={child.id}
-            className="relative"
+            className={childShellClassName}
             style={{ width: child.size.width, height: child.size.height }}
             data-artboard-child="true"
           >
@@ -301,6 +332,14 @@ export function CanvasWorkspace({
               scale={transform.scale}
               interactMode={interactMode}
             />
+            {showReorderControls ? (
+              <ArtboardChildReorderControls
+                disableUp={index === 0}
+                disableDown={index === siblingCount - 1}
+                onMoveUp={() => onMoveLayer?.(child.id, "up")}
+                onMoveDown={() => onMoveLayer?.(child.id, "down")}
+              />
+            ) : null}
           </div>
         )
       }
@@ -309,7 +348,7 @@ export function CanvasWorkspace({
         return (
           <div
             key={child.id}
-            className="relative"
+            className={childShellClassName}
             style={{ width: child.size.width, height: child.size.height }}
             data-artboard-child="true"
           >
@@ -321,6 +360,14 @@ export function CanvasWorkspace({
               scale={transform.scale}
               interactMode={interactMode}
             />
+            {showReorderControls ? (
+              <ArtboardChildReorderControls
+                disableUp={index === 0}
+                disableDown={index === siblingCount - 1}
+                onMoveUp={() => onMoveLayer?.(child.id, "up")}
+                onMoveDown={() => onMoveLayer?.(child.id, "down")}
+              />
+            ) : null}
           </div>
         )
       }
@@ -329,7 +376,7 @@ export function CanvasWorkspace({
         return (
           <div
             key={child.id}
-            className="relative"
+            className={childShellClassName}
             style={{ width: child.size.width, height: child.size.height }}
             data-artboard-child="true"
           >
@@ -341,6 +388,14 @@ export function CanvasWorkspace({
               scale={transform.scale}
               interactMode={interactMode}
             />
+            {showReorderControls ? (
+              <ArtboardChildReorderControls
+                disableUp={index === 0}
+                disableDown={index === siblingCount - 1}
+                onMoveUp={() => onMoveLayer?.(child.id, "up")}
+                onMoveDown={() => onMoveLayer?.(child.id, "down")}
+              />
+            ) : null}
           </div>
         )
       }
@@ -348,7 +403,7 @@ export function CanvasWorkspace({
       return (
         <div
           key={child.id}
-          className="relative"
+          className={childShellClassName}
           style={{ width: child.size.width, height: child.size.height }}
           data-artboard-child="true"
         >
@@ -362,6 +417,14 @@ export function CanvasWorkspace({
             Renderer={Renderer}
             getComponentById={getComponentById}
           />
+          {showReorderControls ? (
+            <ArtboardChildReorderControls
+              disableUp={index === 0}
+              disableDown={index === siblingCount - 1}
+              onMoveUp={() => onMoveLayer?.(child.id, "up")}
+              onMoveDown={() => onMoveLayer?.(child.id, "down")}
+            />
+          ) : null}
         </div>
       )
     },
@@ -374,6 +437,7 @@ export function CanvasWorkspace({
       onReactCompileGenerationChange,
       onReactNodeSelect,
       onReactNodeResize,
+      onMoveLayer,
       Renderer,
       getComponentById,
       transform.scale,
@@ -674,32 +738,35 @@ export function CanvasWorkspace({
         })}
 
         {/* Canvas items */}
-      {sortedArtboards.map((item) => (
-        <CanvasArtboardItemComponent
-          key={item.id}
-          item={item}
-          isSelected={selectedIds.includes(item.id)}
-          isMultiSelected={selectedIds.length > 1 && selectedIds.includes(item.id)}
-          onSelect={(addToSelection) => {
-            onSelectItem(item.id, addToSelection)
-            onBringToFront(item.id)
-          }}
-          onUpdate={(updates: Partial<Omit<CanvasArtboardItemType, "id">>) =>
-            onUpdateItem(item.id, updates)
-          }
-          onRemove={() =>
-            selectedIds.length > 1 && selectedIds.includes(item.id)
-              ? onRemoveSelected()
-              : onRemoveItem(item.id)
-          }
-          onDuplicate={() => onDuplicateItem(item.id)}
-          onBringToFront={() => onBringToFront(item.id)}
-          scale={transform.scale}
-          interactMode={interactMode}
-        >
-          {getArtboardChildren(item.id).map((child) => renderLayoutChild(child))}
-        </CanvasArtboardItemComponent>
-      ))}
+      {sortedArtboards.map((item) => {
+        const children = getArtboardChildren(item.id)
+        return (
+          <CanvasArtboardItemComponent
+            key={item.id}
+            item={item}
+            isSelected={selectedIds.includes(item.id)}
+            isMultiSelected={selectedIds.length > 1 && selectedIds.includes(item.id)}
+            onSelect={(addToSelection) => {
+              onSelectItem(item.id, addToSelection)
+              onBringToFront(item.id)
+            }}
+            onUpdate={(updates: Partial<Omit<CanvasArtboardItemType, "id">>) =>
+              onUpdateItem(item.id, updates)
+            }
+            onRemove={() =>
+              selectedIds.length > 1 && selectedIds.includes(item.id)
+                ? onRemoveSelected()
+                : onRemoveItem(item.id)
+            }
+            onDuplicate={() => onDuplicateItem(item.id)}
+            onBringToFront={() => onBringToFront(item.id)}
+            scale={transform.scale}
+            interactMode={interactMode}
+          >
+            {children.map((child, index) => renderLayoutChild(child, index, children.length))}
+          </CanvasArtboardItemComponent>
+        )
+      })}
 
       {sortedFreeformItems.map((item) => {
           const commonProps = {
@@ -873,6 +940,59 @@ export function CanvasWorkspace({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+function ArtboardChildReorderControls({
+  disableUp,
+  disableDown,
+  onMoveUp,
+  onMoveDown,
+}: {
+  disableUp: boolean
+  disableDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
+}) {
+  return (
+    <div className="absolute -right-2 top-2 z-20 flex flex-col gap-1">
+      <button
+        type="button"
+        data-artboard-child-reorder="true"
+        onMouseDown={(event) => {
+          event.stopPropagation()
+          event.preventDefault()
+        }}
+        onClick={(event) => {
+          event.stopPropagation()
+          onMoveUp()
+        }}
+        disabled={disableUp}
+        className="flex h-6 w-6 items-center justify-center rounded-full border border-default bg-white text-muted-foreground shadow-sm hover:bg-surface-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="Move child up"
+        title="Move child up"
+      >
+        <ChevronUp className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        data-artboard-child-reorder="true"
+        onMouseDown={(event) => {
+          event.stopPropagation()
+          event.preventDefault()
+        }}
+        onClick={(event) => {
+          event.stopPropagation()
+          onMoveDown()
+        }}
+        disabled={disableDown}
+        className="flex h-6 w-6 items-center justify-center rounded-full border border-default bg-white text-muted-foreground shadow-sm hover:bg-surface-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="Move child down"
+        title="Move child down"
+      >
+        <ChevronDown className="h-3.5 w-3.5" />
+      </button>
     </div>
   )
 }

@@ -3405,6 +3405,7 @@ export function CanvasTab({
             onRemoveSelected={handleDeleteSelected}
             onDuplicateItem={duplicateItem}
             onBringToFront={bringToFront}
+            onMoveLayer={handleMoveLayer}
             onPan={pan}
             onWheel={handleWheel}
             onDimensionsChange={handleDimensionsChange}
