@@ -153,9 +153,9 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 ### U7 progress (2026-05-14) — component variant cycling + numeric prop scrub
 
 - Selected component items now cycle variants with `ArrowLeft` / `ArrowRight` in `CanvasTab`, covered by focused unit tests.
-- Generic numeric prop controls now render a dedicated scrub affordance with an `ew-resize` cursor and document-level horizontal drag handling in `PropControl`.
+- Generic numeric prop controls now render a dedicated scrub affordance with an `ew-resize` cursor; the control requests PointerLock when available and falls back to document-level horizontal drag when it is not.
 - Focused coverage now asserts scrub delta application, schema bound clamping, and non-numeric controls omitting the scrub affordance in `tests/propControl.test.tsx`.
-- Remaining U7 work is proof, not plumbing: browser-verify scrub behavior on a real component panel and decide whether the current document-level drag is sufficient or should be upgraded to PointerLock polish.
+- Remaining U7 work is proof, not plumbing: browser-verify scrub behavior on a real component panel now that PointerLock + fallback wiring is in.
 
 ## Remaining v3 surface
 
@@ -168,7 +168,7 @@ To complete the headline goal ("every node type editable like Figma + agent pari
 | **U4b** (structural drag) | drop targets between siblings, drag-to-insert at index N — uses U1/U2 mutations |
 | **U5** (CanvasTab wiring) | host the log state, wire Cmd-Z / Cmd-Shift-Z + toast, route undo/redo through the existing AST writer endpoint |
 | **U6** (endpoint + UI) | markdown write endpoint, U13 bridge wiring for inline edit, CanvasMarkdownItem affordances |
-| **U7** | browser-verify numeric prop scrub on a real component panel and decide whether PointerLock polish is needed beyond the current document-level drag |
+| **U7** | browser-verify numeric prop scrub on a real component panel now that PointerLock + fallback wiring is in |
 | **U8** | image crop handles, video clip-trim handles, aspect-ratio drag |
 | **U9** | artboard child reorder + gap drag (both canvas-state only via `update_item`) |
 | **U10** | mermaid click-to-edit-label via U13 bridge into rendered SVG |

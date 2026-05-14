@@ -5,7 +5,7 @@
  */
 
 import { ChevronDown, MoveHorizontal } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import type { PropSchema } from "../core/types"
 
@@ -161,6 +161,8 @@ function NumberControl({
   max,
   step = 1,
 }: NumberControlProps) {
+  const scrubButtonRef = useRef<HTMLButtonElement | null>(null)
+  const scrubMovementRef = useRef(0)
   const [scrubState, setScrubState] = useState<{
     active: boolean
     startX: number
@@ -175,13 +177,23 @@ function NumberControl({
     if (!scrubState.active) return
 
     const handleMouseMove = (event: MouseEvent) => {
-      const delta = event.clientX - scrubState.startX
+      const pointerLocked = document.pointerLockElement === scrubButtonRef.current
+      const delta = pointerLocked
+        ? (scrubMovementRef.current += event.movementX)
+        : event.clientX - scrubState.startX
       const increments = Math.round(delta / 12)
       const nextValue = clampNumber(scrubState.startValue + increments * step, min, max)
       onChange(nextValue)
     }
 
     const handleMouseUp = () => {
+      if (
+        document.pointerLockElement === scrubButtonRef.current &&
+        typeof document.exitPointerLock === "function"
+      ) {
+        document.exitPointerLock()
+      }
+      scrubMovementRef.current = 0
       setScrubState((current) => ({ ...current, active: false }))
     }
 
@@ -209,14 +221,17 @@ function NumberControl({
           className="h-8 w-full rounded-md border border-default bg-white px-2.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
         />
         <button
+          ref={scrubButtonRef}
           type="button"
           onMouseDown={(event) => {
             event.preventDefault()
+            scrubMovementRef.current = 0
             setScrubState({
               active: true,
               startX: event.clientX,
               startValue: typeof value === "number" ? value : 0,
             })
+            scrubButtonRef.current?.requestPointerLock?.()
           }}
           className="flex h-8 w-8 cursor-ew-resize items-center justify-center rounded-md border border-default bg-white text-muted-foreground hover:bg-surface-50 hover:text-foreground"
           aria-label={`Scrub ${label}`}
