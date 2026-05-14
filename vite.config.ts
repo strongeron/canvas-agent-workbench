@@ -12,6 +12,7 @@ import { readCanvasAstNode } from './utils/canvasAstReader'
 import { injectCanvasHtmlElementIds, readCanvasHtmlNode } from './utils/canvasHtmlEditor'
 import { applyCanvasAstWriteRequest } from './vite/api/canvasAstWrite'
 import { applyCanvasAstLoadRequest } from './vite/api/canvasAstLoad'
+import { applyCanvasMarkdownWriteRequest } from './vite/api/canvasMarkdownWrite'
 import { applyCanvasRegistryListRequest } from './vite/api/canvasRegistryList'
 import { applyCanvasComponentCreateRequest } from './vite/api/canvasComponentCreate'
 import { applyCanvasComponentPromoteRequest } from './vite/api/canvasComponentPromote'
@@ -4554,6 +4555,26 @@ function paperImportPlugin() {
             return sendJson(res, 400, {
               ok: false,
               error: error?.message || 'Failed to write AST node.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/markdown/write') {
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasMarkdownWriteRequest(body, { workspaceRoot: __dirname })
+            if (!result.ok) {
+              return sendJson(res, result.status, {
+                ok: false,
+                code: result.code,
+                error: result.error,
+              })
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to write markdown block.',
             })
           }
         }

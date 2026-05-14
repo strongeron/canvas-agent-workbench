@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14 (refresh: U5 host wiring + resize class insertion fallback)
+updated: 2026-05-14 (refresh: U6 markdown endpoint slice landed locally)
 ---
 
 # Running goal
@@ -34,7 +34,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U3 | 🟡 local wiring in progress | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
 | U4b | not started | drop targets + structural drag (depends on U1+U2+U4a+U13) |
 | U5 | 🟡 local host wiring landed | mutation log + undo/redo — pure module `52df964`; CanvasTab now logs file-backed writes, replays stored snapshots via `/api/canvas/ast/write`, wires Cmd-Z/Cmd-Shift-Z, and shows undo/redo toasts |
-| U6 | 🟡 writer shipped | markdown direct edit — pure block writer `69b1379` (list / update / remove / reorder); endpoint + U13 bridge wiring + CanvasMarkdownItem UI remaining |
+| U6 | 🟡 local endpoint landed | markdown direct edit — pure block writer `69b1379` plus local `/api/canvas/markdown/write` endpoint with file guard + mtime; U13 bridge wiring + CanvasMarkdownItem UI remaining |
 | U7–U12 | not started | component variant cycling, media crop, artboard reorder, mermaid label edit, MCP audit pass, drop targets, multi-select |
 
 ## Open gates before claiming v3 demo "shippable"
@@ -138,7 +138,11 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - Round-trip strategy is parse → mutate top-level mdast children → remark-stringify with stable options. Tests assert structural equivalence, not byte-identity (remark-stringify normalizes whitespace).
 - New deps: `unified` ^11, `remark-parse` ^11, `remark-stringify` ^11 (~150KB minified, called out in plan U6).
 - 12 unit tests cover happy paths, promotion behaviour, empty-newText collapse, out-of-range / negative input rejection, remove, reorder.
-- Remaining U6 work: new endpoint `vite/api/canvasMarkdownWrite.ts` with `resolveWorkspacePath` guard + mtime check; U13 bridge wiring (`canvas/edit-start` / `canvas/edit-commit` / `canvas/edit-result`) so the rendered markdown blocks become inline-editable; CanvasMarkdownItem inline-edit UI + drag-to-reorder.
+- Local worktree now adds `vite/api/canvasMarkdownWrite.ts` and the matching Vite route at `/api/canvas/markdown/write`.
+- Supported actions: `list`, `update`, `remove`, `reorder`, each working against either inline `markdownSource` or a file-backed `.md` path under the workspace root.
+- File-backed writes reuse the same temp-write + rename and `mtimeMs` conflict model as the AST writer, so markdown edits can share the same persistence semantics.
+- Focused endpoint coverage now lives in `tests/canvasMarkdownWriteEndpoint.test.ts`.
+- Remaining U6 work: thread the endpoint into U13 bridge events (`canvas/edit-start` / `canvas/edit-commit` / `canvas/edit-result`) so rendered markdown blocks become inline-editable; then land `CanvasMarkdownItem` inline-edit UI + drag-to-reorder.
 
 ## Remaining v3 surface
 
