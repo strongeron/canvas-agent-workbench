@@ -31,6 +31,10 @@ import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
 import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
 import type { CanvasLibraryDragPayload } from "../../utils/canvasLibraryDrag"
+import {
+  dispatchCanvasLibraryDrop,
+  type CanvasLibraryDropIntent,
+} from "../../utils/canvasLibraryDropDispatch"
 import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
@@ -873,26 +877,68 @@ export function CanvasTab({
     )
   }, [])
 
-  // U4b slice 3.2c. Drop intents bubble up here from CanvasHtmlFrame. The
-  // structural mutation dispatch (POST /api/canvas/ast/write with the staged
-  // primitive's childSource) lands in the next slice; for now we clear the
-  // active drag so the capture overlay drops away after a successful drop,
-  // and log the intent so the browser-verify pass can confirm hit-test +
-  // index resolution are correct.
+  // U4b. A drop bubbled up from a CanvasHtmlFrame zone. Resolve the dropped-
+  // into item's source deps (TSX vs inline HTML, file-backed vs inline) the
+  // same way the property panel + resize dispatch do, then route the staged
+  // primitive through the structural AST writer. Success replays through the
+  // existing source-change + mutation-log path; failure surfaces as a toast.
+  const runLibraryDrop = useCallback(
+    async (itemId: string, intent: CanvasLibraryDropIntent) => {
+      const primitive = activeLibraryDrag?.primitive
+      setActiveLibraryDrag(null)
+      if (!primitive) return
+      const item = items.find((candidate) => candidate.id === itemId)
+      if (!item || item.type !== "html") return
+      const htmlItem = item as CanvasHtmlItem
+      const isHtmlMode = htmlItem.sourceMode === "inline"
+      const result = await dispatchCanvasLibraryDrop(intent, primitive, {
+        sourceKind: isHtmlMode ? "html" : "tsx",
+        sourceId:
+          htmlItem.sourcePath ||
+          htmlItem.sourceHtmlFilePath ||
+          htmlItem.sourceReactFilePath ||
+          htmlItem.id,
+        sourceReact: htmlItem.sourceReact,
+        sourceHtml: htmlItem.sourceHtml,
+        filePath: isHtmlMode ? htmlItem.sourceHtmlFilePath : htmlItem.sourceReactFilePath,
+        mtimeMs: isHtmlMode ? htmlItem.sourceHtmlFileMtime : htmlItem.sourceReactFileMtime,
+        onSourceReactChange: (sourceReact, mtimeMs) =>
+          updateItem(itemId, {
+            sourceMode: "react",
+            sourceReact,
+            ...(typeof mtimeMs === "number" ? { sourceReactFileMtime: mtimeMs } : {}),
+          } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+        onSourceHtmlChange: (sourceHtml, mtimeMs) =>
+          updateItem(itemId, {
+            sourceMode: "inline",
+            sourceHtml,
+            ...(typeof mtimeMs === "number" ? { sourceHtmlFileMtime: mtimeMs } : {}),
+          } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+        onWriteSuccess: handleReactNodeWriteSuccess,
+      })
+      if (result.status === "error") {
+        setHistoryToast({ id: Date.now(), tone: "error", message: result.error })
+      }
+    },
+    [activeLibraryDrag, items, updateItem, handleReactNodeWriteSuccess]
+  )
+
   const handleLibraryDropInsert = useCallback(
     (input: { itemId: string; parentCanvasId: string; index: number }) => {
-      console.debug("[canvas] library drop insert", input, activeLibraryDrag?.primitive.id ?? null)
-      setActiveLibraryDrag(null)
+      void runLibraryDrop(input.itemId, {
+        kind: "insert",
+        parentCanvasId: input.parentCanvasId,
+        index: input.index,
+      })
     },
-    [activeLibraryDrag]
+    [runLibraryDrop]
   )
 
   const handleLibraryDropWrap = useCallback(
     (input: { itemId: string; canvasId: string }) => {
-      console.debug("[canvas] library drop wrap", input, activeLibraryDrag?.primitive.id ?? null)
-      setActiveLibraryDrag(null)
+      void runLibraryDrop(input.itemId, { kind: "wrap", canvasId: input.canvasId })
     },
-    [activeLibraryDrag]
+    [runLibraryDrop]
   )
 
   const handleMarkdownWriteSuccess = useCallback((result: CanvasMarkdownWriteClientResult) => {

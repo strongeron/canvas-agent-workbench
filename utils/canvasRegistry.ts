@@ -109,6 +109,40 @@ function wrapSnippet(primitive: CanvasRegistryPrimitive): string {
   return `${importLine}\nexport default function Preview() {\n  return (\n    ${snippet}\n  )\n}\n`
 }
 
+// Tag-name shape the structural writer accepts (it re-validates server-side;
+// this is just to pick a sane candidate). Kept local so canvasRegistry does
+// not couple to the AST-writer internals.
+const PRIMITIVE_TAG_NAME_RE = /^[A-Za-z][A-Za-z0-9_.-]*$/
+
+/**
+ * The single JSX expression to splice as a child via `insertChild`. Unlike
+ * `buildPrimitiveSnippet` (which emits a whole `export default` module for a
+ * standalone preview node), this returns *just* the element so it parses as
+ * one JSX expression. No import is emitted — `insertChild` cannot add imports;
+ * dropping into a file that doesn't already import the component surfaces a
+ * recompile error (same constraint as the property panel's manual insert).
+ */
+export function buildPrimitiveChildSource(primitive: CanvasRegistryPrimitive): string {
+  const snippet = primitive.snippet?.trim()
+  if (snippet) return snippet
+  if (primitive.importName) return `<${primitive.importName} />`
+  return `<div>${escapeForJsx(primitive.displayName)}</div>`
+}
+
+/**
+ * Wrapper tag for a leaf-target `wrapSelection` drop. `wrapSelection` only
+ * carries a tag name, so the primitive's props/children are intentionally
+ * not represented — the leaf is wrapped in the primitive's root element.
+ */
+export function derivePrimitiveWrapperTag(primitive: CanvasRegistryPrimitive): string {
+  if (primitive.importName && PRIMITIVE_TAG_NAME_RE.test(primitive.importName)) {
+    return primitive.importName
+  }
+  const fromSnippet = primitive.snippet?.match(/^\s*<\s*([A-Za-z][A-Za-z0-9_.-]*)/)?.[1]
+  if (fromSnippet && PRIMITIVE_TAG_NAME_RE.test(fromSnippet)) return fromSnippet
+  return "div"
+}
+
 function resolveImportPath(primitive: CanvasRegistryPrimitive): string | null {
   if (!primitive.filePath) return null
   return `../../projects/design-system-foundation/${primitive.filePath.replace(/\.tsx?$/, "")}`
