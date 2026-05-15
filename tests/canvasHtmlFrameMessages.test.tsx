@@ -579,3 +579,408 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 })
+
+describe("CanvasHtmlFrame — U4b library drop-target wiring", () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  let harness: Harness | null = null
+
+  beforeEach(() => {
+    fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        html: '<!doctype html><html><body><div id="root"></div></body></html>',
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    // dragover schedules the hit-test in a rAF; run it synchronously so the
+    // postMessage lands inside the same act() flush.
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      cb(0)
+      return 1
+    })
+    vi.stubGlobal("cancelAnimationFrame", () => {})
+  })
+
+  afterEach(() => {
+    if (harness) {
+      harness.cleanup()
+      harness = null
+    }
+    vi.unstubAllGlobals()
+  })
+
+  function anchorIframe(iframe: HTMLIFrameElement): { spy: ReturnType<typeof vi.fn> } {
+    iframe.getBoundingClientRect = () =>
+      ({ left: 100, top: 50, right: 500, bottom: 350, width: 400, height: 300, x: 100, y: 50 }) as DOMRect
+    const spy = vi.fn()
+    Object.defineProperty(iframe.contentWindow as Window, "postMessage", {
+      configurable: true,
+      value: spy,
+    })
+    return { spy }
+  }
+
+  function fireDrag(
+    el: Element,
+    type: "dragover" | "drop" | "dragleave",
+    init: { clientX?: number; clientY?: number; relatedTarget?: EventTarget | null } = {}
+  ): void {
+    const ev = new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX: init.clientX ?? 0,
+      clientY: init.clientY ?? 0,
+    })
+    Object.defineProperty(ev, "dataTransfer", {
+      configurable: true,
+      value: { dropEffect: "", effectAllowed: "" },
+    })
+    if ("relatedTarget" in init) {
+      Object.defineProperty(ev, "relatedTarget", {
+        configurable: true,
+        value: init.relatedTarget ?? null,
+      })
+    }
+    el.dispatchEvent(ev)
+  }
+
+  function getResultRequestId(spy: ReturnType<typeof vi.fn>): string {
+    const call = spy.mock.calls.find(
+      ([msg]) => msg && msg.type === "canvas/drop-target-hit-test"
+    )
+    if (!call) throw new Error("no drop-target-hit-test was posted")
+    return call[0].requestId as string
+  }
+
+  it("does not mount the capture layer until libraryDragActive is true", async () => {
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    expect(
+      harness.container.querySelector("[data-testid='canvas-html-frame-drag-capture']")
+    ).toBeNull()
+
+    await act(async () => {
+      harness?.root.render(
+        <CanvasHtmlFrame item={makeItem()} interactMode={false} libraryDragActive />
+      )
+    })
+    expect(
+      harness.container.querySelector("[data-testid='canvas-html-frame-drag-capture']")
+    ).not.toBeNull()
+  })
+
+  it("posts canvas/drop-target-hit-test with iframe-local coords on dragover", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} libraryDragActive />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    const { spy } = anchorIframe(iframe)
+    const capture = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-drag-capture']"
+    ) as HTMLElement
+
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 180, clientY: 130 })
+    })
+
+    const call = spy.mock.calls.find(
+      ([msg]) => msg && msg.type === "canvas/drop-target-hit-test"
+    )
+    expect(call).toBeTruthy()
+    // 180 - 100 = 80 ; 130 - 50 = 80
+    expect(call?.[0]).toMatchObject({
+      type: "canvas/drop-target-hit-test",
+      x: 80,
+      y: 80,
+    })
+    expect(call?.[1]).toBe(window.location.origin)
+  })
+
+  it("renders insert-line zones from a matching canvas/drop-target-result", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} libraryDragActive />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    const { spy } = anchorIframe(iframe)
+    const capture = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-drag-capture']"
+    ) as HTMLElement
+
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 180, clientY: 130 })
+    })
+    const requestId = getResultRequestId(spy)
+
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/drop-target-result",
+        requestId,
+        parentCanvasId: "stack:0",
+        parentRect: { x: 0, y: 0, width: 200, height: 120 },
+        siblings: [
+          { canvasId: "a:0", rect: { x: 0, y: 0, width: 200, height: 40 }, index: 0 },
+          { canvasId: "b:0", rect: { x: 0, y: 60, width: 200, height: 40 }, index: 1 },
+        ],
+        leaf: false,
+      })
+    })
+
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-drop-zones']")
+    ).not.toBeNull()
+    // 2 siblings, vertical flow → N+1 = 3 insert lines.
+    expect(
+      harness.container.querySelectorAll("[data-canvas-drop-zone-index]").length
+    ).toBe(3)
+  })
+
+  it("renders a wrap zone when the result marks the parent as leaf", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} libraryDragActive />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    const { spy } = anchorIframe(iframe)
+    const capture = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-drag-capture']"
+    ) as HTMLElement
+
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 150, clientY: 90 })
+    })
+    const requestId = getResultRequestId(spy)
+
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/drop-target-result",
+        requestId,
+        parentCanvasId: "leaf:0",
+        parentRect: { x: 5, y: 5, width: 100, height: 30 },
+        siblings: [],
+        leaf: true,
+      })
+    })
+
+    const wrap = harness.container.querySelector(
+      "[data-testid='canvas-iframe-drop-zone-wrap']"
+    ) as HTMLElement
+    expect(wrap).not.toBeNull()
+    expect(wrap.getAttribute("data-canvas-drop-wrap-canvas-id")).toBe("leaf:0")
+  })
+
+  it("discards a drop-target-result whose requestId is stale", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} libraryDragActive />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    anchorIframe(iframe)
+    const capture = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-drag-capture']"
+    ) as HTMLElement
+
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 180, clientY: 130 })
+    })
+
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/drop-target-result",
+        requestId: "stale-id-not-the-latest",
+        parentCanvasId: "stack:0",
+        parentRect: { x: 0, y: 0, width: 200, height: 120 },
+        siblings: [{ canvasId: "a:0", rect: { x: 0, y: 0, width: 200, height: 40 }, index: 0 }],
+        leaf: false,
+      })
+    })
+
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-drop-zones']")
+    ).toBeNull()
+  })
+
+  it("clears zones for a result with a null parent (no ancestor under the cursor)", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} libraryDragActive />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    const { spy } = anchorIframe(iframe)
+    const capture = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-drag-capture']"
+    ) as HTMLElement
+
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 180, clientY: 130 })
+    })
+    const firstRequestId = getResultRequestId(spy)
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/drop-target-result",
+        requestId: firstRequestId,
+        parentCanvasId: "stack:0",
+        parentRect: { x: 0, y: 0, width: 200, height: 120 },
+        siblings: [{ canvasId: "a:0", rect: { x: 0, y: 0, width: 200, height: 40 }, index: 0 }],
+        leaf: false,
+      })
+    })
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-drop-zones']")
+    ).not.toBeNull()
+
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 180, clientY: 130 })
+    })
+    const secondRequestId = getResultRequestId(spy)
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/drop-target-result",
+        requestId: secondRequestId,
+        parentCanvasId: null,
+        parentRect: null,
+        siblings: [],
+        leaf: false,
+      })
+    })
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-drop-zones']")
+    ).toBeNull()
+  })
+
+  it("tears down the capture layer and zones when libraryDragActive flips to false", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} libraryDragActive />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    const { spy } = anchorIframe(iframe)
+    const capture = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-drag-capture']"
+    ) as HTMLElement
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 180, clientY: 130 })
+    })
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/drop-target-result",
+        requestId: getResultRequestId(spy),
+        parentCanvasId: "stack:0",
+        parentRect: { x: 0, y: 0, width: 200, height: 120 },
+        siblings: [{ canvasId: "a:0", rect: { x: 0, y: 0, width: 200, height: 40 }, index: 0 }],
+        leaf: false,
+      })
+    })
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-drop-zones']")
+    ).not.toBeNull()
+
+    await act(async () => {
+      harness?.root.render(
+        <CanvasHtmlFrame item={makeItem()} interactMode={false} libraryDragActive={false} />
+      )
+    })
+
+    expect(
+      harness.container.querySelector("[data-testid='canvas-html-frame-drag-capture']")
+    ).toBeNull()
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-drop-zones']")
+    ).toBeNull()
+  })
+
+  it("fires onLibraryDropInsert with itemId + parent + index when an insert line is dropped on", async () => {
+    const onInsert = vi.fn()
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem({ id: "frame-9" })}
+        interactMode={false}
+        libraryDragActive
+        onLibraryDropInsert={onInsert}
+      />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    const { spy } = anchorIframe(iframe)
+    const capture = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-drag-capture']"
+    ) as HTMLElement
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 180, clientY: 130 })
+    })
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/drop-target-result",
+        requestId: getResultRequestId(spy),
+        parentCanvasId: "stack:0",
+        parentRect: { x: 0, y: 0, width: 200, height: 120 },
+        siblings: [
+          { canvasId: "a:0", rect: { x: 0, y: 0, width: 200, height: 40 }, index: 0 },
+          { canvasId: "b:0", rect: { x: 0, y: 60, width: 200, height: 40 }, index: 1 },
+        ],
+        leaf: false,
+      })
+    })
+
+    const lines = harness.container.querySelectorAll("[data-canvas-drop-zone-index]")
+    const lastLine = lines[lines.length - 1] as HTMLElement
+    await act(async () => {
+      fireDrag(lastLine, "drop")
+    })
+
+    expect(onInsert).toHaveBeenCalledWith({
+      itemId: "frame-9",
+      parentCanvasId: "stack:0",
+      index: 2,
+    })
+  })
+
+  it("fires onLibraryDropWrap with itemId + canvasId when the wrap zone is dropped on", async () => {
+    const onWrap = vi.fn()
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem({ id: "frame-7" })}
+        interactMode={false}
+        libraryDragActive
+        onLibraryDropWrap={onWrap}
+      />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    const { spy } = anchorIframe(iframe)
+    const capture = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-drag-capture']"
+    ) as HTMLElement
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 150, clientY: 90 })
+    })
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/drop-target-result",
+        requestId: getResultRequestId(spy),
+        parentCanvasId: "leaf:0",
+        parentRect: { x: 5, y: 5, width: 100, height: 30 },
+        siblings: [],
+        leaf: true,
+      })
+    })
+
+    const wrap = harness.container.querySelector(
+      "[data-testid='canvas-iframe-drop-zone-wrap']"
+    ) as HTMLElement
+    await act(async () => {
+      fireDrag(wrap, "drop")
+    })
+
+    expect(onWrap).toHaveBeenCalledWith({ itemId: "frame-7", canvasId: "leaf:0" })
+  })
+})

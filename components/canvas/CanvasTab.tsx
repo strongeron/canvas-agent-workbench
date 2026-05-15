@@ -30,6 +30,7 @@ import type {
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
 import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
+import type { CanvasLibraryDragPayload } from "../../utils/canvasLibraryDrag"
 import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
@@ -713,6 +714,9 @@ export function CanvasTab({
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
   const [layersPanelVisible, setLayersPanelVisible] = useState(false)
   const [libraryPanelVisible, setLibraryPanelVisible] = useState(false)
+  // U4b slice 3.2c. While a library primitive is in flight from the panel,
+  // every iframe should render drop-zones over hovered ancestors.
+  const [activeLibraryDrag, setActiveLibraryDrag] = useState<CanvasLibraryDragPayload | null>(null)
   const [componentPasteDialogVisible, setComponentPasteDialogVisible] = useState(false)
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
@@ -868,6 +872,28 @@ export function CanvasTab({
       })
     )
   }, [])
+
+  // U4b slice 3.2c. Drop intents bubble up here from CanvasHtmlFrame. The
+  // structural mutation dispatch (POST /api/canvas/ast/write with the staged
+  // primitive's childSource) lands in the next slice; for now we clear the
+  // active drag so the capture overlay drops away after a successful drop,
+  // and log the intent so the browser-verify pass can confirm hit-test +
+  // index resolution are correct.
+  const handleLibraryDropInsert = useCallback(
+    (input: { itemId: string; parentCanvasId: string; index: number }) => {
+      console.debug("[canvas] library drop insert", input, activeLibraryDrag?.primitive.id ?? null)
+      setActiveLibraryDrag(null)
+    },
+    [activeLibraryDrag]
+  )
+
+  const handleLibraryDropWrap = useCallback(
+    (input: { itemId: string; canvasId: string }) => {
+      console.debug("[canvas] library drop wrap", input, activeLibraryDrag?.primitive.id ?? null)
+      setActiveLibraryDrag(null)
+    },
+    [activeLibraryDrag]
+  )
 
   const handleMarkdownWriteSuccess = useCallback((result: CanvasMarkdownWriteClientResult) => {
     if (!result.filePath || !result.prevSourceSnapshot || result.mutations.length === 0) return
@@ -3434,6 +3460,8 @@ export function CanvasTab({
               }}
               onCreateFromPaste={() => setComponentPasteDialogVisible(true)}
               onClose={() => setLibraryPanelVisible(false)}
+              onPrimitiveDragStart={setActiveLibraryDrag}
+              onPrimitiveDragEnd={() => setActiveLibraryDrag(null)}
             />
           )}
 
@@ -3480,6 +3508,9 @@ export function CanvasTab({
             onReactCompileGenerationChange={handleReactCompileGenerationChange}
             onReactNodeResize={handleReactNodeResize}
             onMarkdownWriteSuccess={handleMarkdownWriteSuccess}
+            libraryDragActive={activeLibraryDrag !== null}
+            onLibraryDropInsert={handleLibraryDropInsert}
+            onLibraryDropWrap={handleLibraryDropWrap}
           />
 
           {/* Right sidebar - Props Panel (single selection only) */}

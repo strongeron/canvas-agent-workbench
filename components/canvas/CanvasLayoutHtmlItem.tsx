@@ -18,6 +18,9 @@ interface CanvasLayoutHtmlItemProps {
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
+  libraryDragActive?: boolean
+  onLibraryDropInsert?: (input: { itemId: string; parentCanvasId: string; index: number }) => void
+  onLibraryDropWrap?: (input: { itemId: string; canvasId: string }) => void
 }
 
 const MIN_WIDTH = 280
@@ -34,6 +37,9 @@ export function CanvasLayoutHtmlItem({
   onReactNodeSelect,
   onReactCompileGenerationChange,
   onReactNodeResize,
+  libraryDragActive = false,
+  onLibraryDropInsert,
+  onLibraryDropWrap,
 }: CanvasLayoutHtmlItemProps) {
   const [isResizing, setIsResizing] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
@@ -97,6 +103,9 @@ export function CanvasLayoutHtmlItem({
         onReactNodeSelect={onReactNodeSelect}
         onReactCompileGenerationChange={onReactCompileGenerationChange}
         onReactNodeResize={onReactNodeResize}
+        libraryDragActive={libraryDragActive}
+        onLibraryDropInsert={onLibraryDropInsert}
+        onLibraryDropWrap={onLibraryDropWrap}
       />
 
       {isSelected && !interactMode ? (

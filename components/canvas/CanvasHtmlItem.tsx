@@ -28,6 +28,9 @@ interface CanvasHtmlItemProps {
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
+  libraryDragActive?: boolean
+  onLibraryDropInsert?: (input: { itemId: string; parentCanvasId: string; index: number }) => void
+  onLibraryDropWrap?: (input: { itemId: string; canvasId: string }) => void
 }
 
 const MIN_WIDTH = 280
@@ -60,6 +63,9 @@ export function CanvasHtmlItem({
   onReactNodeSelect,
   onReactCompileGenerationChange,
   onReactNodeResize,
+  libraryDragActive = false,
+  onLibraryDropInsert,
+  onLibraryDropWrap,
 }: CanvasHtmlItemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -257,6 +263,9 @@ export function CanvasHtmlItem({
           onReactNodeSelect={onReactNodeSelect}
           onReactCompileGenerationChange={onReactCompileGenerationChange}
           onReactNodeResize={onReactNodeResize}
+          libraryDragActive={libraryDragActive}
+          onLibraryDropInsert={onLibraryDropInsert}
+          onLibraryDropWrap={onLibraryDropWrap}
         />
       </div>
 

@@ -86,6 +86,9 @@ interface CanvasWorkspaceProps {
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
   onMarkdownWriteSuccess?: (result: CanvasMarkdownWriteClientResult) => void
+  libraryDragActive?: boolean
+  onLibraryDropInsert?: (input: { itemId: string; parentCanvasId: string; index: number }) => void
+  onLibraryDropWrap?: (input: { itemId: string; canvasId: string }) => void
 }
 
 export function CanvasWorkspace({
@@ -115,6 +118,9 @@ export function CanvasWorkspace({
   onReactCompileGenerationChange,
   onReactNodeResize,
   onMarkdownWriteSuccess,
+  libraryDragActive = false,
+  onLibraryDropInsert,
+  onLibraryDropWrap,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -302,6 +308,9 @@ export function CanvasWorkspace({
               onReactNodeSelect={onReactNodeSelect}
               onReactCompileGenerationChange={onReactCompileGenerationChange}
               onReactNodeResize={onReactNodeResize}
+              libraryDragActive={libraryDragActive}
+              onLibraryDropInsert={onLibraryDropInsert}
+              onLibraryDropWrap={onLibraryDropWrap}
             />
             {showReorderControls ? (
               <ArtboardChildReorderControls
@@ -442,6 +451,9 @@ export function CanvasWorkspace({
       Renderer,
       getComponentById,
       transform.scale,
+      libraryDragActive,
+      onLibraryDropInsert,
+      onLibraryDropWrap,
     ]
   )
 
@@ -816,6 +828,9 @@ export function CanvasWorkspace({
                 onReactNodeSelect={onReactNodeSelect}
                 onReactCompileGenerationChange={onReactCompileGenerationChange}
                 onReactNodeResize={onReactNodeResize}
+                libraryDragActive={libraryDragActive}
+                onLibraryDropInsert={onLibraryDropInsert}
+                onLibraryDropWrap={onLibraryDropWrap}
               />
             )
           }

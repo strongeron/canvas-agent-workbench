@@ -1,13 +1,20 @@
 import { Code2, ExternalLink } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { CanvasHtmlItem } from "../../types/canvas"
 import { screenDeltaToIframeLocal } from "../../utils/canvasIframeCoordinates"
 import {
+  buildDropTargetHitTestRequest,
   buildRefreshRectRequest,
   isCanvasReactNodeMessage,
+  type CanvasReactNodeDropTargetSibling,
   type CanvasReactNodeRect,
 } from "../../utils/canvasReactNodeBridge"
+import {
+  CanvasIframeDropZones,
+  type CanvasDropZoneRect,
+  type CanvasDropZoneSibling,
+} from "./CanvasIframeDropZones"
 import {
   CanvasIframeOverlay,
   type CanvasOverlayDragKind,
@@ -67,6 +74,27 @@ interface CanvasHtmlFrameProps {
    * resulting setClassName / setStyle mutation through the AST writer.
    */
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
+  /**
+   * U4b slice 3.2c. When true, the frame renders a transparent capture layer
+   * over the iframe that intercepts dragover events, hit-tests the iframe via
+   * the `canvas/drop-target-hit-test` bridge protocol, and renders the drop
+   * zones returned in `canvas/drop-target-result`. Cleared on `false` and on
+   * dragleave; the parent owns the drag lifecycle (set on library-panel
+   * dragstart, cleared on library-panel dragend).
+   */
+  libraryDragActive?: boolean
+  /** Fires when the user drops a library primitive onto an insert line. */
+  onLibraryDropInsert?: (input: { itemId: string; parentCanvasId: string; index: number }) => void
+  /** Fires when the user drops a library primitive onto a leaf-parent wrap zone. */
+  onLibraryDropWrap?: (input: { itemId: string; canvasId: string }) => void
+}
+
+function toDropZoneRect(rect: CanvasReactNodeRect): CanvasDropZoneRect {
+  return { left: rect.x, top: rect.y, width: rect.width, height: rect.height }
+}
+
+function toDropZoneSibling(sibling: CanvasReactNodeDropTargetSibling): CanvasDropZoneSibling {
+  return { canvasId: sibling.canvasId, rect: toDropZoneRect(sibling.rect), index: sibling.index }
 }
 
 export function CanvasHtmlFrame({
@@ -77,6 +105,9 @@ export function CanvasHtmlFrame({
   onReactCompileGenerationChange,
   canvasScale = 1,
   onReactNodeResize,
+  libraryDragActive = false,
+  onLibraryDropInsert,
+  onLibraryDropWrap,
 }: CanvasHtmlFrameProps) {
   const title = item.title?.trim() || "HTML bundle"
   const sourceHtml = item.sourceHtml?.trim() || ""
@@ -97,6 +128,23 @@ export function CanvasHtmlFrame({
   // matches the active selection).
   const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  // U4b drop-target state. `null` means "no target under cursor" (clear zones);
+  // a populated value means the bridge resolved an ancestor and we should
+  // render either insert lines or a wrap zone over it.
+  const [dropTargetState, setDropTargetState] = useState<{
+    parentCanvasId: string
+    parentRect: CanvasDropZoneRect
+    siblings: CanvasDropZoneSibling[]
+    leaf: boolean
+  } | null>(null)
+  // Last requestId we sent on dragover. Responses must echo this exact id;
+  // anything else is stale (dragover fires faster than the iframe can reply).
+  const dropTargetRequestIdRef = useRef<string | null>(null)
+  // rAF-coalesced hit-test scheduler — dragover fires ~60Hz, browsers already
+  // throttle it, but coalescing keeps the postMessage rate predictable even
+  // under jank.
+  const dropTargetRafRef = useRef<number | null>(null)
+  const dropTargetPendingCoordsRef = useRef<{ x: number; y: number } | null>(null)
   // U2: the sourceId that drives data-canvas-id injection and the bridge's
   // fileHint. For v1 we use the canvas item id; once registry-backed nodes
   // exist (U6) this becomes the source file path so multiple instances of
@@ -249,6 +297,19 @@ export function CanvasHtmlFrame({
         }
       } else if (message.type === "canvas/hover") {
         setHoverRect(message.rect)
+      } else if (message.type === "canvas/drop-target-result") {
+        // U4b. Discard stale responses — dragover-driven hit-tests can race.
+        if (message.requestId !== dropTargetRequestIdRef.current) return
+        if (!message.parentCanvasId || !message.parentRect) {
+          setDropTargetState(null)
+          return
+        }
+        setDropTargetState({
+          parentCanvasId: message.parentCanvasId,
+          parentRect: toDropZoneRect(message.parentRect),
+          siblings: message.siblings.map(toDropZoneSibling),
+          leaf: message.leaf,
+        })
       } else if (message.type === "canvas/rect-update") {
         // U13: iframe re-emitted the rect for a previously-selected element
         // (typically after a recompile). Only apply if it still matches the
@@ -298,6 +359,90 @@ export function CanvasHtmlFrame({
     if (!targetWindow) return
     targetWindow.postMessage(buildRefreshRectRequest(selectedCanvasId), window.location.origin)
   }, [canRefreshSelectionRect, selectedCanvasId, frameSource])
+
+  // U4b. When the library drag ends (drop or cancel), the parent flips
+  // `libraryDragActive` back to false. Clear any visible zones and any pending
+  // hit-test so a fresh drag starts clean.
+  useEffect(() => {
+    if (libraryDragActive) return
+    setDropTargetState(null)
+    dropTargetRequestIdRef.current = null
+    dropTargetPendingCoordsRef.current = null
+    if (dropTargetRafRef.current !== null) {
+      cancelAnimationFrame(dropTargetRafRef.current)
+      dropTargetRafRef.current = null
+    }
+  }, [libraryDragActive])
+
+  const handleLibraryDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      // Without preventDefault the browser refuses the drop and the cursor
+      // shows the "not allowed" icon — we want "copy" while a library
+      // primitive is in flight.
+      event.preventDefault()
+      event.dataTransfer.dropEffect = "copy"
+      const iframe = iframeRef.current
+      const targetWindow = iframe?.contentWindow
+      if (!iframe || !targetWindow) return
+      // Translate viewport coords into iframe-local document coords. The
+      // iframe is rendered at its natural size inside this component — the
+      // canvas-level transform happens on a wrapper *outside* CanvasHtmlFrame
+      // — so the iframe rect's top-left maps to the iframe document's (0, 0)
+      // and no scale factor is needed.
+      const rect = iframe.getBoundingClientRect()
+      dropTargetPendingCoordsRef.current = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      }
+      if (dropTargetRafRef.current !== null) return
+      dropTargetRafRef.current = window.requestAnimationFrame(() => {
+        dropTargetRafRef.current = null
+        const coords = dropTargetPendingCoordsRef.current
+        dropTargetPendingCoordsRef.current = null
+        if (!coords) return
+        const requestId =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()}`
+        dropTargetRequestIdRef.current = requestId
+        targetWindow.postMessage(
+          buildDropTargetHitTestRequest({ requestId, x: coords.x, y: coords.y }),
+          window.location.origin
+        )
+      })
+    },
+    []
+  )
+
+  const handleLibraryDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    // dragleave fires on every child boundary crossing too. Only clear when
+    // the pointer truly left the capture layer (relatedTarget is null or
+    // outside currentTarget). Otherwise dragging across an insert line would
+    // flicker the zones.
+    const next = event.relatedTarget
+    if (next instanceof Node && event.currentTarget.contains(next)) return
+    setDropTargetState(null)
+    dropTargetRequestIdRef.current = null
+    dropTargetPendingCoordsRef.current = null
+    if (dropTargetRafRef.current !== null) {
+      cancelAnimationFrame(dropTargetRafRef.current)
+      dropTargetRafRef.current = null
+    }
+  }, [])
+
+  const handleLibraryInsert = useCallback(
+    (input: { parentCanvasId: string; index: number }) => {
+      onLibraryDropInsert?.({ itemId: item.id, ...input })
+    },
+    [item.id, onLibraryDropInsert]
+  )
+
+  const handleLibraryWrap = useCallback(
+    (input: { canvasId: string }) => {
+      onLibraryDropWrap?.({ itemId: item.id, ...input })
+    },
+    [item.id, onLibraryDropWrap]
+  )
   const hasRenderableSource = shouldRenderReact
     ? compileStatus === "ready" && Boolean(compiledReactHtml)
     : shouldRenderInline
@@ -408,6 +553,33 @@ export function CanvasHtmlFrame({
             )}
             {!interactMode && (
               <div className="absolute inset-0" />
+            )}
+            {libraryDragActive && (shouldRenderReact || shouldRenderInline) && (
+              <div
+                data-testid="canvas-html-frame-drag-capture"
+                className="absolute inset-0"
+                style={{ zIndex: 25 }}
+                onDragOver={handleLibraryDragOver}
+                onDragLeave={handleLibraryDragLeave}
+                onDrop={(event) => {
+                  // Drops onto an insert line or wrap zone fire their own
+                  // handlers (which stopPropagation by default in React).
+                  // This catch-all swallows drops that miss every zone so
+                  // the browser doesn't navigate to a JSON payload URL.
+                  event.preventDefault()
+                }}
+              >
+                {dropTargetState && (
+                  <CanvasIframeDropZones
+                    parentCanvasId={dropTargetState.parentCanvasId}
+                    parentRect={dropTargetState.parentRect}
+                    siblings={dropTargetState.siblings}
+                    leaf={dropTargetState.leaf}
+                    onInsert={handleLibraryInsert}
+                    onWrap={handleLibraryWrap}
+                  />
+                )}
+              </div>
             )}
           </>
         ) : shouldRenderReact && compileStatus === "loading" ? (

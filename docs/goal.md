@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-14 (refresh: U11 MCP wrappers landed locally)
+updated: 2026-05-15 (U4b 3.2c bridge↔overlay wiring landed)
 ---
 
 # Running goal
@@ -32,7 +32,7 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U1 | ✅ complete | TSX structural mutations — all 6 helper mutations are implemented; writer/API structural dispatch returns `canvasIdMap` + `prevSourceSnapshot` |
 | U2 | 🟡 local writer complete | same 6 mutations on the HTML side via parse5; endpoint path is locally exercised, broader consumer wiring still pending |
 | U3 | 🟡 local wiring in progress | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
-| U4b | not started | drop targets + structural drag (depends on U1+U2+U4a+U13) |
+| U4b | 🟡 render path wired end-to-end | drop targets + structural drag; slices 1/2a/2b + 3.2c bridge↔overlay wiring landed. Drop-mutation dispatch (insertChild/wrapSelection write) is the remaining slice |
 | U5 | 🟡 local host wiring landed | mutation log + undo/redo — pure module `52df964`; CanvasTab now logs file-backed writes, replays stored snapshots via `/api/canvas/ast/write`, wires Cmd-Z/Cmd-Shift-Z, and shows undo/redo toasts |
 | U6 | 🟡 local edit controls landed | markdown direct edit — pure block writer `69b1379`, local `/api/canvas/markdown/write` endpoint, rendered block inline edit in markdown items, block reorder controls, and basic formatting buttons (`B`, `I`, `List`) |
 | U7 | 🟡 local variant cycling + scrub landed | selected component items now cycle variants with ArrowLeft / ArrowRight, and numeric prop inputs now expose horizontal scrub controls |
@@ -196,6 +196,14 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - `docs/CANVAS_AGENT_MCP_COMMANDS.md` and `utils/agentNativeManifest.ts` now advertise the new wrapper surface.
 - Remaining U11 work is the rest of the parity audit: document any direct-manip gaps that still rely on generic `update_item`, and decide whether later direct crop-handle state deserves a narrower wrapper than the current media trim/display tool.
 
+### U4b progress (2026-05-15) — slices 1/2a/2b + 3.2c bridge↔overlay wiring
+
+- Slices already landed in the prior session: `aeed673` (library drag payload + dragstart wiring), `20d767c` (drop-target hit-test bridge protocol), `917b518` (overlay drop-zone renderer). These were shippable but isolated — nothing rendered a zone from a real drag yet.
+- 3.2c wires them end-to-end. `CanvasTab` now tracks `activeLibraryDrag` (set on `CanvasLibraryPanel.onPrimitiveDragStart`, cleared on `onPrimitiveDragEnd`) and threads a `libraryDragActive` boolean plus `onLibraryDropInsert` / `onLibraryDropWrap` through `CanvasWorkspace` → `CanvasHtmlItem` / `CanvasLayoutHtmlItem` → `CanvasHtmlFrame`.
+- `CanvasHtmlFrame` mounts a transparent capture layer over the iframe only while `libraryDragActive`. `dragover` translates viewport→iframe-local coords (no scale factor — the canvas transform is applied outside this component) and posts a fresh-`requestId` `canvas/drop-target-hit-test`, rAF-coalesced. The existing message handler now recognizes `canvas/drop-target-result`, discards stale `requestId`s, and renders `CanvasIframeDropZones` from the parent rect + siblings. Zones clear on `libraryDragActive=false` and on a real `dragleave` (relatedTarget-outside guard prevents per-zone flicker).
+- Drop intents bubble to `CanvasTab.handleLibraryDropInsert` / `handleLibraryDropWrap`, which currently clear the active drag and `console.debug` the resolved parent + index for the browser-verify pass. **The structural mutation dispatch (POST `/api/canvas/ast/write` with the staged primitive's `childSource` as `insertChild` / `wrapSelection`) is the remaining U4b slice.**
+- 9 new focused tests in `tests/canvasHtmlFrameMessages.test.tsx` cover: capture-layer mount gating, hit-test post with translated coords, insert-line render, wrap-zone render, stale-requestId discard, null-parent clear, teardown on drag end, and the insert/wrap drop callbacks. 485 tests green; typecheck + lint clean.
+
 ## Remaining v3 surface
 
 To complete the headline goal ("every node type editable like Figma + agent parity"), the still-needed slices are:
@@ -204,7 +212,7 @@ To complete the headline goal ("every node type editable like Figma + agent pari
 |---|---|
 | **U2** (UI consumers) | wire HTML structural mutations into CanvasReactNodePropertyPanel + CanvasHtmlFrame the way TSX is wired today |
 | **U3** (continuity) | verify wrap/insert/remove rebase the active selection + refresh overlay rect on every surface, especially after iframe recompile |
-| **U4b** (structural drag) | drop targets between siblings, drag-to-insert at index N — uses U1/U2 mutations |
+| **U4b** (structural drag) | render path is wired end-to-end (drag → hit-test → zones); remaining: dispatch the `insertChild` / `wrapSelection` write on drop using the staged primitive's `childSource` |
 | **U5** (CanvasTab wiring) | host the log state, wire Cmd-Z / Cmd-Shift-Z + toast, route undo/redo through the existing AST writer endpoint |
 | **U6** (endpoint + UI) | markdown write endpoint, U13 bridge wiring for inline edit, CanvasMarkdownItem affordances |
 | **U7** | browser-verify numeric prop scrub on a real component panel now that PointerLock + fallback wiring is in |
