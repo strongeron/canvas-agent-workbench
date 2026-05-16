@@ -1,6 +1,11 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import type { CanvasMermaidTheme } from "../../types/canvas"
+import {
+  canInlineEditMermaidLabel,
+  listMermaidNodeLabels,
+  resolveMermaidNodeId,
+} from "../../utils/mermaidLabelEditor"
 import { renderMermaidSvg } from "./mermaidRenderer"
 
 interface CanvasMermaidPreviewProps {
@@ -8,6 +13,19 @@ interface CanvasMermaidPreviewProps {
   theme?: CanvasMermaidTheme
   title?: string
   background?: string
+  /** U10: when true, clicking a rendered node label opens an inline editor. */
+  editable?: boolean
+  /** Commit a node-label edit back to the mermaid source. */
+  onCommitLabel?: (nodeId: string, nextLabel: string) => void
+}
+
+interface MermaidEditState {
+  nodeId: string
+  value: string
+  left: number
+  top: number
+  width: number
+  height: number
 }
 
 export function CanvasMermaidPreview({
@@ -15,10 +33,14 @@ export function CanvasMermaidPreview({
   theme,
   title,
   background,
+  editable = false,
+  onCommitLabel,
 }: CanvasMermaidPreviewProps) {
   const [svg, setSvg] = useState<string>("")
   const [error, setError] = useState<string>("")
   const [isRendering, setIsRendering] = useState(false)
+  const svgHostRef = useRef<HTMLDivElement | null>(null)
+  const [edit, setEdit] = useState<MermaidEditState | null>(null)
 
   useEffect(() => {
     const trimmed = source.trim()
@@ -58,6 +80,47 @@ export function CanvasMermaidPreview({
     }
   }, [source, theme])
 
+  // A re-render (new SVG) invalidates the measured node rect; drop any open
+  // inline editor rather than leave it anchored to stale geometry.
+  useEffect(() => {
+    setEdit(null)
+  }, [svg])
+
+  const beginEdit = (target: Element | null) => {
+    if (!editable || !onCommitLabel) return
+    const host = svgHostRef.current
+    if (!host) return
+    const nodeId = resolveMermaidNodeId(target)
+    if (!nodeId) return
+    const current = listMermaidNodeLabels(source).find((l) => l.id === nodeId)
+    if (!current || !canInlineEditMermaidLabel(current.label)) return
+    let groupEl: Element | null = target
+    while (groupEl && !/\bnode\b/.test(groupEl.getAttribute?.("class") ?? "")) {
+      groupEl = groupEl.parentElement
+    }
+    const measured = (groupEl ?? target) as Element
+    const nodeRect = measured.getBoundingClientRect()
+    const hostRect = host.getBoundingClientRect()
+    setEdit({
+      nodeId,
+      value: current.label,
+      left: nodeRect.left - hostRect.left + host.scrollLeft,
+      top: nodeRect.top - hostRect.top + host.scrollTop,
+      width: Math.max(48, nodeRect.width),
+      height: Math.max(24, nodeRect.height),
+    })
+  }
+
+  const commitEdit = () => {
+    if (!edit) return
+    const next = edit.value.trim()
+    const current = listMermaidNodeLabels(source).find((l) => l.id === edit.nodeId)
+    if (next && current && next !== current.label) {
+      onCommitLabel?.(edit.nodeId, next)
+    }
+    setEdit(null)
+  }
+
   if (!source.trim()) {
     return (
       <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
@@ -68,8 +131,10 @@ export function CanvasMermaidPreview({
 
   return (
     <div
+      ref={svgHostRef}
       className="relative h-full w-full overflow-auto"
       style={background ? { background } : undefined}
+      onClick={editable && svg ? (e) => beginEdit(e.target as Element) : undefined}
     >
       {svg ? (
         <div
@@ -84,6 +149,26 @@ export function CanvasMermaidPreview({
           </p>
           {error && <p className="max-w-[44ch] text-xs text-red-600">{error}</p>}
         </div>
+      )}
+      {edit && (
+        <input
+          data-testid="mermaid-label-input"
+          autoFocus
+          value={edit.value}
+          onChange={(e) => setEdit({ ...edit, value: e.target.value })}
+          onBlur={commitEdit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              commitEdit()
+            } else if (e.key === "Escape") {
+              e.preventDefault()
+              setEdit(null)
+            }
+          }}
+          className="absolute z-10 rounded border border-brand-500 bg-white px-1 text-center text-xs shadow"
+          style={{ left: edit.left, top: edit.top, width: edit.width, height: edit.height }}
+        />
       )}
       <div className="pointer-events-none absolute right-2 top-2 rounded bg-surface-900/80 px-2 py-1 text-[10px] text-white">
         Mermaid{theme && theme !== "default" ? ` · ${theme}` : ""}

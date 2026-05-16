@@ -2,6 +2,7 @@ import { RotateCw } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { CanvasMermaidItem as CanvasMermaidItemType } from "../../types/canvas"
+import { updateMermaidNodeLabel } from "../../utils/mermaidLabelEditor"
 import { CanvasContextMenu } from "./CanvasContextMenu"
 import { CanvasMermaidPreview } from "./CanvasMermaidPreview"
 import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
@@ -241,6 +242,10 @@ export function CanvasMermaidItem({
           theme={item.mermaidTheme}
           title={item.title}
           background={item.background}
+          editable={isSelected && !interactMode}
+          onCommitLabel={(nodeId, nextLabel) =>
+            onUpdate({ source: updateMermaidNodeLabel(item.source, nodeId, nextLabel) })
+          }
         />
       </div>
 

@@ -37,3 +37,41 @@ export function updateMermaidNodeLabel(source: string, nodeId: string, nextLabel
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
+
+/**
+ * U10: resolve a clicked element inside a rendered mermaid SVG to the mermaid
+ * source node id. Mermaid 11.x emits flowchart nodes as
+ * `<g class="node ..." data-id="A" id="flowchart-A-0">`. We prefer the
+ * explicit `data-id`; otherwise we strip the `flowchart-` prefix and the
+ * trailing `-<n>` index mermaid appends to the DOM id. Returns null when no
+ * tagged node ancestor exists (caller falls back to the source textarea).
+ */
+export function resolveMermaidNodeId(start: Element | null): string | null {
+  let current: Element | null = start
+  while (current) {
+    const dataId = current.getAttribute?.("data-id")
+    const classList = current.getAttribute?.("class") ?? ""
+    const isNodeGroup = /\bnode\b/.test(classList)
+    if (dataId && isNodeGroup) return dataId
+    if (isNodeGroup) {
+      const domId = current.getAttribute?.("id") ?? ""
+      const stripped = domId.replace(/^flowchart-/, "").replace(/-\d+$/, "")
+      if (stripped) return stripped
+    }
+    if (dataId && /^[A-Za-z][\w-]*$/.test(dataId)) return dataId
+    current = current.parentElement
+  }
+  return null
+}
+
+/**
+ * Inline editing only handles the simple `A[Label]` / `A(Label)` / `A{Label}`
+ * forms the regex patcher supports. A label that itself contains bracket
+ * characters can't round-trip through that regex, so the caller must fall
+ * back to the source textarea (plan U10 edge case).
+ */
+export function canInlineEditMermaidLabel(label: string): boolean {
+  const trimmed = label.trim()
+  if (!trimmed) return false
+  return !/[[\]{}()]/.test(trimmed)
+}
