@@ -5,6 +5,7 @@ import type { CanvasHtmlItem as CanvasHtmlItemType } from "../../types/canvas"
 import { CanvasContextMenu } from "./CanvasContextMenu"
 import {
   CanvasHtmlFrame,
+  type CanvasReactNodeGroupResizeEvent,
   type CanvasReactNodeResizeEvent,
   type CanvasReactNodeSelection,
 } from "./CanvasHtmlFrame"
@@ -28,6 +29,7 @@ interface CanvasHtmlItemProps {
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
+  onReactNodeGroupResize?: (event: CanvasReactNodeGroupResizeEvent) => void
   libraryDragActive?: boolean
   onLibraryDropInsert?: (input: { itemId: string; parentCanvasId: string; index: number }) => void
   onLibraryDropWrap?: (input: { itemId: string; canvasId: string }) => void
@@ -63,6 +65,7 @@ export function CanvasHtmlItem({
   onReactNodeSelect,
   onReactCompileGenerationChange,
   onReactNodeResize,
+  onReactNodeGroupResize,
   libraryDragActive = false,
   onLibraryDropInsert,
   onLibraryDropWrap,
@@ -263,6 +266,7 @@ export function CanvasHtmlItem({
           onReactNodeSelect={onReactNodeSelect}
           onReactCompileGenerationChange={onReactCompileGenerationChange}
           onReactNodeResize={onReactNodeResize}
+          onReactNodeGroupResize={onReactNodeGroupResize}
           libraryDragActive={libraryDragActive}
           onLibraryDropInsert={onLibraryDropInsert}
           onLibraryDropWrap={onLibraryDropWrap}

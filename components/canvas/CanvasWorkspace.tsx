@@ -29,7 +29,11 @@ import { CanvasLayoutMediaItem } from "./CanvasLayoutMediaItem"
 import { CanvasLayoutMermaidItem } from "./CanvasLayoutMermaidItem"
 import { CanvasLayoutMarkdownItem } from "./CanvasLayoutMarkdownItem"
 import { CanvasExcalidrawItem as CanvasExcalidrawItemComponent } from "./CanvasExcalidrawItem"
-import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./CanvasHtmlFrame"
+import type {
+  CanvasReactNodeGroupResizeEvent,
+  CanvasReactNodeResizeEvent,
+  CanvasReactNodeSelection,
+} from "./CanvasHtmlFrame"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
 import { CanvasMarkdownItem as CanvasMarkdownItemComponent } from "./CanvasMarkdownItem"
@@ -85,6 +89,7 @@ interface CanvasWorkspaceProps {
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
+  onReactNodeGroupResize?: (event: CanvasReactNodeGroupResizeEvent) => void
   onMarkdownWriteSuccess?: (result: CanvasMarkdownWriteClientResult) => void
   libraryDragActive?: boolean
   onLibraryDropInsert?: (input: { itemId: string; parentCanvasId: string; index: number }) => void
@@ -117,6 +122,7 @@ export function CanvasWorkspace({
   onReactNodeSelect,
   onReactCompileGenerationChange,
   onReactNodeResize,
+  onReactNodeGroupResize,
   onMarkdownWriteSuccess,
   libraryDragActive = false,
   onLibraryDropInsert,
@@ -308,6 +314,7 @@ export function CanvasWorkspace({
               onReactNodeSelect={onReactNodeSelect}
               onReactCompileGenerationChange={onReactCompileGenerationChange}
               onReactNodeResize={onReactNodeResize}
+              onReactNodeGroupResize={onReactNodeGroupResize}
               libraryDragActive={libraryDragActive}
               onLibraryDropInsert={onLibraryDropInsert}
               onLibraryDropWrap={onLibraryDropWrap}
@@ -446,6 +453,7 @@ export function CanvasWorkspace({
       onReactCompileGenerationChange,
       onReactNodeSelect,
       onReactNodeResize,
+      onReactNodeGroupResize,
       onMoveLayer,
       onMarkdownWriteSuccess,
       Renderer,
@@ -828,6 +836,7 @@ export function CanvasWorkspace({
                 onReactNodeSelect={onReactNodeSelect}
                 onReactCompileGenerationChange={onReactCompileGenerationChange}
                 onReactNodeResize={onReactNodeResize}
+                onReactNodeGroupResize={onReactNodeGroupResize}
                 libraryDragActive={libraryDragActive}
                 onLibraryDropInsert={onLibraryDropInsert}
                 onLibraryDropWrap={onLibraryDropWrap}

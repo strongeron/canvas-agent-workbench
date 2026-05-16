@@ -45,7 +45,10 @@ import {
   type CanvasReactNodeWriteSuccess,
 } from "./CanvasReactNodePropertyPanel"
 import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./CanvasHtmlFrame"
+import type { CanvasOverlayDragKind } from "./CanvasIframeOverlay"
+import type { CanvasReactNodeRect } from "../../utils/canvasReactNodeBridge"
 import { dispatchCanvasResize } from "../../utils/canvasResizeDispatch"
+import { dispatchCanvasGroupResize } from "../../utils/canvasGroupResizeDispatch"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
@@ -1195,6 +1198,61 @@ export function CanvasTab({
               : {}),
           } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
       })
+    },
+    [items, updateItem]
+  )
+
+  const handleReactNodeGroupResize = useCallback(
+    async (event: {
+      itemId: string
+      kind: CanvasOverlayDragKind
+      deltaIframe: { dx: number; dy: number }
+      targets: Array<{ canvasId: string; rect: CanvasReactNodeRect }>
+    }) => {
+      const item = items.find((candidate) => candidate.id === event.itemId)
+      if (!item || item.type !== "html") return
+      const htmlItem = item as CanvasHtmlItem
+      const isHtmlMode = htmlItem.sourceMode === "inline"
+      const result = await dispatchCanvasGroupResize(
+        { kind: event.kind, deltaIframe: event.deltaIframe, targets: event.targets },
+        {
+          sourceKind: isHtmlMode ? "html" : "tsx",
+          sourceId:
+            htmlItem.sourcePath ||
+            htmlItem.sourceHtmlFilePath ||
+            htmlItem.sourceReactFilePath ||
+            htmlItem.id,
+          sourceReact: htmlItem.sourceReact,
+          sourceHtml: htmlItem.sourceHtml,
+          filePath: isHtmlMode ? htmlItem.sourceHtmlFilePath : htmlItem.sourceReactFilePath,
+          mtimeMs: isHtmlMode ? htmlItem.sourceHtmlFileMtime : htmlItem.sourceReactFileMtime,
+          onSourceReactChange: (sourceReact, mtimeMs) =>
+            updateItem(event.itemId, {
+              sourceMode: "react",
+              sourceReact,
+              ...(typeof mtimeMs === "number" ? { sourceReactFileMtime: mtimeMs } : {}),
+            } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+          onSourceHtmlChange: (sourceHtml, mtimeMs) =>
+            updateItem(event.itemId, {
+              sourceMode: "inline",
+              sourceHtml,
+              ...(typeof mtimeMs === "number" ? { sourceHtmlFileMtime: mtimeMs } : {}),
+            } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+        }
+      )
+      if (result.errors.length > 0) {
+        setHistoryToast({
+          id: Date.now(),
+          tone: "error",
+          message: `Group resize: ${result.applied} applied, ${result.errors.length} failed`,
+        })
+      } else if (result.applied > 0) {
+        setHistoryToast({
+          id: Date.now(),
+          tone: "info",
+          message: `Resized ${result.applied} element${result.applied === 1 ? "" : "s"}`,
+        })
+      }
     },
     [items, updateItem]
   )
@@ -3553,6 +3611,7 @@ export function CanvasTab({
             }}
             onReactCompileGenerationChange={handleReactCompileGenerationChange}
             onReactNodeResize={handleReactNodeResize}
+            onReactNodeGroupResize={handleReactNodeGroupResize}
             onMarkdownWriteSuccess={handleMarkdownWriteSuccess}
             libraryDragActive={activeLibraryDrag !== null}
             onLibraryDropInsert={handleLibraryDropInsert}

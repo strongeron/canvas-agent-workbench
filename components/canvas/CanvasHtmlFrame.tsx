@@ -50,6 +50,14 @@ export interface CanvasReactNodeResizeEvent {
   rect: CanvasReactNodeRect
 }
 
+/** U12: overlay drag-commit applied to every shift-selected element. */
+export interface CanvasReactNodeGroupResizeEvent {
+  itemId: string
+  kind: CanvasOverlayDragKind
+  deltaIframe: { dx: number; dy: number }
+  targets: Array<{ canvasId: string; rect: CanvasReactNodeRect }>
+}
+
 interface CanvasHtmlFrameProps {
   item: CanvasHtmlItem
   interactMode: boolean
@@ -74,6 +82,12 @@ interface CanvasHtmlFrameProps {
    * resulting setClassName / setStyle mutation through the AST writer.
    */
   onReactNodeResize?: (event: CanvasReactNodeResizeEvent) => void
+  /**
+   * U12 group transform. Fired on overlay drag-commit while >1 element is
+   * shift-selected in this iframe. Each target carries its own rect so the
+   * dispatcher can snap each node independently against the shared delta.
+   */
+  onReactNodeGroupResize?: (event: CanvasReactNodeGroupResizeEvent) => void
   /**
    * U4b slice 3.2c. When true, the frame renders a transparent capture layer
    * over the iframe that intercepts dragover events, hit-tests the iframe via
@@ -105,6 +119,7 @@ export function CanvasHtmlFrame({
   onReactCompileGenerationChange,
   canvasScale = 1,
   onReactNodeResize,
+  onReactNodeGroupResize,
   libraryDragActive = false,
   onLibraryDropInsert,
   onLibraryDropWrap,
@@ -576,7 +591,40 @@ export function CanvasHtmlFrame({
                 </div>
               </div>
             )}
-            {(shouldRenderReact || shouldRenderInline) && selectionRect && interactMode && (
+            {(shouldRenderReact || shouldRenderInline) &&
+              unionRect &&
+              interactMode && (
+                <CanvasIframeOverlay
+                  rect={{
+                    left: unionRect.x,
+                    top: unionRect.y,
+                    width: unionRect.width,
+                    height: unionRect.height,
+                  }}
+                  onDragCommit={(kind, deltaScreen) => {
+                    if (!onReactNodeGroupResize) return
+                    const deltaIframe = screenDeltaToIframeLocal(
+                      deltaScreen.dx,
+                      deltaScreen.dy,
+                      canvasScale,
+                      1
+                    )
+                    onReactNodeGroupResize({
+                      itemId: item.id,
+                      kind,
+                      deltaIframe,
+                      targets: multiSelections.map((s) => ({
+                        canvasId: s.canvasId,
+                        rect: s.rect,
+                      })),
+                    })
+                  }}
+                />
+              )}
+            {(shouldRenderReact || shouldRenderInline) &&
+              !unionRect &&
+              selectionRect &&
+              interactMode && (
               <CanvasIframeOverlay
                 rect={{
                   left: selectionRect.x,

@@ -1089,4 +1089,92 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
       harness.container.querySelector("[data-testid='canvas-iframe-multi-select']")
     ).toBeNull()
   })
+
+  it("drags the union overlay and emits onReactNodeGroupResize with every target (U12 group)", async () => {
+    const onGroup = vi.fn()
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem()}
+        interactMode
+        onReactNodeGroupResize={onGroup}
+      />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await act(async () => {
+      postSelect(iframe, "a:0", { x: 0, y: 0, width: 100, height: 40 })
+      postSelect(iframe, "b:0", { x: 0, y: 60, width: 100, height: 40 }, true)
+    })
+
+    const handle = harness.container.querySelector(
+      "[data-canvas-overlay-handle='se']"
+    ) as HTMLElement
+    expect(handle).not.toBeNull()
+    handle.setPointerCapture = vi.fn()
+    handle.hasPointerCapture = vi.fn(() => true)
+    handle.releasePointerCapture = vi.fn()
+    function fire(type: "pointerdown" | "pointerup", x: number, y: number) {
+      const ev = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+      }) as MouseEvent & { pointerId: number; pointerType: string }
+      Object.defineProperty(ev, "pointerId", { value: 1 })
+      Object.defineProperty(ev, "pointerType", { value: "mouse" })
+      handle.dispatchEvent(ev)
+    }
+    await act(async () => {
+      fire("pointerdown", 100, 100)
+      fire("pointerup", 120, 120)
+    })
+
+    expect(onGroup).toHaveBeenCalledTimes(1)
+    const arg = onGroup.mock.calls[0][0]
+    expect(arg.itemId).toBe("item-1")
+    expect(arg.kind).toBe("se")
+    expect(arg.targets).toEqual([
+      { canvasId: "a:0", rect: { x: 0, y: 0, width: 100, height: 40 } },
+      { canvasId: "b:0", rect: { x: 0, y: 60, width: 100, height: 40 } },
+    ])
+  })
+
+  it("uses the single-node resize path (not group) when only one element is selected", async () => {
+    const onGroup = vi.fn()
+    const onResize = vi.fn()
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem()}
+        interactMode
+        onReactNodeGroupResize={onGroup}
+        onReactNodeResize={onResize}
+      />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await act(async () => {
+      postSelect(iframe, "a:0", { x: 0, y: 0, width: 100, height: 40 })
+    })
+    const handle = harness.container.querySelector(
+      "[data-canvas-overlay-handle='se']"
+    ) as HTMLElement
+    handle.setPointerCapture = vi.fn()
+    handle.hasPointerCapture = vi.fn(() => true)
+    handle.releasePointerCapture = vi.fn()
+    function fire(type: "pointerdown" | "pointerup", x: number, y: number) {
+      const ev = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+      }) as MouseEvent & { pointerId: number; pointerType: string }
+      Object.defineProperty(ev, "pointerId", { value: 1 })
+      Object.defineProperty(ev, "pointerType", { value: "mouse" })
+      handle.dispatchEvent(ev)
+    }
+    await act(async () => {
+      fire("pointerdown", 100, 40)
+      fire("pointerup", 120, 60)
+    })
+    expect(onGroup).not.toHaveBeenCalled()
+    expect(onResize).toHaveBeenCalledTimes(1)
+  })
 })
