@@ -22,13 +22,25 @@
  */
 
 import * as ts from "typescript"
-import { createHash } from "node:crypto"
 
 const SOURCE_ID_HASH_LEN = 8
 
-/** First 8 hex chars of sha1(sourceId). Stable, collision-resistant for v1. */
+/**
+ * Deterministic 8-hex-char id-namespace prefix for a sourceId. Pure JS
+ * (FNV-1a, 32-bit) — NOT node:crypto, which Vite externalizes in the browser
+ * and which crashed the client when this module entered the canvas bundle.
+ * This is an id prefix, not a security hash; FNV-1a's 32 bits of entropy
+ * match the old "first 8 hex of sha1" collision profile, and the value is
+ * recomputed from sourceId on every compile (never persisted), so changing
+ * the algorithm is safe.
+ */
 export function hashSourceId(sourceId: string): string {
-  return createHash("sha1").update(sourceId).digest("hex").slice(0, SOURCE_ID_HASH_LEN)
+  let hash = 0x811c9dc5
+  for (let i = 0; i < sourceId.length; i++) {
+    hash ^= sourceId.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(SOURCE_ID_HASH_LEN, "0").slice(0, SOURCE_ID_HASH_LEN)
 }
 
 /**

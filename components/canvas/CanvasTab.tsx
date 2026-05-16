@@ -4384,6 +4384,7 @@ export function CanvasTab({
           {showPropsPanel && selectedHtmlItem && !selectedReactNodeSelection && (
             <CanvasHtmlPropsPanel
               src={selectedHtmlItem.src}
+              projectId={activeProjectId || "design-system-foundation"}
               title={selectedHtmlItem.title}
               sandbox={selectedHtmlItem.sandbox}
               background={selectedHtmlItem.background}

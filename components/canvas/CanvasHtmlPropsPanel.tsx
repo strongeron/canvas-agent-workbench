@@ -6,6 +6,10 @@ import {
   writeCanvasHtmlNode,
   type CanvasHtmlSlotInfo,
 } from "../../utils/canvasHtmlEditor"
+import {
+  buildPrimitiveChildSource,
+  type CanvasRegistryPrimitive,
+} from "../../utils/canvasRegistry"
 
 interface CanvasHtmlPropsPanelProps {
   src?: string
@@ -22,6 +26,8 @@ interface CanvasHtmlPropsPanelProps {
   sourceReactFilePath?: string
   sourceReactFileMtime?: number
   size?: { width: number; height: number }
+  /** Project whose registry primitives populate the per-slot component picker. */
+  projectId?: string
   onChange: (updates: {
     src?: string
     title?: string
@@ -77,6 +83,25 @@ function buildSlotStarter(slot: CanvasHtmlSlotInfo) {
   }
 }
 
+/**
+ * Insert a chosen library component into a slot. Same `insertChild` shape as
+ * `buildSlotStarter`'s element branch (position = current child count, i.e.
+ * appended into the slot), but the body is the registry primitive's own
+ * snippet via the shared `buildPrimitiveChildSource`. Pure so it can be unit
+ * tested without the panel/DOM. No import is emitted — identical constraint
+ * to the property panel's manual insertChild (documented in the spec).
+ */
+export function buildSlotComponentInsertion(
+  slot: CanvasHtmlSlotInfo,
+  primitive: CanvasRegistryPrimitive
+) {
+  return {
+    type: "insertChild" as const,
+    position: slot.childElementCount,
+    childSource: buildPrimitiveChildSource(primitive),
+  }
+}
+
 export function CanvasHtmlPropsPanel({
   src,
   title,
@@ -92,6 +117,7 @@ export function CanvasHtmlPropsPanel({
   sourceReactFilePath,
   sourceReactFileMtime,
   size,
+  projectId = "design-system-foundation",
   onChange,
   onResize,
   onReplaceBundle,
@@ -117,6 +143,36 @@ export function CanvasHtmlPropsPanel({
         : [],
     [draftSourceHtml, sourceIdentity, sourceMode]
   )
+  const [registryPrimitives, setRegistryPrimitives] = useState<CanvasRegistryPrimitive[]>([])
+  // slot.name → chosen primitive id, so each slot's picker is independent.
+  const [slotPick, setSlotPick] = useState<Record<string, string>>({})
+  const hasSlots = detectedSlots.length > 0
+
+  // Load the project's registry once a slotted inline shell is open, so each
+  // slot can offer "insert a library component" alongside "insert starter".
+  useEffect(() => {
+    if (sourceMode !== "inline" || !hasSlots || registryPrimitives.length > 0) return
+    const controller = new AbortController()
+    fetch("/api/canvas/registry/list", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean
+          primitives?: CanvasRegistryPrimitive[]
+        }
+        if (response.ok && payload.ok && Array.isArray(payload.primitives)) {
+          setRegistryPrimitives(payload.primitives)
+        }
+      })
+      .catch(() => {
+        /* registry unavailable — slots still offer "insert starter" */
+      })
+    return () => controller.abort()
+  }, [hasSlots, projectId, registryPrimitives.length, sourceMode])
 
   useEffect(() => {
     setDraftSourceReactFilePath(sourceReactFilePath || "")
@@ -242,6 +298,26 @@ export function CanvasHtmlPropsPanel({
     [draftSourceHtml, onChange, sourceIdentity, sourceMode]
   )
 
+  const handleInsertSlotComponent = useCallback(
+    (slot: CanvasHtmlSlotInfo, primitive: CanvasRegistryPrimitive) => {
+      if (sourceMode !== "inline") return
+      const result = writeCanvasHtmlNode(
+        draftSourceHtml || "",
+        slot.canvasId,
+        [buildSlotComponentInsertion(slot, primitive)],
+        { sourceId: sourceIdentity }
+      )
+      if (!result.ok) {
+        setReplaceError(result.error)
+        return
+      }
+      setReplaceError(null)
+      setDraftSourceHtml(result.source)
+      onChange({ sourceMode: "inline", sourceHtml: result.source })
+    },
+    [draftSourceHtml, onChange, sourceIdentity, sourceMode]
+  )
+
   return (
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
       <div className="flex items-center justify-between border-b border-default px-4 py-3">
@@ -360,6 +436,41 @@ export function CanvasHtmlPropsPanel({
                       Insert starter
                     </button>
                   </div>
+                  {registryPrimitives.length > 0 ? (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <select
+                        aria-label={`Library component for ${slot.name}`}
+                        value={slotPick[slot.name] ?? ""}
+                        onChange={(event) =>
+                          setSlotPick((current) => ({
+                            ...current,
+                            [slot.name]: event.target.value,
+                          }))
+                        }
+                        className="min-w-0 flex-1 rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+                      >
+                        <option value="">Library component…</option>
+                        {registryPrimitives.map((primitive) => (
+                          <option key={primitive.id} value={primitive.id}>
+                            {primitive.displayName}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!slotPick[slot.name]}
+                        onClick={() => {
+                          const primitive = registryPrimitives.find(
+                            (entry) => entry.id === slotPick[slot.name]
+                          )
+                          if (primitive) handleInsertSlotComponent(slot, primitive)
+                        }}
+                        className="rounded-full border border-brand-300 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
