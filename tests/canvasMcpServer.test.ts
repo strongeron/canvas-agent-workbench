@@ -1093,6 +1093,7 @@ describe("canvas MCP server", () => {
           arguments: {
             itemId: "media-1",
             updates: {
+              crop: { x: 0.1, y: 0, w: 0.5, h: 0.5 },
               clipStartSec: 4.5,
               clipEndSec: 12,
               objectFit: "contain",
@@ -1108,6 +1109,7 @@ describe("canvas MCP server", () => {
           type: "update_item",
           id: "media-1",
           updates: {
+            crop: { x: 0.1, y: 0, w: 0.5, h: 0.5 },
             clipStartSec: 4.5,
             clipEndSec: 12,
             objectFit: "contain",
@@ -1121,6 +1123,12 @@ describe("canvas MCP server", () => {
       })
       const mediaCropUpdate = await mediaCropPromise
       expect(mediaCropUpdate.result?.structuredContent?.updates?.objectFit).toBe("contain")
+      expect(mediaCropUpdate.result?.structuredContent?.updates?.crop).toEqual({
+        x: 0.1,
+        y: 0,
+        w: 0.5,
+        h: 0.5,
+      })
 
       const createdHtmlComponentPromise = sendRpc({
         jsonrpc: "2.0",

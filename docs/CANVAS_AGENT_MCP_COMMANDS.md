@@ -158,10 +158,19 @@ Web-native editing tools:
 - `update_markdown_block` targets a live markdown item by `itemId`, calls the markdown writer, then enqueues an `update_item` so the canvas state stays aligned with the new markdown source and file `mtimeMs`.
 - `cycle_component_variant` targets a live component item by `itemId`, clamps to the registered primitive variant count, and clears `customProps` the same way the canvas UI does when a variant changes.
 - `update_artboard_layout` targets a live artboard by `itemId` and merges layout keys such as `gap`, `padding`, `direction`, `align`, `justify`, and `columns`.
-- `update_media_crop` targets a live media item by `itemId` and patches the current trim/display fields through the same queued canvas-state path as the media inspector. This slice covers `clipStartSec`, `clipEndSec`, `objectFit`, and the current playback/display booleans; it does not expose live crop handles yet.
-- `update_mermaid_label` targets a live Mermaid item by `itemId`, patches one node label in source form, and updates the item through the normal canvas queue path.
+- `update_media_crop` targets a live media item by `itemId` and patches crop/trim/display fields through the same queued canvas-state path as the media inspector and the on-canvas crop/clip handles. It covers the non-destructive image `crop` window (`{x,y,w,h}` fractions in `[0,1]`), `clipStartSec`, `clipEndSec`, `objectFit`, and the playback/display booleans. This is full parity with the U8 on-canvas handles — the handles and this tool write the same `crop` / clip fields.
+- `update_mermaid_label` targets a live Mermaid item by `itemId`, patches one node label in source form, and updates the item through the normal canvas queue path. This is full parity with the U10 rendered-SVG inline label edit — the on-canvas editor and this tool both call the same `updateMermaidNodeLabel` source patcher.
 - `create_component_from_html` and `create_component_from_tsx` write under `projects/<projectId>/components/`, append a matching `registry.json` entry, and create a preview node unless `createItem: false` is passed.
 - `promote_to_component` extracts an HTML subtree (by `canvasId`) from a canvas item and saves it as a new project component. The original item is unchanged; the new primitive appears in the registry and library panel for re-use.
+
+Direct-manipulation parity audit (v3, complete):
+
+Every on-canvas direct-manipulation affordance an agent might need is reachable via an MCP tool — agents never have to drag:
+
+- **U4a/U4b resize + structural drag** — the overlay resize drag and the library drop both emit ordinary literal/structural mutations. Agents reach the same outcomes via `update_html_node` (`setClassName`, and the U4a computed-class fallback's `setAttribute` on `style`) and `apply_structural_mutation` (`insertChild` / `wrapSelection`). No `drag` tool by design.
+- **U8 media crop/clip** — `update_media_crop` (`crop`, `clipStartSec`, `clipEndSec`, …), full parity with the on-canvas handles.
+- **U10 mermaid label** — `update_mermaid_label`, same source patcher as the rendered-SVG inline editor.
+- **U12 group resize** — a multi-select group drag is N independent literal writes; an agent achieves the same by calling `update_html_node` once per `canvasId`. No group-specific tool needed.
 
 Screenshot note:
 

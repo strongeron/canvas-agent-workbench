@@ -404,7 +404,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'update_media_crop',
     description:
-      'Patch live media trim/display fields through the same canvas-state path as the media inspector. Current slice covers clip start/end and object-fit style.',
+      'Patch live media crop/trim/display fields through the same canvas-state path as the media inspector and the on-canvas crop/clip handles. Covers the non-destructive image crop window, video clip start/end, and object-fit/display flags.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -412,6 +412,19 @@ const TOOL_DEFINITIONS = [
         updates: {
           type: 'object',
           properties: {
+            crop: {
+              type: 'object',
+              description:
+                'Non-destructive image crop window as fractions of the source in [0,1]. Absent or {x:0,y:0,w:1,h:1} means no crop.',
+              properties: {
+                x: { type: 'number' },
+                y: { type: 'number' },
+                w: { type: 'number' },
+                h: { type: 'number' },
+              },
+              required: ['x', 'y', 'w', 'h'],
+              additionalProperties: false,
+            },
             clipStartSec: { type: 'number' },
             clipEndSec: { type: 'number' },
             objectFit: { type: 'string', enum: ['cover', 'contain', 'fill'] },

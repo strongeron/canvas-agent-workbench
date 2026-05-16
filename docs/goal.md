@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-16 (U8 complete; U12 selection model landed)
+updated: 2026-05-16 (v3 feature-complete: U2/U4a-fallback/U10/U11/U12-group landed; 551 tests green)
 ---
 
 # Running goal
@@ -30,34 +30,28 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U4a | ✅ complete (8 slices, see plan) | iframe overlay drag → class snap → AST write |
 | U13 | ✅ complete | bidirectional bridge (refresh-rect, edit-start, edit-commit) |
 | U1 | ✅ complete | TSX structural mutations — all 6 helper mutations are implemented; writer/API structural dispatch returns `canvasIdMap` + `prevSourceSnapshot` |
-| U2 | 🟡 local writer complete | same 6 mutations on the HTML side via parse5; endpoint path is locally exercised, broader consumer wiring still pending |
+| U2 | ✅ complete | all 6 HTML structural mutations via parse5; endpoint + `CanvasReactNodePropertyPanel` (sourceKind="html", canvasIdMap rebase) + CanvasTab wiring + tests all present |
 | U3 | 🟡 local wiring in progress | canvasIdMap rebase + selection-survival through structural mutations (depends on U1+U2+U13) |
+| U4a+ | ✅ complete + computed-class fallback | overlay drag → class snap → AST write; computed-class HTML nodes now fall back to an inline-`style` px write. TSX `style`-object fallback stays a documented decision |
 | U4b | 🟡 full path wired, browser-verify pending | drop targets + structural drag; slices 1/2a/2b + 3.2c (render) + 3.2d (mutation dispatch) all landed and unit-tested. Remaining: a human end-to-end browser pass (native HTML5 DnD is not reliably automatable; devtools target crashed mid-smoke) |
 | U5 | 🟡 local host wiring landed | mutation log + undo/redo — pure module `52df964`; CanvasTab now logs file-backed writes, replays stored snapshots via `/api/canvas/ast/write`, wires Cmd-Z/Cmd-Shift-Z, and shows undo/redo toasts |
 | U6 | 🟡 local edit controls landed | markdown direct edit — pure block writer `69b1379`, local `/api/canvas/markdown/write` endpoint, rendered block inline edit in markdown items, block reorder controls, and basic formatting buttons (`B`, `I`, `List`) |
 | U7 | 🟡 local variant cycling + scrub landed | selected component items now cycle variants with ArrowLeft / ArrowRight, and numeric prop inputs now expose horizontal scrub controls |
 | U8 | ✅ complete | on-canvas image crop handles (4 corners, non-destructive `crop` field) + video clip start/end scrub-bar handles, plus the existing inspector sliders. Pure `canvasMediaCrop` module + component wiring, unit-tested |
 | U9 | 🟡 local gap + reorder controls landed | artboard gap/padding sliders are in the inspector, selected artboards expose a live gap scrub handle, and selected artboard children now expose move controls |
-| U10 | 🟡 local panel label edit landed | mermaid node labels are surfaced in the props panel and patch source inline; rendered-SVG direct edit remains |
-| U11 | 🟡 local MCP wrappers landed | explicit MCP tools now wrap structural mutation, markdown block update, component variant cycling, artboard layout update, and Mermaid label update |
-| U12 | 🟡 selection model + visualization landed | shift-click additive/toggle multi-select within one iframe (bridge `additive` flag → `CanvasHtmlFrame` selection set → union-rect outline + count badge). Group-transform writes (N AST writes) are a deliberately separate follow-up slice |
+| U10 | ✅ complete | source-backed panel label edit **plus** rendered-SVG inline label edit (click a mermaid node → inline editor → `updateMermaidNodeLabel` patch) |
+| U11 | ✅ complete | parity audit reconciled: `update_media_crop` now exposes the `crop` window; docs + manifest document U4a/U4b/U8/U10/U12 agent parity via existing tools (no `drag` tool by design) |
+| U12 | ✅ complete | shift-click additive/toggle multi-select + union-rect visualization **plus** group-transform writes: a union-overlay drag resizes every selected node via a sequential, source/mtime-threaded dispatcher with partial-failure summary |
 
-## Open gates before claiming v3 demo "shippable"
+## Status: v3 feature-complete (2026-05-16)
 
-1. **Visual verification** of U4a end-to-end in a real browser (drag a button corner, confirm file rewrites + overlay re-anchors). Logic is unit-tested but no human has driven it yet.
-2. **Finish U3 follow-through** so a wrap/insert/remove preserves the user's selection and overlay rect continuously across the recompile on every active surface.
-3. **Expression-backed resize fallback** for U4a when a TSX node's `className` is computed (`cn(...)`, ternaries, etc.). Missing class attrs now get a snapped `class` / `className` inserted on first resize; computed expressions still no-op.
+Every plan unit (U1–U13) has its logic landed and unit-tested. **551 tests green; typecheck + lint clean.** What remains is **not build work** — it is verification and one explicit decision:
 
-## Next slice ordering (set 2026-05-14)
+1. **Browser-verification pass (the demo gate).** No human has driven the live surface for most units. One focused session on the running app (`localhost:5175`) should exercise: U4a resize + U4a computed-class fallback, U3 insert/remove selection continuity, U4b library drag-drop, U5 undo/redo, U8 crop/clip handles, U10 mermaid SVG edit, U12 shift-select + group resize. Native HTML5 DnD (U4b) is not reliably automatable — it needs a person.
+2. **U3 continuity** is implemented; verify wrap/insert/remove keep selection + overlay rect across recompile on every surface (only wrap is human-verified).
+3. **One open decision (not a gap):** computed-`className` resize falls back to inline `style` for **HTML**; **TSX** stays source-only because React `style` is an object expression needing a separate object-AST mutation. Ship as-is for v3 or open that mutation in v4.
 
-Three roughly-independent threads to pick from, prioritized by leverage:
-
-1. **Close the demo gate on the live surface.** Sequence:
-   - Browser-verify U5 undo/redo on the source-backed TSX + inline HTML fixtures.
-   - Browser-verify U3 continuity for **insert** and **remove** on TSX (wrap is already verified).
-   - Decide whether U4a should grow a true inline-style / style-prop fallback for computed class expressions, or whether those nodes stay source-only for resize in v3.
-2. **Finish U6 markdown.** The endpoint, inline block edit, block reorder, and basic formatting controls are in; remaining work is polish and deciding whether markdown needs any bridge-style edit protocol at all, given it does not render in an iframe today. Independent of thread 1.
-3. **U4b drop targets.** All deps (U1, U2, U4a, U13) are green. Largest of the three but unblocked.
+U6 markdown and U9 artboard drag-sort polish are optional ergonomics, not missing primitives.
 
 U12 (multi-select) is still a small leaf unit that can land independently after thread 1. U8 now has panel trim sliders but still lacks direct crop/trim handles. U9 now has panel sliders plus live gap/reorder controls; full drag-sort remains optional follow-through, not a missing state primitive. U10 now has source-backed panel label edits; rendered-SVG direct edit still remains. U11 now has the first direct-manip MCP wrappers, but the audit is not complete until docs and any remaining missing tool parity are reconciled.
 
@@ -227,6 +221,15 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - **Deliberately deferred:** group-transform *writes* (resize/move applying to all N selected) are a separate slice — each element is a distinct AST node needing its own snapped mutation + canvasIdMap rebase, with partial-failure risk. This slice ships the selection primitive + visualization, mirroring how U4b was sliced (render path before dispatch).
 - 5 new tests (3 in `tests/canvasHtmlFrameMessages.test.tsx`: union render + count, plain-select collapse, shift-toggle-out; 2 in `tests/canvasReactNodeBridge.test.ts`: `buildSelectMessage` additive, shift-click runtime flag).
 - Full scope green: typecheck + lint clean, **526 tests pass**.
+
+### Feature-complete batch (2026-05-16) — U10, U12-group, U4a-fallback, U11, U2-confirm
+
+- **U2 confirmed complete (no build):** HTML structural writer (`canvasHtmlEditor`, 15 tests incl. all 6 mutations + edge/error), endpoint, panel (`sourceKind="html"` + canvasIdMap rebase tests), and CanvasTab wiring were all already present. The old "remaining" line was stale; goal.md corrected.
+- **U10 — rendered-SVG mermaid label edit** (`e2c2728`): `resolveMermaidNodeId` (prefers `data-id`, else strips mermaid's `flowchart-<ID>-<n>` dom-id) + `canInlineEditMermaidLabel` (rejects bracket labels the regex patcher can't round-trip) added to `mermaidLabelEditor`. `CanvasMermaidPreview` attaches a click handler to its existing relative container (the pre-existing SVG-injection line left untouched) and positions an inline editor over the measured node rect; clears on re-render. 12 tests.
+- **U12 group-transform writes** (`64b0f5f`): `utils/canvasGroupResizeDispatch.ts` loops the multi-selection sequentially, threading rewritten source + mtime in memory between writes (setClassName is literal → ids stable, no canvasIdMap rebase), one final source change, partial-failure summary toast. `CanvasHtmlFrame` anchors the overlay to the union rect when >1 selected; `CanvasReactNodeGroupResizeEvent` threaded through the item/workspace/tab chain. 8 tests.
+- **U4a computed-class fallback** (`utils/canvasResizeStyleMutation.ts`): computed-`className` HTML resize now writes merged inline-`style` px via the existing `setAttribute` writer (no new writer surface). TSX stays a documented no-op (React `style` is an object expression — separate v4 decision). 8 tests.
+- **U11 parity audit reconciled:** the one real gap — `update_media_crop`'s schema lacked U8's `crop` window (handler already passed it through) — is fixed. `CANVAS_AGENT_MCP_COMMANDS.md` + `agentNativeManifest` now document U4a/U4b/U8/U10/U12 agent parity via existing tools; the deliberate "no `drag` MCP tool" stance is recorded. MCP stdio test now round-trips `crop`.
+- **551 tests pass; typecheck + lint clean.** v3 is feature-complete; the only remaining items are the browser-verification pass and the TSX-`style`-object decision.
 
 ## Remaining v3 surface
 

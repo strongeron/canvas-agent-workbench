@@ -206,7 +206,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "update_media_crop",
         title: "Update media crop / trim",
-        description: "Patch media trim/display fields such as clip start, clip end, or object-fit through an explicit MCP wrapper.",
+        description: "Patch the non-destructive image crop window plus clip start/end and display fields — full parity with the on-canvas crop/clip handles.",
         status: "ready",
       },
       {
