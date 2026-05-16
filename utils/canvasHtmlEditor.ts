@@ -50,6 +50,15 @@ export interface CanvasHtmlNodeInfo {
   reasonNotEditable?: string
 }
 
+export interface CanvasHtmlSlotInfo {
+  name: string
+  canvasId: string
+  tag: string
+  kind?: string
+  accepts?: string
+  childElementCount: number
+}
+
 export type CanvasHtmlReadResult = CanvasHtmlNodeInfo | { error: string }
 
 export type CanvasHtmlWriteResult =
@@ -133,6 +142,36 @@ export function readCanvasHtmlNode(
     editableInV1: true,
     editableInV2: true,
   }
+}
+
+export function listCanvasHtmlSlots(
+  sourceHtml: string,
+  options: { sourceId: string }
+): CanvasHtmlSlotInfo[] {
+  let fragment: HtmlParentNode
+  try {
+    fragment = parseHtmlFragment(sourceHtml, false)
+  } catch {
+    return []
+  }
+
+  const sourceHash = hashSourceId(options.sourceId)
+  const slots: CanvasHtmlSlotInfo[] = []
+
+  walkElementChildren(fragment, "", (element, path) => {
+    const name = getParse5Attribute(element, "data-slot")?.trim()
+    if (!name) return
+    slots.push({
+      name,
+      canvasId: `${sourceHash}:${path}`,
+      tag: element.tagName,
+      kind: getParse5Attribute(element, "data-slot-kind")?.trim() || undefined,
+      accepts: getParse5Attribute(element, "data-slot-accepts")?.trim() || undefined,
+      childElementCount: getMeaningfulChildren(element).filter(isElementNode).length,
+    })
+  })
+
+  return slots
 }
 
 export function writeCanvasHtmlNode(

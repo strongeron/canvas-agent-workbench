@@ -29,6 +29,7 @@ source with metadata, not as opaque canvas-only state.
   - toolbar action and template chooser to add a native HTML component shell on canvas,
   - optional starter title in the chooser so the initial heading/item title can be set at creation time,
   - authored slot metadata in starter HTML shells (`data-slot`, `data-slot-kind`, `data-slot-accepts`),
+  - detected slot summaries plus inline “insert starter” actions in the HTML inspector for native shells,
   - MCP tool parity via `create_native_component_shell`.
 - `Still pending`:
   - visual insert controls for child HTML parts inside the shell,

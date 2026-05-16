@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ExternalLink, FolderUp, RefreshCw, Trash2, Upload, X } from "lucide-react"
 import { CanvasViewportPresets } from "./CanvasViewportPresets"
+import {
+  listCanvasHtmlSlots,
+  writeCanvasHtmlNode,
+  type CanvasHtmlSlotInfo,
+} from "../../utils/canvasHtmlEditor"
 
 interface CanvasHtmlPropsPanelProps {
   src?: string
@@ -41,26 +46,35 @@ interface CanvasHtmlPropsPanelProps {
 
 const supportsDirectoryPicker = typeof window !== "undefined" && "showDirectoryPicker" in window
 
-function extractSlotDefinitions(source: string) {
-  const definitions = new Map<
-    string,
-    { name: string; kind?: string; accepts?: string }
-  >()
-  const pattern = /<[^>]*data-slot="([^"]+)"[^>]*>/g
+function titleCaseSlotName(value: string) {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+}
 
-  let match: RegExpExecArray | null
-  while ((match = pattern.exec(source)) !== null) {
-    const fragment = match[0]
-    const name = match[1]?.trim()
-    if (!name) continue
-    const kind = fragment.match(/data-slot-kind="([^"]+)"/)?.[1]?.trim()
-    const accepts = fragment.match(/data-slot-accepts="([^"]+)"/)?.[1]?.trim()
-    if (!definitions.has(name)) {
-      definitions.set(name, { name, kind, accepts })
+function buildSlotStarter(slot: CanvasHtmlSlotInfo) {
+  const label = titleCaseSlotName(slot.name)
+  const accepts = slot.accepts?.split(",").map((entry) => entry.trim()) ?? []
+  if (slot.kind === "text") {
+    if (["h1", "h2", "h3", "h4", "h5", "h6"].includes(slot.tag)) {
+      return { type: "setTextContent" as const, value: label }
+    }
+    return { type: "setTextContent" as const, value: `${label} text` }
+  }
+  if (accepts.includes("image") || accepts.includes("svg") || accepts.includes("video")) {
+    return {
+      type: "insertChild" as const,
+      position: slot.childElementCount,
+      childSource: `<svg viewBox="0 0 160 100" fill="none" aria-label="${label}"><rect x="1" y="1" width="158" height="98" rx="16" stroke="currentColor" stroke-dasharray="6 6"/><path d="M34 68L62 44L82 58L112 28L126 68" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="56" cy="34" r="8" fill="currentColor"/></svg>`,
     }
   }
-
-  return Array.from(definitions.values())
+  return {
+    type: "insertChild" as const,
+    position: slot.childElementCount,
+    childSource: `<div><p>${label} content</p></div>`,
+  }
 }
 
 export function CanvasHtmlPropsPanel({
@@ -95,12 +109,13 @@ export function CanvasHtmlPropsPanel({
   const [draftSourceReactFilePath, setDraftSourceReactFilePath] = useState(sourceReactFilePath || "")
   const [loadStatus, setLoadStatus] = useState<"idle" | "loading" | "error">("idle")
   const [loadError, setLoadError] = useState<string | null>(null)
+  const sourceIdentity = sourcePath || sourceReactFilePath || "inline-html-panel"
   const detectedSlots = useMemo(
     () =>
-      extractSlotDefinitions(
-        sourceMode === "react" ? draftSourceReact || "" : draftSourceHtml || ""
-      ),
-    [draftSourceHtml, draftSourceReact, sourceMode]
+      sourceMode === "inline"
+        ? listCanvasHtmlSlots(draftSourceHtml || "", { sourceId: sourceIdentity })
+        : [],
+    [draftSourceHtml, sourceIdentity, sourceMode]
   )
 
   useEffect(() => {
@@ -204,6 +219,29 @@ export function CanvasHtmlPropsPanel({
     }
   }, [onReplaceBundleFromDirectory])
 
+  const handleInsertSlotStarter = useCallback(
+    (slot: CanvasHtmlSlotInfo) => {
+      if (sourceMode !== "inline") return
+      const result = writeCanvasHtmlNode(
+        draftSourceHtml || "",
+        slot.canvasId,
+        [buildSlotStarter(slot)],
+        { sourceId: sourceIdentity }
+      )
+      if (!result.ok) {
+        setReplaceError(result.error)
+        return
+      }
+      setReplaceError(null)
+      setDraftSourceHtml(result.source)
+      onChange({
+        sourceMode: "inline",
+        sourceHtml: result.source,
+      })
+    },
+    [draftSourceHtml, onChange, sourceIdentity, sourceMode]
+  )
+
   return (
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
       <div className="flex items-center justify-between border-b border-default px-4 py-3">
@@ -303,7 +341,7 @@ export function CanvasHtmlPropsPanel({
                   className="rounded-md border border-default bg-surface-50 px-3 py-2"
                 >
                   <div className="text-xs font-semibold text-foreground">{slot.name}</div>
-                  <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                     {slot.kind ? (
                       <span className="rounded-full border border-default bg-white px-2 py-0.5">
                         {slot.kind}
@@ -314,6 +352,13 @@ export function CanvasHtmlPropsPanel({
                         accepts {slot.accepts}
                       </span>
                     ) : null}
+                    <button
+                      type="button"
+                      onClick={() => handleInsertSlotStarter(slot)}
+                      className="rounded-full border border-default bg-white px-2 py-0.5 text-foreground hover:bg-surface-100"
+                    >
+                      Insert starter
+                    </button>
                   </div>
                 </div>
               ))}

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { hashSourceId } from "../utils/canvasAstPath"
 import {
   injectCanvasHtmlElementIds,
+  listCanvasHtmlSlots,
   readCanvasHtmlNode,
   writeCanvasHtmlNode,
 } from "../utils/canvasHtmlEditor"
@@ -59,6 +60,39 @@ describe("canvas HTML editor", () => {
     expect(result.attributes.map(({ name, value, kind, editableInV1 }) => ({ name, value, kind, editableInV1 }))).toEqual([
       { name: "class", value: "btn", kind: "literal-string", editableInV1: true },
       { name: "type", value: "button", kind: "literal-string", editableInV1: true },
+    ])
+  })
+
+  it("lists named HTML slots with canvas ids and child counts", () => {
+    const source = `<section data-slot="root" data-slot-kind="container"><h1 data-slot="title" data-slot-kind="text">Hero</h1><div data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"><svg></svg></div></section>`
+
+    const result = listCanvasHtmlSlots(source, { sourceId: SOURCE_ID })
+
+    expect(result).toEqual([
+      {
+        name: "root",
+        canvasId: `${HASH}:0`,
+        tag: "section",
+        kind: "container",
+        accepts: undefined,
+        childElementCount: 2,
+      },
+      {
+        name: "title",
+        canvasId: `${HASH}:0.0`,
+        tag: "h1",
+        kind: "text",
+        accepts: undefined,
+        childElementCount: 0,
+      },
+      {
+        name: "media",
+        canvasId: `${HASH}:0.1`,
+        tag: "div",
+        kind: "container",
+        accepts: "image,svg,video",
+        childElementCount: 1,
+      },
     ])
   })
 
