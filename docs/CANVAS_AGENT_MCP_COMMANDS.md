@@ -164,7 +164,7 @@ Web-native editing tools:
 - `update_mermaid_label` targets a live Mermaid item by `itemId`, patches one node label in source form, and updates the item through the normal canvas queue path. This is full parity with the U10 rendered-SVG inline label edit — the on-canvas editor and this tool both call the same `updateMermaidNodeLabel` source patcher.
 - `create_component_from_html` and `create_component_from_tsx` write under `projects/<projectId>/components/`, append a matching `registry.json` entry, and create a preview node unless `createItem: false` is passed.
 - `promote_to_component` extracts an HTML subtree (by `canvasId`) from a canvas item and saves it as a new project component. The original item is unchanged; the new primitive appears in the registry and library panel for re-use.
-- `create_native_component_shell` creates a live `html` item with `sourceMode: "inline"` plus starter slot metadata such as `data-slot="title"` and `data-slot-accepts="image,svg,video"`. Use it when you want the agent to start from an editable HTML section/card/hero shell instead of a props-only component item.
+- `create_native_component_shell` creates a live `html` item with `sourceMode: "inline"` plus starter slot metadata such as `data-slot="title"` and `data-slot-accepts="image,svg,video"`. It also accepts an optional `title` so the starter heading and item title can be set in one call. Use it when you want the agent to start from an editable HTML section/card/hero shell instead of a props-only component item.
 
 Direct-manipulation parity audit (v3, complete):
 
@@ -403,7 +403,7 @@ Use MCP only. Call list_primitives to see the registry, then create_primitive_it
 **6. Start a native HTML composition shell on canvas:**
 
 ```text
-Use MCP only. Read workspace://surface/canvas/state and decide whether the new shell belongs on the free board or inside an existing artboard. Then call create_native_component_shell with a template such as section, card, hero, media-object, or blank. If the shell should live inside an artboard, pass artboardId. After creation, inspect the new html node and continue editing it with read_html_node, update_html_node, or apply_structural_mutation.
+Use MCP only. Read workspace://surface/canvas/state and decide whether the new shell belongs on the free board or inside an existing artboard. Then call create_native_component_shell with a template such as section, card, hero, media-object, or blank, plus an optional title. If the shell should live inside an artboard, pass artboardId. After creation, inspect the new html node and continue editing it with read_html_node, update_html_node, or apply_structural_mutation.
 ```
 
 The whole loop — generate / bring / compose / edit / sync / iterate — runs through MCP without ever leaving the agent surface. The same endpoints back the UI, so any edit lands in source files identically whether driven by a human or the agent.
@@ -417,7 +417,7 @@ Use MCP only. Read workspace://surface/canvas/state, workspace://surface/canvas/
 ### Canvas native composition
 
 ```text
-Use MCP only. Read workspace://surface/canvas/state and summarize the active artboards. Create a new artboard if needed with create_artboard. Then call create_native_component_shell with template section or card and the target artboardId. After creation, inspect the new html node with read_html_node and mutate it with update_html_node or apply_structural_mutation to add headings, body copy, actions, and media slots. Finish by capturing a screenshot of the new item.
+Use MCP only. Read workspace://surface/canvas/state and summarize the active artboards. Create a new artboard if needed with create_artboard. Then call create_native_component_shell with template section or card, an optional title, and the target artboardId. After creation, inspect the new html node with read_html_node and mutate it with update_html_node or apply_structural_mutation to add headings, body copy, actions, and media slots. Finish by capturing a screenshot of the new item.
 ```
 
 ### Canvas File Lifecycle
@@ -487,7 +487,7 @@ Expected:
 ### 2. Canvas native shell composition
 
 ```text
-Use MCP only. Create an artboard, then create a native HTML section shell inside it. Update the shell title text, add a secondary paragraph, and verify the result with a screenshot.
+Use MCP only. Create an artboard, then create a native HTML section shell inside it with a custom title. Update the shell body text, add a secondary paragraph, and verify the result with a screenshot.
 ```
 
 Expected:

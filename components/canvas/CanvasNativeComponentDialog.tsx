@@ -28,6 +28,12 @@ export function CanvasNativeComponentDialog({
 
   useEffect(() => {
     if (!open) return
+    setSelectedTemplate("section")
+    setTitleValue("")
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
