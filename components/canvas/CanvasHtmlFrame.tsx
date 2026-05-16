@@ -372,10 +372,16 @@ export function CanvasHtmlFrame({
     setSelectionRect(activeSelection?.itemId === item.id ? activeSelection.rect : null)
     setSelectedCanvasId(activeSelection?.itemId === item.id ? activeSelection.canvasId : null)
     setHoverRect(null)
-    // A recompile invalidates measured rects; drop the multi-set rather than
-    // anchor stale geometry (re-shift-click rebuilds it post-compile).
-    setMultiSelections([])
   }, [activeSelection, item.id, sourceHtml, sourceReact, sourceCss, sourceId])
+
+  // Drop the multi-select set only on a real recompile — NOT on every
+  // selection change. `activeSelection` is recreated by the parent on every
+  // click (incl. shift-click), so keying this on it would wipe the set the
+  // shift-click just added and U12 would never reach >=2. Recompile signals
+  // (source*/item.id) are the only legitimate reason to drop stale rects.
+  useEffect(() => {
+    setMultiSelections([])
+  }, [item.id, sourceHtml, sourceReact, sourceCss, sourceId])
 
   const frameSource = useMemo(() => {
     if (shouldRenderReact) return compiledReactHtml
@@ -434,36 +440,40 @@ export function CanvasHtmlFrame({
       event.preventDefault()
       event.dataTransfer.dropEffect = "copy"
       const iframe = iframeRef.current
-      const targetWindow = iframe?.contentWindow
-      if (!iframe || !targetWindow) return
-      // Translate viewport coords into iframe-local document coords. The
-      // iframe is rendered at its natural size inside this component — the
-      // canvas-level transform happens on a wrapper *outside* CanvasHtmlFrame
-      // — so the iframe rect's top-left maps to the iframe document's (0, 0)
-      // and no scale factor is needed.
+      if (!iframe || !iframe.contentWindow) return
+      // getBoundingClientRect() is in screen space — the canvas transform is
+      // applied to a wrapper *outside* this component, so the rendered iframe
+      // is scaled by canvasScale. The iframe document itself is not zoomed,
+      // so map screen offset → document coords by dividing out canvasScale
+      // (same as the resize path's screenDeltaToIframeLocal). Skipping this
+      // made drop zones resolve the wrong element at any zoom != 100%.
       const rect = iframe.getBoundingClientRect()
+      const scale = canvasScale || 1
       dropTargetPendingCoordsRef.current = {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
+        x: (event.clientX - rect.left) / scale,
+        y: (event.clientY - rect.top) / scale,
       }
       if (dropTargetRafRef.current !== null) return
       dropTargetRafRef.current = window.requestAnimationFrame(() => {
         dropTargetRafRef.current = null
         const coords = dropTargetPendingCoordsRef.current
         dropTargetPendingCoordsRef.current = null
-        if (!coords) return
+        // Re-read the live contentWindow inside the rAF: the iframe may have
+        // been replaced (srcDoc recompile) between the dragover and this tick.
+        const win = iframeRef.current?.contentWindow
+        if (!coords || !win) return
         const requestId =
           typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
             ? crypto.randomUUID()
             : `${Date.now()}-${Math.random()}`
         dropTargetRequestIdRef.current = requestId
-        targetWindow.postMessage(
+        win.postMessage(
           buildDropTargetHitTestRequest({ requestId, x: coords.x, y: coords.y }),
           window.location.origin
         )
       })
     },
-    []
+    [canvasScale]
   )
 
   const handleLibraryDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {

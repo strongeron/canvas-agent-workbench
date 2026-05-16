@@ -19,6 +19,10 @@ import type { CanvasOverlayDragKind } from "../components/canvas/CanvasIframeOve
 import type { CanvasReactNodeRect } from "./canvasReactNodeBridge"
 import type { AstAttributeInfo, AstNodeInfo } from "./canvasAstReader"
 import { computeResizeMutation } from "./canvasResizeMutation"
+import {
+  computeResizeStyleFallback,
+  type CanvasSetAttributeStyleMutation,
+} from "./canvasResizeStyleMutation"
 
 export interface CanvasGroupResizeTarget {
   canvasId: string
@@ -92,16 +96,36 @@ export async function dispatchCanvasGroupResize(
       const classAttr = readPayload.node.attributes.find(
         (a: AstAttributeInfo) => a.name === "className" || a.name === "class"
       )
+      // Mirror dispatchCanvasResize: literal class → snap a w-*/h-* class;
+      // computed class on an HTML node → merge inline-style px (so group
+      // resize stays at parity with single resize); computed class on TSX →
+      // skip (React `style` is an object expression, a v4 decision).
+      let mutation:
+        | { type: "setClassName"; value: string }
+        | CanvasSetAttributeStyleMutation
+        | null
       if (classAttr && classAttr.kind !== "literal-string") {
-        skipped += 1
-        continue
+        if (!isHtml) {
+          skipped += 1
+          continue
+        }
+        const styleAttr = readPayload.node.attributes.find(
+          (a: AstAttributeInfo) => a.name === "style"
+        )
+        mutation = computeResizeStyleFallback({
+          kind: input.kind,
+          delta: input.deltaIframe,
+          rect: { width: target.rect.width, height: target.rect.height },
+          style: styleAttr?.value ?? "",
+        })
+      } else {
+        mutation = computeResizeMutation({
+          kind: input.kind,
+          delta: input.deltaIframe,
+          rect: { width: target.rect.width, height: target.rect.height },
+          className: classAttr?.value ?? "",
+        })
       }
-      const mutation = computeResizeMutation({
-        kind: input.kind,
-        delta: input.deltaIframe,
-        rect: { width: target.rect.width, height: target.rect.height },
-        className: classAttr?.value ?? "",
-      })
       if (!mutation) {
         skipped += 1
         continue

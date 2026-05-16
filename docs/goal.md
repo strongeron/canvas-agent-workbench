@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-16 (v3 feature-complete: U2/U4a-fallback/U10/U11/U12-group landed; 551 tests green)
+updated: 2026-05-16 (post compound-review: 4 P1s fixed incl. U12 dead-on-arrival; 554 tests green)
 ---
 
 # Running goal
@@ -43,9 +43,15 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U11 | ✅ complete | parity audit reconciled: `update_media_crop` now exposes the `crop` window; docs + manifest document U4a/U4b/U8/U10/U12 agent parity via existing tools (no `drag` tool by design) |
 | U12 | ✅ complete | shift-click additive/toggle multi-select + union-rect visualization **plus** group-transform writes: a union-overlay drag resizes every selected node via a sequential, source/mtime-threaded dispatcher with partial-failure summary |
 
-## Status: v3 feature-complete (2026-05-16)
+## Status: v3 feature-complete + post-review hardening (2026-05-16)
 
-Every plan unit (U1–U13) has its logic landed and unit-tested. **551 tests green; typecheck + lint clean.** What remains is **not build work** — it is verification and one explicit decision:
+A 9-reviewer compound code review of the session diff found that U12 was **dead on arrival** (the multi-select set was wiped by an effect keyed on the parent-recreated `activeSelection`, so the union/group-resize never rendered) plus a zoom bug in the drop hit-test and a concurrent-write race. All four review P1s were fixed and pinned with regression tests; the "feature-complete" claim was premature before that pass. Post-fix: **554 tests green; typecheck + lint clean.**
+
+Review P1s fixed: (1) U12 multi-select clear moved to a recompile-only effect; (2) drop hit-test now divides by `canvasScale` (+ reads the live contentWindow inside the rAF); (3) in-flight guards on group-resize and library-drop; (4) single-resize now surfaces its swallowed error toast. Plus: group dispatcher gained the U4a HTML inline-style fallback (parity with single resize), mermaid commit rejects bracket-bearing typed values, and a document-level dragend/drop safety net clears a stuck library drag.
+
+Deferred (documented residual, not blocking): agent-native rotation MCP path, `apply_structural_mutation` payload schema typing, the duplicated MCP mermaid patcher, and several P2/P3 maintainability items (duplicate `*DispatchDeps`, handle-sign tables, CanvasHtmlFrame size). Tracked in the review artifact under `.context/compound-engineering/ce-code-review/`.
+
+What remains is **not build work** — it is verification and one explicit decision:
 
 1. **Browser-verification pass (the demo gate).** No human has driven the live surface for most units. One focused session on the running app (`localhost:5175`) should exercise: U4a resize + U4a computed-class fallback, U3 insert/remove selection continuity, U4b library drag-drop, U5 undo/redo, U8 crop/clip handles, U10 mermaid SVG edit, U12 shift-select + group resize. Native HTML5 DnD (U4b) is not reliably automatable — it needs a person.
 2. **U3 continuity** is implemented; verify wrap/insert/remove keep selection + overlay rect across recompile on every surface (only wrap is human-verified).

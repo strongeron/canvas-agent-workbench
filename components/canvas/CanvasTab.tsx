@@ -724,6 +724,22 @@ export function CanvasTab({
   // U4b slice 3.2c. While a library primitive is in flight from the panel,
   // every iframe should render drop-zones over hovered ancestors.
   const [activeLibraryDrag, setActiveLibraryDrag] = useState<CanvasLibraryDragPayload | null>(null)
+  // Safety net: the library panel's onDragEnd is the normal clear, but a
+  // drag cancelled by Alt-Tab / an OS notification / releasing the mouse
+  // outside the window does not reliably fire dragend on the source. Without
+  // this, the capture layer stays mounted and would hijack the next dragover
+  // (including an unrelated file drag). A document-level dragend/drop while a
+  // drag is active guarantees the state is cleared.
+  useEffect(() => {
+    if (!activeLibraryDrag) return
+    const clear = () => setActiveLibraryDrag(null)
+    document.addEventListener("dragend", clear, true)
+    document.addEventListener("drop", clear, true)
+    return () => {
+      document.removeEventListener("dragend", clear, true)
+      document.removeEventListener("drop", clear, true)
+    }
+  }, [activeLibraryDrag])
   const [componentPasteDialogVisible, setComponentPasteDialogVisible] = useState(false)
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
@@ -754,6 +770,12 @@ export function CanvasTab({
     canvasPersistenceQueueRef.current = new SerialTaskQueue()
   }
   const canvasRootRef = useRef<HTMLDivElement>(null)
+  // U12/U4b: a drag-commit / drop fires one batch of sequential awaited
+  // AST writes that thread source+mtime in memory. A second commit landing
+  // before the first resolves would read the same pre-write snapshot and
+  // overwrite the first's result. These refs serialize per concern.
+  const groupResizeInFlightRef = useRef(false)
+  const libraryDropInFlightRef = useRef(false)
   const importQueueStorageKey = storageKey
     ? `${storageKey}-imports`
     : "gallery-import-queue"
@@ -890,11 +912,15 @@ export function CanvasTab({
       const primitive = activeLibraryDrag?.primitive
       setActiveLibraryDrag(null)
       if (!primitive) return
+      if (libraryDropInFlightRef.current) return
       const item = items.find((candidate) => candidate.id === itemId)
       if (!item || item.type !== "html") return
       const htmlItem = item as CanvasHtmlItem
       const isHtmlMode = htmlItem.sourceMode === "inline"
-      const result = await dispatchCanvasLibraryDrop(intent, primitive, {
+      libraryDropInFlightRef.current = true
+      let result: Awaited<ReturnType<typeof dispatchCanvasLibraryDrop>>
+      try {
+        result = await dispatchCanvasLibraryDrop(intent, primitive, {
         sourceKind: isHtmlMode ? "html" : "tsx",
         sourceId:
           htmlItem.sourcePath ||
@@ -917,8 +943,11 @@ export function CanvasTab({
             sourceHtml,
             ...(typeof mtimeMs === "number" ? { sourceHtmlFileMtime: mtimeMs } : {}),
           } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
-        onWriteSuccess: handleReactNodeWriteSuccess,
-      })
+          onWriteSuccess: handleReactNodeWriteSuccess,
+        })
+      } finally {
+        libraryDropInFlightRef.current = false
+      }
       if (result.status === "error") {
         setHistoryToast({ id: Date.now(), tone: "error", message: result.error })
       }
@@ -1166,7 +1195,7 @@ export function CanvasTab({
       if (!item || item.type !== "html") return
       const htmlItem = item as CanvasHtmlItem
       const isHtmlMode = htmlItem.sourceMode === "inline"
-      await dispatchCanvasResize(event, {
+      const result = await dispatchCanvasResize(event, {
         sourceKind: isHtmlMode ? "html" : "tsx",
         sourceId:
           htmlItem.sourcePath ||
@@ -1198,6 +1227,9 @@ export function CanvasTab({
               : {}),
           } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
       })
+      if (result.status === "error") {
+        setHistoryToast({ id: Date.now(), tone: "error", message: result.error })
+      }
     },
     [items, updateItem]
   )
@@ -1209,11 +1241,15 @@ export function CanvasTab({
       deltaIframe: { dx: number; dy: number }
       targets: Array<{ canvasId: string; rect: CanvasReactNodeRect }>
     }) => {
+      if (groupResizeInFlightRef.current) return
       const item = items.find((candidate) => candidate.id === event.itemId)
       if (!item || item.type !== "html") return
       const htmlItem = item as CanvasHtmlItem
       const isHtmlMode = htmlItem.sourceMode === "inline"
-      const result = await dispatchCanvasGroupResize(
+      groupResizeInFlightRef.current = true
+      let result: Awaited<ReturnType<typeof dispatchCanvasGroupResize>>
+      try {
+        result = await dispatchCanvasGroupResize(
         { kind: event.kind, deltaIframe: event.deltaIframe, targets: event.targets },
         {
           sourceKind: isHtmlMode ? "html" : "tsx",
@@ -1238,13 +1274,18 @@ export function CanvasTab({
               sourceHtml,
               ...(typeof mtimeMs === "number" ? { sourceHtmlFileMtime: mtimeMs } : {}),
             } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
-        }
-      )
+          }
+        )
+      } finally {
+        groupResizeInFlightRef.current = false
+      }
       if (result.errors.length > 0) {
+        const first = result.errors[0]
+        const more = result.errors.length > 1 ? ` (+${result.errors.length - 1} more)` : ""
         setHistoryToast({
           id: Date.now(),
           tone: "error",
-          message: `Group resize: ${result.applied} applied, ${result.errors.length} failed`,
+          message: `${first}${more} — ${result.applied} of ${result.applied + result.errors.length} applied`,
         })
       } else if (result.applied > 0) {
         setHistoryToast({

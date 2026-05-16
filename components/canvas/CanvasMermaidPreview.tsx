@@ -115,7 +115,11 @@ export function CanvasMermaidPreview({
     if (!edit) return
     const next = edit.value.trim()
     const current = listMermaidNodeLabels(source).find((l) => l.id === edit.nodeId)
-    if (next && current && next !== current.label) {
+    // canInlineEditMermaidLabel gates the *start* on the existing label; the
+    // typed value must pass it too, or the regex patcher would splice
+    // bracket chars verbatim and produce un-renderable mermaid. Reject
+    // silently (cancel the edit) rather than corrupt the source.
+    if (next && current && next !== current.label && canInlineEditMermaidLabel(next)) {
       onCommitLabel?.(edit.nodeId, next)
     }
     setEdit(null)

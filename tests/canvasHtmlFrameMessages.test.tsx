@@ -696,6 +696,33 @@ describe("CanvasHtmlFrame — U4b library drop-target wiring", () => {
     expect(call?.[1]).toBe(window.location.origin)
   })
 
+  it("divides drop hit-test coords by canvasScale (regression: zoom != 100%)", async () => {
+    harness = await mount(
+      <CanvasHtmlFrame
+        item={makeItem()}
+        interactMode={false}
+        libraryDragActive
+        canvasScale={2}
+      />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    const { spy } = anchorIframe(iframe)
+    const capture = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-drag-capture']"
+    ) as HTMLElement
+
+    await act(async () => {
+      fireDrag(capture, "dragover", { clientX: 180, clientY: 130 })
+    })
+
+    const call = spy.mock.calls.find(
+      ([msg]) => msg && msg.type === "canvas/drop-target-hit-test"
+    )
+    // (180 - 100) / 2 = 40 ; (130 - 50) / 2 = 40 — without the /scale fix
+    // this would be 80/80 and resolve the wrong iframe element.
+    expect(call?.[0]).toMatchObject({ type: "canvas/drop-target-hit-test", x: 40, y: 40 })
+  })
+
   it("renders insert-line zones from a matching canvas/drop-target-result", async () => {
     harness = await mount(
       <CanvasHtmlFrame item={makeItem()} interactMode={false} libraryDragActive />
@@ -1025,6 +1052,59 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
       ...(additive ? { additive: true } : {}),
     })
   }
+
+  it("keeps the multi-set across parent activeSelection re-creation (regression: U12 dead-on-arrival)", async () => {
+    // CanvasTab recreates the activeSelection object on every onReactNodeSelect
+    // (every click, incl. shift-click). The multi-set must survive that prop
+    // identity change — only a real recompile should clear it. Before the
+    // fix, the clear lived in an effect keyed on activeSelection, so the set
+    // was wiped the moment the shift-click's onReactNodeSelect round-tripped.
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await act(async () => {
+      postSelect(iframe, "a:0", { x: 10, y: 10, width: 40, height: 20 })
+    })
+    // Parent reacts to select A by handing back a fresh activeSelection object.
+    await act(async () => {
+      harness?.root.render(
+        <CanvasHtmlFrame
+          item={makeItem()}
+          interactMode={false}
+          activeSelection={{
+            itemId: "item-1",
+            canvasId: "a:0",
+            tag: "div",
+            rect: { x: 10, y: 10, width: 40, height: 20 },
+            compileGeneration: 1,
+          }}
+        />
+      )
+    })
+    await act(async () => {
+      postSelect(iframe, "b:0", { x: 100, y: 60, width: 30, height: 30 }, true)
+    })
+    // Parent reacts to select B with yet another fresh activeSelection object.
+    await act(async () => {
+      harness?.root.render(
+        <CanvasHtmlFrame
+          item={makeItem()}
+          interactMode={false}
+          activeSelection={{
+            itemId: "item-1",
+            canvasId: "b:0",
+            tag: "div",
+            rect: { x: 100, y: 60, width: 30, height: 30 },
+            compileGeneration: 1,
+          }}
+        />
+      )
+    })
+    const union = harness.container.querySelector(
+      "[data-testid='canvas-iframe-multi-select']"
+    ) as HTMLElement
+    expect(union).not.toBeNull()
+    expect(union.getAttribute("data-canvas-multi-select-count")).toBe("2")
+  })
 
   it("renders a union outline + count once two elements are shift-selected", async () => {
     harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)

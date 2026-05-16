@@ -161,4 +161,35 @@ describe("CanvasMermaidPreview — U10 inline label edit", () => {
       harness.container.querySelector("[data-testid='mermaid-label-input']")
     ).toBeNull()
   })
+
+  it("rejects a typed value with bracket chars instead of corrupting source (regression)", async () => {
+    renderMermaidSvgMock.mockResolvedValue(SVG)
+    const onCommit = vi.fn()
+    harness = await mount(
+      <CanvasMermaidPreview
+        source={"flowchart TD\n  A[Old] --> B[Two]"}
+        editable
+        onCommitLabel={onCommit}
+      />
+    )
+    const text = harness.container.querySelector("text") as Element
+    await act(async () => {
+      text.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    })
+    const input = harness.container.querySelector(
+      "[data-testid='mermaid-label-input']"
+    ) as HTMLInputElement
+    await act(async () => {
+      setInputValue(input, "Has [brackets]")
+    })
+    await act(async () => {
+      input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }))
+    })
+    // The regex patcher would splice `[brackets]` verbatim → un-renderable
+    // mermaid. The commit must be rejected (no callback), edit cleared.
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(
+      harness.container.querySelector("[data-testid='mermaid-label-input']")
+    ).toBeNull()
+  })
 })
