@@ -2,6 +2,16 @@ import { RotateCw } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { CanvasMediaItem as CanvasMediaItemType } from "../../types/canvas"
+import {
+  applyClipHandleDrag,
+  applyCropHandleDrag,
+  cropToImageStyle,
+  isFullCrop,
+  normalizeCrop,
+  type CanvasClipEdge,
+  type CanvasCropCorner,
+  type CanvasCropRect,
+} from "../../utils/canvasMediaCrop"
 import { CanvasContextMenu } from "./CanvasContextMenu"
 import { getMediaEmbedInfo } from "./mediaStorageService"
 import { resolveCanvasMediaSrc } from "./mediaUrl"
@@ -35,6 +45,13 @@ const HANDLE_POSITIONS: Record<ResizeHandle, { className: string; cursor: string
   sw: { className: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2", cursor: "nesw-resize" },
   w: { className: "left-0 top-1/2 -translate-x-1/2 -translate-y-1/2", cursor: "ew-resize" },
   nw: { className: "left-0 top-0 -translate-x-1/2 -translate-y-1/2", cursor: "nwse-resize" },
+}
+
+const CROP_HANDLE_POSITIONS: Record<CanvasCropCorner, { className: string; cursor: string }> = {
+  nw: { className: "left-0 top-0", cursor: "nwse-resize" },
+  ne: { className: "right-0 top-0", cursor: "nesw-resize" },
+  sw: { className: "left-0 bottom-0", cursor: "nesw-resize" },
+  se: { className: "right-0 bottom-0", cursor: "nwse-resize" },
 }
 
 function detectMediaKind(src: string, explicitKind?: CanvasMediaItemType["mediaKind"]) {
@@ -113,10 +130,18 @@ export function CanvasMediaItem({
     onSelect,
   })
   const [loadError, setLoadError] = useState(false)
+  const [durationSec, setDurationSec] = useState<number | null>(null)
+  const [cropDrag, setCropDrag] = useState<
+    { corner: CanvasCropCorner; startX: number; startY: number; initial: CanvasCropRect } | null
+  >(null)
+  const [clipDrag, setClipDrag] = useState<
+    { edge: CanvasClipEdge; startX: number; initialStart: number; initialEnd: number | null } | null
+  >(null)
   const clipRange = useMemo(
     () => normalizeClipRange(item.clipStartSec, item.clipEndSec),
     [item.clipEndSec, item.clipStartSec]
   )
+  const hasCrop = !isFullCrop(item.crop)
 
   const mediaKind = useMemo(
     () => detectMediaKind(item.src, item.mediaKind),
@@ -363,6 +388,80 @@ export function CanvasMediaItem({
     }
   }, [dragStart, initialState, isDragging, isResizing, isRotating, onUpdate, resizeHandle, scale])
 
+  const handleCropHandleDown = useCallback(
+    (e: React.MouseEvent, corner: CanvasCropCorner) => {
+      if (interactMode) return
+      e.stopPropagation()
+      e.preventDefault()
+      onSelect()
+      setCropDrag({ corner, startX: e.clientX, startY: e.clientY, initial: normalizeCrop(item.crop) })
+    },
+    [interactMode, item.crop, onSelect]
+  )
+
+  const handleClipHandleDown = useCallback(
+    (e: React.MouseEvent, edge: CanvasClipEdge) => {
+      if (interactMode) return
+      e.stopPropagation()
+      e.preventDefault()
+      onSelect()
+      setClipDrag({
+        edge,
+        startX: e.clientX,
+        initialStart: clipRange.startSec,
+        initialEnd: clipRange.endSec,
+      })
+    },
+    [clipRange.endSec, clipRange.startSec, interactMode, onSelect]
+  )
+
+  useEffect(() => {
+    if (!cropDrag && !clipDrag) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (cropDrag) {
+        // Pointer pixels → box fraction → source-image fraction. The box
+        // shows `crop.w`/`crop.h` of the source across item.size, so a box
+        // fraction maps to that times the current window size.
+        const boxDx = (e.clientX - cropDrag.startX) / scale / Math.max(1, item.size.width)
+        const boxDy = (e.clientY - cropDrag.startY) / scale / Math.max(1, item.size.height)
+        const next = applyCropHandleDrag({
+          crop: cropDrag.initial,
+          corner: cropDrag.corner,
+          dxFrac: boxDx * cropDrag.initial.w,
+          dyFrac: boxDy * cropDrag.initial.h,
+        })
+        onUpdate({ crop: next })
+        return
+      }
+      if (clipDrag) {
+        const span = durationSec && durationSec > 0 ? durationSec : item.size.width
+        const deltaSec =
+          ((e.clientX - clipDrag.startX) / scale / Math.max(1, item.size.width)) * span
+        const next = applyClipHandleDrag({
+          startSec: clipDrag.initialStart,
+          endSec: clipDrag.initialEnd,
+          durationSec,
+          edge: clipDrag.edge,
+          deltaSec,
+        })
+        onUpdate({ clipStartSec: next.startSec, clipEndSec: next.endSec })
+      }
+    }
+
+    const handleMouseUp = () => {
+      setCropDrag(null)
+      setClipDrag(null)
+    }
+
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [clipDrag, cropDrag, durationSec, item.size.height, item.size.width, onUpdate, scale])
+
   const borderClass = isMultiSelected
     ? "border-2 border-violet-500 ring-4 ring-violet-500/20"
     : isSelected
@@ -434,7 +533,11 @@ export function CanvasMediaItem({
                 playsInline
                 preload="auto"
                 className={`h-full w-full ${fitClass} ${interactMode ? "pointer-events-auto" : "pointer-events-none"}`}
-                onLoadedMetadata={() => seekToClipStart(true)}
+                onLoadedMetadata={() => {
+                  const d = videoRef.current?.duration
+                  setDurationSec(typeof d === "number" && Number.isFinite(d) ? d : null)
+                  seekToClipStart(true)
+                }}
                 onLoadedData={() => seekToClipStart()}
                 onCanPlay={() => seekToClipStart()}
                 onPlay={handleVideoPlay}
@@ -447,7 +550,8 @@ export function CanvasMediaItem({
             <img
               src={mediaSrc}
               alt={item.alt || item.title || "Media"}
-              className={`h-full w-full ${fitClass}`}
+              className={hasCrop ? "" : `h-full w-full ${fitClass}`}
+              style={cropToImageStyle(item.crop)}
               draggable={false}
               onError={() => setLoadError(true)}
             />
@@ -455,6 +559,60 @@ export function CanvasMediaItem({
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
             Add media source URL
+          </div>
+        )}
+
+        {isSelected &&
+          !interactMode &&
+          !loadError &&
+          item.src &&
+          effectiveMediaKind !== "video" &&
+          (Object.entries(CROP_HANDLE_POSITIONS) as [
+            CanvasCropCorner,
+            { className: string; cursor: string },
+          ][]).map(([corner, { className, cursor }]) => (
+            <div
+              key={corner}
+              data-canvas-crop-handle={corner}
+              onMouseDown={(e) => handleCropHandleDown(e, corner)}
+              className={`absolute z-10 h-3 w-3 border-2 border-brand-500 bg-white shadow ${className}`}
+              style={{ cursor }}
+            />
+          ))}
+
+        {isSelected && !interactMode && !loadError && item.src && effectiveMediaKind === "video" && !embedInfo && (
+          <div
+            data-canvas-clip-track
+            className="absolute inset-x-3 bottom-2 z-10 h-1.5 rounded-full bg-surface-900/40"
+          >
+            {(() => {
+              const span = durationSec && durationSec > 0 ? durationSec : null
+              const startPct = span ? Math.min(100, (clipRange.startSec / span) * 100) : 0
+              const endPct =
+                span && clipRange.endSec !== null
+                  ? Math.min(100, (clipRange.endSec / span) * 100)
+                  : 100
+              return (
+                <>
+                  <div
+                    className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-brand-500"
+                    style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
+                  />
+                  <div
+                    data-canvas-clip-handle="start"
+                    onMouseDown={(e) => handleClipHandleDown(e, "start")}
+                    className="absolute top-1/2 h-4 w-2 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-brand-600 bg-white shadow"
+                    style={{ left: `${startPct}%`, cursor: "ew-resize" }}
+                  />
+                  <div
+                    data-canvas-clip-handle="end"
+                    onMouseDown={(e) => handleClipHandleDown(e, "end")}
+                    className="absolute top-1/2 h-4 w-2 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-brand-600 bg-white shadow"
+                    style={{ left: `${endPct}%`, cursor: "ew-resize" }}
+                  />
+                </>
+              )
+            })()}
           </div>
         )}
 

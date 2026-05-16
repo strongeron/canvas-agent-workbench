@@ -135,6 +135,13 @@ export interface CanvasMediaItem extends CanvasItemBase {
   clipStartSec?: number
   /** Optional clip end timestamp in seconds for video playback */
   clipEndSec?: number
+  /**
+   * Non-destructive crop window for images, as fractions of the source in
+   * [0,1]. `x`/`y` is the window's top-left, `w`/`h` its size. Absent or
+   * full-frame ({x:0,y:0,w:1,h:1}) means no crop. The original `src` is
+   * never mutated — the crop is applied on display only.
+   */
+  crop?: { x: number; y: number; w: number; h: number }
   objectFit?: "cover" | "contain" | "fill"
   /** Original page URL when media came from capture pipeline */
   sourceUrl?: string
