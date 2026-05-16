@@ -984,3 +984,109 @@ describe("CanvasHtmlFrame — U4b library drop-target wiring", () => {
     expect(onWrap).toHaveBeenCalledWith({ itemId: "frame-7", canvasId: "leaf:0" })
   })
 })
+
+describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  let harness: Harness | null = null
+
+  beforeEach(() => {
+    fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        html: '<!doctype html><html><body><div id="root"></div></body></html>',
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+  })
+
+  afterEach(() => {
+    if (harness) {
+      harness.cleanup()
+      harness = null
+    }
+    vi.unstubAllGlobals()
+  })
+
+  function postSelect(
+    iframe: HTMLIFrameElement,
+    canvasId: string,
+    rect: { x: number; y: number; width: number; height: number },
+    additive?: boolean
+  ) {
+    postFromIframe(iframe, {
+      [CANVAS_NODE_BRIDGE_MARKER]: true,
+      version: CANVAS_NODE_BRIDGE_VERSION,
+      type: "canvas/select",
+      canvasId,
+      tag: "div",
+      rect,
+      fileHint: "item-1",
+      ...(additive ? { additive: true } : {}),
+    })
+  }
+
+  it("renders a union outline + count once two elements are shift-selected", async () => {
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await act(async () => {
+      postSelect(iframe, "a:0", { x: 10, y: 10, width: 40, height: 20 })
+    })
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-multi-select']")
+    ).toBeNull()
+
+    await act(async () => {
+      postSelect(iframe, "b:0", { x: 100, y: 60, width: 30, height: 30 }, true)
+    })
+    const union = harness.container.querySelector(
+      "[data-testid='canvas-iframe-multi-select']"
+    ) as HTMLElement
+    expect(union).not.toBeNull()
+    expect(union.getAttribute("data-canvas-multi-select-count")).toBe("2")
+    // Union spans both rects: x 10..130, y 10..90.
+    expect(union.style.left).toBe("10px")
+    expect(union.style.top).toBe("10px")
+    expect(union.style.width).toBe("120px")
+    expect(union.style.height).toBe("80px")
+  })
+
+  it("a plain (non-additive) select collapses the multi-set back to one", async () => {
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await act(async () => {
+      postSelect(iframe, "a:0", { x: 0, y: 0, width: 10, height: 10 })
+      postSelect(iframe, "b:0", { x: 50, y: 50, width: 10, height: 10 }, true)
+    })
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-multi-select']")
+    ).not.toBeNull()
+
+    await act(async () => {
+      postSelect(iframe, "c:0", { x: 5, y: 5, width: 10, height: 10 })
+    })
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-multi-select']")
+    ).toBeNull()
+  })
+
+  it("shift-clicking an already-selected element toggles it back out", async () => {
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    await act(async () => {
+      postSelect(iframe, "a:0", { x: 0, y: 0, width: 10, height: 10 })
+      postSelect(iframe, "b:0", { x: 50, y: 50, width: 10, height: 10 }, true)
+    })
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-multi-select']")
+    ).not.toBeNull()
+
+    await act(async () => {
+      postSelect(iframe, "b:0", { x: 50, y: 50, width: 10, height: 10 }, true)
+    })
+    // Back down to one selection → union indicator gone.
+    expect(
+      harness.container.querySelector("[data-testid='canvas-iframe-multi-select']")
+    ).toBeNull()
+  })
+})

@@ -45,6 +45,12 @@ export interface CanvasReactNodeSelectMessage extends CanvasReactNodeBaseMessage
   canvasId: string
   tag: string
   rect: CanvasReactNodeRect
+  /**
+   * U12: the click was shift-held, so the parent should add this element to
+   * the current single-iframe selection instead of replacing it. Absent /
+   * false means a normal replacing select.
+   */
+  additive?: boolean
 }
 
 export interface CanvasReactNodeHoverMessage extends CanvasReactNodeBaseMessage {
@@ -154,7 +160,8 @@ export function findNearestCanvasIdAncestor(start: Element | null): HTMLElement 
 /** Builds the `select` message for a target element. */
 export function buildSelectMessage(
   target: HTMLElement,
-  fileHint?: string
+  fileHint?: string,
+  additive?: boolean
 ): CanvasReactNodeSelectMessage {
   const rect = target.getBoundingClientRect()
   return {
@@ -165,6 +172,7 @@ export function buildSelectMessage(
     tag: target.tagName.toLowerCase(),
     rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     fileHint,
+    additive: additive === true ? true : undefined,
   }
 }
 
@@ -350,7 +358,7 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
     }
   }
 
-  function postSelect(el: HTMLElement) {
+  function postSelect(el: HTMLElement, additive: boolean) {
     const rect = el.getBoundingClientRect()
     window.parent.postMessage(
       {
@@ -361,6 +369,7 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
         tag: el.tagName.toLowerCase(),
         rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         fileHint: options.fileHint,
+        additive: additive ? true : undefined,
       },
       targetOrigin
     )
@@ -416,7 +425,8 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
       if (!el) return
       // We do NOT preventDefault — clicks should still work for the page's
       // own JS. The canvas opens the property panel as a side-effect.
-      postSelect(el)
+      // U12: a shift-held click is an additive multi-select, not a replace.
+      postSelect(el, (event as MouseEvent).shiftKey === true)
     },
     true
   )
@@ -594,7 +604,8 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
     if (type === "canvas/request-select") {
       const id = typeof data.canvasId === "string" ? data.canvasId : ""
       const el = findById(id)
-      if (el) postSelect(el)
+      // Programmatic select (MCP / panel keyboard nav) is always a replace.
+      if (el) postSelect(el, false)
     } else if (type === "canvas/request-clear") {
       lastHoverId = null
       pendingMoveTarget = null

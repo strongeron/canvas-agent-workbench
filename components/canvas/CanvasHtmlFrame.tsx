@@ -127,6 +127,13 @@ export function CanvasHtmlFrame({
   // id) and by the rect-update filter (apply only when the message id still
   // matches the active selection).
   const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null)
+  // U12: single-iframe multi-select. Shift-click appends/toggles; a plain
+  // click replaces with one. >1 entry renders a read-only union outline +
+  // count badge. Group-transform writes are a separate slice — this slice
+  // ships the selection model + visualization only.
+  const [multiSelections, setMultiSelections] = useState<
+    Array<{ canvasId: string; rect: CanvasReactNodeRect }>
+  >([])
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   // U4b drop-target state. `null` means "no target under cursor" (clear zones);
   // a populated value means the bridge resolved an ancestor and we should
@@ -262,6 +269,7 @@ export function CanvasHtmlFrame({
     if (!activeSelection || activeSelection.itemId !== item.id) {
       setSelectionRect(null)
       setSelectedCanvasId(null)
+      setMultiSelections([])
       return
     }
     setSelectedCanvasId(activeSelection.canvasId)
@@ -285,6 +293,17 @@ export function CanvasHtmlFrame({
       if (message.type === "canvas/select") {
         setSelectionRect(message.rect)
         setSelectedCanvasId(message.canvasId || null)
+        if (message.canvasId) {
+          const id = message.canvasId
+          const rect = message.rect
+          setMultiSelections((current) => {
+            if (!message.additive) return [{ canvasId: id, rect }]
+            const without = current.filter((s) => s.canvasId !== id)
+            // Toggle: shift-clicking an already-selected element removes it.
+            if (without.length !== current.length) return without
+            return [...current, { canvasId: id, rect }]
+          })
+        }
         if (onReactNodeSelect && message.canvasId) {
           onReactNodeSelect({
             itemId: item.id,
@@ -338,6 +357,9 @@ export function CanvasHtmlFrame({
     setSelectionRect(activeSelection?.itemId === item.id ? activeSelection.rect : null)
     setSelectedCanvasId(activeSelection?.itemId === item.id ? activeSelection.canvasId : null)
     setHoverRect(null)
+    // A recompile invalidates measured rects; drop the multi-set rather than
+    // anchor stale geometry (re-shift-click rebuilds it post-compile).
+    setMultiSelections([])
   }, [activeSelection, item.id, sourceHtml, sourceReact, sourceCss, sourceId])
 
   const frameSource = useMemo(() => {
@@ -345,6 +367,21 @@ export function CanvasHtmlFrame({
     if (shouldRenderInline) return injectedInlineHtml || sourceHtml
     return ""
   }, [compiledReactHtml, injectedInlineHtml, shouldRenderInline, shouldRenderReact, sourceHtml])
+
+  const unionRect = useMemo(() => {
+    if (multiSelections.length < 2) return null
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const { rect } of multiSelections) {
+      minX = Math.min(minX, rect.x)
+      minY = Math.min(minY, rect.y)
+      maxX = Math.max(maxX, rect.x + rect.width)
+      maxY = Math.max(maxY, rect.y + rect.height)
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+  }, [multiSelections])
 
   const canRefreshSelectionRect = shouldRenderReact
     ? compileStatus === "ready" && Boolean(compiledReactHtml)
@@ -521,6 +558,23 @@ export function CanvasHtmlFrame({
                   height: selectionRect.height,
                 }}
               />
+            )}
+            {(shouldRenderReact || shouldRenderInline) && unionRect && (
+              <div
+                data-testid="canvas-iframe-multi-select"
+                data-canvas-multi-select-count={multiSelections.length}
+                className="pointer-events-none absolute rounded-sm border-2 border-dashed border-violet-500 bg-violet-500/5"
+                style={{
+                  left: unionRect.x,
+                  top: unionRect.y,
+                  width: unionRect.width,
+                  height: unionRect.height,
+                }}
+              >
+                <div className="absolute -top-5 left-0 rounded bg-violet-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  {multiSelections.length} selected
+                </div>
+              </div>
             )}
             {(shouldRenderReact || shouldRenderInline) && selectionRect && interactMode && (
               <CanvasIframeOverlay

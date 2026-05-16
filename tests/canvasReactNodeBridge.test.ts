@@ -189,6 +189,14 @@ describe("buildSelectMessage", () => {
     const msg = buildSelectMessage(button)
     expect(msg.canvasId).toBe("")
   })
+
+  it("omits additive by default and sets it only when requested (U12)", () => {
+    const el = makeEl("div", { "data-canvas-id": "x:0" }, "x")
+    document.body.appendChild(el)
+    expect(buildSelectMessage(el, "fileA").additive).toBeUndefined()
+    expect(buildSelectMessage(el, "fileA", false).additive).toBeUndefined()
+    expect(buildSelectMessage(el, "fileA", true).additive).toBe(true)
+  })
 })
 
 describe("buildHoverMessage", () => {
@@ -310,6 +318,26 @@ describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
     expect(selectCall![0].canvasId).toBe("abc:1.2")
     expect(selectCall![0].tag).toBe("button")
     expect(selectCall![0].fileHint).toBe("fileA")
+  })
+
+  it("flags a shift-held click as additive (U12) and a plain click as not", () => {
+    installBridgeForTesting(window, "fileA")
+    const button = makeEl("button", { "data-canvas-id": "abc:1.2" }, "x")
+    document.body.appendChild(button)
+
+    parentMock.postMessage.mockClear()
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    const plain = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/select"
+    )
+    expect(plain![0].additive).toBeUndefined()
+
+    parentMock.postMessage.mockClear()
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }))
+    const shifted = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/select"
+    )
+    expect(shifted![0].additive).toBe(true)
   })
 
   it("serialized runtime prefers document.referrer when resolving parent origin", () => {

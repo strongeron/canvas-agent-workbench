@@ -1,7 +1,7 @@
 ---
 title: "Canvas Gallery POC — running goal"
 status: active
-updated: 2026-05-15 (U4b 3.2c bridge↔overlay wiring landed)
+updated: 2026-05-16 (U8 complete; U12 selection model landed)
 ---
 
 # Running goal
@@ -36,11 +36,11 @@ A canvas where every node type (HTML, TSX, markdown, media, mermaid, excalidraw,
 | U5 | 🟡 local host wiring landed | mutation log + undo/redo — pure module `52df964`; CanvasTab now logs file-backed writes, replays stored snapshots via `/api/canvas/ast/write`, wires Cmd-Z/Cmd-Shift-Z, and shows undo/redo toasts |
 | U6 | 🟡 local edit controls landed | markdown direct edit — pure block writer `69b1379`, local `/api/canvas/markdown/write` endpoint, rendered block inline edit in markdown items, block reorder controls, and basic formatting buttons (`B`, `I`, `List`) |
 | U7 | 🟡 local variant cycling + scrub landed | selected component items now cycle variants with ArrowLeft / ArrowRight, and numeric prop inputs now expose horizontal scrub controls |
-| U8 | 🟡 local panel trim sliders landed | video clip start/end sliders are in the inspector; crop handles and on-canvas trim handles remain |
+| U8 | ✅ complete | on-canvas image crop handles (4 corners, non-destructive `crop` field) + video clip start/end scrub-bar handles, plus the existing inspector sliders. Pure `canvasMediaCrop` module + component wiring, unit-tested |
 | U9 | 🟡 local gap + reorder controls landed | artboard gap/padding sliders are in the inspector, selected artboards expose a live gap scrub handle, and selected artboard children now expose move controls |
 | U10 | 🟡 local panel label edit landed | mermaid node labels are surfaced in the props panel and patch source inline; rendered-SVG direct edit remains |
 | U11 | 🟡 local MCP wrappers landed | explicit MCP tools now wrap structural mutation, markdown block update, component variant cycling, artboard layout update, and Mermaid label update |
-| U12 | not started | drop targets and iframe multi-select |
+| U12 | 🟡 selection model + visualization landed | shift-click additive/toggle multi-select within one iframe (bridge `additive` flag → `CanvasHtmlFrame` selection set → union-rect outline + count badge). Group-transform writes (N AST writes) are a deliberately separate follow-up slice |
 
 ## Open gates before claiming v3 demo "shippable"
 
@@ -213,6 +213,21 @@ Browser verification of "wrap then insert child into rebased button" surfaced a 
 - 13 new tests (7 dispatch: insert/wrap shapes, file-backed, inline-HTML mode, endpoint-reject, mtime-conflict, fetch-throw; 6 registry-helper). 498 tests green; typecheck + lint clean.
 - **Verification status:** gallery-poc dev server starts clean on `:5175` and the canvas + library + source-backed fixtures render correctly in real Chrome (screenshot-confirmed). The true end-to-end native drag was **not** automatable — chrome-devtools synthetic events can't carry a real cross-iframe `DataTransfer`, and the devtools target crashed mid-smoke. A human drag-a-primitive-into-the-TSX-fixture pass is the one remaining U4b gate.
 
+### U8 progress (2026-05-16) — on-canvas crop + clip handles
+
+- Added the non-destructive `crop?: {x,y,w,h}` field (fractions in [0,1]) to `CanvasMediaItem`. The source is never mutated; the crop is applied on display.
+- `utils/canvasMediaCrop.ts` is a pure module: `normalizeCrop` (clamp to a valid in-bounds window, min `CROP_MIN`), `isFullCrop`, `applyCropHandleDrag` (corner-anchored: the opposite corner stays fixed in image space), `cropToImageStyle` (absolute scaled `<img>` inside the existing overflow-hidden box), and `applyClipHandleDrag` (edge move + clamp to duration + swap + 0.05s min gap).
+- `CanvasMediaItem` renders 4 corner crop handles for a selected image and a bottom scrub-bar with start/end handles for a selected native video. Pointer pixels are converted to source fractions / seconds and delegated to the pure module; updates flow through the existing `onUpdate` (canvas-state only — no endpoint, no AST, no bridge). The existing inspector sliders and clip-playback logic are untouched and stay wired.
+- 23 tests in `tests/canvasMediaCrop.test.tsx` (16 pure-geometry, 7 component: handle render gating, SE-drag → crop, cropped-image style, video clip-track render, end-handle drag → clip seconds).
+
+### U12 progress (2026-05-16) — single-iframe multi-select model
+
+- Bridge: `canvas/select` now carries an optional `additive` flag. The runtime click listener sets it from `event.shiftKey`; `buildSelectMessage` takes an `additive` param; programmatic `request-select` (MCP / panel keyboard nav) is always a non-additive replace.
+- `CanvasHtmlFrame` keeps a `multiSelections` set: a plain select replaces it with one; a shift (additive) select appends, or toggles the element out if already present. ≥2 entries render a read-only dashed **union bounding-rect** outline with an "N selected" badge. The set clears on recompile / selection handoff (stale geometry is dropped, not anchored).
+- **Deliberately deferred:** group-transform *writes* (resize/move applying to all N selected) are a separate slice — each element is a distinct AST node needing its own snapped mutation + canvasIdMap rebase, with partial-failure risk. This slice ships the selection primitive + visualization, mirroring how U4b was sliced (render path before dispatch).
+- 5 new tests (3 in `tests/canvasHtmlFrameMessages.test.tsx`: union render + count, plain-select collapse, shift-toggle-out; 2 in `tests/canvasReactNodeBridge.test.ts`: `buildSelectMessage` additive, shift-click runtime flag).
+- Full scope green: typecheck + lint clean, **526 tests pass**.
+
 ## Remaining v3 surface
 
 To complete the headline goal ("every node type editable like Figma + agent parity"), the still-needed slices are:
@@ -225,11 +240,11 @@ To complete the headline goal ("every node type editable like Figma + agent pari
 | **U5** (CanvasTab wiring) | host the log state, wire Cmd-Z / Cmd-Shift-Z + toast, route undo/redo through the existing AST writer endpoint |
 | **U6** (endpoint + UI) | markdown write endpoint, U13 bridge wiring for inline edit, CanvasMarkdownItem affordances |
 | **U7** | browser-verify numeric prop scrub on a real component panel now that PointerLock + fallback wiring is in |
-| **U8** | image crop handles and live video trim handles remain; panel-side trim sliders are already in |
+| **U8** | ✅ done — on-canvas crop + clip handles landed alongside the panel sliders |
 | **U9** | optional drag-sort polish remains; panel-side gap/padding sliders, live gap scrub, and live child reorder controls are already in |
 | **U10** | rendered-SVG direct label edit via click/bridge remains; source-backed panel label edit is already in |
 | **U11** | complete the parity audit; first explicit MCP wrappers for landed direct-manip operations are already in |
-| **U12** | shift-click multi-select primitives within one iframe |
+| **U12** | selection model + union-rect visualization done; group-transform writes (resize/move across all selected) remain as a separate slice |
 
 ## Out of scope for v3
 
