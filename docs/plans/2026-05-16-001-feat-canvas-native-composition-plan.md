@@ -26,7 +26,7 @@ source with metadata, not as opaque canvas-only state.
 
 - `P1 in progress`: native source-backed component shell creation is now the first shipped slice.
 - `Implemented in this slice`:
-  - toolbar action to add a native HTML component shell on canvas,
+  - toolbar action and template chooser to add a native HTML component shell on canvas,
   - authored slot metadata in starter HTML shells (`data-slot`, `data-slot-kind`, `data-slot-accepts`),
   - MCP tool parity via `create_native_component_shell`.
 - `Still pending`:

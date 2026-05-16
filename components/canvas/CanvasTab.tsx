@@ -18,6 +18,7 @@ import type {
   CanvasFileDocument,
   CanvasHtmlBundleFileInput,
   CanvasHtmlBundleImportInput,
+  CanvasArtboardItem,
   CanvasMediaItem,
   CanvasRemoteOperation,
   CanvasScene,
@@ -30,6 +31,7 @@ import type {
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
 import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
+import { CanvasNativeComponentDialog } from "./CanvasNativeComponentDialog"
 import type { CanvasLibraryDragPayload } from "../../utils/canvasLibraryDrag"
 import {
   dispatchCanvasLibraryDrop,
@@ -236,11 +238,22 @@ function buildNativeComponentShell(
   template: NativeComponentTemplate = "section",
   title?: string
 ) {
-  const safeTitle = escapeHtmlText(title?.trim() || "Native Section")
+  const defaultTitle =
+    template === "blank"
+      ? "Blank Native Component"
+      : template === "card"
+        ? "Card"
+        : template === "hero"
+          ? "Hero"
+          : template === "media-object"
+            ? "Media Object"
+            : "Section"
+  const resolvedTitle = title?.trim() || defaultTitle
+  const safeTitle = escapeHtmlText(resolvedTitle)
 
   if (template === "blank") {
     return {
-      title: title?.trim() || "Blank Native Component",
+      title: resolvedTitle,
       size: { width: 720, height: 480 },
       sourceHtml: `<!doctype html>
 <html>
@@ -281,7 +294,7 @@ function buildNativeComponentShell(
 
   if (template === "card") {
     return {
-      title: title?.trim() || "Card",
+      title: resolvedTitle,
       size: { width: 560, height: 420 },
       sourceHtml: `<!doctype html>
 <html>
@@ -381,7 +394,7 @@ function buildNativeComponentShell(
 
   if (template === "hero") {
     return {
-      title: title?.trim() || "Hero",
+      title: resolvedTitle,
       size: { width: 880, height: 520 },
       sourceHtml: `<!doctype html>
 <html>
@@ -492,7 +505,7 @@ function buildNativeComponentShell(
 
   if (template === "media-object") {
     return {
-      title: title?.trim() || "Media Object",
+      title: resolvedTitle,
       size: { width: 760, height: 340 },
       sourceHtml: `<!doctype html>
 <html>
@@ -557,7 +570,7 @@ function buildNativeComponentShell(
   }
 
   return {
-    title: title?.trim() || "Section",
+    title: resolvedTitle,
     size: { width: 760, height: 420 },
     sourceHtml: `<!doctype html>
 <html>
@@ -1179,6 +1192,7 @@ export function CanvasTab({
     }
   }, [activeLibraryDrag])
   const [componentPasteDialogVisible, setComponentPasteDialogVisible] = useState(false)
+  const [nativeComponentDialogVisible, setNativeComponentDialogVisible] = useState(false)
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
   const [interactMode, setInteractMode] = useState(false)
@@ -1280,6 +1294,14 @@ export function CanvasTab({
   const selectedMermaidItem = selectedItem?.type === "mermaid" ? selectedItem : null
   const selectedExcalidrawItem = selectedItem?.type === "excalidraw" ? selectedItem : null
   const selectedArtboardItem = selectedItem?.type === "artboard" ? selectedItem : null
+  const nativeComponentTargetArtboard: CanvasArtboardItem | null =
+    selectedArtboardItem ||
+    (selectedItem?.parentId
+      ? (items.find(
+          (item): item is CanvasArtboardItem =>
+            item.id === selectedItem.parentId && item.type === "artboard"
+        ) ?? null)
+      : null)
   const selectedEmbedRenderMode = selectedEmbedItem
     ? resolveEmbedPreviewMode(
         selectedEmbedItem.embedPreviewMode,
@@ -2602,12 +2624,7 @@ export function CanvasTab({
 
   const handleAddNativeComponent = useCallback(
     async (template: NativeComponentTemplate = "section") => {
-      const targetArtboardId =
-        selectedArtboardItem?.id ||
-        (selectedItem?.parentId &&
-        items.some((item) => item.id === selectedItem.parentId && item.type === "artboard")
-          ? selectedItem.parentId
-          : undefined)
+      const targetArtboardId = nativeComponentTargetArtboard?.id
       const shell = buildNativeComponentShell(template)
 
       if (targetArtboardId) {
@@ -2633,7 +2650,7 @@ export function CanvasTab({
         size: shell.size,
       })
     },
-    [handleAddInlineHtml, items, selectedArtboardItem, selectedItem]
+    [handleAddInlineHtml, items, nativeComponentTargetArtboard]
   )
 
   const handleComponentPasteCreated = useCallback(
@@ -3985,7 +4002,7 @@ export function CanvasTab({
           onToggleCopilotPanel={toggleCopilotPanel}
           onToggleInteractMode={toggleInteractMode}
           onAddArtboard={handleAddArtboard}
-          onAddNativeComponent={() => void handleAddNativeComponent()}
+          onAddNativeComponent={() => setNativeComponentDialogVisible(true)}
           onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
           importKind={importKind}
           onImportKindChange={setImportKind}
@@ -4097,6 +4114,16 @@ export function CanvasTab({
               onClose={() => setComponentPasteDialogVisible(false)}
             />
           )}
+
+          <CanvasNativeComponentDialog
+            open={nativeComponentDialogVisible}
+            artboardName={nativeComponentTargetArtboard?.name ?? null}
+            onClose={() => setNativeComponentDialogVisible(false)}
+            onCreate={async (template) => {
+              await handleAddNativeComponent(template)
+              setNativeComponentDialogVisible(false)
+            }}
+          />
 
           <CanvasWorkspace
             items={items}

@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 
 import { CanvasItem } from "../components/canvas/CanvasItem"
 import { CanvasArtboardPropsPanel } from "../components/canvas/CanvasArtboardPropsPanel"
+import { CanvasNativeComponentDialog } from "../components/canvas/CanvasNativeComponentDialog"
 import { CanvasToolbar, type ButtonComponentProps, type TooltipComponentProps } from "../components/canvas/CanvasToolbar"
 import { useCanvasShortcuts } from "../hooks/useCanvasShortcuts"
 import type { GalleryEntry } from "../core/types"
@@ -217,6 +218,39 @@ describe("canvas delete affordances", () => {
     click(nativeButton!)
 
     expect(onAddNativeComponent).toHaveBeenCalledTimes(1)
+
+    await rendered.cleanup()
+  })
+
+  it("lets the user choose a native shell template before creating it", async () => {
+    const onCreate = vi.fn()
+    const rendered = await renderNode(
+      <CanvasNativeComponentDialog
+        open={true}
+        artboardName="Landing Board"
+        onClose={() => {}}
+        onCreate={onCreate}
+      />
+    )
+
+    const dialog = rendered.host.querySelector('[role="dialog"][aria-label="Create native component"]')
+    expect(dialog).not.toBeNull()
+
+    const heroTemplate = Array.from(rendered.host.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Hero")
+    )
+    expect(heroTemplate).not.toBeNull()
+
+    await clickAsync(heroTemplate!)
+
+    const createButton = Array.from(rendered.host.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Create shell")
+    )
+    expect(createButton).not.toBeNull()
+
+    await clickAsync(createButton!)
+
+    expect(onCreate).toHaveBeenCalledWith("hero")
 
     await rendered.cleanup()
   })

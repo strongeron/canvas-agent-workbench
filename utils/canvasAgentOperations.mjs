@@ -394,12 +394,23 @@ export function buildNativeComponentShell(args = {}) {
   const template = ['blank', 'card', 'section', 'hero', 'media-object'].includes(args.template)
     ? args.template
     : 'section'
-  const safeTitle = escapeHtmlText(normalizeString(args.title) || 'Native Section')
+  const defaultTitle =
+    template === 'blank'
+      ? 'Blank Native Component'
+      : template === 'card'
+        ? 'Card'
+        : template === 'hero'
+          ? 'Hero'
+          : template === 'media-object'
+            ? 'Media Object'
+            : 'Section'
+  const resolvedTitle = normalizeString(args.title) || defaultTitle
+  const safeTitle = escapeHtmlText(resolvedTitle)
 
   switch (template) {
     case 'blank':
       return {
-        title: normalizeString(args.title) || 'Blank Native Component',
+        title: resolvedTitle,
         size: { width: 720, height: 480 },
         sourceHtml: `<!doctype html>
 <html>
@@ -438,7 +449,7 @@ export function buildNativeComponentShell(args = {}) {
       }
     case 'card':
       return {
-        title: normalizeString(args.title) || 'Card',
+        title: resolvedTitle,
         size: { width: 560, height: 420 },
         sourceHtml: `<!doctype html>
 <html>
@@ -536,7 +547,7 @@ export function buildNativeComponentShell(args = {}) {
       }
     case 'hero':
       return {
-        title: normalizeString(args.title) || 'Hero',
+        title: resolvedTitle,
         size: { width: 880, height: 520 },
         sourceHtml: `<!doctype html>
 <html>
@@ -645,7 +656,7 @@ export function buildNativeComponentShell(args = {}) {
       }
     case 'media-object':
       return {
-        title: normalizeString(args.title) || 'Media Object',
+        title: resolvedTitle,
         size: { width: 760, height: 340 },
         sourceHtml: `<!doctype html>
 <html>
@@ -710,7 +721,7 @@ export function buildNativeComponentShell(args = {}) {
     case 'section':
     default:
       return {
-        title: normalizeString(args.title) || 'Section',
+        title: resolvedTitle,
         size: { width: 760, height: 420 },
         sourceHtml: `<!doctype html>
 <html>
