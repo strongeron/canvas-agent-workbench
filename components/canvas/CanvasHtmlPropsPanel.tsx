@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ExternalLink, FolderUp, RefreshCw, Trash2, Upload, X } from "lucide-react"
 import { CanvasViewportPresets } from "./CanvasViewportPresets"
 
@@ -41,6 +41,28 @@ interface CanvasHtmlPropsPanelProps {
 
 const supportsDirectoryPicker = typeof window !== "undefined" && "showDirectoryPicker" in window
 
+function extractSlotDefinitions(source: string) {
+  const definitions = new Map<
+    string,
+    { name: string; kind?: string; accepts?: string }
+  >()
+  const pattern = /<[^>]*data-slot="([^"]+)"[^>]*>/g
+
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(source)) !== null) {
+    const fragment = match[0]
+    const name = match[1]?.trim()
+    if (!name) continue
+    const kind = fragment.match(/data-slot-kind="([^"]+)"/)?.[1]?.trim()
+    const accepts = fragment.match(/data-slot-accepts="([^"]+)"/)?.[1]?.trim()
+    if (!definitions.has(name)) {
+      definitions.set(name, { name, kind, accepts })
+    }
+  }
+
+  return Array.from(definitions.values())
+}
+
 export function CanvasHtmlPropsPanel({
   src,
   title,
@@ -73,6 +95,13 @@ export function CanvasHtmlPropsPanel({
   const [draftSourceReactFilePath, setDraftSourceReactFilePath] = useState(sourceReactFilePath || "")
   const [loadStatus, setLoadStatus] = useState<"idle" | "loading" | "error">("idle")
   const [loadError, setLoadError] = useState<string | null>(null)
+  const detectedSlots = useMemo(
+    () =>
+      extractSlotDefinitions(
+        sourceMode === "react" ? draftSourceReact || "" : draftSourceHtml || ""
+      ),
+    [draftSourceHtml, draftSourceReact, sourceMode]
+  )
 
   useEffect(() => {
     setDraftSourceReactFilePath(sourceReactFilePath || "")
@@ -261,6 +290,36 @@ export function CanvasHtmlPropsPanel({
             className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
           />
         </div>
+
+        {detectedSlots.length > 0 ? (
+          <div>
+            <div className="mb-2 text-[11px] font-medium text-muted-foreground">
+              Detected slots
+            </div>
+            <div className="grid gap-2">
+              {detectedSlots.map((slot) => (
+                <div
+                  key={slot.name}
+                  className="rounded-md border border-default bg-surface-50 px-3 py-2"
+                >
+                  <div className="text-xs font-semibold text-foreground">{slot.name}</div>
+                  <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+                    {slot.kind ? (
+                      <span className="rounded-full border border-default bg-white px-2 py-0.5">
+                        {slot.kind}
+                      </span>
+                    ) : null}
+                    {slot.accepts ? (
+                      <span className="rounded-full border border-default bg-white px-2 py-0.5">
+                        accepts {slot.accepts}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div>
           <div className="mb-1 flex items-center justify-between gap-2">
