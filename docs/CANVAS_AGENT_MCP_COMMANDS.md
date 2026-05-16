@@ -105,6 +105,7 @@ Use these when you want the agent to manage the file library itself:
 - `list_primitives`
 - `get_primitive`
 - `create_artboard`
+- `create_native_component_shell`
 - `create_primitive_item`
 - `create_item`
 - `create_items`
@@ -134,6 +135,7 @@ What this surface supports:
 - patch media trim/display fields such as clip start, clip end, and object-fit through an explicit MCP wrapper
 - patch Mermaid node labels through a source-backed item rewrite
 - create new source-backed HTML or TSX components from pasted/generated code
+- create a starter native HTML composition shell with authored slot metadata
 - inspect registered primitives and their metadata
 - create/update/delete board items
 - create several board items atomically in one queued operation
@@ -162,6 +164,7 @@ Web-native editing tools:
 - `update_mermaid_label` targets a live Mermaid item by `itemId`, patches one node label in source form, and updates the item through the normal canvas queue path. This is full parity with the U10 rendered-SVG inline label edit — the on-canvas editor and this tool both call the same `updateMermaidNodeLabel` source patcher.
 - `create_component_from_html` and `create_component_from_tsx` write under `projects/<projectId>/components/`, append a matching `registry.json` entry, and create a preview node unless `createItem: false` is passed.
 - `promote_to_component` extracts an HTML subtree (by `canvasId`) from a canvas item and saves it as a new project component. The original item is unchanged; the new primitive appears in the registry and library panel for re-use.
+- `create_native_component_shell` creates a live `html` item with `sourceMode: "inline"` plus starter slot metadata such as `data-slot="title"` and `data-slot-accepts="image,svg,video"`. Use it when you want the agent to start from an editable HTML section/card/hero shell instead of a props-only component item.
 
 Direct-manipulation parity audit (v3, complete):
 
@@ -196,6 +199,7 @@ HTML bundle notes:
 - the imported bundle is stored under the document-local `.assets` folder
 - the live node renders in an iframe, so resize and interact mode work as expected
 - inline HTML nodes can also be created directly with `create_item` by passing an `html` item with `sourceMode: "inline"` and `sourceHtml`
+- `create_native_component_shell` is the preferred shortcut when the agent should start from a pre-authored HTML shell instead of building raw `sourceHtml` from scratch
 - React TSX nodes use the same `html` item type with `sourceMode: "react"`, `sourceReact`, and optional `sourceCss`; `sourceReact` must default-export a component
 - if you have a large external library, scan it first and choose the exact folder + entry file to import
 - if you are importing from the UI, save the board to a real `.canvas` file first
@@ -396,12 +400,24 @@ Use MCP only. Read the canvas item's sourceHtml and the selection's canvasId. Ca
 Use MCP only. Call list_primitives to see the registry, then create_primitive_item or create_items to drop primitives onto the board. Use update_item to position them, and update_html_node on the new instances to tweak text/classes. Call capture_canvas_items_screenshot to verify the layout.
 ```
 
+**6. Start a native HTML composition shell on canvas:**
+
+```text
+Use MCP only. Read workspace://surface/canvas/state and decide whether the new shell belongs on the free board or inside an existing artboard. Then call create_native_component_shell with a template such as section, card, hero, media-object, or blank. If the shell should live inside an artboard, pass artboardId. After creation, inspect the new html node and continue editing it with read_html_node, update_html_node, or apply_structural_mutation.
+```
+
 The whole loop — generate / bring / compose / edit / sync / iterate — runs through MCP without ever leaving the agent surface. The same endpoints back the UI, so any edit lands in source files identically whether driven by a human or the agent.
 
 ### Canvas
 
 ```text
 Use MCP only. Read workspace://surface/canvas/state, workspace://surface/canvas/selection, and workspace://surface/canvas/primitives. Summarize the current board. Then create a new artboard with a heading, text, and button using create_artboard and create_primitive_item. If you need to inspect the result closely, use focus_canvas_items or set_canvas_viewport before capture_workspace_screenshot, or call capture_canvas_items_screenshot directly for the target item ids.
+```
+
+### Canvas native composition
+
+```text
+Use MCP only. Read workspace://surface/canvas/state and summarize the active artboards. Create a new artboard if needed with create_artboard. Then call create_native_component_shell with template section or card and the target artboardId. After creation, inspect the new html node with read_html_node and mutate it with update_html_node or apply_structural_mutation to add headings, body copy, actions, and media slots. Finish by capturing a screenshot of the new item.
 ```
 
 ### Canvas File Lifecycle
@@ -468,7 +484,20 @@ Expected:
 - creates artboard and primitive items
 - UI updates without reload
 
-### 2. Color Audit read/write
+### 2. Canvas native shell composition
+
+```text
+Use MCP only. Create an artboard, then create a native HTML section shell inside it. Update the shell title text, add a secondary paragraph, and verify the result with a screenshot.
+```
+
+Expected:
+
+- reads Canvas state/resources
+- creates an artboard and a source-backed html shell
+- uses HTML node tools to mutate the shell instead of props-only component tools
+- UI updates without reload
+
+### 3. Color Audit read/write
 
 ```text
 Use MCP only. Read the current Color Audit state and export preview, summarize the graph, then generate the shadcn template from brand #3b82f6 and accent #a855f7.
@@ -480,7 +509,7 @@ Expected:
 - runs `generate_template`
 - graph updates live
 
-### 3. System Canvas read/write
+### 4. System Canvas read/write
 
 ```text
 Use MCP only. Read the current System Canvas state, increase icon stroke, switch to layout view, regenerate the scale graph, then create one explainer node and connect it.
@@ -493,7 +522,7 @@ Expected:
 - regenerates graph
 - creates/links authored node
 
-### 4. Node Catalog review
+### 5. Node Catalog review
 
 ```text
 Use MCP only. Read the Node Catalog state and sections, then review all node families and call out any title, pill, connector, or overflow issues.
