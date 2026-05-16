@@ -102,6 +102,43 @@ describe("dispatchCanvasResize", () => {
     expect(result).toEqual({ status: "no-op", reason: "non-literal-class" })
   })
 
+  it("falls back to an inline-style write for an HTML node with a computed class (U4a)", async () => {
+    const fetchImpl = mockFetchSequence(
+      mockJson({
+        ok: true,
+        node: {
+          canvasId: "abc:0",
+          tag: "div",
+          attributes: [
+            { name: "class", kind: "expression", value: "clsx('card', open && 'open')", rawValue: "" },
+            { name: "style", kind: "literal-string", value: "color: red", rawValue: "" },
+          ],
+          textChildren: "",
+        },
+      }),
+      mockJson({ ok: true, sourceHtml: "<div style=\"color: red; width: 128px; height: 64px\"></div>", mtimeMs: 7 })
+    )
+    const onSourceHtmlChange = vi.fn()
+    const result = await dispatchCanvasResize(
+      makeEvent({ kind: "se", deltaIframe: { dx: 28, dy: 24 } }),
+      { sourceKind: "html", sourceId: "item-1", sourceHtml: "<div></div>", fetchImpl, onSourceHtmlChange }
+    )
+    expect(result.status).toBe("applied")
+    if (result.status === "applied") {
+      expect(result.mutation).toEqual({
+        type: "setAttribute",
+        attrName: "style",
+        value: "color: red; width: 128px; height: 64px",
+      })
+    }
+    const calls = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls
+    const writeBody = JSON.parse(calls[1][1].body)
+    expect(writeBody.mutations).toEqual([
+      { type: "setAttribute", attrName: "style", value: "color: red; width: 128px; height: 64px" },
+    ])
+    expect(onSourceHtmlChange).toHaveBeenCalled()
+  })
+
   it("returns no-op:sub-snap when the snap is the same as the current class", async () => {
     const fetchImpl = mockFetchSequence(
       mockJson({

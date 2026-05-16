@@ -25,6 +25,10 @@
 import type { CanvasReactNodeResizeEvent } from "../components/canvas/CanvasHtmlFrame"
 import type { AstAttributeInfo, AstNodeInfo } from "./canvasAstReader"
 import { computeResizeMutation } from "./canvasResizeMutation"
+import {
+  computeResizeStyleFallback,
+  type CanvasSetAttributeStyleMutation,
+} from "./canvasResizeStyleMutation"
 
 export interface CanvasResizeDispatchDeps {
   sourceKind: "tsx" | "html"
@@ -42,7 +46,10 @@ export interface CanvasResizeDispatchDeps {
 }
 
 export type CanvasResizeDispatchResult =
-  | { status: "applied"; mutation: { type: "setClassName"; value: string } }
+  | {
+      status: "applied"
+      mutation: { type: "setClassName"; value: string } | CanvasSetAttributeStyleMutation
+    }
   | { status: "no-op"; reason: "move-handle" | "sub-snap" | "non-literal-class" }
   | { status: "error"; error: string }
 
@@ -81,20 +88,37 @@ export async function dispatchCanvasResize(
     const classNameAttr = readPayload.node.attributes.find(
       (a: AstAttributeInfo) => a.name === "className" || a.name === "class"
     )
-    // Only literal-string className can be safely rewritten by setClassName
-    // today. Expression className (e.g. cn("p-4", isOpen && "bg-red")) needs
-    // a richer mutation; deferred.
+    // 2. Compute the mutation. A literal class snaps to a Tailwind w-*/h-*
+    // class. A computed class (cn(...), ternary) can't be rewritten that way:
+    // for HTML we fall back to explicit inline-style px (a plain string attr,
+    // merged with any existing declarations); for TSX it stays a no-op
+    // because React `style` is an object expression, not a string attr
+    // (documented v3 decision).
+    let mutation:
+      | { type: "setClassName"; value: string }
+      | CanvasSetAttributeStyleMutation
+      | null
     if (classNameAttr && classNameAttr.kind !== "literal-string") {
-      return { status: "no-op", reason: "non-literal-class" }
+      if (deps.sourceKind !== "html") {
+        return { status: "no-op", reason: "non-literal-class" }
+      }
+      const styleAttr = readPayload.node.attributes.find(
+        (a: AstAttributeInfo) => a.name === "style"
+      )
+      mutation = computeResizeStyleFallback({
+        kind: event.kind,
+        delta: event.deltaIframe,
+        rect: { width: event.rect.width, height: event.rect.height },
+        style: styleAttr?.value ?? "",
+      })
+    } else {
+      mutation = computeResizeMutation({
+        kind: event.kind,
+        delta: event.deltaIframe,
+        rect: { width: event.rect.width, height: event.rect.height },
+        className: classNameAttr?.value ?? "",
+      })
     }
-
-    // 2. Compute the mutation.
-    const mutation = computeResizeMutation({
-      kind: event.kind,
-      delta: event.deltaIframe,
-      rect: { width: event.rect.width, height: event.rect.height },
-      className: classNameAttr?.value ?? "",
-    })
     if (!mutation) {
       return { status: "no-op", reason: "sub-snap" }
     }
