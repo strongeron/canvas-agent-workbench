@@ -50,6 +50,7 @@ import {
   createDeleteGroupOperation,
   createDeleteItemsOperation,
   createHtmlCanvasItem,
+  createNativeComponentShellItem,
   createPrimitiveCanvasItem,
   createSetViewportOperation,
   createSelectItemsOperation,
@@ -957,6 +958,28 @@ const TOOL_DEFINITIONS = [
           },
           additionalProperties: false,
         },
+        select: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_native_component_shell',
+    description:
+      'Create a source-backed inline HTML shell with authored slot metadata for native canvas composition.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        template: {
+          type: 'string',
+          enum: ['blank', 'card', 'section', 'hero', 'media-object'],
+        },
+        title: { type: 'string' },
+        position: positionSchema(),
+        size: sizeSchema(),
+        parentId: { type: 'string' },
+        artboardId: { type: 'string' },
+        background: { type: 'string' },
         select: { type: 'boolean' },
       },
       additionalProperties: false,
@@ -2028,6 +2051,8 @@ async function callTool(name, args) {
     }
     case 'create_artboard':
       return runCreateArtboard(args)
+    case 'create_native_component_shell':
+      return runCreateNativeComponentShell(args)
     case 'create_primitive_item':
       return runCreatePrimitiveItem(args)
     case 'create_item':
@@ -2158,7 +2183,7 @@ function buildPrompt(name) {
             content: {
               type: 'text',
               text:
-                'Start with workspace://manifest, then inspect workspace://surface/canvas/state, workspace://surface/canvas/selection, workspace://surface/canvas/themes, and workspace://surface/canvas/primitives. Summarize the current board briefly before calling any write tools. Prefer create_artboard, create_primitive_item, create_item, create_items, create_group, update_item, update_group, select_items, set_canvas_viewport, focus_canvas_items, and export_board over shell edits when the task is scene-graph related. Use create_items when several new nodes should land in one atomic batch. Capture workspace://surface/canvas/viewport/screenshot after focusing the relevant board area when visual confirmation matters.',
+                'Start with workspace://manifest, then inspect workspace://surface/canvas/state, workspace://surface/canvas/selection, workspace://surface/canvas/themes, and workspace://surface/canvas/primitives. Summarize the current board briefly before calling any write tools. Prefer create_artboard, create_native_component_shell, create_primitive_item, create_item, create_items, create_group, update_item, update_group, select_items, set_canvas_viewport, focus_canvas_items, and export_board over shell edits when the task is scene-graph related. Use create_items when several new nodes should land in one atomic batch. Capture workspace://surface/canvas/viewport/screenshot after focusing the relevant board area when visual confirmation matters.',
             },
           },
         ],
@@ -2243,6 +2268,16 @@ async function runCreateArtboard(args) {
   return applyOperation(
     'create_artboard',
     createCreateItemOperation(createArtboardItem(state, args), args.select !== false)
+  )
+}
+
+async function runCreateNativeComponentShell(args) {
+  const state = await readCanvasAgentState(context)
+  const item = createNativeComponentShellItem(state, args)
+  return applyOperation(
+    'create_native_component_shell',
+    createCreateItemOperation(item, args.select !== false),
+    { item }
   )
 }
 

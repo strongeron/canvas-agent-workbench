@@ -1500,6 +1500,48 @@ describe("canvas MCP server", () => {
       const batchCreateResult = await batchCreatePromise
       expect(batchCreateResult.result?.structuredContent?.ok).toBe(true)
 
+      const nativeShellPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-native-shell",
+        method: "tools/call",
+        params: {
+          name: "create_native_component_shell",
+          arguments: {
+            template: "card",
+            title: "Promo Card",
+            artboardId: "artboard-1",
+            select: true,
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedNativeShell = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedNativeShell.request).toMatchObject({
+        toolName: "create_native_component_shell",
+        operation: {
+          type: "create_item",
+          select: true,
+          item: {
+            type: "html",
+            title: "Promo Card",
+            sourceMode: "inline",
+            parentId: "artboard-1",
+          },
+        },
+      })
+      expect(queuedNativeShell.request.operation.item.sourceHtml).toContain('data-slot="media"')
+      expect(queuedNativeShell.request.operation.item.sourceHtml).toContain(
+        'data-slot-accepts="image,svg,video"'
+      )
+      await queuedNativeShell.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:00.750Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: ["html-shell-1"] },
+      })
+      const nativeShellResult = await nativeShellPromise
+      expect(nativeShellResult.result?.structuredContent?.ok).toBe(true)
+      expect(nativeShellResult.result?.structuredContent?.item?.type).toBe("html")
+
       const updateGroupPromise = sendRpc({
         jsonrpc: "2.0",
         id: "5e-group-update",

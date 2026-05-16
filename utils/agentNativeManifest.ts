@@ -168,6 +168,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "create_native_component_shell",
+        title: "Create native component shell",
+        description: "Create a source-backed inline HTML shell with slot metadata for native composition on canvas.",
+        status: "ready",
+      },
+      {
         id: "create_group",
         title: "Create group",
         description: "Group existing canvas items under a named freeform canvas group.",

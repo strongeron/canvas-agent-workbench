@@ -22,6 +22,19 @@ source-backed HTML node pipeline (`CanvasHtmlFrame` + `canvasHtmlEditor` +
 `/api/canvas/ast/write`) and treats composed components as authored HTML
 source with metadata, not as opaque canvas-only state.
 
+## Implementation status
+
+- `P1 in progress`: native source-backed component shell creation is now the first shipped slice.
+- `Implemented in this slice`:
+  - toolbar action to add a native HTML component shell on canvas,
+  - authored slot metadata in starter HTML shells (`data-slot`, `data-slot-kind`, `data-slot-accepts`),
+  - MCP tool parity via `create_native_component_shell`.
+- `Still pending`:
+  - visual insert controls for child HTML parts inside the shell,
+  - explicit slot editing UI,
+  - save-to-registry flow from the shell authoring path,
+  - richer media slot insertion and replacement affordances.
+
 ---
 
 # Problem

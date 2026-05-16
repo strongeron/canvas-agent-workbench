@@ -118,6 +118,7 @@ describe("canvas delete affordances", () => {
   it("keeps delete selected separate from clear canvas in the toolbar", async () => {
     const onDeleteSelected = vi.fn()
     const onClearCanvas = vi.fn()
+    const onAddNativeComponent = vi.fn()
     const rendered = await renderNode(
       <CanvasToolbar
         scale={1}
@@ -134,6 +135,7 @@ describe("canvas delete affordances", () => {
         onToggleLibraryPanel={() => {}}
         onToggleInteractMode={() => {}}
         onAddArtboard={() => {}}
+        onAddNativeComponent={onAddNativeComponent}
         onGroupSelected={() => {}}
         onUngroupSelected={() => {}}
         onDuplicateSelected={() => {}}
@@ -165,6 +167,56 @@ describe("canvas delete affordances", () => {
 
     expect(onDeleteSelected).toHaveBeenCalledTimes(1)
     expect(onClearCanvas).not.toHaveBeenCalled()
+
+    await rendered.cleanup()
+  })
+
+  it("exposes a dedicated native component action in the toolbar", async () => {
+    const onAddNativeComponent = vi.fn()
+    const rendered = await renderNode(
+      <CanvasToolbar
+        scale={1}
+        onZoomIn={() => {}}
+        onZoomOut={() => {}}
+        onResetZoom={() => {}}
+        onFitToView={() => {}}
+        onDeleteSelected={() => {}}
+        onClearCanvas={() => {}}
+        onToggleSidebar={() => {}}
+        onToggleHelp={() => {}}
+        onToggleScenes={() => {}}
+        onToggleLayers={() => {}}
+        onToggleLibraryPanel={() => {}}
+        onToggleInteractMode={() => {}}
+        onAddArtboard={() => {}}
+        onAddNativeComponent={onAddNativeComponent}
+        onGroupSelected={() => {}}
+        onUngroupSelected={() => {}}
+        onDuplicateSelected={() => {}}
+        onToggleThemePanel={() => {}}
+        onToggleCopilotPanel={() => {}}
+        itemCount={0}
+        selectedCount={0}
+        canGroup={false}
+        canUngroup={false}
+        interactMode={false}
+        sidebarVisible={true}
+        scenesVisible={false}
+        layersVisible={false}
+        libraryPanelVisible={false}
+        themePanelVisible={false}
+        copilotPanelVisible={false}
+        Button={TestButton}
+        Tooltip={TestTooltip}
+      />
+    )
+
+    const nativeButton = rendered.host.querySelector('[aria-label="Add native component"]')
+    expect(nativeButton).not.toBeNull()
+
+    click(nativeButton!)
+
+    expect(onAddNativeComponent).toHaveBeenCalledTimes(1)
 
     await rendered.cleanup()
   })

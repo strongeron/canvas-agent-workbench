@@ -4,6 +4,7 @@ import {
   FolderOpen,
   Group,
   HelpCircle,
+  Layers3,
   LayoutGrid,
   Layers,
   Maximize2,
@@ -54,6 +55,7 @@ interface CanvasToolbarProps {
   onCreateComponentFromPaste?: () => void
   onToggleInteractMode: () => void
   onAddArtboard: () => void
+  onAddNativeComponent?: () => void
   onImportFromPaper?: () => void
   importKind?: PaperImportKind
   onImportKindChange?: (kind: PaperImportKind) => void
@@ -96,6 +98,7 @@ export function CanvasToolbar({
   onCreateComponentFromPaste,
   onToggleInteractMode,
   onAddArtboard,
+  onAddNativeComponent,
   onImportFromPaper,
   importKind,
   onImportKindChange,
@@ -218,6 +221,20 @@ export function CanvasToolbar({
           <LayoutGrid className="h-5 w-5" />
         </Button>
       </Tooltip>
+
+      {onAddNativeComponent && (
+        <Tooltip content="Add native component">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAddNativeComponent}
+            className={iconButtonClass}
+            aria-label="Add native component"
+          >
+            <Layers3 className="h-5 w-5" />
+          </Button>
+        </Tooltip>
+      )}
 
       {onImportFromPaper && (
         <>
