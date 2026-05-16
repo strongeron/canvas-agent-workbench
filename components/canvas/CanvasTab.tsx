@@ -2623,9 +2623,12 @@ export function CanvasTab({
   )
 
   const handleAddNativeComponent = useCallback(
-    async (template: NativeComponentTemplate = "section") => {
+    async (
+      template: NativeComponentTemplate = "section",
+      title?: string
+    ) => {
       const targetArtboardId = nativeComponentTargetArtboard?.id
-      const shell = buildNativeComponentShell(template)
+      const shell = buildNativeComponentShell(template, title)
 
       if (targetArtboardId) {
         const siblings = items.filter(
@@ -4119,8 +4122,8 @@ export function CanvasTab({
             open={nativeComponentDialogVisible}
             artboardName={nativeComponentTargetArtboard?.name ?? null}
             onClose={() => setNativeComponentDialogVisible(false)}
-            onCreate={async (template) => {
-              await handleAddNativeComponent(template)
+            onCreate={async (input) => {
+              await handleAddNativeComponent(input.template, input.title)
               setNativeComponentDialogVisible(false)
             }}
           />

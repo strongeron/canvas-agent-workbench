@@ -10,7 +10,10 @@ interface CanvasNativeComponentDialogProps {
   open: boolean
   artboardName?: string | null
   onClose: () => void
-  onCreate: (template: NativeComponentTemplate) => void | Promise<void>
+  onCreate: (input: {
+    template: NativeComponentTemplate
+    title?: string
+  }) => void | Promise<void>
 }
 
 export function CanvasNativeComponentDialog({
@@ -21,6 +24,7 @@ export function CanvasNativeComponentDialog({
 }: CanvasNativeComponentDialogProps) {
   const [selectedTemplate, setSelectedTemplate] =
     useState<NativeComponentTemplate>("section")
+  const [titleValue, setTitleValue] = useState("")
 
   useEffect(() => {
     if (!open) return
@@ -112,6 +116,19 @@ export function CanvasNativeComponentDialog({
 
           <div className="flex flex-col gap-4 rounded-2xl border border-default bg-surface-50 p-4">
             <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Optional title
+              </label>
+              <input
+                type="text"
+                value={titleValue}
+                onChange={(event) => setTitleValue(event.target.value)}
+                placeholder={NATIVE_COMPONENT_TEMPLATES.find((template) => template.id === selectedTemplate)?.label}
+                className="mt-2 w-full rounded-md border border-default bg-white px-3 py-2 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+              />
+            </div>
+
+            <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Placement
               </div>
@@ -146,7 +163,12 @@ export function CanvasNativeComponentDialog({
           </button>
           <button
             type="button"
-            onClick={() => void onCreate(selectedTemplate)}
+            onClick={() =>
+              void onCreate({
+                template: selectedTemplate,
+                title: titleValue.trim() || undefined,
+              })
+            }
             className="inline-flex items-center gap-2 rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-100"
           >
             <Layers3 className="h-4 w-4" />

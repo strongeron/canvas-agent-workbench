@@ -243,6 +243,18 @@ describe("canvas delete affordances", () => {
 
     await clickAsync(heroTemplate!)
 
+    const titleInput = rendered.host.querySelector('input[type="text"]') as HTMLInputElement | null
+    expect(titleInput).not.toBeNull()
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value"
+      )?.set
+      valueSetter?.call(titleInput, "Launch Hero")
+      titleInput!.dispatchEvent(new Event("input", { bubbles: true }))
+    })
+
     const createButton = Array.from(rendered.host.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("Create shell")
     )
@@ -250,7 +262,7 @@ describe("canvas delete affordances", () => {
 
     await clickAsync(createButton!)
 
-    expect(onCreate).toHaveBeenCalledWith("hero")
+    expect(onCreate).toHaveBeenCalledWith({ template: "hero", title: "Launch Hero" })
 
     await rendered.cleanup()
   })
