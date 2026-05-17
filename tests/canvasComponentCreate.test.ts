@@ -4,7 +4,11 @@ import path from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import { applyCanvasComponentCreateRequest } from "../vite/api/canvasComponentCreate"
+import {
+  applyCanvasComponentCreateRequest,
+  validateSingleSegment,
+} from "../vite/api/canvasComponentCreate"
+import { parseCanvasRegistry } from "../utils/canvasRegistry"
 
 async function makeWorkspace() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-component-create-"))
@@ -115,7 +119,7 @@ describe("applyCanvasComponentCreateRequest", () => {
     )
   })
 
-  it("rejects duplicate component files", async () => {
+  it("rejects duplicate component files when failOnExisting is set (opt-out)", async () => {
     const { root, projectRoot } = await makeWorkspace()
     await fs.mkdir(path.join(projectRoot, "components"), { recursive: true })
     await fs.writeFile(path.join(projectRoot, "components", "PromoCard.html"), "<article></article>", "utf8")
@@ -126,6 +130,7 @@ describe("applyCanvasComponentCreateRequest", () => {
         name: "Promo Card",
         format: "html",
         sourceHtml: `<article>Hello</article>`,
+        failOnExisting: true,
       },
       { workspaceRoot: root }
     )
@@ -134,5 +139,209 @@ describe("applyCanvasComponentCreateRequest", () => {
     if (result.ok) return
     expect(result.status).toBe(409)
     expect(result.code).toBe("already-exists")
+  })
+
+  it("first create of a name maps to the bare slug + filename", async () => {
+    const { root, projectRoot } = await makeWorkspace()
+
+    const result = await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Card", format: "html", sourceHtml: `<article>Card</article>` },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.primitive.id).toBe("primitive/card")
+    expect(result.primitive.filePath).toBe("components/Card.html")
+    await expect(fs.access(path.join(projectRoot, "components", "Card.html"))).resolves.toBeUndefined()
+  })
+
+  it("uniquifies a repeated name to a paired filename + registry id", async () => {
+    const { root, projectRoot } = await makeWorkspace()
+
+    const first = await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Card", format: "html", sourceHtml: `<article>One</article>` },
+      { workspaceRoot: root }
+    )
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect(first.primitive.id).toBe("primitive/card")
+    expect(first.primitive.filePath).toBe("components/Card.html")
+
+    const second = await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Card", format: "html", sourceHtml: `<article>Two</article>` },
+      { workspaceRoot: root }
+    )
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    // Filename and registry id advance together to the same suffix.
+    expect(second.primitive.id).toBe("primitive/card-2")
+    expect(second.primitive.filePath).toBe("components/Card2.html")
+    expect(second.primitive.componentSlug).toBe("card-2")
+    await expect(fs.access(path.join(projectRoot, "components", "Card2.html"))).resolves.toBeUndefined()
+
+    const third = await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Card", format: "html", sourceHtml: `<article>Three</article>` },
+      { workspaceRoot: root }
+    )
+    expect(third.ok).toBe(true)
+    if (!third.ok) return
+    expect(third.primitive.id).toBe("primitive/card-3")
+    expect(third.primitive.filePath).toBe("components/Card3.html")
+  })
+
+  it("advances until BOTH the filename and the registry id are free at the same suffix", async () => {
+    const { root, projectRoot } = await makeWorkspace()
+    await fs.mkdir(path.join(projectRoot, "components"), { recursive: true })
+
+    // Filename `Card.html` is FREE, but registry id `primitive/card` is TAKEN.
+    // `Card2.html` is TAKEN on disk, but `primitive/card-2` is FREE.
+    // The uniquifier must skip BOTH partial-collision suffixes and land on
+    // suffix 3 where filename AND id are simultaneously free.
+    await fs.writeFile(
+      path.join(projectRoot, "registry.json"),
+      JSON.stringify({
+        ui: [{ id: "primitive/card", displayName: "Card", category: "ui", kind: "html", filePath: "components/Other.html" }],
+        page: [],
+      }),
+      "utf8"
+    )
+    await fs.writeFile(path.join(projectRoot, "components", "Card2.html"), "<article>taken</article>", "utf8")
+
+    const result = await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Card", format: "html", sourceHtml: `<article>New</article>` },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Both share suffix 3; neither suffix 1 (id taken) nor suffix 2 (file taken)
+    // was accepted — the pair never diverged.
+    expect(result.primitive.id).toBe("primitive/card-3")
+    expect(result.primitive.filePath).toBe("components/Card3.html")
+    const suffixFromId = result.primitive.id.replace("primitive/card", "")
+    const suffixFromFile = (result.primitive.filePath ?? "").match(/Card(\d+)\.html$/)?.[1]
+    expect(suffixFromId).toBe("-3")
+    expect(suffixFromFile).toBe("3")
+  })
+
+  it("treats a stray sibling .css as occupying the slug pair", async () => {
+    const { root, projectRoot } = await makeWorkspace()
+    await fs.mkdir(path.join(projectRoot, "components"), { recursive: true })
+    // Only the .css exists for the base slug — the .html is free, but the slug
+    // is still considered taken so the pair advances.
+    await fs.writeFile(path.join(projectRoot, "components", "Card.css"), ".x{}", "utf8")
+
+    const result = await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Card", format: "html", sourceHtml: `<article>New</article>` },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.primitive.id).toBe("primitive/card-2")
+    expect(result.primitive.filePath).toBe("components/Card2.html")
+  })
+
+  it("keeps returning 409 with failOnExisting on a registry-id collision", async () => {
+    const { root, projectRoot } = await makeWorkspace()
+    await fs.writeFile(
+      path.join(projectRoot, "registry.json"),
+      JSON.stringify({
+        ui: [{ id: "primitive/card", displayName: "Card", category: "ui", kind: "html", filePath: "components/Card.html" }],
+        page: [],
+      }),
+      "utf8"
+    )
+
+    const result = await applyCanvasComponentCreateRequest(
+      {
+        projectId: "demo",
+        name: "Card",
+        format: "html",
+        sourceHtml: `<article>Hello</article>`,
+        failOnExisting: true,
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(409)
+    expect(result.code).toBe("already-exists")
+  })
+
+  it("validateSingleSegment rejects non-single-segment slugs (bad-path, never 500)", () => {
+    // The path-segment guard is the backstop run before any path.join.
+    expect(validateSingleSegment("card")).toBeNull()
+    expect(validateSingleSegment("card-2")).toBeNull()
+    expect(validateSingleSegment("a/b")).toMatch(/single path segment/)
+    expect(validateSingleSegment("a\\b")).toMatch(/single path segment/)
+    expect(validateSingleSegment("..")).toMatch(/traversal/)
+    expect(validateSingleSegment("foo..bar")).toMatch(/traversal/)
+    expect(validateSingleSegment(".hidden")).toMatch(/start with a dot/)
+    expect(validateSingleSegment("a\0b")).toMatch(/null byte/)
+    expect(validateSingleSegment("")).toMatch(/empty/)
+  })
+
+  it("never returns 500 for a name that normalizes near a path-segment edge", async () => {
+    const { root } = await makeWorkspace()
+    // `../etc` / `a/b` normalize to clean PascalCase via normalizeComponentName
+    // (separators are stripped), so the guard is a backstop, not a 500 source.
+    for (const name of ["../etc", "a/b", "..", "./x"]) {
+      const result = await applyCanvasComponentCreateRequest(
+        { projectId: "demo", name, format: "html", sourceHtml: `<article>x</article>` },
+        { workspaceRoot: root }
+      )
+      // Either a clean create or a deterministic 4xx — never an unhandled 500.
+      if (!result.ok) {
+        expect(result.status).toBeLessThan(500)
+      }
+    }
+  })
+
+  it("registry stays parseCanvasRegistry-valid after a uniquified insert", async () => {
+    const { root, projectRoot } = await makeWorkspace()
+
+    await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Card", format: "html", sourceHtml: `<article>One</article>` },
+      { workspaceRoot: root }
+    )
+    await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Card", format: "html", sourceHtml: `<article>Two</article>` },
+      { workspaceRoot: root }
+    )
+
+    const registryRaw = JSON.parse(await fs.readFile(path.join(projectRoot, "registry.json"), "utf8"))
+    const parsed = parseCanvasRegistry(registryRaw)
+    expect(parsed.warnings).toEqual([])
+    const ids = parsed.primitives.map((primitive) => primitive.id)
+    expect(ids).toContain("primitive/card")
+    expect(ids).toContain("primitive/card-2")
+    // No duplicate ids — the pair allocation kept them unique.
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it("uniquifies TSX components with a paired slug + filename", async () => {
+    const { root } = await makeWorkspace()
+
+    const first = await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Badge", format: "tsx", sourceTsx: `export function Badge() { return <span/> }` },
+      { workspaceRoot: root }
+    )
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect(first.primitive.id).toBe("primitive/badge")
+    expect(first.primitive.filePath).toBe("components/Badge.tsx")
+
+    const second = await applyCanvasComponentCreateRequest(
+      { projectId: "demo", name: "Badge", format: "tsx", sourceTsx: `export function Badge2() { return <span/> }` },
+      { workspaceRoot: root }
+    )
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    expect(second.primitive.id).toBe("primitive/badge-2")
+    expect(second.primitive.filePath).toBe("components/Badge2.tsx")
+    expect(second.primitive.importName).toBe("Badge2")
   })
 })
