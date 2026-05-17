@@ -94,6 +94,15 @@ describe("native slot part helpers", () => {
       position: 1,
       childSource: '<img src="https://placehold.co/640x360/png?text=Media" alt="Media" />',
     })
+    expect(
+      buildSlotNativePartInsertion(mediaSlot, "image", {
+        sourceUrl: "https://cdn.example.com/hero.jpg",
+      })
+    ).toEqual({
+      type: "insertChild",
+      position: 1,
+      childSource: '<img src="https://cdn.example.com/hero.jpg" alt="Media" />',
+    })
     expect(buildSlotNativePartInsertion(mediaSlot, "section")).toEqual({
       type: "insertChild",
       position: 1,
@@ -152,6 +161,13 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set
   setter?.call(select, value)
   select.dispatchEvent(new Event("change", { bubbles: true }))
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event("input", { bubbles: true }))
+  input.dispatchEvent(new Event("change", { bubbles: true }))
 }
 
 const SLOT_HTML =
@@ -287,6 +303,52 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     expect(arg.sourceMode).toBe("inline")
     expect(arg.sourceHtml).toContain(
       '<figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"><img src="https://placehold.co/640x360/png?text=Media" alt="Media"></figure>'
+    )
+  })
+
+  it("uses a custom source url for media slot insertion", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
+    const onChange = vi.fn()
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={MEDIA_SLOT_HTML}
+        projectId="demo"
+        onChange={onChange}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const select = harness.container.querySelector(
+      "select[aria-label='HTML part for media']"
+    ) as HTMLSelectElement
+    expect(select).not.toBeNull()
+    await act(async () => {
+      setSelectValue(select, "image")
+    })
+
+    const urlInput = harness.container.querySelector(
+      "input[aria-label='Source URL for media']"
+    ) as HTMLInputElement
+    expect(urlInput).not.toBeNull()
+    await act(async () => {
+      setInputValue(urlInput, "https://cdn.example.com/hero.jpg")
+    })
+
+    const insertBtn = [...harness.container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Insert part"
+    ) as HTMLButtonElement
+    await act(async () => {
+      insertBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    })
+
+    const arg = onChange.mock.calls.at(-1)?.[0]
+    expect(arg.sourceHtml).toContain(
+      '<figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"><img src="https://cdn.example.com/hero.jpg" alt="Media"></figure>'
     )
   })
 })

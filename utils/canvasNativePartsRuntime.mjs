@@ -86,10 +86,11 @@ export function listCanvasHtmlSlots(sourceHtml, { sourceId }) {
   return slots
 }
 
-export function buildSlotNativePartInsertion(slot, part) {
+export function buildSlotNativePartInsertion(slot, part, options = {}) {
   const label = titleCaseSlotName(slot?.name)
   const slug = slugifySlotLabel(label) || 'slot'
   const position = Number.isInteger(slot?.childElementCount) ? Number(slot.childElementCount) : 0
+  const sourceUrl = typeof options?.sourceUrl === 'string' ? options.sourceUrl.trim() : ''
 
   switch (part) {
     case 'div':
@@ -138,13 +139,13 @@ export function buildSlotNativePartInsertion(slot, part) {
       return {
         type: 'insertChild',
         position,
-        childSource: `<a href="#${slug}">${label} link</a>`,
+        childSource: `<a href="${sourceUrl || `#${slug}`}">${label} link</a>`,
       }
     case 'image':
       return {
         type: 'insertChild',
         position,
-        childSource: `<img src="https://placehold.co/640x360/png?text=${encodeURIComponent(label)}" alt="${label}" />`,
+        childSource: `<img src="${sourceUrl || `https://placehold.co/640x360/png?text=${encodeURIComponent(label)}`}" alt="${label}" />`,
       }
     case 'svg':
       return {
@@ -156,7 +157,7 @@ export function buildSlotNativePartInsertion(slot, part) {
       return {
         type: 'insertChild',
         position,
-        childSource: `<video controls muted playsinline aria-label="${label}"><source src="" type="video/mp4" /></video>`,
+        childSource: `<video controls muted playsinline aria-label="${label}"><source src="${sourceUrl}" type="video/mp4" /></video>`,
       }
     default:
       throw new Error(`Unsupported native slot part: ${part || ''}`)

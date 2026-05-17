@@ -955,6 +955,7 @@ describe("canvas MCP server", () => {
             sourceId: "inline-slot-source",
             canvasId: slotCanvasId,
             part: "button",
+            sourceUrl: "https://example.com/ignored-for-button",
           },
         },
       })) as { result?: { structuredContent?: Record<string, any> } }
@@ -972,6 +973,38 @@ describe("canvas MCP server", () => {
         ],
       })
       expect(insertNativeSlotPart.result?.structuredContent?.ok).toBe(true)
+
+      const insertMediaSlotPart = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-slot-media-part",
+        method: "tools/call",
+        params: {
+          name: "insert_native_slot_part",
+          arguments: {
+            sourceHtml:
+              '<!doctype html><html><body><article><figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"></figure></article></body></html>',
+            sourceId: "inline-media-slot-source",
+            canvasId:
+              listCanvasHtmlSlots(
+                '<!doctype html><html><body><article><figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"></figure></article></body></html>',
+                { sourceId: "inline-media-slot-source" }
+              )[0]?.canvasId || "",
+            part: "image",
+            sourceUrl: "https://cdn.example.com/hero.jpg",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(htmlWriteRequestBody).toMatchObject({
+        sourceId: "inline-media-slot-source",
+        mutations: [
+          {
+            type: "insertChild",
+            childSource: '<img src="https://cdn.example.com/hero.jpg" alt="Media" />',
+          },
+        ],
+      })
+      expect(insertMediaSlotPart.result?.structuredContent?.ok).toBe(true)
 
       const markdownUpdatePromise = sendRpc({
         jsonrpc: "2.0",

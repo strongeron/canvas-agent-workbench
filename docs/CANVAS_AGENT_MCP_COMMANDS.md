@@ -166,7 +166,7 @@ Web-native editing tools:
 - `create_component_from_html` and `create_component_from_tsx` write under `projects/<projectId>/components/`, append a matching `registry.json` entry, and create a preview node unless `createItem: false` is passed.
 - `promote_to_component` extracts an HTML subtree (by `canvasId`) from a canvas item and saves it as a new project component. The original item is unchanged; the new primitive appears in the registry and library panel for re-use.
 - `create_native_component_shell` creates a live `html` item with `sourceMode: "inline"` plus starter slot metadata such as `data-slot="title"` and `data-slot-accepts="image,svg,video"`. It also accepts an optional `title` so the starter heading and item title can be set in one call. Use it when you want the agent to start from an editable HTML section/card/hero shell instead of a props-only component item.
-- `insert_native_slot_part` appends a native HTML part into a slotted shell node by `canvasId`. It is the direct MCP counterpart to the inspector's `Insert part` control and supports `div`, `section`, `header`, `footer`, `heading`, `paragraph`, `button`, `link`, `image`, `svg`, and `video`.
+- `insert_native_slot_part` appends a native HTML part into a slotted shell node by `canvasId`. It is the direct MCP counterpart to the inspector's `Insert part` control and supports `div`, `section`, `header`, `footer`, `heading`, `paragraph`, `button`, `link`, `image`, `svg`, and `video`. `image`, `video`, and `link` can also take an optional `sourceUrl`.
 
 Direct-manipulation parity audit (v3, complete):
 

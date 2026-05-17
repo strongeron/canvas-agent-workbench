@@ -88,6 +88,10 @@ function buildSlotStarter(slot: CanvasHtmlSlotInfo) {
   }
 }
 
+function partUsesSourceUrl(part: CanvasNativePartKind | "") {
+  return part === "image" || part === "video" || part === "link"
+}
+
 /**
  * Insert a chosen library component into a slot. Same `insertChild` shape as
  * `buildSlotStarter`'s element branch (position = current child count, i.e.
@@ -152,6 +156,7 @@ export function CanvasHtmlPropsPanel({
   // slot.name → chosen primitive id, so each slot's picker is independent.
   const [slotPick, setSlotPick] = useState<Record<string, string>>({})
   const [slotPartPick, setSlotPartPick] = useState<Record<string, CanvasNativePartKind | "">>({})
+  const [slotPartSource, setSlotPartSource] = useState<Record<string, string>>({})
   const hasSlots = detectedSlots.length > 0
 
   // Load the project's registry once a slotted inline shell is open, so each
@@ -330,7 +335,7 @@ export function CanvasHtmlPropsPanel({
       const result = writeCanvasHtmlNode(
         draftSourceHtml || "",
         slot.canvasId,
-        [buildSlotNativePartInsertion(slot, part)],
+        [buildSlotNativePartInsertion(slot, part, { sourceUrl: slotPartSource[slot.name] })],
         { sourceId: sourceIdentity }
       )
       if (!result.ok) {
@@ -341,7 +346,7 @@ export function CanvasHtmlPropsPanel({
       setDraftSourceHtml(result.source)
       onChange({ sourceMode: "inline", sourceHtml: result.source })
     },
-    [draftSourceHtml, onChange, sourceIdentity, sourceMode]
+    [draftSourceHtml, onChange, sourceIdentity, sourceMode, slotPartSource]
   )
 
   return (
@@ -462,36 +467,59 @@ export function CanvasHtmlPropsPanel({
                     </button>
                   </div>
                   {nativePartOptions.length > 0 ? (
-                    <div className="mt-2 flex items-center gap-1.5">
-                      <select
-                        aria-label={`HTML part for ${slot.name}`}
-                        value={slotPartPick[slot.name] ?? ""}
-                        onChange={(event) =>
-                          setSlotPartPick((current) => ({
-                            ...current,
-                            [slot.name]: event.target.value as CanvasNativePartKind | "",
-                          }))
-                        }
-                        className="min-w-0 flex-1 rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-                      >
-                        <option value="">HTML part…</option>
-                        {nativePartOptions.map((option) => (
-                          <option key={option.kind} value={option.kind}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        disabled={!slotPartPick[slot.name]}
-                        onClick={() => {
-                          const part = slotPartPick[slot.name]
-                          if (part) handleInsertSlotPart(slot, part)
-                        }}
-                        className="rounded-full border border-brand-300 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Insert part
-                      </button>
+                    <div className="mt-2 grid gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          aria-label={`HTML part for ${slot.name}`}
+                          value={slotPartPick[slot.name] ?? ""}
+                          onChange={(event) =>
+                            setSlotPartPick((current) => ({
+                              ...current,
+                              [slot.name]: event.target.value as CanvasNativePartKind | "",
+                            }))
+                          }
+                          className="min-w-0 flex-1 rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+                        >
+                          <option value="">HTML part…</option>
+                          {nativePartOptions.map((option) => (
+                            <option key={option.kind} value={option.kind}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={!slotPartPick[slot.name]}
+                          onClick={() => {
+                            const part = slotPartPick[slot.name]
+                            if (part) handleInsertSlotPart(slot, part)
+                          }}
+                          className="rounded-full border border-brand-300 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Insert part
+                        </button>
+                      </div>
+                      {partUsesSourceUrl(slotPartPick[slot.name] ?? "") ? (
+                        <input
+                          type="url"
+                          aria-label={`Source URL for ${slot.name}`}
+                          value={slotPartSource[slot.name] ?? ""}
+                          onChange={(event) =>
+                            setSlotPartSource((current) => ({
+                              ...current,
+                              [slot.name]: event.target.value,
+                            }))
+                          }
+                          placeholder={
+                            slotPartPick[slot.name] === "link"
+                              ? "https://example.com/page"
+                              : slotPartPick[slot.name] === "video"
+                                ? "https://cdn.example.com/clip.mp4"
+                                : "https://images.example.com/photo.jpg"
+                          }
+                          className="w-full rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+                        />
+                      ) : null}
                     </div>
                   ) : null}
                   {registryPrimitives.length > 0 ? (

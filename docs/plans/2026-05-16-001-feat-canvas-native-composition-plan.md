@@ -32,11 +32,12 @@ source with metadata, not as opaque canvas-only state.
   - detected slot summaries plus inline “insert starter” actions in the HTML inspector for native shells,
   - visual insert controls for native child HTML parts inside non-text slots (`div`, `section`, `header`, `footer`, `h2`, `p`, `button`, `a`, `img`, `svg`, `video`),
   - explicit MCP parity for that shell-building step via `insert_native_slot_part`,
+  - source-aware insertion for `image`, `video`, and `link` parts so manual or agent-driven composition can provide a real URL instead of only a placeholder,
   - MCP tool parity via `create_native_component_shell`.
 - `Still pending`:
   - explicit slot editing UI,
   - save-to-registry flow from the shell authoring path,
-  - richer media slot insertion and replacement affordances.
+  - richer media slot replacement / asset-browser affordances beyond URL-based insertion.
 
 ---
 

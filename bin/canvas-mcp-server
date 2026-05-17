@@ -1003,6 +1003,7 @@ const TOOL_DEFINITIONS = [
         canvasId: { type: 'string' },
         sourceId: { type: 'string' },
         mtimeMs: { type: 'number' },
+        sourceUrl: { type: 'string' },
         part: { type: 'string', enum: CANVAS_NATIVE_PART_KINDS },
       },
       required: ['canvasId', 'part'],
@@ -2346,7 +2347,11 @@ async function runInsertNativeSlotPart(args) {
       canvasId,
       sourceId,
       mtimeMs,
-      mutations: [buildSlotNativePartInsertion(slot, part)],
+      mutations: [
+        buildSlotNativePartInsertion(slot, part, {
+          sourceUrl: normalizeString(args.sourceUrl) || undefined,
+        }),
+      ],
     })
   )
 }

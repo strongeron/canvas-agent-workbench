@@ -18,6 +18,10 @@ export interface CanvasNativePartOption {
   label: string
 }
 
+export interface CanvasNativePartInsertionOptions {
+  sourceUrl?: string
+}
+
 const BASE_SLOT_PART_OPTIONS: CanvasNativePartOption[] = [
   { kind: "div", label: "Div group" },
   { kind: "section", label: "Section" },
@@ -66,10 +70,12 @@ export function listSlotNativePartOptions(
 
 export function buildSlotNativePartInsertion(
   slot: Pick<CanvasHtmlSlotInfo, "name" | "childElementCount">,
-  part: CanvasNativePartKind
+  part: CanvasNativePartKind,
+  options: CanvasNativePartInsertionOptions = {}
 ) {
   const label = titleCaseSlotName(slot.name)
   const slug = slugifySlotLabel(label) || "slot"
+  const sourceUrl = options.sourceUrl?.trim() || ""
 
   switch (part) {
     case "div":
@@ -118,15 +124,15 @@ export function buildSlotNativePartInsertion(
       return {
         type: "insertChild" as const,
         position: slot.childElementCount,
-        childSource: `<a href="#${slug}">${label} link</a>`,
+        childSource: `<a href="${sourceUrl || `#${slug}`}">${label} link</a>`,
       }
     case "image":
       return {
         type: "insertChild" as const,
         position: slot.childElementCount,
-        childSource: `<img src="https://placehold.co/640x360/png?text=${encodeURIComponent(
-          label
-        )}" alt="${label}" />`,
+        childSource: `<img src="${
+          sourceUrl || `https://placehold.co/640x360/png?text=${encodeURIComponent(label)}`
+        }" alt="${label}" />`,
       }
     case "svg":
       return {
@@ -141,7 +147,7 @@ export function buildSlotNativePartInsertion(
         childSource:
           '<video controls muted playsinline aria-label="' +
           label +
-          '"><source src="" type="video/mp4" /></video>',
+          `"><source src="${sourceUrl}" type="video/mp4" /></video>`,
       }
   }
 }
