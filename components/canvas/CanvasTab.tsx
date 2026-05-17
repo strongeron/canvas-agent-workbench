@@ -4101,6 +4101,8 @@ export function CanvasTab({
                   sourceReact: input.sourceReact,
                   sourceHtml: input.sourceHtml,
                   sourcePath: input.sourcePath,
+                  sourceHtmlFilePath: input.sourceHtmlFilePath,
+                  sourceHtmlFileMtime: input.sourceHtmlFileMtime,
                 })
               }}
               onCreateFromPaste={() => setComponentPasteDialogVisible(true)}

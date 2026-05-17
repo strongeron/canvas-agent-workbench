@@ -20,6 +20,8 @@ export interface CanvasLibraryPanelProps {
     sourceHtml?: string
     sourceMode?: "react" | "inline"
     sourcePath?: string
+    sourceHtmlFilePath?: string
+    sourceHtmlFileMtime?: number
   }) => void | Promise<void>
   onCreateFromPaste?: () => void
   onClose: () => void
@@ -112,16 +114,21 @@ export function CanvasLibraryPanel({
           ok?: boolean
           sourceHtml?: string
           source?: string
+          filePath?: string
+          mtimeMs?: number
           error?: string
         }
         if (!response.ok || !payload.ok) {
           throw new Error(payload.error || "Failed to load HTML primitive.")
         }
+        const filePath = `projects/${projectId}/${primitive.filePath}`
         await onInstantiate({
           title: primitive.displayName,
           sourceHtml: payload.sourceHtml || payload.source || "",
           sourceMode: "inline",
-          sourcePath: `projects/${projectId}/${primitive.filePath}`,
+          sourcePath: filePath,
+          sourceHtmlFilePath: payload.filePath || filePath,
+          sourceHtmlFileMtime: payload.mtimeMs,
         })
         return
       }

@@ -178,4 +178,59 @@ describe("CanvasLibraryPanel dragstart", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
+
+  it("instantiates HTML primitives as file-backed inline sources", async () => {
+    fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/canvas/registry/list") {
+        return new Response(
+          JSON.stringify({ ok: true, primitives: [PRIMITIVE], warnings: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      }
+      if (url === "/api/canvas/ast/load") {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            sourceHtml: "<article>Loaded primitive</article>",
+            filePath: "projects/design-system-foundation/primitives/button.html",
+            mtimeMs: 789,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const onInstantiate = vi.fn()
+    harness = await mount(
+      <CanvasLibraryPanel
+        projectId="design-system-foundation"
+        onInstantiate={onInstantiate}
+        onClose={vi.fn()}
+      />
+    )
+
+    const button = harness.container.querySelector<HTMLButtonElement>(
+      '[data-canvas-library-primitive="button-primary"]'
+    )
+    expect(button).not.toBeNull()
+    if (!button) return
+
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onInstantiate).toHaveBeenCalledWith({
+      title: "Primary Button",
+      sourceHtml: "<article>Loaded primitive</article>",
+      sourceMode: "inline",
+      sourcePath: "projects/design-system-foundation/primitives/button.html",
+      sourceHtmlFilePath: "projects/design-system-foundation/primitives/button.html",
+      sourceHtmlFileMtime: 789,
+    })
+  })
 })
