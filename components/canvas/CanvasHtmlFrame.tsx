@@ -1,4 +1,4 @@
-import { Code2, ExternalLink } from "lucide-react"
+import { Code2 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { CanvasHtmlItem } from "../../types/canvas"
@@ -109,6 +109,41 @@ function toDropZoneRect(rect: CanvasReactNodeRect): CanvasDropZoneRect {
 
 function toDropZoneSibling(sibling: CanvasReactNodeDropTargetSibling): CanvasDropZoneSibling {
   return { canvasId: sibling.canvasId, rect: toDropZoneRect(sibling.rect), index: sibling.index }
+}
+
+/**
+ * Figma-style floating identity label for an HTML node. Rendered by the node
+ * wrapper (outside the frame's clipped box), positioned just above the frame.
+ * Visible only when the node is selected or its wrapper is hovered (the
+ * wrapper opts in by adding the `group` class), so the canvas stays clean.
+ */
+export function CanvasHtmlNodeLabel({
+  item,
+  isSelected,
+}: {
+  item: CanvasHtmlItem
+  isSelected: boolean
+}) {
+  const title = item.title?.trim() || "HTML bundle"
+  const typeLabel =
+    item.sourceMode === "react"
+      ? "React TSX"
+      : item.sourceMode === "inline"
+        ? "Inline HTML"
+        : item.entryAsset || item.src || "HTML"
+  return (
+    <div
+      className={`pointer-events-none absolute -top-[22px] left-0 z-20 flex max-w-full items-center gap-1 overflow-hidden whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] leading-none transition-opacity duration-100 ${
+        isSelected
+          ? "bg-brand-500 text-white opacity-100"
+          : "bg-surface-900/80 text-white opacity-0 group-hover:opacity-100"
+      }`}
+    >
+      <Code2 className="h-3 w-3 shrink-0 opacity-80" />
+      <span className="truncate font-semibold">{title}</span>
+      <span className="shrink-0 font-normal opacity-70">{typeLabel}</span>
+    </div>
+  )
 }
 
 export function CanvasHtmlFrame({
@@ -516,36 +551,6 @@ export function CanvasHtmlFrame({
       className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-default bg-white"
       style={{ background: item.background || undefined }}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-default bg-surface-50/80 px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Code2 className="h-4 w-4 shrink-0 text-brand-600" />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-foreground">{title}</div>
-            <div className="truncate text-[11px] text-muted-foreground">
-              {shouldRenderReact
-                ? compileStatus === "loading"
-                  ? "React TSX compiling..."
-                  : "React TSX"
-                : shouldRenderInline
-                  ? "Inline HTML"
-                  : item.entryAsset || item.src}
-            </div>
-          </div>
-        </div>
-        {item.src ? (
-          <a
-            href={item.src}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(event) => event.stopPropagation()}
-            className="shrink-0 rounded-full p-1 text-muted-foreground hover:bg-white hover:text-foreground"
-            title="Open bundled HTML"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        ) : null}
-      </div>
-
       <div className="relative min-h-0 flex-1 bg-white">
         {hasRenderableSource ? (
           <>

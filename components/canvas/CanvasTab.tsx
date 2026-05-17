@@ -4048,6 +4048,7 @@ export function CanvasTab({
                 onAddEmbed={handleAddEmbed}
                 onAddHtmlBundle={handleAddHtmlBundle}
                 onAddInlineHtml={handleAddInlineHtml}
+                onAddNativeComponent={() => setNativeComponentDialogVisible(true)}
                 onAddHtmlBundleFromDirectory={handleAddHtmlBundleFromDirectory}
                 onScanHtmlBundleLibrary={scanCanvasHtmlBundleLibrary}
                 onAddMedia={handleAddMedia}

@@ -1,5 +1,5 @@
 import { useDraggable } from "@dnd-kit/core"
-import { ChevronDown, ChevronRight, Copy, FileText, GripVertical, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Copy, FileText, GripVertical, Layers3, Pencil, Plus, RefreshCw, Save, Search, Star, Trash2, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { useLocalStorage } from "../../hooks/useLocalStorage"
@@ -352,6 +352,7 @@ interface CanvasSidebarProps {
     sourceReact?: string
     sourceCss?: string
   }) => void | Promise<void>
+  onAddNativeComponent?: () => void
   onAddHtmlBundleFromDirectory?: (input: {
     directoryPath: string
     entryFile?: string
@@ -421,6 +422,7 @@ export function CanvasSidebar({
   onAddEmbed,
   onAddHtmlBundle,
   onAddInlineHtml,
+  onAddNativeComponent,
   onAddHtmlBundleFromDirectory,
   onScanHtmlBundleLibrary,
   onAddMedia,
@@ -1670,7 +1672,17 @@ export function CanvasSidebar({
                   placeholder="Optional node title"
                   className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 />
-                <div className="mt-2 flex gap-2">
+                {onAddNativeComponent ? (
+                  <button
+                    type="button"
+                    onClick={onAddNativeComponent}
+                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100"
+                  >
+                    <Layers3 className="h-3.5 w-3.5" />
+                    Native component
+                  </button>
+                ) : null}
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   {onAddInlineHtml ? (
                     <>
                       <button

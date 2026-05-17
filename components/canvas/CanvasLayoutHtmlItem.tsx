@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react"
 import type { CanvasHtmlItem as CanvasHtmlItemType } from "../../types/canvas"
 import {
   CanvasHtmlFrame,
+  CanvasHtmlNodeLabel,
   type CanvasReactNodeGroupResizeEvent,
   type CanvasReactNodeResizeEvent,
   type CanvasReactNodeSelection,
@@ -89,7 +90,7 @@ export function CanvasLayoutHtmlItem({
 
   return (
     <div
-      className={`relative h-full w-full ${isSelected ? "ring-4 ring-brand-500/20" : ""}`}
+      className={`group relative h-full w-full ${isSelected ? "ring-4 ring-brand-500/20" : ""}`}
       data-canvas-item-id={item.id}
       data-canvas-item-type={item.type}
       onClick={(event) => {
@@ -111,6 +112,10 @@ export function CanvasLayoutHtmlItem({
         onLibraryDropInsert={onLibraryDropInsert}
         onLibraryDropWrap={onLibraryDropWrap}
       />
+
+      {!interactMode ? (
+        <CanvasHtmlNodeLabel item={item} isSelected={isSelected} />
+      ) : null}
 
       {isSelected && !interactMode ? (
         <>

@@ -303,7 +303,7 @@ export function CanvasArtboardItem({
         containerRef.current = node
         setNodeRef(node)
       }}
-      className={`absolute ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+      className={`group absolute ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
       data-canvas-item-id={item.id}
       data-canvas-item-type={item.type}
       style={{
@@ -340,32 +340,6 @@ export function CanvasArtboardItem({
         data-artboard-id={item.id}
       >
         <div
-          data-artboard-handle="true"
-          className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-md bg-white/90 px-2 py-1 text-[11px] font-semibold text-foreground shadow-sm"
-        >
-          <span className="h-2 w-2 rounded-full bg-brand-500" />
-          {item.name}
-          {item.themeId && (
-            <span className="rounded-full border border-default bg-white px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
-              {item.themeId}
-            </span>
-          )}
-          {isSelected && !interactMode && (
-            <button
-              type="button"
-              data-artboard-handle="true"
-              onMouseDown={handleGapScrubStart}
-              className="ml-1 flex cursor-ew-resize items-center gap-1 rounded-full border border-default bg-white px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground hover:bg-surface-100 hover:text-foreground"
-              aria-label="Scrub artboard gap"
-              title="Scrub artboard gap"
-            >
-              <MoveHorizontal className="h-3 w-3" />
-              Gap {Math.round(layout.gap ?? 12)}
-            </button>
-          )}
-        </div>
-
-        <div
           className={`h-full w-full ${layoutClassName}`}
           style={{
             gap: layout.gap ?? 12,
@@ -376,6 +350,37 @@ export function CanvasArtboardItem({
           {children}
         </div>
       </div>
+
+      {!interactMode ? (
+        <div className="pointer-events-none absolute -top-[24px] left-0 z-20 flex max-w-full items-center gap-1.5">
+          <div
+            className={`flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none transition-opacity duration-100 ${
+              isSelected
+                ? "bg-brand-500 text-white opacity-100"
+                : "bg-surface-900/80 text-white opacity-0 group-hover:opacity-100"
+            }`}
+          >
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-70" />
+            <span className="truncate">{item.name}</span>
+            {item.themeId ? (
+              <span className="shrink-0 font-normal opacity-70">{item.themeId}</span>
+            ) : null}
+          </div>
+          {isSelected ? (
+            <button
+              type="button"
+              data-artboard-handle="true"
+              onMouseDown={handleGapScrubStart}
+              className="pointer-events-auto flex shrink-0 cursor-ew-resize items-center gap-1 rounded border border-brand-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-brand-700 shadow-sm hover:bg-brand-50"
+              aria-label="Scrub artboard gap"
+              title="Scrub artboard gap"
+            >
+              <MoveHorizontal className="h-3 w-3" />
+              Gap {Math.round(layout.gap ?? 12)}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {isSelected && !interactMode && (
         <>

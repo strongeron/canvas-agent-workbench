@@ -5,6 +5,7 @@ import type { CanvasHtmlItem as CanvasHtmlItemType } from "../../types/canvas"
 import { CanvasContextMenu } from "./CanvasContextMenu"
 import {
   CanvasHtmlFrame,
+  CanvasHtmlNodeLabel,
   type CanvasReactNodeGroupResizeEvent,
   type CanvasReactNodeResizeEvent,
   type CanvasReactNodeSelection,
@@ -228,7 +229,7 @@ export function CanvasHtmlItem({
   return (
     <div
       ref={containerRef}
-      className={`absolute ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+      className={`group absolute ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
       data-canvas-item-id={item.id}
       data-canvas-item-type={item.type}
       style={{
@@ -250,6 +251,10 @@ export function CanvasHtmlItem({
       }}
       onContextMenu={handleContextMenu}
     >
+      {!interactMode ? (
+        <CanvasHtmlNodeLabel item={item} isSelected={isSelected} />
+      ) : null}
+
       {groupColor ? (
         <div
           className="absolute -left-1 top-0 h-full w-1 rounded-l"
