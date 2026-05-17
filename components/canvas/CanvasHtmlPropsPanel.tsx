@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ExternalLink, FolderUp, RefreshCw, Trash2, Upload, X } from "lucide-react"
+import { ExternalLink, FolderUp, Loader2, RefreshCw, Save, Trash2, Upload, X } from "lucide-react"
 import { CanvasViewportPresets } from "./CanvasViewportPresets"
 import {
   listCanvasHtmlSlots,
@@ -42,6 +42,9 @@ interface CanvasHtmlPropsPanelProps {
     sourceHtml?: string
     sourceReact?: string
     sourceCss?: string
+    sourcePath?: string
+    sourceHtmlFilePath?: string
+    sourceHtmlFileMtime?: number
     sourceReactFilePath?: string
     sourceReactFileMtime?: number
   }) => void
@@ -53,6 +56,21 @@ interface CanvasHtmlPropsPanelProps {
   onReplaceBundleFromDirectory?: (input: { directoryPath: string; entryFile?: string }) => Promise<void>
   onDelete: () => void
   onClose: () => void
+}
+
+interface ComponentSaveResult {
+  ok?: boolean
+  projectId: string
+  primitive: {
+    id: string
+    displayName: string
+    kind: "html" | "tsx"
+    filePath?: string
+    cssPath?: string
+    importName?: string
+  }
+  files: Array<{ filePath: string; mtimeMs: number }>
+  error?: string
 }
 
 const supportsDirectoryPicker = typeof window !== "undefined" && "showDirectoryPicker" in window
@@ -157,7 +175,21 @@ export function CanvasHtmlPropsPanel({
   const [slotPick, setSlotPick] = useState<Record<string, string>>({})
   const [slotPartPick, setSlotPartPick] = useState<Record<string, CanvasNativePartKind | "">>({})
   const [slotPartSource, setSlotPartSource] = useState<Record<string, string>>({})
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  const [saveName, setSaveName] = useState("")
+  const [saveDescription, setSaveDescription] = useState("")
+  const [saveState, setSaveState] = useState<{ status: "idle" | "saving" | "error"; error: string }>(
+    {
+      status: "idle",
+      error: "",
+    }
+  )
   const hasSlots = detectedSlots.length > 0
+
+  useEffect(() => {
+    if (!saveDialogOpen) return
+    setSaveName((current) => current || (title || "Native Component"))
+  }, [saveDialogOpen, title])
 
   // Load the project's registry once a slotted inline shell is open, so each
   // slot can offer "insert a library component" alongside "insert starter".
@@ -349,6 +381,45 @@ export function CanvasHtmlPropsPanel({
     [draftSourceHtml, onChange, sourceIdentity, sourceMode, slotPartSource]
   )
 
+  const handleSaveAsComponent = useCallback(async () => {
+    if (sourceMode !== "inline" || !draftSourceHtml.trim() || !saveName.trim()) return
+    setSaveState({ status: "saving", error: "" })
+    try {
+      const response = await fetch("/api/canvas/component/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          name: saveName,
+          format: "html",
+          sourceHtml: draftSourceHtml,
+          sourceCss: draftSourceCss.trim() ? draftSourceCss : undefined,
+          description: saveDescription.trim() || undefined,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as ComponentSaveResult
+      if (!response.ok || !payload.ok || payload.primitive?.kind !== "html" || !payload.primitive.filePath) {
+        throw new Error(payload.error || "Failed to save component.")
+      }
+      const htmlFile = payload.files.find((entry) => entry.filePath === payload.primitive.filePath)
+      onChange({
+        sourceMode: "inline",
+        sourceHtml: draftSourceHtml,
+        sourcePath: `projects/${projectId}/${payload.primitive.filePath}`,
+        sourceHtmlFilePath: `projects/${projectId}/${payload.primitive.filePath}`,
+        sourceHtmlFileMtime: htmlFile?.mtimeMs,
+      })
+      setSaveDialogOpen(false)
+      setSaveState({ status: "idle", error: "" })
+      setSaveDescription("")
+    } catch (error) {
+      setSaveState({
+        status: "error",
+        error: error instanceof Error ? error.message : "Failed to save component.",
+      })
+    }
+  }, [draftSourceCss, draftSourceHtml, onChange, projectId, saveDescription, saveName, sourceMode])
+
   return (
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
       <div className="flex items-center justify-between border-b border-default px-4 py-3">
@@ -357,6 +428,20 @@ export function CanvasHtmlPropsPanel({
           <p className="truncate text-xs text-muted-foreground">Local HTML/CSS/JS node</p>
         </div>
         <div className="ml-2 flex items-center gap-1">
+          {sourceMode === "inline" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSaveDialogOpen(true)
+                setSaveState({ status: "idle", error: "" })
+              }}
+              className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
+              aria-label="Save as component"
+              title="Save as component"
+            >
+              <Save className="h-4 w-4" />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onDelete}
@@ -375,6 +460,56 @@ export function CanvasHtmlPropsPanel({
           </button>
         </div>
       </div>
+
+      {saveDialogOpen ? (
+        <div className="border-b border-default bg-surface-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Save as component
+          </div>
+          <div className="mt-2 space-y-2">
+            <input
+              type="text"
+              aria-label="Component name"
+              value={saveName}
+              onChange={(event) => setSaveName(event.target.value)}
+              placeholder="Promo Card"
+              className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+            />
+            <textarea
+              aria-label="Component description"
+              value={saveDescription}
+              onChange={(event) => setSaveDescription(event.target.value)}
+              rows={2}
+              placeholder="Optional registry description"
+              className="w-full resize-none rounded-md border border-default bg-white px-3 py-2 text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+            />
+            {saveState.status === "error" ? (
+              <p className="text-[11px] text-red-700">{saveState.error}</p>
+            ) : null}
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveDialogOpen(false)
+                  setSaveState({ status: "idle", error: "" })
+                }}
+                className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!saveName.trim() || !draftSourceHtml.trim() || saveState.status === "saving"}
+                onClick={() => void handleSaveAsComponent()}
+                className="inline-flex items-center gap-1 rounded border border-brand-300 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saveState.status === "saving" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                Save component
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         <div>

@@ -351,4 +351,80 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
       '<figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"><img src="https://cdn.example.com/hero.jpg" alt="Media"></figure>'
     )
   })
+
+  it("saves an inline shell as a project component and attaches file metadata", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === "/api/canvas/registry/list") {
+        return { ok: true, json: async () => ({ ok: true, primitives: [] }) }
+      }
+      if (url === "/api/canvas/component/create") {
+        const body = JSON.parse(String(init?.body || "{}"))
+        expect(body).toMatchObject({
+          projectId: "demo",
+          name: "Promo Card",
+          format: "html",
+        })
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            projectId: "demo",
+            primitive: {
+              id: "primitive/promo-card",
+              displayName: "PromoCard",
+              kind: "html",
+              filePath: "components/PromoCard.html",
+            },
+            files: [{ filePath: "components/PromoCard.html", mtimeMs: 456 }],
+          }),
+        }
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const onChange = vi.fn()
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        title="Promo Card"
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        projectId="demo"
+        onChange={onChange}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const saveOpenButton = harness.container.querySelector(
+      'button[aria-label="Save as component"]'
+    ) as HTMLButtonElement
+    expect(saveOpenButton).not.toBeNull()
+    await act(async () => {
+      saveOpenButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    })
+
+    const nameInput = harness.container.querySelector(
+      'input[aria-label="Component name"]'
+    ) as HTMLInputElement
+    expect(nameInput.value).toBe("Promo Card")
+    await act(async () => {
+      setInputValue(nameInput, "Promo Card")
+    })
+
+    const saveButton = [...harness.container.querySelectorAll("button")].find(
+      (b) => b.textContent?.includes("Save component")
+    ) as HTMLButtonElement
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    })
+
+    expect(onChange).toHaveBeenCalledWith({
+      sourceMode: "inline",
+      sourceHtml: SLOT_HTML,
+      sourcePath: "projects/demo/components/PromoCard.html",
+      sourceHtmlFilePath: "projects/demo/components/PromoCard.html",
+      sourceHtmlFileMtime: 456,
+    })
+  })
 })
