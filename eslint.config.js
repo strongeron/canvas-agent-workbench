@@ -69,6 +69,45 @@ export default [
         varsIgnorePattern: "^_",
         caughtErrorsIgnorePattern: "^_",
       }],
+      // Client-import guard. A shared/client module that imports a Node
+      // builtin compiles, type-checks, and passes Vitest (all run in Node) —
+      // but Vite externalizes the builtin in the browser bundle and the app
+      // crashes to a blank screen at runtime. This happened: canvasAstPath
+      // imported `node:crypto` and blanked the canvas. This rule fails the
+      // existing lint / pre-commit gate at commit time instead.
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["node:*"],
+          message:
+            "Node builtins must not be imported by client/shared source — Vite externalizes them and the app blanks at runtime (tsc/Vitest pass because they run in Node). If this module is genuinely server/build-only and never reachable from the client bundle, add it to the server-only allowlist override in eslint.config.js with a comment.",
+        }],
+        paths: [
+          { name: "crypto", message: "Bare 'crypto' is Node-only and Vite externalizes it — use a browser-safe hash (see canvasAstPath FNV-1a)." },
+          { name: "fs", message: "fs is server-only; client/shared code must not import it." },
+          { name: "child_process", message: "child_process is server-only." },
+          { name: "worker_threads", message: "worker_threads is server-only." },
+        ],
+      }],
+    },
+  },
+  {
+    // Server/build-only modules: imported by vite.config, API endpoints, or
+    // bin — never reachable from the client React bundle, so Node builtins
+    // are legitimate here. INVARIANT: nothing in this list may be imported
+    // by client code (components/**, hooks/**, or a util the client tree
+    // pulls in). Adding a file here is a conscious "this is server-only"
+    // assertion, not a way to silence the guard.
+    files: [
+      "utils/agentNativeBrowser.ts",
+      "utils/agentNativeRuntimeAdapters.ts",
+      "utils/agentNativeRuntimeSessions.ts",
+      "utils/canvasFileAssets.ts",
+      "utils/canvasFileStore.ts",
+      "utils/canvasTokenCss.ts",
+      "utils/copilotkitViteAdapter.ts",
+    ],
+    rules: {
+      "no-restricted-imports": "off",
     },
   },
 ]
