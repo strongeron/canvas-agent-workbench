@@ -9,6 +9,7 @@ import {
   CANVAS_LIBRARY_DRAG_MIME,
   parseLibraryDragPayload,
 } from "../utils/canvasLibraryDrag"
+import { CANVAS_REGISTRY_UPDATED_EVENT } from "../utils/canvasRegistryEvents"
 import type { CanvasRegistryPrimitive } from "../utils/canvasRegistry"
 
 const PRIMITIVE: CanvasRegistryPrimitive = {
@@ -156,5 +157,25 @@ describe("CanvasLibraryPanel dragstart", () => {
       button.dispatchEvent(event)
     })
     expect(onPrimitiveDragEnd).toHaveBeenCalledTimes(1)
+  })
+
+  it("refetches the registry when the global registry-updated event fires", async () => {
+    harness = await mount(
+      <CanvasLibraryPanel
+        projectId="design-system-foundation"
+        onInstantiate={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(CANVAS_REGISTRY_UPDATED_EVENT))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

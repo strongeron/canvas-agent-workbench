@@ -10,6 +10,7 @@ import {
   writeLibraryDragPayload,
   type CanvasLibraryDragPayload,
 } from "../../utils/canvasLibraryDrag"
+import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
 
 export interface CanvasLibraryPanelProps {
   projectId?: string
@@ -90,6 +91,12 @@ export function CanvasLibraryPanel({
   }, [projectId, refreshKey])
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
+
+  useEffect(() => {
+    const handleRegistryUpdated = () => setRefreshKey((k) => k + 1)
+    window.addEventListener(CANVAS_REGISTRY_UPDATED_EVENT, handleRegistryUpdated)
+    return () => window.removeEventListener(CANVAS_REGISTRY_UPDATED_EVENT, handleRegistryUpdated)
+  }, [])
 
   const instantiate = useCallback(
     async (primitive: CanvasRegistryPrimitive) => {

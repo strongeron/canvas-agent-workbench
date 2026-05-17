@@ -10,6 +10,7 @@ import {
   buildPrimitiveChildSource,
   type CanvasRegistryPrimitive,
 } from "../../utils/canvasRegistry"
+import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
 import {
   buildSlotNativePartInsertion,
   listSlotNativePartOptions,
@@ -409,6 +410,9 @@ export function CanvasHtmlPropsPanel({
         sourceHtmlFilePath: `projects/${projectId}/${payload.primitive.filePath}`,
         sourceHtmlFileMtime: htmlFile?.mtimeMs,
       })
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(CANVAS_REGISTRY_UPDATED_EVENT))
+      }
       setSaveDialogOpen(false)
       setSaveState({ status: "idle", error: "" })
       setSaveDescription("")

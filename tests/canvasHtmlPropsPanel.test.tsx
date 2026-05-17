@@ -13,6 +13,7 @@ import {
   buildSlotNativePartInsertion,
   listSlotNativePartOptions,
 } from "../utils/canvasNativeParts"
+import { CANVAS_REGISTRY_UPDATED_EVENT } from "../utils/canvasRegistryEvents"
 import type { CanvasRegistryPrimitive } from "../utils/canvasRegistry"
 
 const button: CanvasRegistryPrimitive = {
@@ -384,6 +385,8 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
     const onChange = vi.fn()
+    const registryUpdated = vi.fn()
+    window.addEventListener(CANVAS_REGISTRY_UPDATED_EVENT, registryUpdated)
     harness = await mount(
       <CanvasHtmlPropsPanel
         title="Promo Card"
@@ -426,5 +429,7 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
       sourceHtmlFilePath: "projects/demo/components/PromoCard.html",
       sourceHtmlFileMtime: 456,
     })
+    expect(registryUpdated).toHaveBeenCalledTimes(1)
+    window.removeEventListener(CANVAS_REGISTRY_UPDATED_EVENT, registryUpdated)
   })
 })
