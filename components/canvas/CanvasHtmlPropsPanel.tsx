@@ -74,6 +74,12 @@ interface ComponentSaveResult {
   error?: string
 }
 
+interface SlotEditDraft {
+  name: string
+  kind: string
+  accepts: string
+}
+
 const supportsDirectoryPicker = typeof window !== "undefined" && "showDirectoryPicker" in window
 
 function titleCaseSlotName(value: string) {
@@ -176,6 +182,7 @@ export function CanvasHtmlPropsPanel({
   const [slotPick, setSlotPick] = useState<Record<string, string>>({})
   const [slotPartPick, setSlotPartPick] = useState<Record<string, CanvasNativePartKind | "">>({})
   const [slotPartSource, setSlotPartSource] = useState<Record<string, string>>({})
+  const [slotEdits, setSlotEdits] = useState<Record<string, SlotEditDraft>>({})
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
   const [saveName, setSaveName] = useState("")
   const [saveDescription, setSaveDescription] = useState("")
@@ -191,6 +198,20 @@ export function CanvasHtmlPropsPanel({
     if (!saveDialogOpen) return
     setSaveName((current) => current || (title || "Native Component"))
   }, [saveDialogOpen, title])
+
+  useEffect(() => {
+    setSlotEdits((current) => {
+      const next: Record<string, SlotEditDraft> = {}
+      for (const slot of detectedSlots) {
+        next[slot.canvasId] = current[slot.canvasId] ?? {
+          name: slot.name,
+          kind: slot.kind || "",
+          accepts: slot.accepts || "",
+        }
+      }
+      return next
+    })
+  }, [detectedSlots])
 
   // Load the project's registry once a slotted inline shell is open, so each
   // slot can offer "insert a library component" alongside "insert starter".
@@ -424,6 +445,40 @@ export function CanvasHtmlPropsPanel({
     }
   }, [draftSourceCss, draftSourceHtml, onChange, projectId, saveDescription, saveName, sourceMode])
 
+  const handleApplySlotMetadata = useCallback(
+    (slot: CanvasHtmlSlotInfo) => {
+      if (sourceMode !== "inline") return
+      const draft = slotEdits[slot.canvasId]
+      if (!draft || !draft.name.trim()) return
+      const result = writeCanvasHtmlNode(
+        draftSourceHtml || "",
+        slot.canvasId,
+        [
+          { type: "setAttribute", attrName: "data-slot", value: draft.name.trim() },
+          {
+            type: "setAttribute",
+            attrName: "data-slot-kind",
+            value: draft.kind.trim() || null,
+          },
+          {
+            type: "setAttribute",
+            attrName: "data-slot-accepts",
+            value: draft.accepts.trim() || null,
+          },
+        ],
+        { sourceId: sourceIdentity }
+      )
+      if (!result.ok) {
+        setReplaceError(result.error)
+        return
+      }
+      setReplaceError(null)
+      setDraftSourceHtml(result.source)
+      onChange({ sourceMode: "inline", sourceHtml: result.source })
+    },
+    [draftSourceHtml, onChange, slotEdits, sourceIdentity, sourceMode]
+  )
+
   return (
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
       <div className="flex items-center justify-between border-b border-default px-4 py-3">
@@ -604,6 +659,74 @@ export function CanvasHtmlPropsPanel({
                     >
                       Insert starter
                     </button>
+                  </div>
+                  <div className="mt-2 grid gap-1.5">
+                    <input
+                      type="text"
+                      aria-label={`Slot name for ${slot.name}`}
+                      value={slotEdits[slot.canvasId]?.name ?? slot.name}
+                      onChange={(event) =>
+                        setSlotEdits((current) => ({
+                          ...current,
+                          [slot.canvasId]: {
+                            name: event.target.value,
+                            kind: current[slot.canvasId]?.kind ?? slot.kind ?? "",
+                            accepts: current[slot.canvasId]?.accepts ?? slot.accepts ?? "",
+                          },
+                        }))
+                      }
+                      placeholder="title"
+                      className="w-full rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+                    />
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        aria-label={`Slot kind for ${slot.name}`}
+                        value={slotEdits[slot.canvasId]?.kind ?? slot.kind ?? ""}
+                        onChange={(event) =>
+                          setSlotEdits((current) => ({
+                            ...current,
+                            [slot.canvasId]: {
+                              name: current[slot.canvasId]?.name ?? slot.name,
+                              kind: event.target.value,
+                              accepts: current[slot.canvasId]?.accepts ?? slot.accepts ?? "",
+                            },
+                          }))
+                        }
+                        className="min-w-0 flex-1 rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+                      >
+                        <option value="">Kind…</option>
+                        <option value="text">text</option>
+                        <option value="container">container</option>
+                        <option value="image">image</option>
+                        <option value="svg">svg</option>
+                        <option value="video">video</option>
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!slotEdits[slot.canvasId]?.name?.trim()}
+                        onClick={() => handleApplySlotMetadata(slot)}
+                        className="rounded-full border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Apply slot
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      aria-label={`Slot accepts for ${slot.name}`}
+                      value={slotEdits[slot.canvasId]?.accepts ?? slot.accepts ?? ""}
+                      onChange={(event) =>
+                        setSlotEdits((current) => ({
+                          ...current,
+                          [slot.canvasId]: {
+                            name: current[slot.canvasId]?.name ?? slot.name,
+                            kind: current[slot.canvasId]?.kind ?? slot.kind ?? "",
+                            accepts: event.target.value,
+                          },
+                        }))
+                      }
+                      placeholder="image,svg,video"
+                      className="w-full rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+                    />
                   </div>
                   {nativePartOptions.length > 0 ? (
                     <div className="mt-2 grid gap-1.5">

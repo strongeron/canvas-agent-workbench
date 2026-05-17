@@ -432,4 +432,53 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     expect(registryUpdated).toHaveBeenCalledTimes(1)
     window.removeEventListener(CANVAS_REGISTRY_UPDATED_EVENT, registryUpdated)
   })
+
+  it("updates slot metadata through the inspector controls", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
+    const onChange = vi.fn()
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        projectId="demo"
+        onChange={onChange}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const nameInput = harness.container.querySelector(
+      'input[aria-label="Slot name for body"]'
+    ) as HTMLInputElement
+    const kindSelect = harness.container.querySelector(
+      'select[aria-label="Slot kind for body"]'
+    ) as HTMLSelectElement
+    const acceptsInput = harness.container.querySelector(
+      'input[aria-label="Slot accepts for body"]'
+    ) as HTMLInputElement
+    expect(nameInput).not.toBeNull()
+    expect(kindSelect).not.toBeNull()
+    expect(acceptsInput).not.toBeNull()
+
+    await act(async () => {
+      setInputValue(nameInput, "copy")
+      setSelectValue(kindSelect, "container")
+      setInputValue(acceptsInput, "image,svg")
+    })
+
+    const applyButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Apply slot"
+    ) as HTMLButtonElement
+    await act(async () => {
+      applyButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    })
+
+    const arg = onChange.mock.calls.at(-1)?.[0]
+    expect(arg.sourceHtml).toContain(
+      '<section data-slot="copy" data-slot-kind="container" data-slot-accepts="image,svg"></section>'
+    )
+  })
 })

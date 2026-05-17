@@ -35,9 +35,9 @@ source with metadata, not as opaque canvas-only state.
   - source-aware insertion for `image`, `video`, and `link` parts so manual or agent-driven composition can provide a real URL instead of only a placeholder,
   - inspector-level `Save as component` flow that writes the current inline shell into `projects/<projectId>/components/` and attaches the saved file metadata back onto the live canvas item,
   - automatic library refresh after shell save so the new registry primitive becomes available without a manual panel reload,
+  - first-class slot metadata editing in the inspector for `data-slot`, `data-slot-kind`, and `data-slot-accepts`,
   - MCP tool parity via `create_native_component_shell`.
 - `Still pending`:
-  - explicit slot editing UI,
   - richer media slot replacement / asset-browser affordances beyond URL-based insertion.
 
 ---
