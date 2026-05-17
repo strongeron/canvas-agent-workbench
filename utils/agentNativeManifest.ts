@@ -174,6 +174,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "insert_native_slot_part",
+        title: "Insert native slot part",
+        description: "Append a native HTML part such as div, section, button, image, svg, or video into a slotted HTML shell node.",
+        status: "ready",
+      },
+      {
         id: "create_group",
         title: "Create group",
         description: "Group existing canvas items under a named freeform canvas group.",

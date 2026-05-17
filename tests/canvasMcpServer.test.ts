@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
+import { listCanvasHtmlSlots } from "../utils/canvasHtmlEditor"
 
 const WORKSPACE_ROOT = "/Users/strongeron/Evil Martians/Open Source/gallery-poc"
 
@@ -938,6 +939,39 @@ describe("canvas MCP server", () => {
         mutations: [{ type: "wrapSelection", wrapperTag: "section" }],
       })
       expect(structuralMutation.result?.structuredContent?.appliedMutations).toBe(1)
+
+      const slotSourceHtml =
+        '<!doctype html><html><body><article><section data-slot="body" data-slot-kind="container"></section></article></body></html>'
+      const slotCanvasId =
+        listCanvasHtmlSlots(slotSourceHtml, { sourceId: "inline-slot-source" })[0]?.canvasId || ""
+      const insertNativeSlotPart = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-slot-part",
+        method: "tools/call",
+        params: {
+          name: "insert_native_slot_part",
+          arguments: {
+            sourceHtml: slotSourceHtml,
+            sourceId: "inline-slot-source",
+            canvasId: slotCanvasId,
+            part: "button",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      expect(htmlWriteRequestBody).toMatchObject({
+        sourceHtml: slotSourceHtml,
+        canvasId: slotCanvasId,
+        sourceId: "inline-slot-source",
+        mutations: [
+          {
+            type: "insertChild",
+            position: 0,
+            childSource: '<button type="button">Body action</button>',
+          },
+        ],
+      })
+      expect(insertNativeSlotPart.result?.structuredContent?.ok).toBe(true)
 
       const markdownUpdatePromise = sendRpc({
         jsonrpc: "2.0",

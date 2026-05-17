@@ -45,6 +45,7 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_item")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_items")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_native_component_shell")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "insert_native_slot_part")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_group")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "list_canvas_files")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "save_canvas_file")).toBe(true)

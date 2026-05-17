@@ -31,6 +31,7 @@ source with metadata, not as opaque canvas-only state.
   - authored slot metadata in starter HTML shells (`data-slot`, `data-slot-kind`, `data-slot-accepts`),
   - detected slot summaries plus inline “insert starter” actions in the HTML inspector for native shells,
   - visual insert controls for native child HTML parts inside non-text slots (`div`, `section`, `header`, `footer`, `h2`, `p`, `button`, `a`, `img`, `svg`, `video`),
+  - explicit MCP parity for that shell-building step via `insert_native_slot_part`,
   - MCP tool parity via `create_native_component_shell`.
 - `Still pending`:
   - explicit slot editing UI,

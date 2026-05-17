@@ -11,6 +11,7 @@ import {
   duplicateProjectCanvasFile,
   importProjectCanvasHtmlBundle,
   listDesignTokens,
+  loadCanvasSourceFile,
   scanProjectCanvasHtmlBundles,
   readCanvasHtmlNode,
   readAgentNativeWorkspaceDebug,
@@ -60,6 +61,11 @@ import {
   normalizeIdList,
   normalizeString,
 } from '../utils/canvasAgentOperations.mjs'
+import {
+  CANVAS_NATIVE_PART_KINDS,
+  buildSlotNativePartInsertion,
+  listCanvasHtmlSlots,
+} from '../utils/canvasNativePartsRuntime.mjs'
 
 const SERVER_INFO = {
   name: 'canvas-agent-mcp',
@@ -982,6 +988,24 @@ const TOOL_DEFINITIONS = [
         background: { type: 'string' },
         select: { type: 'boolean' },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'insert_native_slot_part',
+    description:
+      'Append a native HTML part such as div, section, button, image, svg, or video into a slotted HTML shell node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        filePath: { type: 'string' },
+        sourceHtml: { type: 'string' },
+        canvasId: { type: 'string' },
+        sourceId: { type: 'string' },
+        mtimeMs: { type: 'number' },
+        part: { type: 'string', enum: CANVAS_NATIVE_PART_KINDS },
+      },
+      required: ['canvasId', 'part'],
       additionalProperties: false,
     },
   },
@@ -2053,6 +2077,8 @@ async function callTool(name, args) {
       return runCreateArtboard(args)
     case 'create_native_component_shell':
       return runCreateNativeComponentShell(args)
+    case 'insert_native_slot_part':
+      return runInsertNativeSlotPart(args)
     case 'create_primitive_item':
       return runCreatePrimitiveItem(args)
     case 'create_item':
@@ -2183,7 +2209,7 @@ function buildPrompt(name) {
             content: {
               type: 'text',
               text:
-                'Start with workspace://manifest, then inspect workspace://surface/canvas/state, workspace://surface/canvas/selection, workspace://surface/canvas/themes, and workspace://surface/canvas/primitives. Summarize the current board briefly before calling any write tools. Prefer create_artboard, create_native_component_shell, create_primitive_item, create_item, create_items, create_group, update_item, update_group, select_items, set_canvas_viewport, focus_canvas_items, and export_board over shell edits when the task is scene-graph related. Use create_items when several new nodes should land in one atomic batch. Capture workspace://surface/canvas/viewport/screenshot after focusing the relevant board area when visual confirmation matters.',
+                'Start with workspace://manifest, then inspect workspace://surface/canvas/state, workspace://surface/canvas/selection, workspace://surface/canvas/themes, and workspace://surface/canvas/primitives. Summarize the current board briefly before calling any write tools. Prefer create_artboard, create_native_component_shell, insert_native_slot_part, create_primitive_item, create_item, create_items, create_group, update_item, update_group, select_items, set_canvas_viewport, focus_canvas_items, and export_board over shell edits when the task is scene-graph related. Use create_items when several new nodes should land in one atomic batch. Capture workspace://surface/canvas/viewport/screenshot after focusing the relevant board area when visual confirmation matters.',
             },
           },
         ],
@@ -2278,6 +2304,50 @@ async function runCreateNativeComponentShell(args) {
     'create_native_component_shell',
     createCreateItemOperation(item, args.select !== false),
     { item }
+  )
+}
+
+async function runInsertNativeSlotPart(args) {
+  const canvasId = normalizeString(args.canvasId)
+  const part = normalizeString(args.part)
+  if (!canvasId) return asToolError('canvasId is required.')
+  if (!CANVAS_NATIVE_PART_KINDS.includes(part)) {
+    return asToolError(`part must be one of: ${CANVAS_NATIVE_PART_KINDS.join(', ')}`)
+  }
+
+  const filePath = normalizeString(args.filePath) || undefined
+  const inlineSourceHtml = typeof args.sourceHtml === 'string' ? args.sourceHtml : undefined
+  let sourceHtml = inlineSourceHtml || ''
+  let mtimeMs = typeof args.mtimeMs === 'number' ? args.mtimeMs : undefined
+
+  if (filePath) {
+    const loaded = await loadCanvasSourceFile(context, filePath)
+    sourceHtml = loaded?.sourceHtml || loaded?.source || ''
+    if (typeof loaded?.mtimeMs === 'number' && mtimeMs == null) {
+      mtimeMs = loaded.mtimeMs
+    }
+  }
+
+  if (!sourceHtml.trim()) {
+    return asToolError('sourceHtml or filePath is required.')
+  }
+
+  const sourceId = normalizeString(args.sourceId) || filePath || 'inline-html-panel'
+  const slots = listCanvasHtmlSlots(sourceHtml, { sourceId })
+  const slot = slots.find((entry) => entry.canvasId === canvasId)
+  if (!slot) {
+    return asToolError(`Slot not found for canvasId: ${canvasId}`)
+  }
+
+  return asToolResult(
+    await updateCanvasHtmlNode(context, {
+      filePath,
+      sourceHtml: filePath ? undefined : sourceHtml,
+      canvasId,
+      sourceId,
+      mtimeMs,
+      mutations: [buildSlotNativePartInsertion(slot, part)],
+    })
   )
 }
 

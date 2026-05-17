@@ -6,11 +6,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 
 import {
   CanvasHtmlPropsPanel,
-  buildSlotNativePartInsertion,
   buildSlotComponentInsertion,
-  listSlotNativePartOptions,
 } from "../components/canvas/CanvasHtmlPropsPanel"
 import type { CanvasHtmlSlotInfo } from "../utils/canvasHtmlEditor"
+import {
+  buildSlotNativePartInsertion,
+  listSlotNativePartOptions,
+} from "../utils/canvasNativeParts"
 import type { CanvasRegistryPrimitive } from "../utils/canvasRegistry"
 
 const button: CanvasRegistryPrimitive = {
