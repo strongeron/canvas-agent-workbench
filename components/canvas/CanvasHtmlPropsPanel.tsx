@@ -30,6 +30,8 @@ interface CanvasHtmlPropsPanelProps {
   entryAsset?: string
   sourcePath?: string
   sourceImportedAt?: string
+  sourceHtmlFilePath?: string
+  sourceHtmlFileMtime?: number
   sourceReactFilePath?: string
   sourceReactFileMtime?: number
   size?: { width: number; height: number }
@@ -156,6 +158,8 @@ export function CanvasHtmlPropsPanel({
   entryAsset,
   sourcePath,
   sourceImportedAt,
+  sourceHtmlFilePath,
+  sourceHtmlFileMtime,
   sourceReactFilePath,
   sourceReactFileMtime,
   size,
@@ -888,9 +892,18 @@ export function CanvasHtmlPropsPanel({
             placeholder="<!doctype html><html><head><style>...</style></head><body>...</body></html>"
             className="w-full resize-y rounded-md border border-default bg-surface-50 px-3 py-2 font-mono text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
           />
-          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-            Applying inline HTML renders this node from stored source instead of a bundled URL.
-          </p>
+          {sourceHtmlFilePath ? (
+            <p className="mt-1 truncate text-[10px] text-muted-foreground" title={sourceHtmlFilePath}>
+              Saving will write to <span className="font-mono">{sourceHtmlFilePath}</span>
+              {typeof sourceHtmlFileMtime === "number"
+                ? ` (mtime ${new Date(sourceHtmlFileMtime).toLocaleTimeString()})`
+                : ""}
+            </p>
+          ) : (
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+              Applying inline HTML renders this node from stored source instead of a bundled URL.
+            </p>
+          )}
         </div>
 
         <div>

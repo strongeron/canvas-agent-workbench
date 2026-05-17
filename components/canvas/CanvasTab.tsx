@@ -4397,6 +4397,8 @@ export function CanvasTab({
               entryAsset={selectedHtmlItem.entryAsset}
               sourcePath={selectedHtmlItem.sourcePath}
               sourceImportedAt={selectedHtmlItem.sourceImportedAt}
+              sourceHtmlFilePath={selectedHtmlItem.sourceHtmlFilePath}
+              sourceHtmlFileMtime={selectedHtmlItem.sourceHtmlFileMtime}
               sourceReactFilePath={selectedHtmlItem.sourceReactFilePath}
               sourceReactFileMtime={selectedHtmlItem.sourceReactFileMtime}
               size={selectedHtmlItem.size}

@@ -487,6 +487,25 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     )
   })
 
+  it("shows file-backed html status when a source html file is attached", async () => {
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceHtmlFilePath="projects/demo/components/PromoCard.html"
+        sourceHtmlFileMtime={456}
+        projectId="demo"
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const text = harness.container.textContent || ""
+    expect(text).toContain("Saving will write to")
+    expect(text).toContain("projects/demo/components/PromoCard.html")
+  })
+
   it("replaces the first matching media child when a new source url is provided", async () => {
     vi.stubGlobal(
       "fetch",
