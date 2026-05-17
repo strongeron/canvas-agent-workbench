@@ -287,6 +287,24 @@ function PrimitiveList({
                       {primitive.description}
                     </div>
                   )}
+                  {primitive.slots && primitive.slots.length > 0 && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      {primitive.slots.slice(0, 4).map((slot) => (
+                        <span
+                          key={`${primitive.id}:${slot.name}`}
+                          className="rounded-full border border-default bg-surface-50 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                        >
+                          {slot.name}
+                          {slot.kind ? `:${slot.kind}` : ""}
+                        </span>
+                      ))}
+                      {primitive.slots.length > 4 ? (
+                        <span className="text-[10px] text-muted-foreground">
+                          +{primitive.slots.length - 4} more
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
                 </button>
               </li>
             ))}

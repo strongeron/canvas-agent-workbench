@@ -18,6 +18,11 @@ const PRIMITIVE: CanvasRegistryPrimitive = {
   category: "ui",
   kind: "html",
   filePath: "primitives/button.html",
+  slots: [
+    { name: "media", kind: "container" },
+    { name: "title", kind: "text" },
+    { name: "body", kind: "text" },
+  ],
 }
 
 const originalActEnvironmentDescriptor = Object.getOwnPropertyDescriptor(
@@ -232,5 +237,20 @@ describe("CanvasLibraryPanel dragstart", () => {
       sourceHtmlFilePath: "projects/design-system-foundation/primitives/button.html",
       sourceHtmlFileMtime: 789,
     })
+  })
+
+  it("renders slot metadata hints for primitives that define slots", async () => {
+    harness = await mount(
+      <CanvasLibraryPanel
+        projectId="design-system-foundation"
+        onInstantiate={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
+
+    const text = harness.container.textContent || ""
+    expect(text).toContain("media:container")
+    expect(text).toContain("title:text")
+    expect(text).toContain("body:text")
   })
 })
