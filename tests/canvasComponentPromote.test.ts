@@ -16,7 +16,7 @@ async function makeWorkspace() {
 }
 
 const SOURCE_ID = "demo/canvas-A.canvas"
-const SOURCE_HTML = `<section><article class="promo"><h2>Title</h2><p>Body</p></article></section>`
+const SOURCE_HTML = `<section><article class="promo" data-slot="root" data-slot-kind="container"><h2 data-slot="title" data-slot-kind="text">Title</h2><p data-slot="body" data-slot-kind="text">Body</p></article></section>`
 
 function findArticleId(): string {
   const { ids } = injectCanvasHtmlElementIds(SOURCE_HTML, { sourceId: SOURCE_ID, injectBridge: false })
@@ -34,8 +34,8 @@ describe("extractHtmlSubtree", () => {
     if (!result.ok) return
     expect(result.tag).toBe("article")
     expect(result.subtreeHtml).toContain('class="promo"')
-    expect(result.subtreeHtml).toContain("<h2>Title</h2>")
-    expect(result.subtreeHtml).toContain("<p>Body</p>")
+    expect(result.subtreeHtml).toContain('<h2 data-slot="title" data-slot-kind="text">Title</h2>')
+    expect(result.subtreeHtml).toContain('<p data-slot="body" data-slot-kind="text">Body</p>')
     expect(result.subtreeHtml).not.toContain("data-canvas-id")
     expect(result.subtreeHtml).not.toContain("<section>")
   })
@@ -78,6 +78,11 @@ describe("applyCanvasComponentPromoteRequest", () => {
     expect(written).not.toContain("data-canvas-id")
     const registry = JSON.parse(await fs.readFile(path.join(projectRoot, "registry.json"), "utf8"))
     expect(registry.ui[0]).toMatchObject({ id: "primitive/promo-card", kind: "html" })
+    expect(registry.ui[0].slots).toEqual([
+      { name: "root", kind: "container", tag: "article" },
+      { name: "title", kind: "text", tag: "h2" },
+      { name: "body", kind: "text", tag: "p" },
+    ])
   })
 
   it("rejects when sourceHtml or canvasId is missing", async () => {

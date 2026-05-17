@@ -49,6 +49,46 @@ describe("applyCanvasComponentCreateRequest", () => {
     expect(registry.ui[0]).toMatchObject({ id: "primitive/promo-card", kind: "html" })
   })
 
+  it("persists slot metadata for HTML components in the registry entry", async () => {
+    const { root, projectRoot } = await makeWorkspace()
+
+    const result = await applyCanvasComponentCreateRequest(
+      {
+        projectId: "demo",
+        name: "Hero Card",
+        format: "html",
+        sourceHtml:
+          '<section data-slot="root" data-slot-kind="container"><figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"></figure><h2 data-slot="title" data-slot-kind="text">Title</h2></section>',
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.primitive.slots).toEqual([
+      { name: "root", kind: "container", tag: "section" },
+      {
+        name: "media",
+        kind: "container",
+        accepts: "image,svg,video",
+        tag: "figure",
+      },
+      { name: "title", kind: "text", tag: "h2" },
+    ])
+
+    const registry = JSON.parse(await fs.readFile(path.join(projectRoot, "registry.json"), "utf8"))
+    expect(registry.ui[0].slots).toEqual([
+      { name: "root", kind: "container", tag: "section" },
+      {
+        name: "media",
+        kind: "container",
+        accepts: "image,svg,video",
+        tag: "figure",
+      },
+      { name: "title", kind: "text", tag: "h2" },
+    ])
+  })
+
   it("creates TSX component files and appends a TSX registry entry", async () => {
     const { root, projectRoot } = await makeWorkspace()
 

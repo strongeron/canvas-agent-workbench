@@ -1,5 +1,12 @@
 export type CanvasRegistryCategory = "ui" | "page"
 
+export interface CanvasRegistrySlot {
+  name: string
+  kind?: string
+  accepts?: string
+  tag?: string
+}
+
 export interface CanvasRegistryPrimitive {
   id: string
   displayName: string
@@ -11,6 +18,7 @@ export interface CanvasRegistryPrimitive {
   componentSlug?: string
   snippet?: string
   description?: string
+  slots?: CanvasRegistrySlot[]
 }
 
 export interface CanvasRegistryParseResult {
@@ -81,7 +89,37 @@ function parseEntry(
     componentSlug: typeof value.componentSlug === "string" ? value.componentSlug : undefined,
     snippet: typeof value.snippet === "string" ? value.snippet : undefined,
     description: typeof value.description === "string" ? value.description : undefined,
+    slots: parseSlots(value.slots, warnings),
   }
+}
+
+function parseSlots(
+  raw: unknown,
+  warnings: string[]
+): CanvasRegistrySlot[] | undefined {
+  if (raw == null) return undefined
+  if (!Array.isArray(raw)) {
+    warnings.push(`Skipping invalid "slots" metadata; expected an array.`)
+    return undefined
+  }
+  const slots = raw
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null
+      const value = entry as Record<string, unknown>
+      const name = typeof value.name === "string" ? value.name.trim() : ""
+      if (!name) return null
+      return {
+        name,
+        kind: typeof value.kind === "string" && value.kind.trim() ? value.kind.trim() : undefined,
+        accepts:
+          typeof value.accepts === "string" && value.accepts.trim()
+            ? value.accepts.trim()
+            : undefined,
+        tag: typeof value.tag === "string" && value.tag.trim() ? value.tag.trim() : undefined,
+      } satisfies CanvasRegistrySlot
+    })
+    .filter(Boolean) as CanvasRegistrySlot[]
+  return slots.length > 0 ? slots : undefined
 }
 
 function deriveDisplayName(id: string): string {

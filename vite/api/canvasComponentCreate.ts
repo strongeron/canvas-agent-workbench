@@ -1,7 +1,12 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 
-import { parseCanvasRegistry, type CanvasRegistryPrimitive } from "../../utils/canvasRegistry"
+import { listCanvasHtmlSlots } from "../../utils/canvasHtmlEditor"
+import {
+  parseCanvasRegistry,
+  type CanvasRegistryPrimitive,
+  type CanvasRegistrySlot,
+} from "../../utils/canvasRegistry"
 
 interface CanvasComponentCreateBody {
   projectId?: unknown
@@ -85,6 +90,7 @@ export async function applyCanvasComponentCreateRequest(
       ...(cssSource ? { cssPath: cssRelative } : {}),
       componentSlug: toKebabCase(componentName),
       ...(description ? { description } : {}),
+      slots: extractRegistrySlotsFromHtml(sourceHtml),
     }
     const writes = [{ filePath: htmlPath, source: ensureDataComponent(sourceHtml, primitive.componentSlug) }]
     if (cssSource) writes.push({ filePath: cssPath, source: cssSource.endsWith("\n") ? cssSource : `${cssSource}\n` })
@@ -255,4 +261,14 @@ function toRegistryEntry(primitive: CanvasRegistryPrimitive): Record<string, unk
   return Object.fromEntries(
     Object.entries(primitive).filter(([, value]) => value !== undefined && value !== "")
   )
+}
+
+function extractRegistrySlotsFromHtml(sourceHtml: string): CanvasRegistrySlot[] | undefined {
+  const slots = listCanvasHtmlSlots(sourceHtml, { sourceId: "registry-slot-scan" }).map((slot) => ({
+    name: slot.name,
+    kind: slot.kind,
+    accepts: slot.accepts,
+    tag: slot.tag,
+  }))
+  return slots.length > 0 ? slots : undefined
 }
