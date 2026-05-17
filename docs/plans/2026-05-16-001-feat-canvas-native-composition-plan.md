@@ -37,6 +37,7 @@ source with metadata, not as opaque canvas-only state.
   - automatic library refresh after shell save so the new registry primitive becomes available without a manual panel reload,
   - first-class slot metadata editing in the inspector for `data-slot`, `data-slot-kind`, and `data-slot-accepts`,
   - HTML primitives instantiated from the library now carry `sourceHtmlFilePath` and `mtime` so reused native components stay file-backed and source-editable,
+  - URL-backed media slot insertion can now retarget an existing matching `img`, `video`, or `a` child instead of always appending a duplicate node,
   - MCP tool parity via `create_native_component_shell`.
 - `Still pending`:
   - richer media slot replacement / asset-browser affordances beyond URL-based insertion.

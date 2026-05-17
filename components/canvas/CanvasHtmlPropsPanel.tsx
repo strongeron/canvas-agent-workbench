@@ -3,6 +3,7 @@ import { ExternalLink, FolderUp, Loader2, RefreshCw, Save, Trash2, Upload, X } f
 import { CanvasViewportPresets } from "./CanvasViewportPresets"
 import {
   listCanvasHtmlSlots,
+  readCanvasHtmlNode,
   writeCanvasHtmlNode,
   type CanvasHtmlSlotInfo,
 } from "../../utils/canvasHtmlEditor"
@@ -115,6 +116,13 @@ function buildSlotStarter(slot: CanvasHtmlSlotInfo) {
 
 function partUsesSourceUrl(part: CanvasNativePartKind | "") {
   return part === "image" || part === "video" || part === "link"
+}
+
+function matchingUrlBackedTag(part: CanvasNativePartKind) {
+  if (part === "image") return "img"
+  if (part === "video") return "video"
+  if (part === "link") return "a"
+  return null
 }
 
 /**
@@ -386,12 +394,40 @@ export function CanvasHtmlPropsPanel({
   const handleInsertSlotPart = useCallback(
     (slot: CanvasHtmlSlotInfo, part: CanvasNativePartKind) => {
       if (sourceMode !== "inline") return
-      const result = writeCanvasHtmlNode(
-        draftSourceHtml || "",
-        slot.canvasId,
-        [buildSlotNativePartInsertion(slot, part, { sourceUrl: slotPartSource[slot.name] })],
-        { sourceId: sourceIdentity }
-      )
+      const sourceUrl = slotPartSource[slot.name]
+      const matchedTag = matchingUrlBackedTag(part)
+      const firstChildCanvasId = `${slot.canvasId}.0`
+      const firstChild =
+        slot.childElementCount > 0
+          ? readCanvasHtmlNode(draftSourceHtml || "", firstChildCanvasId, {
+              sourceId: sourceIdentity,
+            })
+          : null
+
+      const result =
+        matchedTag &&
+        sourceUrl &&
+        firstChild &&
+        !("error" in firstChild) &&
+        firstChild.tag === matchedTag
+          ? writeCanvasHtmlNode(
+              draftSourceHtml || "",
+              firstChildCanvasId,
+              [
+                {
+                  type: "setAttribute",
+                  attrName: part === "link" ? "href" : "src",
+                  value: sourceUrl,
+                },
+              ],
+              { sourceId: sourceIdentity }
+            )
+          : writeCanvasHtmlNode(
+              draftSourceHtml || "",
+              slot.canvasId,
+              [buildSlotNativePartInsertion(slot, part, { sourceUrl })],
+              { sourceId: sourceIdentity }
+            )
       if (!result.ok) {
         setReplaceError(result.error)
         return

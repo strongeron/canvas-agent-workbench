@@ -181,6 +181,11 @@ const MEDIA_SLOT_HTML =
   '<figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"></figure>' +
   "</article></body></html>"
 
+const MEDIA_SLOT_WITH_IMAGE_HTML =
+  '<!doctype html><html><body><article class="card">' +
+  '<figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"><img src="https://placehold.co/640x360/png?text=Media" alt="Media" /></figure>' +
+  "</article></body></html>"
+
 describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
   let harness: Harness | null = null
 
@@ -480,5 +485,50 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     expect(arg.sourceHtml).toContain(
       '<section data-slot="copy" data-slot-kind="container" data-slot-accepts="image,svg"></section>'
     )
+  })
+
+  it("replaces the first matching media child when a new source url is provided", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
+    const onChange = vi.fn()
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={MEDIA_SLOT_WITH_IMAGE_HTML}
+        projectId="demo"
+        onChange={onChange}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const select = harness.container.querySelector(
+      'select[aria-label="HTML part for media"]'
+    ) as HTMLSelectElement
+    const urlInput = harness.container.querySelector(
+      'input[aria-label="Source URL for media"]'
+    ) as HTMLInputElement | null
+    await act(async () => {
+      setSelectValue(select, "image")
+    })
+    const nextUrlInput = harness.container.querySelector(
+      'input[aria-label="Source URL for media"]'
+    ) as HTMLInputElement
+    await act(async () => {
+      setInputValue(nextUrlInput, "https://cdn.example.com/replaced.jpg")
+    })
+    const insertBtn = [...harness.container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Insert part"
+    ) as HTMLButtonElement
+    await act(async () => {
+      insertBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    })
+
+    const arg = onChange.mock.calls.at(-1)?.[0]
+    expect(arg.sourceHtml).toContain('src="https://cdn.example.com/replaced.jpg"')
+    expect(arg.sourceHtml.match(/<img /g)?.length).toBe(1)
+    expect(urlInput).toBeNull()
   })
 })
