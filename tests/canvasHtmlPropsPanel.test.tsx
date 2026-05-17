@@ -6,7 +6,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 
 import {
   CanvasHtmlPropsPanel,
+  buildSlotNativePartInsertion,
   buildSlotComponentInsertion,
+  listSlotNativePartOptions,
 } from "../components/canvas/CanvasHtmlPropsPanel"
 import type { CanvasHtmlSlotInfo } from "../utils/canvasHtmlEditor"
 import type { CanvasRegistryPrimitive } from "../utils/canvasRegistry"
@@ -46,6 +48,55 @@ describe("buildSlotComponentInsertion", () => {
         importName: "Box",
       }).childSource
     ).toBe("<Box />")
+  })
+})
+
+describe("native slot part helpers", () => {
+  const mediaSlot: CanvasHtmlSlotInfo = {
+    name: "media",
+    canvasId: "x:2",
+    tag: "figure",
+    kind: "container",
+    accepts: "image,svg,video",
+    childElementCount: 1,
+  }
+
+  it("offers media parts for media-capable slots and hides them for text slots", () => {
+    expect(listSlotNativePartOptions(mediaSlot).map((option) => option.kind)).toEqual([
+      "div",
+      "section",
+      "header",
+      "footer",
+      "heading",
+      "paragraph",
+      "button",
+      "link",
+      "image",
+      "svg",
+      "video",
+    ])
+    expect(
+      listSlotNativePartOptions({
+        name: "title",
+        canvasId: "x:3",
+        tag: "h2",
+        kind: "text",
+        childElementCount: 0,
+      })
+    ).toEqual([])
+  })
+
+  it("builds media and native group insertion snippets", () => {
+    expect(buildSlotNativePartInsertion(mediaSlot, "image")).toEqual({
+      type: "insertChild",
+      position: 1,
+      childSource: '<img src="https://placehold.co/640x360/png?text=Media" alt="Media" />',
+    })
+    expect(buildSlotNativePartInsertion(mediaSlot, "section")).toEqual({
+      type: "insertChild",
+      position: 1,
+      childSource: "<section><h2>Media section</h2><p>Describe this section.</p></section>",
+    })
   })
 })
 
@@ -104,6 +155,11 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
 const SLOT_HTML =
   '<!doctype html><html><body><article class="card">' +
   '<section data-slot="body" data-slot-kind="content"></section>' +
+  "</article></body></html>"
+
+const MEDIA_SLOT_HTML =
+  '<!doctype html><html><body><article class="card">' +
+  '<figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"></figure>' +
   "</article></body></html>"
 
 describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
@@ -189,5 +245,46 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
         (b) => b.textContent === "Insert starter"
       )
     ).toBe(true)
+  })
+
+  it("inserts native html parts into container/media slots", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
+    const onChange = vi.fn()
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={MEDIA_SLOT_HTML}
+        projectId="demo"
+        onChange={onChange}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const select = harness.container.querySelector(
+      "select[aria-label='HTML part for media']"
+    ) as HTMLSelectElement
+    expect(select).not.toBeNull()
+    expect(select.querySelectorAll("option").length).toBeGreaterThan(4)
+
+    await act(async () => {
+      setSelectValue(select, "image")
+    })
+    const insertBtn = [...harness.container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Insert part"
+    ) as HTMLButtonElement
+    expect(insertBtn.disabled).toBe(false)
+    await act(async () => {
+      insertBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    })
+
+    const arg = onChange.mock.calls.at(-1)?.[0]
+    expect(arg.sourceMode).toBe("inline")
+    expect(arg.sourceHtml).toContain(
+      '<figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video"><img src="https://placehold.co/640x360/png?text=Media" alt="Media"></figure>'
+    )
   })
 })

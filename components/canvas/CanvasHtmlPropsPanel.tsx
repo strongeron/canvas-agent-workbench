@@ -83,6 +83,139 @@ function buildSlotStarter(slot: CanvasHtmlSlotInfo) {
   }
 }
 
+export type CanvasNativePartKind =
+  | "div"
+  | "section"
+  | "header"
+  | "footer"
+  | "heading"
+  | "paragraph"
+  | "button"
+  | "link"
+  | "image"
+  | "svg"
+  | "video"
+
+interface CanvasNativePartOption {
+  kind: CanvasNativePartKind
+  label: string
+}
+
+const BASE_SLOT_PART_OPTIONS: CanvasNativePartOption[] = [
+  { kind: "div", label: "Div group" },
+  { kind: "section", label: "Section" },
+  { kind: "header", label: "Header" },
+  { kind: "footer", label: "Footer" },
+  { kind: "heading", label: "Heading" },
+  { kind: "paragraph", label: "Paragraph" },
+  { kind: "button", label: "Button" },
+  { kind: "link", label: "Link" },
+]
+
+const MEDIA_SLOT_PART_OPTIONS: CanvasNativePartOption[] = [
+  { kind: "image", label: "Image" },
+  { kind: "svg", label: "SVG" },
+  { kind: "video", label: "Video" },
+]
+
+function slugifySlotLabel(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
+function buildSlotMediaSvg(label: string) {
+  return `<svg viewBox="0 0 160 100" fill="none" aria-label="${label}"><rect x="1" y="1" width="158" height="98" rx="16" stroke="currentColor" stroke-dasharray="6 6"/><path d="M34 68L62 44L82 58L112 28L126 68" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="56" cy="34" r="8" fill="currentColor"/></svg>`
+}
+
+export function listSlotNativePartOptions(slot: CanvasHtmlSlotInfo): CanvasNativePartOption[] {
+  if (slot.kind === "text") return []
+  const accepts = slot.accepts?.split(",").map((entry) => entry.trim()) ?? []
+  return accepts.some((entry) => ["image", "svg", "video"].includes(entry))
+    ? [...BASE_SLOT_PART_OPTIONS, ...MEDIA_SLOT_PART_OPTIONS]
+    : BASE_SLOT_PART_OPTIONS
+}
+
+export function buildSlotNativePartInsertion(
+  slot: CanvasHtmlSlotInfo,
+  part: CanvasNativePartKind
+) {
+  const label = titleCaseSlotName(slot.name)
+  const slug = slugifySlotLabel(label) || "slot"
+
+  switch (part) {
+    case "div":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<div><p>${label} group</p></div>`,
+      }
+    case "section":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<section><h2>${label} section</h2><p>Describe this section.</p></section>`,
+      }
+    case "header":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<header><h2>${label} header</h2><p>Supporting intro copy.</p></header>`,
+      }
+    case "footer":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<footer><p>${label} footer</p></footer>`,
+      }
+    case "heading":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<h2>${label} heading</h2>`,
+      }
+    case "paragraph":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<p>${label} text</p>`,
+      }
+    case "button":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<button type="button">${label} action</button>`,
+      }
+    case "link":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<a href="#${slug}">${label} link</a>`,
+      }
+    case "image":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<img src="https://placehold.co/640x360/png?text=${encodeURIComponent(
+          label
+        )}" alt="${label}" />`,
+      }
+    case "svg":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: buildSlotMediaSvg(label),
+      }
+    case "video":
+      return {
+        type: "insertChild" as const,
+        position: slot.childElementCount,
+        childSource: `<video controls muted playsinline aria-label="${label}"><source src="" type="video/mp4" /></video>`,
+      }
+  }
+}
+
 /**
  * Insert a chosen library component into a slot. Same `insertChild` shape as
  * `buildSlotStarter`'s element branch (position = current child count, i.e.
@@ -146,6 +279,7 @@ export function CanvasHtmlPropsPanel({
   const [registryPrimitives, setRegistryPrimitives] = useState<CanvasRegistryPrimitive[]>([])
   // slot.name → chosen primitive id, so each slot's picker is independent.
   const [slotPick, setSlotPick] = useState<Record<string, string>>({})
+  const [slotPartPick, setSlotPartPick] = useState<Record<string, CanvasNativePartKind | "">>({})
   const hasSlots = detectedSlots.length > 0
 
   // Load the project's registry once a slotted inline shell is open, so each
@@ -318,6 +452,26 @@ export function CanvasHtmlPropsPanel({
     [draftSourceHtml, onChange, sourceIdentity, sourceMode]
   )
 
+  const handleInsertSlotPart = useCallback(
+    (slot: CanvasHtmlSlotInfo, part: CanvasNativePartKind) => {
+      if (sourceMode !== "inline") return
+      const result = writeCanvasHtmlNode(
+        draftSourceHtml || "",
+        slot.canvasId,
+        [buildSlotNativePartInsertion(slot, part)],
+        { sourceId: sourceIdentity }
+      )
+      if (!result.ok) {
+        setReplaceError(result.error)
+        return
+      }
+      setReplaceError(null)
+      setDraftSourceHtml(result.source)
+      onChange({ sourceMode: "inline", sourceHtml: result.source })
+    },
+    [draftSourceHtml, onChange, sourceIdentity, sourceMode]
+  )
+
   return (
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
       <div className="flex items-center justify-between border-b border-default px-4 py-3">
@@ -411,11 +565,10 @@ export function CanvasHtmlPropsPanel({
               Detected slots
             </div>
             <div className="grid gap-2">
-              {detectedSlots.map((slot) => (
-                <div
-                  key={slot.name}
-                  className="rounded-md border border-default bg-surface-50 px-3 py-2"
-                >
+              {detectedSlots.map((slot) => {
+                const nativePartOptions = listSlotNativePartOptions(slot)
+                return (
+                  <div key={slot.name} className="rounded-md border border-default bg-surface-50 px-3 py-2">
                   <div className="text-xs font-semibold text-foreground">{slot.name}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                     {slot.kind ? (
@@ -436,6 +589,39 @@ export function CanvasHtmlPropsPanel({
                       Insert starter
                     </button>
                   </div>
+                  {nativePartOptions.length > 0 ? (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <select
+                        aria-label={`HTML part for ${slot.name}`}
+                        value={slotPartPick[slot.name] ?? ""}
+                        onChange={(event) =>
+                          setSlotPartPick((current) => ({
+                            ...current,
+                            [slot.name]: event.target.value as CanvasNativePartKind | "",
+                          }))
+                        }
+                        className="min-w-0 flex-1 rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+                      >
+                        <option value="">HTML part…</option>
+                        {nativePartOptions.map((option) => (
+                          <option key={option.kind} value={option.kind}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!slotPartPick[slot.name]}
+                        onClick={() => {
+                          const part = slotPartPick[slot.name]
+                          if (part) handleInsertSlotPart(slot, part)
+                        }}
+                        className="rounded-full border border-brand-300 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Insert part
+                      </button>
+                    </div>
+                  ) : null}
                   {registryPrimitives.length > 0 ? (
                     <div className="mt-2 flex items-center gap-1.5">
                       <select
@@ -471,8 +657,9 @@ export function CanvasHtmlPropsPanel({
                       </button>
                     </div>
                   ) : null}
-                </div>
-              ))}
+                  </div>
+                )
+              })}
             </div>
           </div>
         ) : null}

@@ -30,9 +30,9 @@ source with metadata, not as opaque canvas-only state.
   - optional starter title in the chooser so the initial heading/item title can be set at creation time,
   - authored slot metadata in starter HTML shells (`data-slot`, `data-slot-kind`, `data-slot-accepts`),
   - detected slot summaries plus inline “insert starter” actions in the HTML inspector for native shells,
+  - visual insert controls for native child HTML parts inside non-text slots (`div`, `section`, `header`, `footer`, `h2`, `p`, `button`, `a`, `img`, `svg`, `video`),
   - MCP tool parity via `create_native_component_shell`.
 - `Still pending`:
-  - visual insert controls for child HTML parts inside the shell,
   - explicit slot editing UI,
   - save-to-registry flow from the shell authoring path,
   - richer media slot insertion and replacement affordances.
