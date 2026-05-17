@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Layers3, X } from "lucide-react"
 
 import {
+  NATIVE_COMPONENT_ELEMENT_PARTS,
   NATIVE_COMPONENT_TEMPLATES,
   type NativeComponentTemplate,
 } from "../../utils/canvasNativeComponentShell"
@@ -82,42 +83,78 @@ export function CanvasNativeComponentDialog({
         </div>
 
         <div className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1.4fr)_280px]">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {NATIVE_COMPONENT_TEMPLATES.map((template) => {
-              const selected = template.id === selectedTemplate
-              return (
-                <button
-                  key={template.id}
-                  type="button"
-                  onClick={() => setSelectedTemplate(template.id)}
-                  className={`rounded-2xl border p-4 text-left transition ${
-                    selected
-                      ? "border-brand-300 bg-brand-50 shadow-sm"
-                      : "border-default bg-white hover:border-brand-200 hover:bg-surface-50"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`rounded-full p-2 ${
-                        selected ? "bg-brand-100 text-brand-700" : "bg-surface-100 text-foreground"
+          <div className="flex flex-col gap-4">
+            <div>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Templates &amp; layout primitives
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {NATIVE_COMPONENT_TEMPLATES.map((template) => {
+                  const selected = template.id === selectedTemplate
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => setSelectedTemplate(template.id)}
+                      className={`rounded-2xl border p-4 text-left transition ${
+                        selected
+                          ? "border-brand-300 bg-brand-50 shadow-sm"
+                          : "border-default bg-white hover:border-brand-200 hover:bg-surface-50"
                       }`}
                     >
-                      <Layers3 className="h-4 w-4" />
-                    </div>
-                    <div className="text-sm font-semibold text-foreground">{template.label}</div>
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                    {template.description}
-                  </p>
-                  <div className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Slots
-                  </div>
-                  <div className="mt-1 text-xs leading-5 text-foreground">
-                    {template.slotSummary}
-                  </div>
-                </button>
-              )
-            })}
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`rounded-full p-2 ${
+                            selected
+                              ? "bg-brand-100 text-brand-700"
+                              : "bg-surface-100 text-foreground"
+                          }`}
+                        >
+                          <Layers3 className="h-4 w-4" />
+                        </div>
+                        <div className="text-sm font-semibold text-foreground">
+                          {template.label}
+                        </div>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                        {template.description}
+                      </p>
+                      <div className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Slots
+                      </div>
+                      <div className="mt-1 text-xs leading-5 text-foreground">
+                        {template.slotSummary}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Element parts
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {NATIVE_COMPONENT_ELEMENT_PARTS.map((part) => {
+                  const selected = part === selectedTemplate
+                  return (
+                    <button
+                      key={part}
+                      type="button"
+                      onClick={() => setSelectedTemplate(part)}
+                      className={`rounded-md border px-2.5 py-1 font-mono text-xs transition ${
+                        selected
+                          ? "border-brand-300 bg-brand-50 text-brand-700 shadow-sm"
+                          : "border-default bg-white text-foreground hover:border-brand-200 hover:bg-surface-50"
+                      }`}
+                    >
+                      {`<${part}>`}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-col gap-4 rounded-2xl border border-default bg-surface-50 p-4">
@@ -146,7 +183,7 @@ export function CanvasNativeComponentDialog({
                 Result
               </div>
               <p className="mt-2 text-sm leading-6 text-foreground">
-                The canvas creates a source-backed inline HTML node, not a props-only component
+                The canvas creates a file-backed HTML component, not a props-only component
                 instance. You can edit the structure immediately in the right panel or through the
                 agent HTML tools.
               </p>
