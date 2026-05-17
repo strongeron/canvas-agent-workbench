@@ -4094,7 +4094,7 @@ export function CanvasTab({
 
           {libraryPanelVisible && (
             <CanvasLibraryPanel
-              projectId="design-system-foundation"
+              projectId={activeProjectId || "design-system-foundation"}
               onInstantiate={async (input) => {
                 await handleAddInlineHtml({
                   title: input.title,
