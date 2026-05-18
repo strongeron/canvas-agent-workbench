@@ -9,6 +9,10 @@ import {
   validateSingleSegment,
 } from "../vite/api/canvasComponentCreate"
 import { parseCanvasRegistry } from "../utils/canvasRegistry"
+import {
+  isFileBackedComponent,
+  resolveHtmlSourceFilePath,
+} from "../utils/canvasHtmlSourceResolve"
 
 async function makeWorkspace() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-component-create-"))
@@ -343,5 +347,87 @@ describe("applyCanvasComponentCreateRequest", () => {
     expect(second.primitive.id).toBe("primitive/badge-2")
     expect(second.primitive.filePath).toBe("components/Badge2.tsx")
     expect(second.primitive.importName).toBe("Badge2")
+  })
+
+  // U3 — file-backed-on-create + the create-then-rebind reconcile contract.
+  describe("create-then-rebind contract (U3)", () => {
+    it("a native create yields a file-backed item bound to filePath + slug (no inline-only phase)", async () => {
+      const { root } = await makeWorkspace()
+
+      const result = await applyCanvasComponentCreateRequest(
+        {
+          projectId: "demo",
+          name: "Stack",
+          format: "html",
+          sourceHtml: `<section class="stack">Hello</section>`,
+        },
+        { workspaceRoot: root }
+      )
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.primitive.componentSlug).toBe("stack")
+      expect(result.primitive.filePath).toBe("components/Stack.html")
+      const htmlFile = result.files.find(
+        (file) => file.filePath === result.primitive.filePath
+      )
+      expect(typeof htmlFile?.mtimeMs).toBe("number")
+
+      // This is exactly what handleAddNativeComponent stores on the item:
+      const repoRelative = `projects/demo/${result.primitive.filePath}`
+      const item = {
+        sourceHtmlFilePath: repoRelative,
+        sourceComponentSlug: result.primitive.componentSlug,
+        sourceComponentFilePath: repoRelative,
+      }
+      // Already file-backed — never an inline-only node.
+      expect(isFileBackedComponent(item)).toBe(true)
+      expect(resolveHtmlSourceFilePath(item)).toBe(repoRelative)
+    })
+
+    it("rebind dropped → next edit still resolves the file via the create-time path, not a divergent inline copy", async () => {
+      const { root } = await makeWorkspace()
+      const result = await applyCanvasComponentCreateRequest(
+        {
+          projectId: "demo",
+          name: "Hero",
+          format: "html",
+          sourceHtml: `<section class="hero">Hi</section>`,
+        },
+        { workspaceRoot: root }
+      )
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+
+      const repoRelative = `projects/demo/${result.primitive.filePath}`
+      // Simulate the post-create rebind being dropped: the editable binding
+      // (sourceHtmlFilePath) never landed, but the stable slug/path did.
+      const itemAfterDroppedRebind = {
+        sourceHtmlFilePath: undefined,
+        sourceComponentSlug: result.primitive.componentSlug,
+        sourceComponentFilePath: repoRelative,
+      }
+      // The reconcile keys on the create-time identity, so the next edit
+      // resolves the REAL file — it must never treat this as inline-divergent.
+      expect(isFileBackedComponent(itemAfterDroppedRebind)).toBe(true)
+      expect(resolveHtmlSourceFilePath(itemAfterDroppedRebind)).toBe(repoRelative)
+    })
+
+    it("a genuinely inline node (no slug, no create path) resolves to no file", () => {
+      const inlineOnly = { sourceHtmlFilePath: undefined }
+      expect(isFileBackedComponent(inlineOnly)).toBe(false)
+      expect(resolveHtmlSourceFilePath(inlineOnly)).toBeUndefined()
+    })
+
+    it("the live editable binding wins over the stable create-time path", () => {
+      const item = {
+        sourceHtmlFilePath: "projects/demo/components/Renamed.html",
+        sourceComponentSlug: "hero",
+        sourceComponentFilePath: "projects/demo/components/Hero.html",
+      }
+      expect(resolveHtmlSourceFilePath(item)).toBe(
+        "projects/demo/components/Renamed.html"
+      )
+    })
   })
 })

@@ -168,6 +168,14 @@ export interface CanvasHtmlItem extends CanvasItemBase {
   sourceHtmlFileMtime?: number
   sourceReactFilePath?: string
   sourceReactFileMtime?: number
+  /**
+   * Create-then-rebind reconcile (U3). Set once when a native component is
+   * created file-backed; never cleared by inline edits. If the editable
+   * `sourceHtmlFilePath` binding is dropped, the next edit still resolves the
+   * real file via these instead of falling back to a divergent inline copy.
+   */
+  sourceComponentSlug?: string
+  sourceComponentFilePath?: string
 }
 
 export type CanvasMermaidTheme = "default" | "neutral" | "dark" | "forest" | "base"

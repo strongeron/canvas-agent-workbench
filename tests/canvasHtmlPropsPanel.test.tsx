@@ -13,7 +13,6 @@ import {
   buildSlotNativePartInsertion,
   listSlotNativePartOptions,
 } from "../utils/canvasNativeParts"
-import { CANVAS_REGISTRY_UPDATED_EVENT } from "../utils/canvasRegistryEvents"
 import type { CanvasRegistryPrimitive } from "../utils/canvasRegistry"
 
 const button: CanvasRegistryPrimitive = {
@@ -358,84 +357,239 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     )
   })
 
-  it("saves an inline shell as a project component and attaches file metadata", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url === "/api/canvas/registry/list") {
-        return { ok: true, json: async () => ({ ok: true, primitives: [] }) }
-      }
-      if (url === "/api/canvas/component/create") {
-        const body = JSON.parse(String(init?.body || "{}"))
-        expect(body).toMatchObject({
-          projectId: "demo",
-          name: "Promo Card",
-          format: "html",
-        })
-        return {
-          ok: true,
-          json: async () => ({
-            ok: true,
-            projectId: "demo",
-            primitive: {
-              id: "primitive/promo-card",
-              displayName: "PromoCard",
-              kind: "html",
-              filePath: "components/PromoCard.html",
-            },
-            files: [{ filePath: "components/PromoCard.html", mtimeMs: 456 }],
-          }),
-        }
-      }
-      throw new Error(`Unexpected fetch: ${url}`)
-    })
-    vi.stubGlobal("fetch", fetchMock)
-    const onChange = vi.fn()
-    const registryUpdated = vi.fn()
-    window.addEventListener(CANVAS_REGISTRY_UPDATED_EVENT, registryUpdated)
+  it("removes the 'Save as component' affordance entirely (U3)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
     harness = await mount(
       <CanvasHtmlPropsPanel
         title="Promo Card"
         sourceMode="inline"
         sourceHtml={SLOT_HTML}
+        sourceHtmlFilePath="projects/demo/components/PromoCard.html"
         projectId="demo"
-        onChange={onChange}
+        onChange={() => {}}
         onDelete={() => {}}
         onClose={() => {}}
       />
     )
+    // No Save button, no Save dialog inputs — the whole step is gone.
+    expect(
+      harness.container.querySelector('button[aria-label="Save as component"]')
+    ).toBeNull()
+    expect(
+      harness.container.querySelector('input[aria-label="Component name"]')
+    ).toBeNull()
+    expect(
+      [...harness.container.querySelectorAll("button")].some((b) =>
+        b.textContent?.includes("Save component")
+      )
+    ).toBe(false)
+  })
 
-    const saveOpenButton = harness.container.querySelector(
-      'button[aria-label="Save as component"]'
+  it("shows the Sync button only for file-backed items, labelled by sync history", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
+    // Not file-backed → no Sync button.
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        projectId="demo"
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    expect(
+      harness.container.querySelector('button[aria-label="Sync component"]')
+    ).toBeNull()
+    harness.cleanup()
+
+    // File-backed, never synced → label "Sync".
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceComponentSlug="promo-card"
+        sourceComponentFilePath="projects/demo/components/PromoCard.html"
+        projectId="demo"
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
     ) as HTMLButtonElement
-    expect(saveOpenButton).not.toBeNull()
-    await act(async () => {
-      saveOpenButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-    })
+    expect(syncBtn).not.toBeNull()
+    expect(syncBtn.textContent).toContain("Sync")
+    expect(syncBtn.textContent).not.toContain("Re-sync")
+    harness.cleanup()
 
-    const nameInput = harness.container.querySelector(
-      'input[aria-label="Component name"]'
-    ) as HTMLInputElement
-    expect(nameInput.value).toBe("Promo Card")
-    await act(async () => {
-      setInputValue(nameInput, "Promo Card")
-    })
-
-    const saveButton = [...harness.container.querySelectorAll("button")].find(
-      (b) => b.textContent?.includes("Save component")
+    // Synced before → steady label is "Re-sync".
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceHtmlFilePath="projects/demo/components/PromoCard.html"
+        syncedBefore
+        projectId="demo"
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const reSyncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
     ) as HTMLButtonElement
-    await act(async () => {
-      saveButton.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-    })
+    expect(reSyncBtn.textContent).toContain("Re-sync")
+  })
 
-    expect(onChange).toHaveBeenCalledWith({
-      sourceMode: "inline",
-      sourceHtml: SLOT_HTML,
-      sourcePath: "projects/demo/components/PromoCard.html",
-      sourceHtmlFilePath: "projects/demo/components/PromoCard.html",
-      sourceHtmlFileMtime: 456,
+  it("Sync button is inert (no state change) when onSync is undefined (U3)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceComponentSlug="promo-card"
+        projectId="demo"
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    expect(syncBtn.getAttribute("data-sync-phase")).toBe("idle")
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
     })
-    expect(registryUpdated).toHaveBeenCalledTimes(1)
-    window.removeEventListener(CANVAS_REGISTRY_UPDATED_EVENT, registryUpdated)
+    // No onSync → stays idle, never disabled, label unchanged.
+    expect(syncBtn.getAttribute("data-sync-phase")).toBe("idle")
+    expect(syncBtn.disabled).toBe(false)
+    expect(syncBtn.textContent).toContain("Sync")
+  })
+
+  it("Sync state machine: Sync → Syncing… → Synced ✓ → Re-sync", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
+    vi.useFakeTimers()
+    let resolveSync: (() => void) | null = null
+    const onSync = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSync = resolve
+        })
+    )
+    try {
+      harness = await mount(
+        <CanvasHtmlPropsPanel
+          sourceMode="inline"
+          sourceHtml={SLOT_HTML}
+          sourceComponentSlug="promo-card"
+          projectId="demo"
+          onChange={() => {}}
+          onDelete={() => {}}
+          onClose={() => {}}
+          onSync={onSync}
+        />
+      )
+      const syncBtn = harness.container.querySelector(
+        'button[aria-label="Sync component"]'
+      ) as HTMLButtonElement
+      expect(syncBtn.getAttribute("data-sync-phase")).toBe("idle")
+      expect(syncBtn.textContent).toContain("Sync")
+
+      // Click → Syncing…, disabled.
+      await act(async () => {
+        syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      })
+      expect(syncBtn.getAttribute("data-sync-phase")).toBe("syncing")
+      expect(syncBtn.textContent).toContain("Syncing")
+      expect(syncBtn.disabled).toBe(true)
+
+      // Resolve → Synced ✓ (transient).
+      await act(async () => {
+        resolveSync?.()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(syncBtn.getAttribute("data-sync-phase")).toBe("synced")
+      expect(syncBtn.textContent).toContain("Synced")
+
+      // After the transient timeout → settles to Re-sync.
+      await act(async () => {
+        vi.advanceTimersByTime(2000)
+      })
+      expect(syncBtn.getAttribute("data-sync-phase")).toBe("idle")
+      expect(syncBtn.textContent).toContain("Re-sync")
+      expect(syncBtn.disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("Sync state machine: failure → Sync failed + inline templated error → prior label", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
+    vi.useFakeTimers()
+    const permissionError = Object.assign(new Error("EACCES: denied"), {
+      class: "permission" as const,
+    })
+    const onSync = vi.fn(() => Promise.reject(permissionError))
+    try {
+      harness = await mount(
+        <CanvasHtmlPropsPanel
+          sourceMode="inline"
+          sourceHtml={SLOT_HTML}
+          sourceHtmlFilePath="projects/demo/components/PromoCard.html"
+          syncedBefore
+          projectId="demo"
+          onChange={() => {}}
+          onDelete={() => {}}
+          onClose={() => {}}
+          onSync={onSync}
+        />
+      )
+      const syncBtn = harness.container.querySelector(
+        'button[aria-label="Sync component"]'
+      ) as HTMLButtonElement
+      expect(syncBtn.textContent).toContain("Re-sync")
+
+      await act(async () => {
+        syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(syncBtn.getAttribute("data-sync-phase")).toBe("failed")
+      expect(syncBtn.textContent).toContain("Sync failed")
+      // Templated per the `permission` error class, raw detail appended.
+      const alert = harness.container.querySelector('[role="alert"]')
+      expect(alert?.textContent).toContain("folder permissions")
+      expect(alert?.textContent).toContain("EACCES: denied")
+
+      // After the transient → reverts to the prior steady label (Re-sync).
+      await act(async () => {
+        vi.advanceTimersByTime(2500)
+      })
+      expect(syncBtn.getAttribute("data-sync-phase")).toBe("idle")
+      expect(syncBtn.textContent).toContain("Re-sync")
+      expect(harness.container.querySelector('[role="alert"]')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("updates slot metadata through the inspector controls", async () => {

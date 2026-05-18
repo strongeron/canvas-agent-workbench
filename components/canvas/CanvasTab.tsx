@@ -109,9 +109,32 @@ import {
   type CanvasSourceMutation,
 } from "../../utils/canvasMutationHistory"
 import { cycleVariantIndex } from "../../utils/canvasVariantCycle"
+import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
+import { resolveHtmlSourceFilePath } from "../../utils/canvasHtmlSourceResolve"
 import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
+
+/**
+ * Client-side shape of the `/api/canvas/component/create` response (U2/U3).
+ * Mirrors the server `CanvasComponentCreateResponse` success branch plus the
+ * `{ ok:false, error }` failure branch the panel/handler need.
+ */
+interface ComponentCreateClientResult {
+  ok?: boolean
+  projectId?: string
+  primitive?: {
+    id: string
+    displayName: string
+    kind: "html" | "tsx"
+    filePath?: string
+    cssPath?: string
+    importName?: string
+    componentSlug?: string
+  }
+  files: Array<{ filePath: string; mtimeMs: number }>
+  error?: string
+}
 
 /** Props for injected Renderer component */
 interface RendererComponentProps {
@@ -937,7 +960,9 @@ export function CanvasTab({
           htmlItem.id,
         sourceReact: htmlItem.sourceReact,
         sourceHtml: htmlItem.sourceHtml,
-        filePath: isHtmlMode ? htmlItem.sourceHtmlFilePath : htmlItem.sourceReactFilePath,
+        filePath: isHtmlMode
+          ? resolveHtmlSourceFilePath(htmlItem)
+          : htmlItem.sourceReactFilePath,
         mtimeMs: isHtmlMode ? htmlItem.sourceHtmlFileMtime : htmlItem.sourceReactFileMtime,
         onSourceReactChange: (sourceReact, mtimeMs) =>
           updateItem(itemId, {
@@ -1213,7 +1238,7 @@ export function CanvasTab({
         sourceReact: htmlItem.sourceReact,
         sourceHtml: htmlItem.sourceHtml,
         filePath: isHtmlMode
-          ? htmlItem.sourceHtmlFilePath
+          ? resolveHtmlSourceFilePath(htmlItem)
           : htmlItem.sourceReactFilePath,
         mtimeMs: isHtmlMode
           ? htmlItem.sourceHtmlFileMtime
@@ -1268,7 +1293,9 @@ export function CanvasTab({
             htmlItem.id,
           sourceReact: htmlItem.sourceReact,
           sourceHtml: htmlItem.sourceHtml,
-          filePath: isHtmlMode ? htmlItem.sourceHtmlFilePath : htmlItem.sourceReactFilePath,
+          filePath: isHtmlMode
+          ? resolveHtmlSourceFilePath(htmlItem)
+          : htmlItem.sourceReactFilePath,
           mtimeMs: isHtmlMode ? htmlItem.sourceHtmlFileMtime : htmlItem.sourceReactFileMtime,
           onSourceReactChange: (sourceReact, mtimeMs) =>
             updateItem(event.itemId, {
@@ -2077,6 +2104,8 @@ export function CanvasTab({
       sourceHtmlFileMtime?: number
       sourceReactFilePath?: string
       sourceReactFileMtime?: number
+      sourceComponentSlug?: string
+      sourceComponentFilePath?: string
       position?: { x: number; y: number }
       size?: { width: number; height: number }
       parentId?: string
@@ -2145,6 +2174,8 @@ export function CanvasTab({
         sourceHtmlFileMtime: input?.sourceHtmlFileMtime,
         sourceReactFilePath: input?.sourceReactFilePath,
         sourceReactFileMtime: input?.sourceReactFileMtime,
+        sourceComponentSlug: input?.sourceComponentSlug,
+        sourceComponentFilePath: input?.sourceComponentFilePath,
         sandbox: "allow-scripts allow-same-origin allow-forms allow-modals allow-popups",
         position: {
           x: Math.max(0, targetX - htmlWidth / 2),
@@ -2177,6 +2208,56 @@ export function CanvasTab({
     ) => {
       const targetArtboardId = nativeComponentTargetArtboard?.id
       const shell = buildNativeComponentShell(template, title)
+      const projectId = activeProjectId || "design-system-foundation"
+
+      // File-backed-on-create (U3): write a real file via the U2 uniquifier
+      // BEFORE adding the canvas item. Default body, no `failOnExisting`, so a
+      // name clash never 409s — the slug is auto-uniquified server-side. On
+      // failure we throw and add NO orphan canvas item.
+      let createResult: ComponentCreateClientResult
+      try {
+        const response = await fetch("/api/canvas/component/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            name: shell.title,
+            format: "html",
+            sourceHtml: shell.sourceHtml,
+          }),
+        })
+        createResult = (await response
+          .json()
+          .catch(() => ({}))) as ComponentCreateClientResult
+        if (
+          !response.ok ||
+          !createResult.ok ||
+          createResult.primitive?.kind !== "html" ||
+          !createResult.primitive.filePath
+        ) {
+          throw new Error(createResult.error || "Failed to create component.")
+        }
+      } catch (error) {
+        throw error instanceof Error
+          ? error
+          : new Error("Failed to create component.")
+      }
+
+      const primitive = createResult.primitive
+      // The create response carries the resolved (possibly uniquified) slug +
+      // file path. We bind the item to BOTH the editable file path and the
+      // stable create-time slug/path so a dropped rebind still resolves the
+      // real file via `slug` (the create-then-rebind reconcile contract).
+      const filePath = `projects/${projectId}/${primitive.filePath}`
+      const htmlFile = createResult.files.find(
+        (entry) => entry.filePath === primitive.filePath
+      )
+
+      // Notify library/registry consumers of the new file-backed component
+      // (same signal `handleSaveAsComponent` used to emit).
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(CANVAS_REGISTRY_UPDATED_EVENT))
+      }
 
       if (targetArtboardId) {
         const siblings = items.filter(
@@ -2186,7 +2267,14 @@ export function CanvasTab({
 
         await handleAddInlineHtml({
           title: shell.title,
+          // Keep the inline source for immediate render; the item is already
+          // file-backed via the binding fields below.
           sourceHtml: shell.sourceHtml,
+          sourcePath: filePath,
+          sourceHtmlFilePath: filePath,
+          sourceHtmlFileMtime: htmlFile?.mtimeMs,
+          sourceComponentSlug: primitive.componentSlug,
+          sourceComponentFilePath: filePath,
           parentId: targetArtboardId,
           order: maxOrder + 1,
           position: { x: shell.size.width / 2, y: shell.size.height / 2 },
@@ -2198,10 +2286,15 @@ export function CanvasTab({
       await handleAddInlineHtml({
         title: shell.title,
         sourceHtml: shell.sourceHtml,
+        sourcePath: filePath,
+        sourceHtmlFilePath: filePath,
+        sourceHtmlFileMtime: htmlFile?.mtimeMs,
+        sourceComponentSlug: primitive.componentSlug,
+        sourceComponentFilePath: filePath,
         size: shell.size,
       })
     },
-    [handleAddInlineHtml, items, nativeComponentTargetArtboard]
+    [activeProjectId, handleAddInlineHtml, items, nativeComponentTargetArtboard]
   )
 
   const handleComponentPasteCreated = useCallback(
@@ -3674,8 +3767,21 @@ export function CanvasTab({
             artboardName={nativeComponentTargetArtboard?.name ?? null}
             onClose={() => setNativeComponentDialogVisible(false)}
             onCreate={async (input) => {
-              await handleAddNativeComponent(input.template, input.title)
-              setNativeComponentDialogVisible(false)
+              try {
+                await handleAddNativeComponent(input.template, input.title)
+                setNativeComponentDialogVisible(false)
+              } catch (error) {
+                // Create failed → no orphan canvas item was added; keep the
+                // dialog open and surface the error inline.
+                setHistoryToast({
+                  id: Date.now(),
+                  tone: "error",
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : "Failed to create component.",
+                })
+              }
             }}
           />
 
@@ -3950,6 +4056,8 @@ export function CanvasTab({
               sourceHtmlFileMtime={selectedHtmlItem.sourceHtmlFileMtime}
               sourceReactFilePath={selectedHtmlItem.sourceReactFilePath}
               sourceReactFileMtime={selectedHtmlItem.sourceReactFileMtime}
+              sourceComponentSlug={selectedHtmlItem.sourceComponentSlug}
+              sourceComponentFilePath={selectedHtmlItem.sourceComponentFilePath}
               size={selectedHtmlItem.size}
               onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
               onResize={(width) =>

@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ExternalLink, FolderUp, Loader2, RefreshCw, Save, Trash2, Upload, X } from "lucide-react"
+import {
+  Check,
+  ExternalLink,
+  FolderUp,
+  Loader2,
+  RefreshCw,
+  Trash2,
+  Upload,
+  UploadCloud,
+  X,
+} from "lucide-react"
 import { CanvasViewportPresets } from "./CanvasViewportPresets"
 import {
   listCanvasHtmlSlots,
@@ -11,7 +21,6 @@ import {
   buildPrimitiveChildSource,
   type CanvasRegistryPrimitive,
 } from "../../utils/canvasRegistry"
-import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
 import {
   buildSlotNativePartInsertion,
   listSlotNativePartOptions,
@@ -34,9 +43,24 @@ interface CanvasHtmlPropsPanelProps {
   sourceHtmlFileMtime?: number
   sourceReactFilePath?: string
   sourceReactFileMtime?: number
+  /** Create-then-rebind reconcile keys (U3). Set at file-backed-on-create. */
+  sourceComponentSlug?: string
+  sourceComponentFilePath?: string
   size?: { width: number; height: number }
   /** Project whose registry primitives populate the per-slot component picker. */
   projectId?: string
+  /**
+   * Sync action (wired in U6). Resolves on success, rejects on failure with an
+   * error whose `class` (when present) selects the inline copy template. For
+   * U3 this is `undefined` — the button is inert but the state machine still
+   * renders and transitions are exercised by tests through it.
+   */
+  onSync?: () => Promise<void>
+  /**
+   * Whether this item has been synced at least once. Drives the steady label
+   * (`Sync` vs `Re-sync`). U6 persists/derives this; U3 passes `false`.
+   */
+  syncedBefore?: boolean
   onChange: (updates: {
     src?: string
     title?: string
@@ -60,21 +84,6 @@ interface CanvasHtmlPropsPanelProps {
   onReplaceBundleFromDirectory?: (input: { directoryPath: string; entryFile?: string }) => Promise<void>
   onDelete: () => void
   onClose: () => void
-}
-
-interface ComponentSaveResult {
-  ok?: boolean
-  projectId: string
-  primitive: {
-    id: string
-    displayName: string
-    kind: "html" | "tsx"
-    filePath?: string
-    cssPath?: string
-    importName?: string
-  }
-  files: Array<{ filePath: string; mtimeMs: number }>
-  error?: string
 }
 
 interface SlotEditDraft {
@@ -146,6 +155,157 @@ export function buildSlotComponentInsertion(
   }
 }
 
+/**
+ * Sync error classes (U3). The action handler (wired in U6) rejects with an
+ * `Error` whose optional `class` selects the inline copy template. Unknown /
+ * absent class → the generic template (the raw message is still surfaced).
+ */
+export type SyncErrorClass =
+  | "permission"
+  | "stale-source"
+  | "normalization"
+  | "non-file-backed-child"
+
+export interface SyncError extends Error {
+  /** One of the documented `SyncErrorClass` values, when known. */
+  class?: SyncErrorClass
+  /** For `non-file-backed-child`: the offending child labels/slugs. */
+  offendingChildren?: string[]
+}
+
+/**
+ * Templated, human copy per error class. The raw `message` is appended so the
+ * server detail is never lost. `non-file-backed-child` lists the offenders.
+ */
+export function syncErrorCopy(error: SyncError): string {
+  const detail = error.message?.trim()
+  switch (error.class) {
+    case "permission":
+      return `Can't write to the sync folder — check folder permissions.${
+        detail ? ` (${detail})` : ""
+      }`
+    case "stale-source":
+      return `The source changed since this was loaded — reopen or reload before syncing.${
+        detail ? ` (${detail})` : ""
+      }`
+    case "normalization":
+      return `Couldn't normalize the source for export — the HTML/TSX output failed.${
+        detail ? ` (${detail})` : ""
+      }`
+    case "non-file-backed-child": {
+      const children = error.offendingChildren?.length
+        ? ` Offending children: ${error.offendingChildren.join(", ")}.`
+        : ""
+      return `This artboard has children that aren't file-backed yet — sync each child first.${children}`
+    }
+    default:
+      return detail || "Sync failed."
+  }
+}
+
+type SyncPhase = "idle" | "syncing" | "synced" | "failed"
+
+const SYNCED_TRANSIENT_MS = 2000
+const FAILED_TRANSIENT_MS = 2500
+
+interface SyncButtonProps {
+  /** Steady label is `Re-sync` once a successful sync has happened. */
+  syncedBefore: boolean
+  /** Injected sync action (wired in U6). Undefined → inert no-op button. */
+  onSync?: () => Promise<void>
+}
+
+/**
+ * The Sync button + its state machine (presentational; U3).
+ *
+ * States:
+ *  - `idle`     → label `Sync` (or `Re-sync` if synced before / after success)
+ *  - `syncing`  → label `Syncing…`, disabled, spinner
+ *  - `synced`   → transient `Synced ✓` (~2s), then settles to `Re-sync`
+ *  - `failed`   → transient `Sync failed` (then reverts to the prior steady
+ *                 label), inline templated error below the button
+ *
+ * The button is disabled while `syncing` (defense-in-depth in-flight lock; the
+ * server lock added in U5 is the authority). With no `onSync` the click is a
+ * no-op so the steady state never changes — exactly the U3 inert contract.
+ */
+function SyncButton({ syncedBefore, onSync }: SyncButtonProps) {
+  const [phase, setPhase] = useState<SyncPhase>("idle")
+  const [hasSucceeded, setHasSucceeded] = useState(false)
+  const [error, setError] = useState<SyncError | null>(null)
+  const transientRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (transientRef.current) clearTimeout(transientRef.current)
+    }
+  }, [])
+
+  const settledSyncedBefore = syncedBefore || hasSucceeded
+
+  const handleClick = useCallback(async () => {
+    if (phase === "syncing" || !onSync) return
+    if (transientRef.current) {
+      clearTimeout(transientRef.current)
+      transientRef.current = null
+    }
+    setError(null)
+    setPhase("syncing")
+    try {
+      await onSync()
+      setHasSucceeded(true)
+      setPhase("synced")
+      transientRef.current = setTimeout(() => {
+        setPhase("idle")
+      }, SYNCED_TRANSIENT_MS)
+    } catch (caught) {
+      const syncError = (caught instanceof Error ? caught : new Error("Sync failed.")) as SyncError
+      setError(syncError)
+      setPhase("failed")
+      transientRef.current = setTimeout(() => {
+        setPhase("idle")
+      }, FAILED_TRANSIENT_MS)
+    }
+  }, [onSync, phase])
+
+  const steadyLabel = settledSyncedBefore ? "Re-sync" : "Sync"
+  const label =
+    phase === "syncing"
+      ? "Syncing…"
+      : phase === "synced"
+        ? "Synced ✓"
+        : phase === "failed"
+          ? "Sync failed"
+          : steadyLabel
+
+  return (
+    <div>
+      <button
+        type="button"
+        aria-label="Sync component"
+        data-sync-phase={phase}
+        onClick={() => void handleClick()}
+        disabled={phase === "syncing"}
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {phase === "syncing" ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : phase === "synced" ? (
+          <Check className="h-3.5 w-3.5" />
+        ) : (
+          <UploadCloud className="h-3.5 w-3.5" />
+        )}
+        {label}
+      </button>
+      {phase === "failed" && error ? (
+        <p role="alert" className="mt-1.5 text-[11px] leading-snug text-red-700">
+          {syncErrorCopy(error)}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 export function CanvasHtmlPropsPanel({
   src,
   title,
@@ -162,6 +322,8 @@ export function CanvasHtmlPropsPanel({
   sourceHtmlFileMtime,
   sourceReactFilePath,
   sourceReactFileMtime,
+  sourceComponentSlug,
+  sourceComponentFilePath,
   size,
   projectId = "design-system-foundation",
   onChange,
@@ -170,6 +332,8 @@ export function CanvasHtmlPropsPanel({
   onReplaceBundleFromDirectory,
   onDelete,
   onClose,
+  onSync,
+  syncedBefore = false,
 }: CanvasHtmlPropsPanelProps) {
   const importedAtLabel = sourceImportedAt ? new Date(sourceImportedAt).toLocaleString() : null
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -195,21 +359,10 @@ export function CanvasHtmlPropsPanel({
   const [slotPartPick, setSlotPartPick] = useState<Record<string, CanvasNativePartKind | "">>({})
   const [slotPartSource, setSlotPartSource] = useState<Record<string, string>>({})
   const [slotEdits, setSlotEdits] = useState<Record<string, SlotEditDraft>>({})
-  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
-  const [saveName, setSaveName] = useState("")
-  const [saveDescription, setSaveDescription] = useState("")
-  const [saveState, setSaveState] = useState<{ status: "idle" | "saving" | "error"; error: string }>(
-    {
-      status: "idle",
-      error: "",
-    }
-  )
   const hasSlots = detectedSlots.length > 0
-
-  useEffect(() => {
-    if (!saveDialogOpen) return
-    setSaveName((current) => current || (title || "Native Component"))
-  }, [saveDialogOpen, title])
+  const isFileBacked = Boolean(
+    sourceHtmlFilePath || sourceComponentSlug || sourceComponentFilePath
+  )
 
   useEffect(() => {
     setSlotEdits((current) => {
@@ -443,48 +596,6 @@ export function CanvasHtmlPropsPanel({
     [draftSourceHtml, onChange, sourceIdentity, sourceMode, slotPartSource]
   )
 
-  const handleSaveAsComponent = useCallback(async () => {
-    if (sourceMode !== "inline" || !draftSourceHtml.trim() || !saveName.trim()) return
-    setSaveState({ status: "saving", error: "" })
-    try {
-      const response = await fetch("/api/canvas/component/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          name: saveName,
-          format: "html",
-          sourceHtml: draftSourceHtml,
-          sourceCss: draftSourceCss.trim() ? draftSourceCss : undefined,
-          description: saveDescription.trim() || undefined,
-        }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as ComponentSaveResult
-      if (!response.ok || !payload.ok || payload.primitive?.kind !== "html" || !payload.primitive.filePath) {
-        throw new Error(payload.error || "Failed to save component.")
-      }
-      const htmlFile = payload.files.find((entry) => entry.filePath === payload.primitive.filePath)
-      onChange({
-        sourceMode: "inline",
-        sourceHtml: draftSourceHtml,
-        sourcePath: `projects/${projectId}/${payload.primitive.filePath}`,
-        sourceHtmlFilePath: `projects/${projectId}/${payload.primitive.filePath}`,
-        sourceHtmlFileMtime: htmlFile?.mtimeMs,
-      })
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent(CANVAS_REGISTRY_UPDATED_EVENT))
-      }
-      setSaveDialogOpen(false)
-      setSaveState({ status: "idle", error: "" })
-      setSaveDescription("")
-    } catch (error) {
-      setSaveState({
-        status: "error",
-        error: error instanceof Error ? error.message : "Failed to save component.",
-      })
-    }
-  }, [draftSourceCss, draftSourceHtml, onChange, projectId, saveDescription, saveName, sourceMode])
-
   const handleApplySlotMetadata = useCallback(
     (slot: CanvasHtmlSlotInfo) => {
       if (sourceMode !== "inline") return
@@ -527,20 +638,6 @@ export function CanvasHtmlPropsPanel({
           <p className="truncate text-xs text-muted-foreground">Local HTML/CSS/JS node</p>
         </div>
         <div className="ml-2 flex items-center gap-1">
-          {sourceMode === "inline" ? (
-            <button
-              type="button"
-              onClick={() => {
-                setSaveDialogOpen(true)
-                setSaveState({ status: "idle", error: "" })
-              }}
-              className="rounded p-1 text-muted-foreground hover:bg-surface-100 hover:text-foreground"
-              aria-label="Save as component"
-              title="Save as component"
-            >
-              <Save className="h-4 w-4" />
-            </button>
-          ) : null}
           <button
             type="button"
             onClick={onDelete}
@@ -560,53 +657,17 @@ export function CanvasHtmlPropsPanel({
         </div>
       </div>
 
-      {saveDialogOpen ? (
+      {isFileBacked ? (
         <div className="border-b border-default bg-surface-50 px-4 py-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Save as component
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Sync to project
+            </span>
           </div>
-          <div className="mt-2 space-y-2">
-            <input
-              type="text"
-              aria-label="Component name"
-              value={saveName}
-              onChange={(event) => setSaveName(event.target.value)}
-              placeholder="Promo Card"
-              className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-            />
-            <textarea
-              aria-label="Component description"
-              value={saveDescription}
-              onChange={(event) => setSaveDescription(event.target.value)}
-              rows={2}
-              placeholder="Optional registry description"
-              className="w-full resize-none rounded-md border border-default bg-white px-3 py-2 text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-            />
-            {saveState.status === "error" ? (
-              <p className="text-[11px] text-red-700">{saveState.error}</p>
-            ) : null}
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setSaveDialogOpen(false)
-                  setSaveState({ status: "idle", error: "" })
-                }}
-                className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!saveName.trim() || !draftSourceHtml.trim() || saveState.status === "saving"}
-                onClick={() => void handleSaveAsComponent()}
-                className="inline-flex items-center gap-1 rounded border border-brand-300 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {saveState.status === "saving" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                Save component
-              </button>
-            </div>
-          </div>
+          <SyncButton syncedBefore={syncedBefore} onSync={onSync} />
+          <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+            Publishes the normalized component into your picked project folder.
+          </p>
         </div>
       ) : null}
 
