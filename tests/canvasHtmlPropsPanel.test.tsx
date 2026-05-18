@@ -660,6 +660,419 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     expect(text).toContain("projects/demo/components/PromoCard.html")
   })
 
+  // --- U6 Sync wiring (picker → detect → persist → POST; re-sync reuse) ---
+
+  interface FetchCall {
+    url: string
+    body: Record<string, unknown>
+  }
+
+  function routeSyncFetch(options: {
+    storedTarget?: Record<string, unknown> | null
+    storedValid?: boolean
+    detect?: Record<string, unknown>
+    syncResponse?: { ok: boolean; status?: number; payload: Record<string, unknown> }
+    calls: FetchCall[]
+  }) {
+    return vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : {}
+      options.calls.push({ url, body })
+      if (url === "/api/canvas/registry/list") {
+        return { ok: true, json: async () => ({ ok: true, primitives: [] }) }
+      }
+      if (url === "/api/canvas/project/sync-target") {
+        if (body.mode === "write") {
+          return {
+            ok: true,
+            json: async () => ({ ok: true, syncTarget: body.syncTarget }),
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            syncTarget: options.storedTarget ?? null,
+            valid: options.storedValid === true,
+          }),
+        }
+      }
+      if (url === "/api/canvas/project/detect-components-dir") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            resolvedComponentsDir: "src/components",
+            candidates: [{ dir: "src/components", exists: true }],
+            resolvedRealPath: "/real/picked",
+            frameworkSuggestion: "html",
+            escapedDisplayPath: "/real/picked/src/components",
+            ...options.detect,
+          }),
+        }
+      }
+      if (url === "/api/canvas/project/sync") {
+        const r = options.syncResponse ?? {
+          ok: true,
+          payload: {
+            ok: true,
+            writtenPaths: ["promo-card.html"],
+            notWritten: [],
+            manifestPath: "/real/picked/src/components/manifest.json",
+            perFile: [{ path: "promo-card.html", status: "written" }],
+          },
+        }
+        return { ok: r.ok, status: r.status ?? 200, json: async () => r.payload }
+      }
+      return { ok: true, json: async () => ({ ok: true }) }
+    })
+  }
+
+  it("first component sync runs picker → detect → persist → POST and persists realpath", async () => {
+    const calls: FetchCall[] = []
+    vi.stubGlobal("fetch", routeSyncFetch({ storedTarget: null, calls }))
+    vi.stubGlobal("window", window)
+    ;(window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker =
+      vi.fn(async () => ({ name: "/picked/project" }))
+
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceComponentSlug="promo-card"
+        sourceComponentFilePath="projects/demo/components/promo-card.html"
+        projectId="demo"
+        syncSelection={{
+          type: "component",
+          slug: "promo-card",
+          sourcePath: "projects/demo/components/promo-card.html",
+          mtimeMs: 123,
+        }}
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    expect(syncBtn).not.toBeNull()
+
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const urls = calls.map((c) => c.url)
+    expect(urls).toContain("/api/canvas/project/detect-components-dir")
+    const writeCall = calls.find(
+      (c) => c.url === "/api/canvas/project/sync-target" && c.body.mode === "write"
+    )
+    expect(writeCall).toBeTruthy()
+    const persisted = writeCall!.body.syncTarget as Record<string, unknown>
+    expect(persisted.rootPath).toBe("/picked/project")
+    expect(persisted.resolvedRealPath).toBe("/real/picked")
+    expect(persisted.componentsDir).toBe("src/components")
+    expect(persisted.mappedAt).toBeTruthy()
+    const syncCall = calls.find((c) => c.url === "/api/canvas/project/sync")
+    expect(syncCall).toBeTruthy()
+    expect((syncCall!.body.selection as Record<string, unknown>).slug).toBe(
+      "promo-card"
+    )
+  })
+
+  it("re-sync reuses the persisted mapping — no picker, one sync call", async () => {
+    const calls: FetchCall[] = []
+    vi.stubGlobal(
+      "fetch",
+      routeSyncFetch({
+        storedTarget: {
+          rootPath: "/picked/project",
+          resolvedRealPath: "/real/picked",
+          componentsDir: "src/components",
+          format: "html",
+          mappedAt: "2026-05-17T00:00:00.000Z",
+        },
+        storedValid: true,
+        calls,
+      })
+    )
+    const pickerSpy = vi.fn(async () => ({ name: "/should/not/be/called" }))
+    ;(window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker =
+      pickerSpy
+
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceComponentSlug="promo-card"
+        sourceComponentFilePath="projects/demo/components/promo-card.html"
+        syncedBefore
+        projectId="demo"
+        syncSelection={{
+          type: "component",
+          slug: "promo-card",
+          sourcePath: "projects/demo/components/promo-card.html",
+        }}
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(pickerSpy).not.toHaveBeenCalled()
+    expect(
+      calls.some((c) => c.url === "/api/canvas/project/detect-components-dir")
+    ).toBe(false)
+    expect(
+      calls.filter((c) => c.url === "/api/canvas/project/sync")
+    ).toHaveLength(1)
+  })
+
+  it("persisted root missing/realpath-mismatch → re-pick prompt, no silent tree", async () => {
+    const calls: FetchCall[] = []
+    vi.stubGlobal(
+      "fetch",
+      routeSyncFetch({
+        storedTarget: {
+          rootPath: "/old/moved",
+          resolvedRealPath: "/old/moved",
+          componentsDir: "src/components",
+          format: "html",
+          mappedAt: "2026-05-17T00:00:00.000Z",
+        },
+        storedValid: false, // realpath revalidation failed server-side
+        calls,
+      })
+    )
+    // Picker cancelled → user must explicitly re-pick.
+    ;(window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker =
+      vi.fn(async () => {
+        throw new DOMException("aborted", "AbortError")
+      })
+
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceComponentSlug="promo-card"
+        syncedBefore
+        projectId="demo"
+        syncSelection={{
+          type: "component",
+          slug: "promo-card",
+          sourcePath: "projects/demo/components/promo-card.html",
+        }}
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    // No sync POST (no silent tree), and the re-pick prompt + button label.
+    expect(calls.some((c) => c.url === "/api/canvas/project/sync")).toBe(false)
+    expect(harness.container.textContent).toContain(
+      "Sync folder not found or moved"
+    )
+    expect(syncBtn.textContent).toContain("Choose folder")
+  })
+
+  it("React detected → format toggle shows the HTML+TSX hint (not auto-applied)", async () => {
+    const calls: FetchCall[] = []
+    vi.stubGlobal(
+      "fetch",
+      routeSyncFetch({
+        storedTarget: null,
+        detect: { frameworkSuggestion: "html+tsx" },
+        calls,
+      })
+    )
+    ;(window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker =
+      vi.fn(async () => ({ name: "/picked/react-app" }))
+
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceComponentSlug="promo-card"
+        projectId="demo"
+        syncSelection={{
+          type: "component",
+          slug: "promo-card",
+          sourcePath: "projects/demo/components/promo-card.html",
+        }}
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    // Hint visible; the persisted format stays "html" (no silent auto-switch).
+    expect(harness.container.textContent).toContain("React detected")
+    const writeCall = calls.find(
+      (c) => c.url === "/api/canvas/project/sync-target" && c.body.mode === "write"
+    )
+    expect((writeCall!.body.syncTarget as Record<string, unknown>).format).toBe(
+      "html"
+    )
+  })
+
+  it("picker unavailable → inline server-path entry works with validation", async () => {
+    const calls: FetchCall[] = []
+    vi.stubGlobal("fetch", routeSyncFetch({ storedTarget: null, calls }))
+    // No showDirectoryPicker on window → path-entry fallback rendered.
+    delete (window as unknown as { showDirectoryPicker?: unknown })
+      .showDirectoryPicker
+
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceComponentSlug="promo-card"
+        projectId="demo"
+        syncSelection={{
+          type: "component",
+          slug: "promo-card",
+          sourcePath: "projects/demo/components/promo-card.html",
+        }}
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const pathInput = harness.container.querySelector(
+      'input[aria-label="Sync folder path"]'
+    ) as HTMLInputElement
+    expect(pathInput).not.toBeNull()
+
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    // Empty path → validation feedback, no sync.
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(harness.container.textContent).toContain("Enter an absolute path")
+    expect(calls.some((c) => c.url === "/api/canvas/project/sync")).toBe(false)
+
+    // Valid absolute path → sync proceeds.
+    await act(async () => {
+      setInputValue(pathInput, "/Users/me/project")
+    })
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const writeCall = calls.find(
+      (c) => c.url === "/api/canvas/project/sync-target" && c.body.mode === "write"
+    )
+    expect((writeCall!.body.syncTarget as Record<string, unknown>).rootPath).toBe(
+      "/Users/me/project"
+    )
+  })
+
+  it("shows a non-blocking overwrite notice distinct from the error state", async () => {
+    const calls: FetchCall[] = []
+    vi.stubGlobal(
+      "fetch",
+      routeSyncFetch({
+        storedTarget: {
+          rootPath: "/picked/project",
+          resolvedRealPath: "/real/picked",
+          componentsDir: "src/components",
+          format: "html",
+          mappedAt: "2026-05-17T00:00:00.000Z",
+        },
+        storedValid: true,
+        syncResponse: {
+          ok: true,
+          payload: {
+            ok: true,
+            writtenPaths: ["promo-card.html", "promo-card.css"],
+            notWritten: [],
+            manifestPath: "/real/picked/src/components/manifest.json",
+            perFile: [
+              { path: "promo-card.html", status: "written" },
+              { path: "promo-card.css", status: "written" },
+            ],
+          },
+        },
+        calls,
+      })
+    )
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceComponentSlug="promo-card"
+        syncedBefore
+        projectId="demo"
+        syncSelection={{
+          type: "component",
+          slug: "promo-card",
+          sourcePath: "projects/demo/components/promo-card.html",
+        }}
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const notice = harness.container.querySelector(
+      '[data-testid="sync-overwrite-notice"]'
+    ) as HTMLElement
+    expect(notice).not.toBeNull()
+    expect(notice.textContent).toContain("promo-card.html")
+    expect(notice.textContent).toContain("promo-card.css")
+    // Distinct from the error styling — the notice is muted, not role=alert.
+    expect(notice.getAttribute("role")).not.toBe("alert")
+    expect(harness.container.querySelector('[role="alert"]')).toBeNull()
+  })
+
   it("replaces the first matching media child when a new source url is provided", async () => {
     vi.stubGlobal(
       "fetch",

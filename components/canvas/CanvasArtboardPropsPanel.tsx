@@ -8,6 +8,8 @@ import {
   type NativeComponentTemplate,
 } from "../../utils/canvasNativeComponentShell"
 import { CanvasStructurePreview } from "./CanvasStructurePreview"
+import { SyncSection } from "./CanvasHtmlPropsPanel"
+import type { SyncSelection } from "./canvasSyncWiring"
 
 interface CanvasArtboardPropsPanelProps {
   name: string
@@ -48,6 +50,19 @@ interface CanvasArtboardPropsPanelProps {
   onCreateStructureChild?: (
     template: NativeComponentTemplate
   ) => void | Promise<void>
+  /**
+   * Project whose `meta.syncTarget` mapping is read/persisted for Sync (U6).
+   * Used by the artboard Sync wiring (page + children).
+   */
+  projectId?: string
+  /**
+   * The artboard selection to publish (U6): the page plus every file-backed
+   * child. Built by CanvasTab from the selected artboard + its children. When
+   * absent the Sync section is hidden (nothing file-backed to publish).
+   */
+  syncSelection?: SyncSelection
+  /** Whether this artboard has been synced before (steady label). */
+  syncedBefore?: boolean
   onDelete: () => void
   onClose: () => void
 }
@@ -104,6 +119,9 @@ export function CanvasArtboardPropsPanel({
   importingPaper,
   onChange,
   onCreateStructureChild,
+  projectId = "design-system-foundation",
+  syncSelection,
+  syncedBefore = false,
   onDelete,
   onClose,
 }: CanvasArtboardPropsPanelProps) {
@@ -149,6 +167,22 @@ export function CanvasArtboardPropsPanel({
           </button>
         </div>
       </div>
+
+      {syncSelection ? (
+        <div className="border-b border-default bg-surface-50 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Sync to project
+            </span>
+          </div>
+          <SyncSection
+            projectId={projectId}
+            selection={syncSelection}
+            syncedBefore={syncedBefore}
+            blurb="Publishes this page (with its file-backed children) into your picked project folder."
+          />
+        </div>
+      ) : null}
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="space-y-4">

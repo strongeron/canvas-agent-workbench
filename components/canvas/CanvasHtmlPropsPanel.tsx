@@ -26,6 +26,15 @@ import {
   listSlotNativePartOptions,
   type CanvasNativePartKind,
 } from "../../utils/canvasNativeParts"
+import {
+  canPickDirectory,
+  isAbortSyncError,
+  pickDirectoryPath,
+  readSyncTarget,
+  runSync,
+  type DetectResult,
+  type SyncSelection,
+} from "./canvasSyncWiring"
 
 interface CanvasHtmlPropsPanelProps {
   src?: string
@@ -54,8 +63,17 @@ interface CanvasHtmlPropsPanelProps {
    * error whose `class` (when present) selects the inline copy template. For
    * U3 this is `undefined` — the button is inert but the state machine still
    * renders and transitions are exercised by tests through it.
+   *
+   * When `onSync` is omitted but `syncSelection` is provided, U6 builds the
+   * full picker→detect→persist→POST flow internally (the default wiring).
    */
   onSync?: () => Promise<void>
+  /**
+   * The component selection to publish (U6). When provided (and `onSync` is
+   * not), the panel wires the SyncButton to the full first-sync / re-sync
+   * orchestration. Built by CanvasTab from the selected file-backed item.
+   */
+  syncSelection?: SyncSelection
   /**
    * Whether this item has been synced at least once. Drives the steady label
    * (`Sync` vs `Re-sync`). U6 persists/derives this; U3 passes `false`.
@@ -213,6 +231,11 @@ interface SyncButtonProps {
   syncedBefore: boolean
   /** Injected sync action (wired in U6). Undefined → inert no-op button. */
   onSync?: () => Promise<void>
+  /**
+   * Replaces the steady label entirely (e.g. `Choose folder` for the U6
+   * re-pick prompt). Only applies in the steady `idle` phase.
+   */
+  steadyLabelOverride?: string
 }
 
 /**
@@ -229,7 +252,7 @@ interface SyncButtonProps {
  * server lock added in U5 is the authority). With no `onSync` the click is a
  * no-op so the steady state never changes — exactly the U3 inert contract.
  */
-function SyncButton({ syncedBefore, onSync }: SyncButtonProps) {
+function SyncButton({ syncedBefore, onSync, steadyLabelOverride }: SyncButtonProps) {
   const [phase, setPhase] = useState<SyncPhase>("idle")
   const [hasSucceeded, setHasSucceeded] = useState(false)
   const [error, setError] = useState<SyncError | null>(null)
@@ -259,6 +282,15 @@ function SyncButton({ syncedBefore, onSync }: SyncButtonProps) {
         setPhase("idle")
       }, SYNCED_TRANSIENT_MS)
     } catch (caught) {
+      // A cancelled folder pick (U6) is a benign no-op — NOT a failure and
+      // NOT a success. Revert silently to the steady label.
+      if (
+        caught instanceof Error &&
+        (caught as SyncError & { aborted?: boolean }).aborted === true
+      ) {
+        setPhase("idle")
+        return
+      }
       const syncError = (caught instanceof Error ? caught : new Error("Sync failed.")) as SyncError
       setError(syncError)
       setPhase("failed")
@@ -268,7 +300,8 @@ function SyncButton({ syncedBefore, onSync }: SyncButtonProps) {
     }
   }, [onSync, phase])
 
-  const steadyLabel = settledSyncedBefore ? "Re-sync" : "Sync"
+  const steadyLabel =
+    steadyLabelOverride ?? (settledSyncedBefore ? "Re-sync" : "Sync")
   const label =
     phase === "syncing"
       ? "Syncing…"
@@ -306,6 +339,299 @@ function SyncButton({ syncedBefore, onSync }: SyncButtonProps) {
   )
 }
 
+/**
+ * U6 Sync wiring surface — shared by the component panel and (via export) the
+ * artboard panel. Owns:
+ *  - the resolved-path display + an "Edit" override affordance (inline text
+ *    input prefilled with the detected path, inline validation feedback),
+ *  - the picker-denied inline server-path entry fallback (same server-
+ *    validated mechanism as the sidebar's "Filesystem root (advanced)"),
+ *  - the re-pick prompt when a persisted mapping is missing/moved,
+ *  - the non-blocking overwrite notice (muted, visually distinct from the
+ *    error styling), auto-dismissed with the transient `Synced ✓`,
+ *  - the `HTML` | `HTML + TSX` format toggle (component panel only; inert
+ *    until a sync target exists; a React detection surfaces a visible HINT,
+ *    never a silent auto-switch).
+ *
+ * It drives the U3 `SyncButton` via its `onSync` (resolve target → POST sync
+ * → map to success/partial/error → templated inline error via `syncErrorCopy`
+ * classes). The browser directory handle is never the write mechanism — the
+ * server writes via the validated path string.
+ */
+export function SyncSection({
+  projectId,
+  selection,
+  syncedBefore,
+  showFormatToggle = false,
+  blurb,
+}: {
+  projectId: string
+  selection?: SyncSelection
+  syncedBefore: boolean
+  /** Component panel passes true; the artboard panel hides the TSX toggle. */
+  showFormatToggle?: boolean
+  blurb: string
+}) {
+  const [format, setFormat] = useState<"html" | "html+tsx">("html")
+  const [detect, setDetect] = useState<DetectResult | null>(null)
+  const [overrideDir, setOverrideDir] = useState<string | null>(null)
+  const [editingDir, setEditingDir] = useState(false)
+  const [needsRepick, setNeedsRepick] = useState(false)
+  const [usePathEntry, setUsePathEntry] = useState(!canPickDirectory())
+  const [pathEntry, setPathEntry] = useState("")
+  const [pathEntryError, setPathEntryError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string[] | null>(null)
+  const [mappedBefore, setMappedBefore] = useState(false)
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
+    }
+  }, [])
+
+  // Eagerly read the persisted mapping so the re-pick prompt + steady label
+  // are correct BEFORE the first click: a moved/symlink-swapped root is
+  // surfaced up-front (button becomes "Choose folder"), and a still-valid
+  // mapping makes the steady label "Re-sync" (one-click re-sync).
+  useEffect(() => {
+    if (!selection) return
+    let cancelled = false
+    void readSyncTarget(projectId)
+      .then((result) => {
+        if (cancelled) return
+        if (result.syncTarget && !result.valid) {
+          setNeedsRepick(true)
+        } else if (result.syncTarget && result.valid) {
+          setMappedBefore(true)
+          setNeedsRepick(false)
+        }
+      })
+      .catch(() => {
+        /* mapping unreadable — treat as first sync */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, selection])
+
+  const hasTarget = detect !== null
+  const reactHint =
+    detect?.frameworkSuggestion === "html+tsx" && format === "html"
+
+  const resolveDirectoryPath = useCallback(async (): Promise<string | null> => {
+    if (usePathEntry) {
+      const value = pathEntry.trim()
+      if (!value) {
+        setPathEntryError("Enter an absolute path to the project folder.")
+        // Treat as a benign abort so the button reverts to its steady label.
+        return null
+      }
+      if (!value.startsWith("/")) {
+        setPathEntryError("Path must be absolute (start with /).")
+        return null
+      }
+      setPathEntryError(null)
+      return value
+    }
+    try {
+      const picked = await pickDirectoryPath()
+      return picked
+    } catch {
+      // Picker unavailable / denied → switch to the inline server-path entry
+      // and abort this attempt (no error toast — the user enters a path next).
+      setUsePathEntry(true)
+      return null
+    }
+  }, [pathEntry, usePathEntry])
+
+  const handleSync = useCallback(async () => {
+    if (!selection) {
+      throw Object.assign(new Error("Nothing to sync."), {})
+    }
+    setNotice(null)
+    try {
+      await runSync({
+        projectId,
+        selection,
+        format,
+        getPickedPath: resolveDirectoryPath,
+        componentsDirOverride: overrideDir ?? undefined,
+        onDetect: (result) => {
+          setDetect(result)
+          setNeedsRepick(false)
+          // Default the override editor to the detected dir but do not force
+          // a format switch — a React project only surfaces a visible hint.
+          if (overrideDir === null) setOverrideDir(result.resolvedComponentsDir)
+        },
+        onNotice: (n) => {
+          setNotice(n.slugs)
+          if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
+          noticeTimerRef.current = setTimeout(() => setNotice(null), 2000)
+        },
+      })
+    } catch (error) {
+      if (isAbortSyncError(error)) {
+        // Cancelled folder pick → benign, surface a re-pick affordance and
+        // re-throw the abort so the button reverts silently (no success, no
+        // error) instead of falsely showing `Synced ✓`.
+        setNeedsRepick(true)
+        throw error
+      }
+      throw error
+    }
+  }, [format, overrideDir, projectId, resolveDirectoryPath, selection])
+
+  const onSyncProp = selection ? handleSync : undefined
+  const buttonSyncedBefore =
+    syncedBefore || mappedBefore || (hasTarget && !needsRepick)
+
+  return (
+    <div>
+      {showFormatToggle ? (
+        <div className="mb-2">
+          <div
+            className="flex gap-1 rounded-md border border-default bg-white p-1"
+            role="group"
+            aria-label="Export format"
+          >
+            {(["html", "html+tsx"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                disabled={!hasTarget}
+                aria-pressed={format === value}
+                onClick={() => setFormat(value)}
+                className={`flex-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                  format === value
+                    ? "bg-foreground text-white"
+                    : "text-muted-foreground hover:bg-surface-100"
+                } disabled:cursor-not-allowed disabled:opacity-50`}
+              >
+                {value === "html" ? "HTML" : "HTML + TSX"}
+              </button>
+            ))}
+          </div>
+          {reactHint ? (
+            <p className="mt-1 text-[10px] leading-snug text-amber-700">
+              React detected — consider <span className="font-semibold">HTML + TSX</span> for this project.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {needsRepick ? (
+        <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-800">
+          Sync folder not found or moved — choose a folder.
+        </p>
+      ) : null}
+
+      <SyncButton
+        syncedBefore={buttonSyncedBefore}
+        onSync={onSyncProp}
+        steadyLabelOverride={needsRepick ? "Choose folder" : undefined}
+      />
+
+      {usePathEntry ? (
+        <div className="mt-2 rounded-md border border-default bg-white p-2">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Project folder path
+          </div>
+          <input
+            type="text"
+            aria-label="Sync folder path"
+            value={pathEntry}
+            onChange={(event) => {
+              setPathEntry(event.target.value)
+              setPathEntryError(null)
+            }}
+            placeholder="Absolute path, e.g. /Users/.../my-project"
+            spellCheck={false}
+            className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+          {pathEntryError ? (
+            <p className="mt-1 text-[10px] text-red-700">{pathEntryError}</p>
+          ) : (
+            <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+              The server validates and writes via this path string (no browser
+              file access).
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      {detect ? (
+        <div className="mt-2 rounded-md border border-default bg-surface-50 px-2 py-1.5">
+          {editingDir ? (
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Components directory
+              </label>
+              <input
+                type="text"
+                aria-label="Components directory override"
+                value={overrideDir ?? ""}
+                onChange={(event) => setOverrideDir(event.target.value)}
+                placeholder="src/components"
+                spellCheck={false}
+                className="w-full rounded-md border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+              />
+              {(overrideDir ?? "").includes("..") ||
+              (overrideDir ?? "").startsWith("/") ? (
+                <p className="mt-1 text-[10px] text-red-700">
+                  Must be a safe relative path (no leading / or ..).
+                </p>
+              ) : (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Relative to the picked root. Re-sync to apply.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setEditingDir(false)}
+                className="mt-1 rounded border border-default bg-white px-2 py-0.5 text-[10px] font-medium text-foreground hover:bg-surface-100"
+              >
+                Done
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground"
+                title={detect.escapedDisplayPath}
+                // The detected path is HTML-escaped server-side; render the
+                // escaped string as text (double-safe — never as innerHTML).
+              >
+                {detect.escapedDisplayPath}
+              </span>
+              <button
+                type="button"
+                onClick={() => setEditingDir(true)}
+                className="shrink-0 rounded border border-default bg-white px-2 py-0.5 text-[10px] font-medium text-foreground hover:bg-surface-100"
+              >
+                Edit
+              </button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {notice && notice.length > 0 ? (
+        <p
+          data-testid="sync-overwrite-notice"
+          className="mt-1.5 rounded-md border border-default bg-surface-50 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground"
+        >
+          Overwriting existing file(s): {notice.join(", ")}.
+        </p>
+      ) : null}
+
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+        {blurb}
+      </p>
+    </div>
+  )
+}
+
 export function CanvasHtmlPropsPanel({
   src,
   title,
@@ -333,6 +659,7 @@ export function CanvasHtmlPropsPanel({
   onDelete,
   onClose,
   onSync,
+  syncSelection,
   syncedBefore = false,
 }: CanvasHtmlPropsPanelProps) {
   const importedAtLabel = sourceImportedAt ? new Date(sourceImportedAt).toLocaleString() : null
@@ -664,10 +991,24 @@ export function CanvasHtmlPropsPanel({
               Sync to project
             </span>
           </div>
-          <SyncButton syncedBefore={syncedBefore} onSync={onSync} />
-          <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-            Publishes the normalized component into your picked project folder.
-          </p>
+          {onSync ? (
+            // Explicit injected action (U3 contract / tests) — bare button.
+            <>
+              <SyncButton syncedBefore={syncedBefore} onSync={onSync} />
+              <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+                Publishes the normalized component into your picked project folder.
+              </p>
+            </>
+          ) : (
+            // Default U6 wiring: picker → detect → persist → POST sync.
+            <SyncSection
+              projectId={projectId}
+              selection={syncSelection}
+              syncedBefore={syncedBefore}
+              showFormatToggle
+              blurb="Publishes the normalized component into your picked project folder."
+            />
+          )}
         </div>
       ) : null}
 

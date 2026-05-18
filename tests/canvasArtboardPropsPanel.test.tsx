@@ -348,6 +348,117 @@ describe("CanvasArtboardPropsPanel", () => {
     expect(onCreateStructureChild).toHaveBeenCalledWith("div")
   })
 
+  it("artboard sync publishes the page + children via the reused mapping (U6)", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : {}
+      calls.push({ url, body })
+      if (url === "/api/canvas/project/sync-target") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            syncTarget: {
+              rootPath: "/picked/project",
+              resolvedRealPath: "/real/picked",
+              componentsDir: "src/components",
+              format: "html",
+              mappedAt: "2026-05-17T00:00:00.000Z",
+            },
+            valid: true,
+          }),
+        }
+      }
+      if (url === "/api/canvas/project/sync") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            writtenPaths: ["home.html", "card.html"],
+            notWritten: [],
+            manifestPath: "/real/picked/src/components/manifest.json",
+            perFile: [
+              { path: "home.html", status: "written" },
+              { path: "card.html", status: "written" },
+            ],
+          }),
+        }
+      }
+      return { ok: true, json: async () => ({ ok: true }) }
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Home"
+        background="#ffffff"
+        layout={{ display: "flex", direction: "column", gap: 16, padding: 24 }}
+        size={{ width: 800, height: 600 }}
+        projectId="demo"
+        syncSelection={{
+          type: "artboard",
+          slug: "home",
+          sourcePath: "projects/demo/components/card.html",
+          children: [
+            { slug: "card", sourcePath: "projects/demo/components/card.html" },
+          ],
+        }}
+        syncedBefore
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    expect(syncBtn).not.toBeNull()
+
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const syncCall = calls.find((c) => c.url === "/api/canvas/project/sync")
+    expect(syncCall).toBeTruthy()
+    const selection = syncCall!.body.selection as Record<string, unknown>
+    expect(selection.type).toBe("artboard")
+    expect(selection.slug).toBe("home")
+    expect((selection.children as unknown[]).length).toBe(1)
+
+    const notice = harness.container.querySelector(
+      '[data-testid="sync-overwrite-notice"]'
+    ) as HTMLElement
+    expect(notice.textContent).toContain("home.html")
+    expect(notice.textContent).toContain("card.html")
+    // The component-only format toggle is NOT shown for the artboard panel.
+    expect(
+      harness.container.querySelector('[role="group"][aria-label="Export format"]')
+    ).toBeNull()
+  })
+
+  it("hides the Sync section when there is no file-backed selection", async () => {
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Home"
+        background="#ffffff"
+        layout={{ display: "flex", direction: "column", gap: 16, padding: 24 }}
+        size={{ width: 800, height: 600 }}
+        projectId="demo"
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    expect(
+      harness.container.querySelector('button[aria-label="Sync component"]')
+    ).toBeNull()
+  })
+
   it("disables the picker when no artboard target is provided", async () => {
     const onCreate = vi.fn()
     harness = await mount(

@@ -47,6 +47,7 @@ import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
 import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "./CanvasFileDialogs"
 import { CanvasHtmlPropsPanel } from "./CanvasHtmlPropsPanel"
+import type { SyncSelection } from "./canvasSyncWiring"
 import {
   CanvasReactNodePropertyPanel,
   type CanvasReactNodeWriteSuccess,
@@ -882,6 +883,62 @@ export function CanvasTab({
     : "iframe"
   const selectedComponent = selectedComponentItem ? getComponentById(selectedComponentItem.componentId) : null
   const selectedVariant = selectedComponent?.variants[selectedComponentItem?.variantIndex ?? 0]
+
+  // --- U6 Sync selection plumbing -----------------------------------------
+  // A file-backed html item maps to a `component` sync selection: its slug
+  // (the create-time `sourceComponentSlug`) + its Root A `projects/<id>/...`
+  // source path + last-known mtime. A non-file-backed item yields no
+  // selection (the Sync section then hides / blocks with a per-child error).
+  const htmlItemSyncSelection = useMemo<SyncSelection | undefined>(() => {
+    if (!selectedHtmlItem) return undefined
+    const slug = selectedHtmlItem.sourceComponentSlug
+    const sourcePath =
+      selectedHtmlItem.sourceComponentFilePath ||
+      selectedHtmlItem.sourceHtmlFilePath
+    if (!slug || !sourcePath) return undefined
+    return {
+      type: "component",
+      slug,
+      sourcePath,
+      mtimeMs: selectedHtmlItem.sourceHtmlFileMtime,
+    }
+  }, [selectedHtmlItem])
+
+  // An artboard sync = the page + every file-backed child. A child that is
+  // not file-backed is still included (slug undefined) so the server returns
+  // the per-child "non-file-backed child" error the panel surfaces.
+  const artboardSyncSelection = useMemo<SyncSelection | undefined>(() => {
+    if (!selectedArtboardItem) return undefined
+    const children = items.filter(
+      (item) => item.parentId === selectedArtboardItem.id && item.type === "html"
+    ) as CanvasHtmlItem[]
+    const fileBackedChildren = children
+      .map((child) => {
+        const slug = child.sourceComponentSlug
+        const sourcePath =
+          child.sourceComponentFilePath || child.sourceHtmlFilePath
+        if (!slug || !sourcePath) return null
+        return { slug, sourcePath, mtimeMs: child.sourceHtmlFileMtime }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    if (fileBackedChildren.length === 0) return undefined
+    const pageSlug =
+      selectedArtboardItem.name
+        ?.trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || `artboard-${selectedArtboardItem.id}`
+    return {
+      type: "artboard",
+      slug: pageSlug,
+      // The page itself has no single Root A source; the server reads each
+      // child. Use the first child's path as a benign placeholder (the
+      // endpoint resolves children individually).
+      sourcePath: fileBackedChildren[0].sourcePath,
+      children: fileBackedChildren,
+    }
+  }, [items, selectedArtboardItem])
+
   const artboardThemeId = selectedArtboardItem?.themeId || activeThemeId
   const [artboardTokenValues, setArtboardTokenValues] = useState<Record<string, string>>(tokenValues)
   const [liveAuditPairs, setLiveAuditPairs] = useState<LiveAuditPair[]>([])
@@ -4058,6 +4115,7 @@ export function CanvasTab({
               sourceReactFileMtime={selectedHtmlItem.sourceReactFileMtime}
               sourceComponentSlug={selectedHtmlItem.sourceComponentSlug}
               sourceComponentFilePath={selectedHtmlItem.sourceComponentFilePath}
+              syncSelection={htmlItemSyncSelection}
               size={selectedHtmlItem.size}
               onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
               onResize={(width) =>
@@ -4178,6 +4236,8 @@ export function CanvasTab({
               importKind={importKind}
               onImportKindChange={setImportKind}
               importingPaper={isImportingPaper}
+              projectId={activeProjectId || "design-system-foundation"}
+              syncSelection={artboardSyncSelection}
               onChange={(updates) => updateItem(selectedArtboardItem.id, updates)}
               onCreateStructureChild={async (template) => {
                 try {
