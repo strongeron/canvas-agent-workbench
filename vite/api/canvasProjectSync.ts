@@ -45,6 +45,7 @@
 //  sandbox; they are still realpath-contained here regardless.
 // ============================================================================
 
+import { randomBytes } from "node:crypto"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 
@@ -566,7 +567,7 @@ function sandboxErrToResponse(err: ResolveSandboxPathErr): CanvasProjectSyncResp
 
 // --- Endpoint -------------------------------------------------------------
 
-export async function applyCanvasProjectSyncRequest(
+async function performCanvasProjectSync(
   body: CanvasProjectSyncBody,
   options: CanvasProjectSyncOptions
 ): Promise<CanvasProjectSyncResponse> {
@@ -898,7 +899,11 @@ export async function applyCanvasProjectSyncRequest(
       await cleanupTmp()
       return sandboxErrToResponse(guard)
     }
-    const tmpPath = `${guard.resolved}.${process.pid}.${Date.now()}.${staged.length}.tmp`
+    // Collision-proof tmp name: a per-file random token guarantees uniqueness
+    // even for two concurrent same-process syncs of the same selection (pid +
+    // Date.now() + index alone collide within a millisecond, letting one
+    // call's rename consume another's tmp file).
+    const tmpPath = `${guard.resolved}.${randomBytes(8).toString("hex")}.${staged.length}.tmp`
     try {
       await fs.mkdir(path.dirname(guard.resolved), { recursive: true })
       await fs.writeFile(tmpPath, out.content, "utf8")
@@ -1023,4 +1028,39 @@ export async function applyCanvasProjectSyncRequest(
     manifestPath: path.join(sandboxRoot, "manifest.json"),
     perFile,
   }
+}
+
+// Per-Root-B serialization. `manifest.json` is merged per root, so concurrent
+// syncs to the same root — even of different selections — race the manifest
+// read/merge/write and can interleave the staged rename batch. The server is
+// the authority for Sync-vs-Sync (plan R10 / Key Technical Decisions); the UI
+// button disable is defense-in-depth only. Entries are keyed by the resolved
+// Root B path and are tiny resolved promises (bounded by distinct sync roots
+// on a dev server), so the map is intentionally not pruned.
+const syncLocksByRoot = new Map<string, Promise<unknown>>()
+
+export async function applyCanvasProjectSyncRequest(
+  body: CanvasProjectSyncBody,
+  options: CanvasProjectSyncOptions
+): Promise<CanvasProjectSyncResponse> {
+  const target = typeof body.target === "string" ? body.target.trim() : ""
+  const componentsDirRaw =
+    typeof body.componentsDir === "string" ? body.componentsDir.trim() : ""
+  const lockKey = target ? path.resolve(target, componentsDirRaw) : "<no-target>"
+  const prior = syncLocksByRoot.get(lockKey) ?? Promise.resolve()
+  // Run after `prior` settles whether it resolved or rejected, so one failed
+  // sync never blocks the queue.
+  const run = prior.then(
+    () => performCanvasProjectSync(body, options),
+    () => performCanvasProjectSync(body, options)
+  )
+  // Store a non-rejecting tail so a rejected `run` cannot poison the chain.
+  syncLocksByRoot.set(
+    lockKey,
+    run.then(
+      () => undefined,
+      () => undefined
+    )
+  )
+  return run
 }
