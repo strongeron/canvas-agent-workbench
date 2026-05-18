@@ -16,6 +16,7 @@ import { applyCanvasMarkdownWriteRequest } from './vite/api/canvasMarkdownWrite'
 import { applyCanvasRegistryListRequest } from './vite/api/canvasRegistryList'
 import { applyCanvasComponentCreateRequest } from './vite/api/canvasComponentCreate'
 import { applyCanvasComponentPromoteRequest } from './vite/api/canvasComponentPromote'
+import { applyCanvasProjectSyncRequest } from './vite/api/canvasProjectSync'
 import { listProjectDesignTokens, writeProjectDesignToken } from './utils/canvasTokenCss'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
@@ -206,6 +207,44 @@ async function readJson(req) {
   const body = Buffer.concat(chunks).toString('utf8')
   if (!body) return {}
   return JSON.parse(body)
+}
+
+// Localhost/origin guard for the high-risk Root B sync endpoint.
+//
+// `/api/canvas/project/sync` writes to ARBITRARY external filesystem paths.
+// The primary control is the dev server binding 127.0.0.1, but this is
+// defense-in-depth: reject any request whose Origin/Host header is not a
+// loopback address so a misconfigured non-loopback bind or a cross-origin
+// browser context cannot reach it. Returns null when allowed, or an error
+// string when the request must be rejected (403).
+function isLoopbackHostname(hostname) {
+  const lower = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '')
+  if (!lower) return false
+  if (lower === 'localhost') return true
+  if (lower === '::1') return true
+  if (lower === '0.0.0.0') return false
+  if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lower)) return true
+  return false
+}
+
+function rejectIfNotLocalhost(req) {
+  const hostHeader = req.headers?.host || ''
+  const hostname = String(hostHeader).split(':')[0]
+  if (!isLoopbackHostname(hostname)) {
+    return `Host "${hostHeader}" is not localhost. The sync endpoint only accepts loopback requests.`
+  }
+  const origin = req.headers?.origin
+  if (origin) {
+    try {
+      const url = new URL(origin)
+      if (!isLoopbackHostname(url.hostname)) {
+        return `Origin "${origin}" is not localhost. The sync endpoint only accepts loopback requests.`
+      }
+    } catch {
+      return `Origin "${origin}" is not a valid URL.`
+    }
+  }
+  return null
 }
 
 function escapeHtmlText(value) {
@@ -4495,6 +4534,37 @@ function paperImportPlugin() {
             return sendJson(res, 400, {
               ok: false,
               error: error?.message || 'Failed to promote subtree.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/project/sync') {
+          // Localhost/origin guard FIRST — this endpoint writes to arbitrary
+          // external paths, so a non-loopback request must never reach the
+          // handler. The 127.0.0.1 bind is the primary control; this is
+          // defense-in-depth.
+          const localhostError = rejectIfNotLocalhost(req)
+          if (localhostError) {
+            return sendJson(res, 403, { ok: false, code: 'forbidden-origin', error: localhostError })
+          }
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasProjectSyncRequest(body, { workspaceRoot: __dirname })
+            if (!result.ok) {
+              return sendJson(res, result.status, {
+                ok: false,
+                code: result.code,
+                error: result.error,
+                ...(result.writtenPaths ? { writtenPaths: result.writtenPaths } : {}),
+                ...(result.notWritten ? { notWritten: result.notWritten } : {}),
+                ...(result.partialFailure ? { partialFailure: true } : {}),
+              })
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to sync project.',
             })
           }
         }
