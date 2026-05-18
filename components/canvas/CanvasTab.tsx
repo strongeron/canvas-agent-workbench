@@ -4179,6 +4179,20 @@ export function CanvasTab({
               onImportKindChange={setImportKind}
               importingPaper={isImportingPaper}
               onChange={(updates) => updateItem(selectedArtboardItem.id, updates)}
+              onCreateStructureChild={async (template) => {
+                try {
+                  await handleAddNativeComponent(template)
+                } catch (error) {
+                  setHistoryToast({
+                    id: Date.now(),
+                    tone: "error",
+                    message:
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to create component.",
+                  })
+                }
+              }}
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />
