@@ -406,6 +406,187 @@ export function createNativeComponentShellItem(state, args = {}) {
   })
 }
 
+// --- U7 agent parity helpers (pure JS, no fs/node:* — client-import safe) ---
+
+/**
+ * Resolve the native shell create payload an agent must POST to
+ * `/api/canvas/component/create` so that the file-backed component is byte-
+ * identical to what the UI U3 path writes. The shared U1 builder is the single
+ * source of truth for the markup (template incl. layout primitives + element
+ * parts, optional grid/slots flow through the builder args). The endpoint's U2
+ * uniquifier picks the final slug.
+ */
+export function buildNativeComponentShellCreateInput(args = {}) {
+  const shell = buildNativeComponentShell(args)
+  return {
+    name: normalizeString(args.name) || shell.title,
+    format: 'html',
+    sourceHtml: shell.sourceHtml,
+    description: normalizeString(args.description) || undefined,
+    shell,
+  }
+}
+
+/**
+ * ALLOWLIST enforcement for the agent `sync_to_project` target. An agent runs
+ * outside the browser and has no folder picker, so it can ONLY sync to a Root B
+ * a user already confirmed via the UI (persisted in `project.json`
+ * `meta.syncTarget`). This is intentionally distinct from the sync endpoint's
+ * traversal/symlink guard: even a perfectly path-safe folder is rejected here
+ * unless it is the user-confirmed one.
+ *
+ * - `requestedTarget` omitted/empty + a persisted mapping exists → reuse it.
+ * - `requestedTarget` present and equals the persisted `rootPath` → allowed.
+ * - `requestedTarget` present but ≠ the persisted `rootPath` → rejected with a
+ *   distinct `not-allowlisted` reason (NOT a traversal rejection).
+ * - no persisted mapping (and/or no usable target) → rejected `no-mapping`.
+ *
+ * `persisted` is the normalized `meta.syncTarget` (`{ rootPath,
+ * resolvedRealPath, componentsDir, format, mappedAt }`) or null.
+ */
+export function resolveSyncToProjectTarget(requestedTarget, persisted) {
+  const requested = normalizeString(requestedTarget)
+  const mappedRoot =
+    persisted && typeof persisted === 'object'
+      ? normalizeString(persisted.rootPath)
+      : ''
+
+  if (!requested) {
+    if (!mappedRoot) {
+      return {
+        ok: false,
+        code: 'no-mapping',
+        error:
+          'sync_to_project needs a target. No `target` was provided and this project has no user-confirmed sync folder yet. A user must pick and confirm a folder in the canvas Sync panel first.',
+      }
+    }
+    return {
+      ok: true,
+      target: mappedRoot,
+      componentsDir: normalizeString(persisted.componentsDir) || undefined,
+      format: persisted.format === 'html+tsx' ? 'html+tsx' : undefined,
+      reusedMapping: true,
+    }
+  }
+
+  if (!mappedRoot) {
+    return {
+      ok: false,
+      code: 'no-mapping',
+      error: `sync_to_project target "${requested}" is not allowed: this project has no user-confirmed sync folder. A user must pick and confirm a folder in the canvas Sync panel before an agent can sync.`,
+    }
+  }
+
+  if (requested !== mappedRoot) {
+    return {
+      ok: false,
+      code: 'not-allowlisted',
+      error: `sync_to_project target "${requested}" is not in the user-confirmed allowlist. The only allowed folder for this project is "${mappedRoot}" (confirmed via the canvas Sync panel). An agent cannot nominate a new sync folder.`,
+    }
+  }
+
+  return {
+    ok: true,
+    target: mappedRoot,
+    componentsDir: normalizeString(persisted.componentsDir) || undefined,
+    format: persisted.format === 'html+tsx' ? 'html+tsx' : undefined,
+    reusedMapping: false,
+  }
+}
+
+function deriveArtboardPageSlug(artboard) {
+  const fromName = normalizeString(artboard?.name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return fromName || `artboard-${normalizeString(artboard?.id) || 'page'}`
+}
+
+function toFileBackedChild(item) {
+  if (!item || typeof item !== 'object') return null
+  const slug = normalizeString(item.sourceComponentSlug)
+  const sourcePath =
+    normalizeString(item.sourceComponentFilePath) ||
+    normalizeString(item.sourceHtmlFilePath)
+  if (!slug || !sourcePath) return null
+  return {
+    slug,
+    sourcePath,
+    mtimeMs:
+      typeof item.sourceHtmlFileMtime === 'number'
+        ? item.sourceHtmlFileMtime
+        : undefined,
+  }
+}
+
+/**
+ * Resolve a canvas selection id (a file-backed html component item, or an
+ * artboard) into the EXACT `selection` shape the UI sends to
+ * `/api/canvas/project/sync` (see CanvasTab.tsx `htmlItemSyncSelection` /
+ * `artboardSyncSelection`). Reusing this shape is what guarantees the agent and
+ * the UI publish identical Root B trees + manifest for the same selection.
+ */
+export function resolveSyncSelectionFromState(state, selectionId) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const id = normalizeString(selectionId)
+  if (!id) {
+    return { ok: false, code: 'bad-input', error: 'selection id is required.' }
+  }
+  const target = current.items.find((item) => item?.id === id)
+  if (!target) {
+    return { ok: false, code: 'not-found', error: `No canvas item with id "${id}".` }
+  }
+
+  if (target.type === 'artboard') {
+    const children = current.items.filter(
+      (item) => item?.parentId === target.id && item?.type === 'html'
+    )
+    const fileBackedChildren = children.map(toFileBackedChild).filter(Boolean)
+    if (fileBackedChildren.length === 0) {
+      return {
+        ok: false,
+        code: 'no-file-backed-children',
+        error: `Artboard "${id}" has no file-backed html children to sync. Children must be created via create_native_component_shell (file-backed) first.`,
+      }
+    }
+    return {
+      ok: true,
+      selection: {
+        type: 'artboard',
+        slug: deriveArtboardPageSlug(target),
+        sourcePath: fileBackedChildren[0].sourcePath,
+        children: fileBackedChildren,
+      },
+    }
+  }
+
+  if (target.type === 'html') {
+    const child = toFileBackedChild(target)
+    if (!child) {
+      return {
+        ok: false,
+        code: 'not-file-backed',
+        error: `Item "${id}" is not file-backed. Only file-backed components (created via create_native_component_shell) can be synced.`,
+      }
+    }
+    return {
+      ok: true,
+      selection: {
+        type: 'component',
+        slug: child.slug,
+        sourcePath: child.sourcePath,
+        mtimeMs: child.mtimeMs,
+      },
+    }
+  }
+
+  return {
+    ok: false,
+    code: 'unsupported-selection',
+    error: `Selection "${id}" (type "${normalizeString(target.type) || 'unknown'}") cannot be synced. Pick a file-backed component or an artboard.`,
+  }
+}
+
 export function resolvePrimitiveVariantIndex(primitive, args = {}) {
   if (Number.isFinite(args.variantIndex)) {
     const variantIndex = Number(args.variantIndex)

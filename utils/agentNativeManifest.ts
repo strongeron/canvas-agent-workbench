@@ -170,7 +170,8 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "create_native_component_shell",
         title: "Create native component shell",
-        description: "Create a source-backed inline HTML shell with slot metadata for native composition on canvas.",
+        description:
+          "Create a FILE-BACKED native HTML component shell from the shared builder and place it on canvas. `template` accepts a named template (blank, card, section, hero, media-object), a layout primitive (stack, row, grid, split, center, cover, frame), or an element part (div, section, header, footer, figure, h1-h6, p, span, ul, ol, li, a, button, img, svg, video); optional `grid` and `slots` tune layout/slot metadata. The file is written to projects/<projectId>/components/ via the same create endpoint + auto-slug uniquifier as the UI, so agent and UI shells cannot diverge.",
         status: "ready",
       },
       {
@@ -178,6 +179,14 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         title: "Insert native slot part",
         description: "Append a native HTML part such as div, section, button, image, svg, or video into a slotted HTML shell node.",
         status: "ready",
+      },
+      {
+        id: "sync_to_project",
+        title: "Sync to project",
+        description:
+          "Publish a file-backed component or an artboard page (with its children) into a user-confirmed external project folder. `target` must match a `rootPath` a user previously confirmed in project.json `meta.syncTarget` (allowlist — an agent cannot nominate an arbitrary new folder); omit `target` to reuse the persisted mapping. Optional `componentsDir` overrides detection (ambiguous detection with no override is an error, not a guess); `format` is \"html\" | \"html+tsx\" (default: detect React ⇒ html+tsx else html). Reuses the same normalize + atomic-publish pipeline as the UI Sync button and returns { ok, writtenPaths[], notWritten[], manifestPath, perFile:[{path,status}] }.",
+        status: "ready",
+        destructive: true,
       },
       {
         id: "create_group",
