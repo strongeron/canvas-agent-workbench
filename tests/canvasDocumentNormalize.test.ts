@@ -160,6 +160,79 @@ describe("canvasDocumentNormalize — inline-embed collision (the P0 case)", () 
   })
 })
 
+describe("canvasDocumentNormalize — P1 defect fixes", () => {
+  it("(#1) a body <style> never leaks into the fragment; its rule appears scoped in css only", () => {
+    const html = `<!doctype html><html><head></head><body><section class="x">hi</section><style>.x{color:red}</style></body></html>`
+    const { fragmentHtml, css } = normalizeDocument({ sourceHtml: html, slug: "demo" })
+    expect(fragmentHtml).not.toMatch(/<style[\s>]/i)
+    expect(fragmentHtml).not.toContain("color:red")
+    expect(css).toContain('[data-component="demo"] .x {color:red}')
+    // Exactly one scoped rule — the body <style> contributed it once.
+    expect(css.split("{").length - 1).toBe(1)
+  })
+
+  it("(#2) splitSelectors is quote-aware: a `]` `,` inside an attr value does not split", () => {
+    const html = `<!doctype html><html><head><style>[data-x="]"] , .b { color:red }</style></head><body><div class="b" data-x="]">x</div></body></html>`
+    const { css } = normalizeDocument({ sourceHtml: html, slug: "demo" })
+    expect(css).toContain('[data-component="demo"] [data-x="]"]')
+    expect(css).toContain('[data-component="demo"] .b')
+    // Two scoped selectors, ONE rule body (the inner `]`/`,` did not split).
+    expect(css.split("{").length - 1).toBe(1)
+    const head = css.slice(0, css.indexOf("{"))
+    expect(head.split(",\n").length).toBe(2)
+  })
+
+  it("(#3) a trailing backslash before the closing quote does not overrun into the next rule", () => {
+    const html = `<!doctype html><html><head><style>.a[data-q="x\\\\"] { color:red } .survivor { color:blue }</style></head><body><div class="a">x</div><p class="survivor">y</p></body></html>`
+    const { css } = normalizeDocument({ sourceHtml: html, slug: "demo" })
+    // The rule after the escaped-quote selector survives (scanner bounded).
+    // Body text is preserved verbatim, so match the selector head + the rule.
+    expect(css).toContain('[data-component="demo"] .survivor {')
+    expect(css).toContain("color:blue")
+    expect(css.match(/\.survivor/g)?.length).toBe(1)
+  })
+
+  it("(#4) statement at-rules without a block are emitted verbatim, not glued onto the next rule", () => {
+    const html = `<!doctype html><html><head><style>@import url("x.css"); .a{color:red}</style></head><body><div class="a">x</div></body></html>`
+    const { css } = normalizeDocument({ sourceHtml: html, slug: "demo" })
+    expect(css).toContain('@import url("x.css");')
+    // @import emitted exactly once, verbatim, at the top.
+    expect(css.indexOf('@import url("x.css");')).toBe(0)
+    expect(css.match(/@import/g)?.length).toBe(1)
+    // .a is correctly wrapper-scoped — NOT glued to @import, NOT global.
+    expect(css).toContain('[data-component="demo"] .a {color:red}')
+    expect(css).not.toMatch(/@import url\("x\.css"\);\s*\.a/)
+  })
+
+  it("(#4) @charset / @layer statement at-rules are preserved and the rule scopes", () => {
+    const html = `<!doctype html><html><head><style>@charset "utf-8"; @layer a, b; .c{color:green}</style></head><body><div class="c">x</div></body></html>`
+    const { css } = normalizeDocument({ sourceHtml: html, slug: "demo" })
+    expect(css).toContain('@charset "utf-8";')
+    expect(css).toContain("@layer a, b;")
+    expect(css).toContain('[data-component="demo"] .c {color:green}')
+  })
+
+  it("(#5) leading body/html/:root with an attached qualifier keeps the qualifier; standalone collapses", () => {
+    const html = `<!doctype html><html><head><style>body.theme-dark .x{color:red} body .y{margin:0} :root{--c:red}</style></head><body><div class="x">x</div><div class="y">y</div></body></html>`
+    const { css } = normalizeDocument({ sourceHtml: html, slug: "slug" })
+    // Qualifier preserved (body-state gate not dropped).
+    expect(css).toContain('[data-component="slug"].theme-dark .x {color:red}')
+    expect(css).not.toMatch(/\[data-component="slug"\] \.x \{color:red\}/)
+    // Standalone body/:root collapse to the wrapper.
+    expect(css).toContain('[data-component="slug"] .y {margin:0}')
+    expect(css).toContain('[data-component="slug"] {--c:red}')
+  })
+
+  it("(#8) composeNormalizedPage rejects duplicate child slugs", () => {
+    const src = `<!doctype html><html><head><style>section{color:red}</style></head><body><section>x</section></body></html>`
+    const a = normalizeDocument({ sourceHtml: src, slug: "dup" })
+    const b = normalizeDocument({ sourceHtml: src, slug: "dup" })
+    expect(() => composeNormalizedPage([a, b])).toThrowError(
+      CanvasDocumentNormalizeError
+    )
+  })
+})
+
 describe("canvasDocumentNormalize — no-style and determinism", () => {
   it("returns empty css (not an error) when there is no <style>", () => {
     const html = `<!doctype html><html><head></head><body><div>plain</div></body></html>`

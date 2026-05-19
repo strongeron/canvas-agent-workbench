@@ -727,12 +727,14 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     })
   }
 
-  it("first component sync runs picker → detect → persist → POST and persists realpath", async () => {
+  it("first component sync uses the server-validated path-entry value (not the picker basename) → detect → persist → POST", async () => {
     const calls: FetchCall[] = []
     vi.stubGlobal("fetch", routeSyncFetch({ storedTarget: null, calls }))
     vi.stubGlobal("window", window)
+    // A realistic FileSystemDirectoryHandle exposes only the BASENAME, never
+    // an absolute path. It must NOT become the value sent to the server.
     ;(window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker =
-      vi.fn(async () => ({ name: "/picked/project" }))
+      vi.fn(async () => ({ name: "project" }))
 
     harness = await mount(
       <CanvasHtmlPropsPanel
@@ -757,6 +759,15 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     ) as HTMLButtonElement
     expect(syncBtn).not.toBeNull()
 
+    // The path-entry input is the PRIMARY mechanism and is always rendered.
+    const pathInput = harness.container.querySelector(
+      'input[aria-label="Sync folder path"]'
+    ) as HTMLInputElement
+    expect(pathInput).not.toBeNull()
+    await act(async () => {
+      setInputValue(pathInput, "/Users/me/project")
+    })
+
     await act(async () => {
       syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
       await Promise.resolve()
@@ -772,7 +783,10 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     )
     expect(writeCall).toBeTruthy()
     const persisted = writeCall!.body.syncTarget as Record<string, unknown>
-    expect(persisted.rootPath).toBe("/picked/project")
+    // The user-confirmed absolute path is what reaches the server — NOT the
+    // picker handle basename ("project").
+    expect(persisted.rootPath).toBe("/Users/me/project")
+    expect(persisted.rootPath).not.toBe("project")
     expect(persisted.resolvedRealPath).toBe("/real/picked")
     expect(persisted.componentsDir).toBe("src/components")
     expect(persisted.mappedAt).toBeTruthy()
@@ -780,6 +794,76 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     expect(syncCall).toBeTruthy()
     expect((syncCall!.body.selection as Record<string, unknown>).slug).toBe(
       "promo-card"
+    )
+  })
+
+  it("the directory picker basename only prefills a confirmation hint — it is never the server value, and no sync fires until the absolute path is confirmed", async () => {
+    const calls: FetchCall[] = []
+    vi.stubGlobal("fetch", routeSyncFetch({ storedTarget: null, calls }))
+    vi.stubGlobal("window", window)
+    ;(window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker =
+      vi.fn(async () => ({ name: "my-project" }))
+
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={SLOT_HTML}
+        sourceComponentSlug="promo-card"
+        projectId="demo"
+        syncSelection={{
+          type: "component",
+          slug: "promo-card",
+          sourcePath: "projects/demo/components/promo-card.html",
+        }}
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    // Browse… uses the picker only as a hint.
+    const browseBtn = Array.from(
+      harness.container.querySelectorAll("button")
+    ).find((b) => b.textContent?.includes("Browse")) as HTMLButtonElement
+    expect(browseBtn).not.toBeNull()
+    await act(async () => {
+      browseBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // The basename surfaces as a confirmation hint, NOT as a path.
+    expect(harness.container.textContent).toContain("my-project")
+
+    // Clicking Sync with no confirmed absolute path → benign abort, no POST.
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(calls.some((c) => c.url === "/api/canvas/project/sync")).toBe(false)
+
+    // Confirming the absolute path → the path-entry value is what is sent.
+    const pathInput = harness.container.querySelector(
+      'input[aria-label="Sync folder path"]'
+    ) as HTMLInputElement
+    await act(async () => {
+      setInputValue(pathInput, "/Users/me/my-project")
+    })
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const writeCall = calls.find(
+      (c) => c.url === "/api/canvas/project/sync-target" && c.body.mode === "write"
+    )
+    expect((writeCall!.body.syncTarget as Record<string, unknown>).rootPath).toBe(
+      "/Users/me/my-project"
     )
   })
 
@@ -908,7 +992,7 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
       })
     )
     ;(window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker =
-      vi.fn(async () => ({ name: "/picked/react-app" }))
+      vi.fn(async () => ({ name: "react-app" }))
 
     harness = await mount(
       <CanvasHtmlPropsPanel
@@ -929,6 +1013,12 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     const syncBtn = harness.container.querySelector(
       'button[aria-label="Sync component"]'
     ) as HTMLButtonElement
+    const pathInput = harness.container.querySelector(
+      'input[aria-label="Sync folder path"]'
+    ) as HTMLInputElement
+    await act(async () => {
+      setInputValue(pathInput, "/Users/me/react-app")
+    })
     await act(async () => {
       syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
       await Promise.resolve()

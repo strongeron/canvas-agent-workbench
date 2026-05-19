@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { applyCanvasProjectSyncRequest } from "../vite/api/canvasProjectSync"
 import { buildNativeComponentShell } from "../utils/canvasNativeComponentShell"
@@ -445,6 +445,324 @@ describe("applyCanvasProjectSyncRequest — error paths", () => {
     }
     // card.html WAS written (overwrite-by-slug, non-restoring).
     await fs.access(path.join(ws.target, "card.html"))
+  })
+
+  it("(#8) artboard with two children sharing a slug → typed duplicate-slug, Root B untouched", async () => {
+    const ws = await makeWorkspace()
+    const a = await writeShellSource(ws, "card-a", "card", "CardA")
+    const b = await writeShellSource(ws, "card-b", "card", "CardB")
+    const res = await applyCanvasProjectSyncRequest(
+      {
+        target: ws.target,
+        componentsDir: "",
+        format: "html",
+        selection: {
+          type: "artboard",
+          slug: "landing",
+          children: [
+            { slug: "dup", sourcePath: a.relPath, mtimeMs: a.mtimeMs },
+            { slug: "dup", sourcePath: b.relPath, mtimeMs: b.mtimeMs },
+          ],
+        },
+      },
+      { workspaceRoot: ws.workspaceRoot }
+    )
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.code).toBe("duplicate-slug")
+      expect(res.status).toBe(400)
+    }
+    expect(await fs.readdir(ws.target)).toEqual([])
+  })
+
+  it("(#8) artboard page slug equal to a child slug → typed duplicate-slug, Root B untouched", async () => {
+    const ws = await makeWorkspace()
+    const a = await writeShellSource(ws, "card-a", "card", "CardA")
+    const res = await applyCanvasProjectSyncRequest(
+      {
+        target: ws.target,
+        componentsDir: "",
+        format: "html",
+        selection: {
+          type: "artboard",
+          slug: "shared",
+          children: [{ slug: "shared", sourcePath: a.relPath, mtimeMs: a.mtimeMs }],
+        },
+      },
+      { workspaceRoot: ws.workspaceRoot }
+    )
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.code).toBe("duplicate-slug")
+      expect(res.status).toBe(400)
+    }
+    expect(await fs.readdir(ws.target)).toEqual([])
+  })
+
+  it("(#10) a delete race between stat and read → typed stale-source 409, nothing written", async () => {
+    const ws = await makeWorkspace()
+    const src = await writeShellSource(ws, "card")
+    // Replace fs.readFile so the stat succeeds but the read fails ENOENT,
+    // simulating a delete race between the two calls (the file at src.absPath).
+    const realReadFile = fs.readFile
+    const spy = vi
+      .spyOn(fs, "readFile")
+      .mockImplementation((async (p: Parameters<typeof realReadFile>[0], ...rest: unknown[]) => {
+        if (typeof p === "string" && p === src.absPath) {
+          const err = new Error("ENOENT") as NodeJS.ErrnoException
+          err.code = "ENOENT"
+          throw err
+        }
+        // @ts-expect-error pass-through
+        return realReadFile(p, ...rest)
+      }) as typeof realReadFile)
+    try {
+      const res = await applyCanvasProjectSyncRequest(
+        {
+          target: ws.target,
+          componentsDir: "",
+          format: "html",
+          selection: {
+            type: "component",
+            slug: "card",
+            sourcePath: src.relPath,
+            mtimeMs: src.mtimeMs,
+          },
+        },
+        { workspaceRoot: ws.workspaceRoot }
+      )
+      expect(res.ok).toBe(false)
+      if (!res.ok) {
+        expect(res.code).toBe("stale-source")
+        expect(res.status).toBe(409)
+      }
+      expect(await fs.readdir(ws.target)).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("(#7) realpath drift detected at the STAGING dir (before mkdir/writeFile) → 403, nothing written", async () => {
+    const ws = await makeWorkspace()
+    const src = await writeShellSource(ws, "card")
+    const mod = await import("../vite/api/resolveSandboxPath")
+    // The staging guard calls assertRealpathStable on the staging DIRECTORY
+    // (path.dirname(resolved)) before mkdir/writeFile. Drift it on the very
+    // first call so staging never runs — same bail shape as the pre-rename
+    // check, and nothing lands in Root B.
+    let firstCall = true
+    const spy = vi
+      .spyOn(mod, "assertRealpathStable")
+      .mockImplementation(async () => {
+        if (firstCall) {
+          firstCall = false
+          return {
+            ok: false,
+            code: "escapes-sandbox",
+            error: "staging-dir symlink swapped (test-injected)",
+          }
+        }
+        return null
+      })
+    try {
+      const res = await applyCanvasProjectSyncRequest(
+        {
+          target: ws.target,
+          componentsDir: "",
+          format: "html",
+          selection: {
+            type: "component",
+            slug: "card",
+            sourcePath: src.relPath,
+            mtimeMs: src.mtimeMs,
+          },
+        },
+        { workspaceRoot: ws.workspaceRoot }
+      )
+      expect(res.ok).toBe(false)
+      if (!res.ok) {
+        expect(res.code).toBe("escapes-sandbox")
+        expect(res.status).toBe(403)
+      }
+      // No file (and no tmp residue) — rejected before staging wrote anything.
+      expect(await fs.readdir(ws.target)).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("(coverage) mid-batch realpath drift with NOTHING renamed yet → 403, true all-or-nothing (nothing written)", async () => {
+    const ws = await makeWorkspace()
+    const src = await writeShellSource(ws, "card")
+    // Make assertRealpathStable fail on the VERY FIRST destination (k=0) so
+    // writtenPaths is still empty → discard staged batch, 403, nothing renamed.
+    const mod = await import("../vite/api/resolveSandboxPath")
+    const spy = vi
+      .spyOn(mod, "assertRealpathStable")
+      .mockResolvedValue({
+        ok: false,
+        code: "escapes-sandbox",
+        error: "drift (test-injected, pre-batch)",
+      })
+    try {
+      const res = await applyCanvasProjectSyncRequest(
+        {
+          target: ws.target,
+          componentsDir: "",
+          format: "html",
+          selection: {
+            type: "component",
+            slug: "card",
+            sourcePath: src.relPath,
+            mtimeMs: src.mtimeMs,
+          },
+        },
+        { workspaceRoot: ws.workspaceRoot }
+      )
+      expect(res.ok).toBe(false)
+      if (!res.ok) {
+        expect(res.status).toBe(403)
+        expect(res.code).toBe("escapes-sandbox")
+      }
+      // Nothing renamed into place — true all-or-nothing.
+      const entries = await fs.readdir(ws.target)
+      expect(entries.filter((e) => !e.endsWith(".tmp"))).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("(coverage) mid-batch realpath drift AFTER the first rename → partialFailure, written/notWritten split", async () => {
+    const ws = await makeWorkspace()
+    const src = await writeShellSource(ws, "card")
+    const mod = await import("../vite/api/resolveSandboxPath")
+    // assertRealpathStable is called per file at BOTH the staging-dir check
+    // (arg = directory) and the pre-rename check (arg = the file path). Let
+    // every staging-dir check + the card.html rename pass; drift the next
+    // rename so card.html is renamed (non-restoring) but card.css is not.
+    const spy = vi
+      .spyOn(mod, "assertRealpathStable")
+      .mockImplementation(async (resolved: string) => {
+        if (resolved.endsWith("card.html")) return null // first rename OK
+        if (resolved.endsWith(".css") || resolved.endsWith(".json")) {
+          return {
+            ok: false,
+            code: "escapes-sandbox",
+            error: "drift (test-injected, mid-batch)",
+          }
+        }
+        return null // staging-dir checks pass
+      })
+    try {
+      const res = await applyCanvasProjectSyncRequest(
+        {
+          target: ws.target,
+          componentsDir: "",
+          format: "html",
+          selection: {
+            type: "component",
+            slug: "card",
+            sourcePath: src.relPath,
+            mtimeMs: src.mtimeMs,
+          },
+        },
+        { workspaceRoot: ws.workspaceRoot }
+      )
+      expect(res.ok).toBe(false)
+      if (!res.ok) {
+        expect(res.code).toBe("partial-write")
+        expect(res.partialFailure).toBe(true)
+        expect(res.writtenPaths).toContain("card.html")
+        expect((res.notWritten ?? []).length).toBeGreaterThan(0)
+      }
+      // card.html WAS renamed (non-restoring overwrite-by-slug).
+      await fs.access(path.join(ws.target, "card.html"))
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("(coverage) htmlToTsx failure (html+tsx) → ok:false code:tsx-failed, Root B empty (no HTML-only write)", async () => {
+    const ws = await makeWorkspace()
+    // A fragment that forces HtmlToTsxError: a namespaced tag name (`x:y`)
+    // survives parse5 but fails the converter's strict tag-name regex
+    // `^[a-zA-Z][a-zA-Z0-9-]*$` (the `:` is rejected) → HtmlToTsxError.
+    const absPath = path.join(ws.componentsDir, "broken.html")
+    const badSource = `<!doctype html><html><head></head><body><section><x:weird>nope</x:weird></section></body></html>`
+    await fs.writeFile(absPath, badSource, "utf8")
+    const stat = await fs.stat(absPath)
+    const res = await applyCanvasProjectSyncRequest(
+      {
+        target: ws.target,
+        componentsDir: "",
+        format: "html+tsx",
+        selection: {
+          type: "component",
+          slug: "broken",
+          sourcePath: path.relative(ws.workspaceRoot, absPath),
+          mtimeMs: stat.mtimeMs,
+        },
+      },
+      { workspaceRoot: ws.workspaceRoot }
+    )
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.code).toBe("tsx-failed")
+    // No HTML-only write — the whole selection aborted before staging.
+    expect(await fs.readdir(ws.target)).toEqual([])
+  })
+
+  it("(coverage) non-restore proven by sentinel: a mid-batch failure leaves the NEW content (old sentinel destroyed)", async () => {
+    const ws = await makeWorkspace()
+    const src = await writeShellSource(ws, "card")
+    // Pre-seed an OLD card.html carrying a unique sentinel.
+    const sentinel = "SENTINEL-OLD-CONTENT-DO-NOT-RESTORE"
+    await fs.writeFile(
+      path.join(ws.target, "card.html"),
+      `<article>${sentinel}</article>\n`,
+      "utf8"
+    )
+    const mod = await import("../vite/api/resolveSandboxPath")
+    const spy = vi
+      .spyOn(mod, "assertRealpathStable")
+      .mockImplementation(async (resolved: string) => {
+        if (resolved.endsWith("card.html")) return null // sentinel destroyed
+        if (resolved.endsWith(".css") || resolved.endsWith(".json")) {
+          return {
+            ok: false,
+            code: "escapes-sandbox",
+            error: "drift after sentinel file renamed",
+          }
+        }
+        return null // staging-dir checks pass
+      })
+    try {
+      const res = await applyCanvasProjectSyncRequest(
+        {
+          target: ws.target,
+          componentsDir: "",
+          format: "html",
+          selection: {
+            type: "component",
+            slug: "card",
+            sourcePath: src.relPath,
+            mtimeMs: src.mtimeMs,
+          },
+        },
+        { workspaceRoot: ws.workspaceRoot }
+      )
+      expect(res.ok).toBe(false)
+      if (!res.ok) expect(res.partialFailure).toBe(true)
+      // The on-disk file is the NEW content — the old sentinel is GONE,
+      // proving overwrite-by-slug is genuinely non-restoring (no backup).
+      const onDisk = await fs.readFile(
+        path.join(ws.target, "card.html"),
+        "utf8"
+      )
+      expect(onDisk).not.toContain(sentinel)
+      expect(onDisk).toContain('data-component="card"')
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it("missing slug is rejected as a bad path segment", async () => {

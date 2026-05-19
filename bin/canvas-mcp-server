@@ -2429,6 +2429,15 @@ async function runSyncToProject(args) {
   try {
     const mapping = await readProjectSyncTarget(context, projectId)
     persisted = mapping?.syncTarget || null
+    // The read endpoint realpath-revalidates the persisted mapping and
+    // returns `valid`. A stale/invalid mapping (root deleted/moved/symlink-
+    // swapped) must NOT be synced to — the agent has no folder picker, so
+    // there is no safe recovery; require a user re-pick in the UI.
+    if (persisted && mapping?.valid === false) {
+      return asToolError(
+        '[stale-sync-target] The persisted sync folder is missing, moved, or its realpath changed. A user must re-pick the project folder in the canvas UI before the agent can sync.'
+      )
+    }
   } catch (error) {
     return asToolError(
       error instanceof Error

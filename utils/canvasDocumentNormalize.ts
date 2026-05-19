@@ -104,6 +104,22 @@ function collectStyleText(root: HtmlNode, sink: string[]): void {
   for (const child of root.childNodes) collectStyleText(child, sink)
 }
 
+/**
+ * Remove every `<style>` descendant from `node` IN PLACE. `collectStyleText`
+ * has already gathered ALL `<style>` (head OR body) into the scoped sibling
+ * CSS, so a `<style>` left in the body subtree would be serialized verbatim
+ * into `fragmentHtml` — defeating the no-collision guarantee for
+ * agent/manual-edited content. Strip it from the fragment; the rule survives
+ * (scoped) in the css output only.
+ */
+function removeStyleElements(node: HtmlNode): void {
+  if (!hasChildNodes(node)) return
+  node.childNodes = (node.childNodes as HtmlChildNode[]).filter(
+    (child) => !(isElementNode(child) && child.tagName === "style")
+  )
+  for (const child of node.childNodes) removeStyleElements(child)
+}
+
 function isStrippedAttr(name: string): boolean {
   if (STRIPPED_EXACT_ATTRS.has(name)) return true
   return STRIPPED_PREFIXES.some((prefix) => name.startsWith(prefix))
@@ -167,6 +183,12 @@ interface CssBlock {
   prelude: string
   /** Raw inner text between the matching braces. */
   body: string
+  /**
+   * A semicolon-terminated statement at-rule with NO `{}` body (e.g.
+   * `@import url(x);`, `@charset "utf-8";`, `@layer a, b;`). Emitted verbatim
+   * in source order, never glued onto the following rule.
+   */
+  statement?: boolean
 }
 
 /**
@@ -192,15 +214,24 @@ function splitCssBlocks(css: string): CssBlock[] {
       continue
     }
 
-    // String literal in a prelude (e.g. attribute selector value).
+    // String literal in a prelude (e.g. attribute selector value). Bound the
+    // escape skip so a trailing `\` before the closing quote cannot make the
+    // scanner consume the quote and run into the next rule; if the string is
+    // unterminated, stop at end (do not silently swallow the remainder).
     if (ch === '"' || ch === "'") {
       const quote = ch
       let j = i + 1
       while (j < n && css[j] !== quote) {
-        if (css[j] === "\\") j++
+        if (css[j] === "\\" && j + 1 < n) j++
         j++
       }
-      prelude += css.slice(i, Math.min(j + 1, n))
+      if (j >= n) {
+        // Unterminated string: emit what we have and stop.
+        prelude += css.slice(i, n)
+        i = n
+        continue
+      }
+      prelude += css.slice(i, j + 1)
       i = j + 1
       continue
     }
@@ -220,9 +251,10 @@ function splitCssBlocks(css: string): CssBlock[] {
           const quote = c
           j++
           while (j < n && css[j] !== quote) {
-            if (css[j] === "\\") j++
+            if (css[j] === "\\" && j + 1 < n) j++
             j++
           }
+          if (j >= n) break // unterminated string — stop, don't overrun
           j++
           continue
         }
@@ -244,6 +276,20 @@ function splitCssBlocks(css: string): CssBlock[] {
       continue
     }
 
+    // A top-level `;` with no `{` opened terminates a statement at-rule
+    // (`@import url(x);`, `@charset "utf-8";`, `@layer a, b;`). Emit it as a
+    // standalone verbatim block so it is never glued onto the next `{` rule.
+    // A bare `;` that is not an at-rule (stray) is just dropped.
+    if (ch === ";") {
+      const stmt = prelude.trim()
+      if (stmt.startsWith("@")) {
+        blocks.push({ prelude: `${stmt};`, body: "", statement: true })
+      }
+      prelude = ""
+      i++
+      continue
+    }
+
     prelude += ch
     i++
   }
@@ -258,8 +304,29 @@ function splitSelectors(selectorList: string): string[] {
   const out: string[] = []
   let depth = 0
   let buf = ""
-  for (let i = 0; i < selectorList.length; i++) {
+  const n = selectorList.length
+  for (let i = 0; i < n; i++) {
     const ch = selectorList[i]
+    // Skip over quoted strings so commas/brackets/parens inside an attribute
+    // value (e.g. `[data-x="]"]`) never move depth or split — mirrors the
+    // string handling in splitCssBlocks (bounded escape, unterminated stop).
+    if (ch === '"' || ch === "'") {
+      buf += ch
+      let j = i + 1
+      while (j < n && selectorList[j] !== ch) {
+        if (selectorList[j] === "\\" && j + 1 < n) {
+          buf += selectorList[j]
+          j++
+        }
+        buf += selectorList[j]
+        j++
+      }
+      if (j < n) {
+        buf += selectorList[j] // closing quote
+      }
+      i = j
+      continue
+    }
     if (ch === "(" || ch === "[") depth++
     else if (ch === ")" || ch === "]") depth--
     if (ch === "," && depth === 0) {
@@ -291,9 +358,30 @@ function scopeSingleSelector(selector: string, wrapper: string): string {
     return `${wrapper} *`
   }
 
-  // Leading `html `/`body `/`:root ` prefixes are redundant once scoped.
-  const stripped = selector.replace(/^\s*(?:html|body|:root)\b\s*(?:>\s*)?/i, "")
-  const target = stripped.trim()
+  // A STANDALONE leading `html`/`body`/`:root` is redundant once scoped and
+  // collapses away (`body .x` → wrapper + `.x`). But a leading token that
+  // carries an attached qualifier (`body.theme-dark`, `html#root`,
+  // `:root[data-x]`) is a body/root-STATE gate — stripping it would drop the
+  // gate and apply the rule unconditionally. Only collapse when the token is
+  // immediately followed by whitespace, a combinator (`>`, `+`, `~`), a comma,
+  // or end-of-selector — NOT when followed by `.`/`#`/`[`/`:`.
+  const standaloneAnchor = /^\s*(?:html|body|:root)(?=\s|>|\+|~|,|$)\s*(?:[>+~]\s*)?/i
+  const m = standaloneAnchor.exec(selector)
+  if (m) {
+    const target = selector.slice(m[0].length).trim()
+    return target === "" ? wrapper : `${wrapper} ${target}`
+  }
+  // Leading anchor WITH an attached qualifier: re-root the qualifier under the
+  // wrapper (`body.theme-dark .x` → `wrapper.theme-dark .x` would over-narrow;
+  // the body state must still gate, so anchor the qualifier on the wrapper
+  // itself: `[data-component="slug"].theme-dark .x`).
+  const qualifiedAnchor = /^\s*(?:html|body|:root)(?=[.#[:])/i
+  const q = qualifiedAnchor.exec(selector)
+  if (q) {
+    const rest = selector.slice(q[0].length).trim()
+    return `${wrapper}${rest}`
+  }
+  const target = selector.trim()
   if (target === "") return wrapper
   return `${wrapper} ${target}`
 }
@@ -331,6 +419,14 @@ function scopeCssText(css: string, wrapper: string): string {
 
   for (const block of blocks) {
     if (block.prelude === "") continue
+
+    // Semicolon-terminated statement at-rule with no body — emit verbatim,
+    // preserving order (@import/@charset stay at top because source order is
+    // preserved and they appear before any rule block).
+    if (block.statement) {
+      out.push(block.prelude)
+      continue
+    }
 
     if (block.prelude.startsWith("@")) {
       const name = atRuleName(block.prelude)
@@ -433,6 +529,10 @@ export function normalizeDocument(input: NormalizeDocumentInput): NormalizedDocu
   for (const child of body.childNodes ?? []) {
     stripAuthoringAttributes(child)
   }
+  // Body `<style>` is already in the scoped css (collectStyleText covers head
+  // AND body); drop it from the fragment so it cannot be re-serialized
+  // unscoped and collide.
+  removeStyleElements(body)
   for (const element of bodyElementChildren) {
     if (getAttribute(element, "data-component") === null) {
       setAttribute(element, "data-component", slug)
@@ -462,6 +562,19 @@ export function normalizeDocument(input: NormalizeDocumentInput): NormalizedDocu
 export function composeNormalizedPage(children: NormalizedDocument[]): ComposedPage {
   if (!Array.isArray(children)) {
     throw new CanvasDocumentNormalizeError("bad-input", "children must be an array")
+  }
+  // Duplicate child slugs would emit colliding `[data-component]` wrappers and
+  // (in Sync) two outputs racing the same rename — reject rather than silently
+  // publish colliding content.
+  const seenSlugs = new Set<string>()
+  for (const child of children) {
+    if (seenSlugs.has(child.slug)) {
+      throw new CanvasDocumentNormalizeError(
+        "bad-input",
+        `duplicate child slug "${child.slug}" — each composed child must have a unique slug.`
+      )
+    }
+    seenSlugs.add(child.slug)
   }
   const fragmentHtml = children.map((child) => child.fragmentHtml).join("\n")
   const css = children

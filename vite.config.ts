@@ -18,6 +18,7 @@ import { applyCanvasComponentCreateRequest } from './vite/api/canvasComponentCre
 import { applyCanvasComponentPromoteRequest } from './vite/api/canvasComponentPromote'
 import { applyCanvasProjectSyncRequest } from './vite/api/canvasProjectSync'
 import { applyCanvasProjectDetectComponentsDirRequest } from './vite/api/canvasProjectDetectComponentsDir'
+import { computeWrittenSyncTarget } from './vite/api/syncTargetState'
 import { listProjectDesignTokens, writeProjectDesignToken } from './utils/canvasTokenCss'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
@@ -4702,18 +4703,22 @@ function paperImportPlugin() {
             }
             const projectDir = path.join(PROJECTS_ROOT, projectId)
             if (body?.mode === 'write') {
-              const normalized = normalizeSyncTargetState(body?.syncTarget)
-              if (!normalized) {
+              // The client-supplied resolvedRealPath is NOT trusted: recompute
+              // it server-side via fs.realpath(rootPath) and reject if the
+              // root does not resolve. Persisting a client-pinned realpath
+              // would defeat the re-sync revalidation.
+              const computed = await computeWrittenSyncTarget(body?.syncTarget)
+              if (!computed.ok) {
                 return sendJson(res, 400, {
                   ok: false,
                   code: 'bad-input',
-                  error: 'syncTarget.rootPath is required to persist a mapping.',
+                  error: computed.error,
                 })
               }
               const saved = await writeProjectSyncTarget(
                 projectDir,
                 projectId,
-                normalized
+                computed.syncTarget
               )
               return sendJson(res, 200, { ok: true, syncTarget: saved })
             }

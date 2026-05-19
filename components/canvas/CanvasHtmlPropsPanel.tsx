@@ -29,7 +29,7 @@ import {
 import {
   canPickDirectory,
   isAbortSyncError,
-  pickDirectoryPath,
+  pickDirectoryHint,
   readSyncTarget,
   runSync,
   type DetectResult,
@@ -257,9 +257,12 @@ function SyncButton({ syncedBefore, onSync, steadyLabelOverride }: SyncButtonPro
   const [hasSucceeded, setHasSucceeded] = useState(false)
   const [error, setError] = useState<SyncError | null>(null)
   const transientRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isMountedRef = useRef(true)
 
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
+      isMountedRef.current = false
       if (transientRef.current) clearTimeout(transientRef.current)
     }
   }, [])
@@ -276,12 +279,16 @@ function SyncButton({ syncedBefore, onSync, steadyLabelOverride }: SyncButtonPro
     setPhase("syncing")
     try {
       await onSync()
+      // The panel can unmount mid-sync (selection switched). Guard every
+      // post-await setState so it does not fire on an unmounted component.
+      if (!isMountedRef.current) return
       setHasSucceeded(true)
       setPhase("synced")
       transientRef.current = setTimeout(() => {
         setPhase("idle")
       }, SYNCED_TRANSIENT_MS)
     } catch (caught) {
+      if (!isMountedRef.current) return
       // A cancelled folder pick (U6) is a benign no-op — NOT a failure and
       // NOT a success. Revert silently to the steady label.
       if (
@@ -377,11 +384,11 @@ export function SyncSection({
   const [overrideDir, setOverrideDir] = useState<string | null>(null)
   const [editingDir, setEditingDir] = useState(false)
   const [needsRepick, setNeedsRepick] = useState(false)
-  const [usePathEntry, setUsePathEntry] = useState(!canPickDirectory())
   const [pathEntry, setPathEntry] = useState("")
   const [pathEntryError, setPathEntryError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string[] | null>(null)
   const [mappedBefore, setMappedBefore] = useState(false)
+  const [pickerHint, setPickerHint] = useState<string | null>(null)
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -419,31 +426,46 @@ export function SyncSection({
   const reactHint =
     detect?.frameworkSuggestion === "html+tsx" && format === "html"
 
+  // The server-validated absolute-path text entry is the PRIMARY (and only)
+  // mechanism for choosing the project folder. `FileSystemDirectoryHandle.name`
+  // is only a basename — never a usable Node write path — so the picker is
+  // offered ONLY to hint the folder name; the value sent to the server is
+  // always the user-confirmed absolute path from the text input.
   const resolveDirectoryPath = useCallback(async (): Promise<string | null> => {
-    if (usePathEntry) {
-      const value = pathEntry.trim()
-      if (!value) {
-        setPathEntryError("Enter an absolute path to the project folder.")
-        // Treat as a benign abort so the button reverts to its steady label.
-        return null
-      }
-      if (!value.startsWith("/")) {
-        setPathEntryError("Path must be absolute (start with /).")
-        return null
-      }
-      setPathEntryError(null)
-      return value
-    }
-    try {
-      const picked = await pickDirectoryPath()
-      return picked
-    } catch {
-      // Picker unavailable / denied → switch to the inline server-path entry
-      // and abort this attempt (no error toast — the user enters a path next).
-      setUsePathEntry(true)
+    const value = pathEntry.trim()
+    if (!value) {
+      setPathEntryError(
+        pickerHint
+          ? `Confirm the absolute path to "${pickerHint}" below.`
+          : "Enter an absolute path to the project folder."
+      )
+      // Treat as a benign abort so the button reverts to its steady label.
       return null
     }
-  }, [pathEntry, usePathEntry])
+    if (!value.startsWith("/")) {
+      setPathEntryError("Path must be absolute (start with /).")
+      return null
+    }
+    setPathEntryError(null)
+    return value
+  }, [pathEntry, pickerHint])
+
+  const handleBrowseHint = useCallback(async () => {
+    try {
+      const hint = await pickDirectoryHint()
+      if (hint) {
+        // A basename hint only — the user must still confirm the absolute path.
+        setPickerHint(hint.basename)
+        setPathEntryError(
+          `Picked "${hint.basename}". Enter its absolute path below to confirm.`
+        )
+      }
+    } catch {
+      // Picker unavailable / denied — the path entry is already the primary
+      // input, so there is nothing else to do.
+      setPickerHint(null)
+    }
+  }, [])
 
   const handleSync = useCallback(async () => {
     if (!selection) {
@@ -532,33 +554,42 @@ export function SyncSection({
         steadyLabelOverride={needsRepick ? "Choose folder" : undefined}
       />
 
-      {usePathEntry ? (
-        <div className="mt-2 rounded-md border border-default bg-white p-2">
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className="mt-2 rounded-md border border-default bg-white p-2">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Project folder path
           </div>
-          <input
-            type="text"
-            aria-label="Sync folder path"
-            value={pathEntry}
-            onChange={(event) => {
-              setPathEntry(event.target.value)
-              setPathEntryError(null)
-            }}
-            placeholder="Absolute path, e.g. /Users/.../my-project"
-            spellCheck={false}
-            className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-          />
-          {pathEntryError ? (
-            <p className="mt-1 text-[10px] text-red-700">{pathEntryError}</p>
-          ) : (
-            <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-              The server validates and writes via this path string (no browser
-              file access).
-            </p>
-          )}
+          {canPickDirectory() ? (
+            <button
+              type="button"
+              onClick={() => void handleBrowseHint()}
+              className="rounded border border-default bg-white px-2 py-0.5 text-[10px] font-medium text-foreground hover:bg-surface-100"
+            >
+              Browse…
+            </button>
+          ) : null}
         </div>
-      ) : null}
+        <input
+          type="text"
+          aria-label="Sync folder path"
+          value={pathEntry}
+          onChange={(event) => {
+            setPathEntry(event.target.value)
+            setPathEntryError(null)
+          }}
+          placeholder="Absolute path, e.g. /Users/.../my-project"
+          spellCheck={false}
+          className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+        />
+        {pathEntryError ? (
+          <p className="mt-1 text-[10px] text-red-700">{pathEntryError}</p>
+        ) : (
+          <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+            The server validates and writes via this path string (no browser
+            file access). The picker only hints the folder name.
+          </p>
+        )}
+      </div>
 
       {detect ? (
         <div className="mt-2 rounded-md border border-default bg-surface-50 px-2 py-1.5">

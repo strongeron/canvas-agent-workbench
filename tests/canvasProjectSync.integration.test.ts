@@ -191,6 +191,63 @@ describe("Sync-vs-Sync — concurrent same-selection syncs (serialized)", () => 
 })
 
 // ---------------------------------------------------------------------------
+// Fix #6: the per-Root-B lock is keyed by REALPATH, not the raw path. Two
+// concurrent syncs of DIFFERENT component selections to the SAME real Root B
+// reached via two different path spellings (a symlink dir vs its realpath)
+// must serialize on one lock so the manifest merge does not interleave and
+// lose an entry. Post-fix invariant: the final manifest contains BOTH.
+// ---------------------------------------------------------------------------
+
+describe("Sync-vs-Sync — symlink-aliased same real Root B serializes on realpath", () => {
+  it("two concurrent syncs of different components via symlink vs realpath both land in manifest.json", async () => {
+    const ws = await makeWorkspace()
+    const a = await writeShellSource(ws, "card-a", "card", "CardA")
+    const b = await writeShellSource(ws, "card-b", "card", "CardB")
+
+    // `ws.target` is the realpath. Add a symlink alias to the SAME dir.
+    const aliasParent = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "sync-int-alias-"))
+    )
+    tmpDirs.push(aliasParent)
+    const aliasTarget = path.join(aliasParent, "alias-root-b")
+    await fs.symlink(ws.target, aliasTarget)
+
+    const syncVia = (target: string, slug: string, src: typeof a) =>
+      applyCanvasProjectSyncRequest(
+        {
+          target,
+          componentsDir: "",
+          format: "html",
+          selection: {
+            type: "component",
+            slug,
+            sourcePath: src.relPath,
+            mtimeMs: src.mtimeMs,
+          },
+        },
+        { workspaceRoot: ws.workspaceRoot }
+      )
+
+    // Different selections, same real dir, two different path spellings.
+    const [ra, rb] = await Promise.all([
+      syncVia(ws.target, "card-a", a),
+      syncVia(aliasTarget, "card-b", b),
+    ])
+    expect(ra.ok).toBe(true)
+    expect(rb.ok).toBe(true)
+
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(ws.target, "manifest.json"), "utf8")
+    )
+    const slugs = manifest.components
+      .map((c: { slug: string }) => c.slug)
+      .sort()
+    // BOTH components survived — the realpath-keyed lock serialized the merge.
+    expect(slugs).toEqual(["card-a", "card-b"])
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Error: read-only target dir → clear permission error; no partial files.
 // chmod the picked Root B to read-only and assert the staged-batch write
 // fails with a surfaced error before anything lands. Skipped when running as

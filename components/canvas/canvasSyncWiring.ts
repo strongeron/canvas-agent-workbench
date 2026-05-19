@@ -77,6 +77,37 @@ function makeSyncError(
   return err
 }
 
+// Bounded fetch: the sync/detect/sync-target endpoints touch an arbitrary
+// user-picked filesystem; a hung server call would otherwise leave the Sync
+// button stuck on "Syncing…" forever. An AbortController times the request
+// out and surfaces a class-tagged SyncError so the button leaves its loading
+// state with a clear message.
+const POST_SYNC_TIMEOUT_MS = 60_000
+const METADATA_TIMEOUT_MS = 15_000
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  label: string
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw makeSyncError(
+        `${label} timed out after ${Math.round(timeoutMs / 1000)}s — the server did not respond.`,
+        "permission"
+      )
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Map a server error `code` to a `SyncErrorClass` so the inline copy is
  * templated (U3 `syncErrorCopy`). Unknown codes fall through to the generic
@@ -110,11 +141,16 @@ export async function readSyncTarget(projectId: string): Promise<{
   syncTarget: PersistedSyncTarget | null
   valid: boolean
 }> {
-  const response = await fetch("/api/canvas/project/sync-target", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId, mode: "read" }),
-  })
+  const response = await fetchWithTimeout(
+    "/api/canvas/project/sync-target",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, mode: "read" }),
+    },
+    METADATA_TIMEOUT_MS,
+    "Reading the sync mapping"
+  )
   const payload = (await response.json().catch(() => ({}))) as {
     ok?: boolean
     syncTarget?: PersistedSyncTarget | null
@@ -134,11 +170,16 @@ async function persistSyncTarget(
     ...syncTarget,
     mappedAt: syncTarget.mappedAt ?? new Date().toISOString(),
   }
-  const response = await fetch("/api/canvas/project/sync-target", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId, mode: "write", syncTarget: withTimestamp }),
-  })
+  const response = await fetchWithTimeout(
+    "/api/canvas/project/sync-target",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, mode: "write", syncTarget: withTimestamp }),
+    },
+    METADATA_TIMEOUT_MS,
+    "Persisting the sync mapping"
+  )
   const payload = (await response.json().catch(() => ({}))) as {
     ok?: boolean
     syncTarget?: PersistedSyncTarget
@@ -155,11 +196,16 @@ async function persistSyncTarget(
  * result for the resolved-path display + override UI.
  */
 export async function detectComponentsDir(rootPath: string): Promise<DetectResult> {
-  const response = await fetch("/api/canvas/project/detect-components-dir", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rootPath }),
-  })
+  const response = await fetchWithTimeout(
+    "/api/canvas/project/detect-components-dir",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rootPath }),
+    },
+    METADATA_TIMEOUT_MS,
+    "Inspecting the folder"
+  )
   const payload = (await response.json().catch(() => ({}))) as
     | (DetectResult & { ok: true })
     | { ok?: false; error?: string }
@@ -173,12 +219,18 @@ export async function detectComponentsDir(rootPath: string): Promise<DetectResul
 }
 
 /**
- * Open the browser directory picker to obtain a directory NAME/path STRING.
- * The handle is intentionally discarded — the server writes via a path string,
- * never a browser handle. Returns `null` on cancel; throws when unsupported so
- * the caller shows the inline path-entry fallback.
+ * Open the browser directory picker. IMPORTANT: `FileSystemDirectoryHandle.name`
+ * is ONLY the final path segment (web spec — no absolute path is exposed to
+ * the page). It is therefore NEVER a usable Node write path: the server's
+ * `path.resolve` would resolve a bare basename against the dev-server CWD and
+ * write to the wrong place. The picked name is returned ONLY as a HINT to
+ * prefill the server-validated absolute-path text input; the value actually
+ * sent to the server is always the user-confirmed absolute path from that
+ * input. Returns `{ basename }` on success (a hint, not a path), `null` on
+ * cancel; throws when the picker is unsupported so the caller shows the
+ * (primary) path-entry input.
  */
-export async function pickDirectoryPath(): Promise<string | null> {
+export async function pickDirectoryHint(): Promise<{ basename: string } | null> {
   if (!canPickDirectory()) {
     throw makeSyncError(
       "Directory picker unavailable in this browser — enter the folder path below.",
@@ -193,10 +245,8 @@ export async function pickDirectoryPath(): Promise<string | null> {
     ).showDirectoryPicker
     const handle = await picker?.()
     if (!handle) return null
-    // We deliberately only read `handle.name`. The browser handle cannot be
-    // used by the Node sync endpoint; the server-validated path string is the
-    // single write mechanism for ALL browsers.
-    return handle.name ?? ""
+    // Only the basename is available. NOT a path — a prefill hint only.
+    return { basename: handle.name ?? "" }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return null
     throw makeSyncError(
@@ -238,11 +288,16 @@ export async function postSync(input: {
   format: "html" | "html+tsx"
   selection: SyncSelection
 }): Promise<SyncOverwriteNotice> {
-  const response = await fetch("/api/canvas/project/sync", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  })
+  const response = await fetchWithTimeout(
+    "/api/canvas/project/sync",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+    POST_SYNC_TIMEOUT_MS,
+    "Sync"
+  )
   const payload = (await response
     .json()
     .catch(() => ({}))) as SyncResponseOk | SyncResponseErr

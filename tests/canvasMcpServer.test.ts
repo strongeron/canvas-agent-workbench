@@ -262,6 +262,9 @@ describe("canvas MCP server", () => {
     let syncTargetRequestBody: Record<string, any> | null = null
     let detectComponentsDirRequestBody: Record<string, any> | null = null
     let projectSyncRequestBody: Record<string, any> | null = null
+    // Mutable so a test step can simulate a stale/invalid persisted mapping
+    // (the read endpoint realpath-revalidates and returns `valid`).
+    let syncTargetValid = true
 
     server = createServer((req, res) => {
       const requestUrl = new URL(req.url || "/", "http://127.0.0.1")
@@ -442,8 +445,10 @@ describe("canvas MCP server", () => {
                 format: "html",
                 mappedAt: "2026-05-17T10:00:00.000Z",
               },
-              valid: true,
-              resolvedRealPath: "/tmp/allowlisted-root-b",
+              valid: syncTargetValid,
+              ...(syncTargetValid
+                ? { resolvedRealPath: "/tmp/allowlisted-root-b" }
+                : {}),
             })
           )
         })
@@ -1805,6 +1810,32 @@ describe("canvas MCP server", () => {
         "manifest.json",
       ])
       expect(okSyncResult.result?.structuredContent?.reusedMapping).toBe(true)
+
+      // Stale/invalid persisted mapping: the read endpoint realpath-
+      // revalidates and returns `valid: false`. The agent has no folder
+      // picker, so sync_to_project must REJECT (re-pick required) instead of
+      // proceeding to publish into a moved/missing/symlink-swapped root.
+      syncTargetValid = false
+      projectSyncRequestBody = null
+      const staleSyncResult = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-sync-stale",
+        method: "tools/call",
+        params: {
+          name: "sync_to_project",
+          arguments: {
+            selection: "promo-card-item",
+            projectId: "demo",
+          },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text: string }> } }
+      expect(staleSyncResult.result?.isError).toBe(true)
+      expect(staleSyncResult.result?.content?.[0]?.text).toContain(
+        "stale-sync-target"
+      )
+      // It bailed BEFORE hitting the sync endpoint.
+      expect(projectSyncRequestBody).toBeNull()
+      syncTargetValid = true
 
       // Restore the original live state for the downstream assertions.
       await writeFile(path.join(tempDir, "state.json"), originalStateJson)

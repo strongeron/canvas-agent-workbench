@@ -494,7 +494,47 @@ async function readAllSources(
         })`,
       }
     }
-    const sourceHtml = await fs.readFile(src.absPath, "utf8")
+    let sourceHtml: string
+    try {
+      sourceHtml = await fs.readFile(src.absPath, "utf8")
+    } catch (error) {
+      // A delete/EACCES/EISDIR race between stat and read. Return a typed
+      // error mirroring the stat catch instead of an uncaught rejection
+      // surfacing as a generic 400.
+      const code = (error as NodeJS.ErrnoException)?.code
+      if (code === "ENOENT") {
+        return {
+          ok: false,
+          status: 409,
+          code: "stale-source",
+          error: `Root A source vanished between stat and read: ${src.label}. Reload before syncing.`,
+        }
+      }
+      if (code === "EACCES" || code === "EPERM") {
+        return {
+          ok: false,
+          status: 403,
+          code: "source-unreadable",
+          error: `Root A source is not readable: ${src.label} (${code}).`,
+        }
+      }
+      if (code === "EISDIR") {
+        return {
+          ok: false,
+          status: 409,
+          code: "stale-source",
+          error: `Root A source is a directory, not a file: ${src.label}.`,
+        }
+      }
+      return {
+        ok: false,
+        status: 500,
+        code: "source-read-failed",
+        error: `Failed to read Root A source ${src.label}: ${
+          error instanceof Error ? error.message : "read failed"
+        }`,
+      }
+    }
     loaded.push({ ...src, sourceHtml, snapshotMtime: stat.mtimeMs })
   }
   return { ok: true, loaded }
@@ -665,6 +705,30 @@ async function performCanvasProjectSync(
       reads.push({ label: `child:${childSlug}`, absPath: abs, expectedMtime, slug: childSlug })
       plannedComponents.push({ slug: childSlug, sourceAbs: abs, expectedMtime })
       pageChildrenSlugs.push(childSlug)
+    }
+    // Duplicate child slugs (a duplicated canvas item) OR a page slug equal to
+    // a child slug both produce colliding `[data-component]` wrappers and two
+    // outputs racing the same rename. Reject BEFORE staging — never silently
+    // publish colliding content.
+    const seenChildSlugs = new Set<string>()
+    for (const childSlug of pageChildrenSlugs) {
+      if (seenChildSlugs.has(childSlug)) {
+        return {
+          ok: false,
+          status: 400,
+          code: "duplicate-slug",
+          error: `Duplicate child slug "${childSlug}" in the artboard selection — each child must have a unique slug.`,
+        }
+      }
+      seenChildSlugs.add(childSlug)
+    }
+    if (seenChildSlugs.has(pageSlug)) {
+      return {
+        ok: false,
+        status: 400,
+        code: "duplicate-slug",
+        error: `Page slug "${pageSlug}" collides with a child slug — the page and its children must have distinct slugs.`,
+      }
     }
   }
 
@@ -899,6 +963,19 @@ async function performCanvasProjectSync(
       await cleanupTmp()
       return sandboxErrToResponse(guard)
     }
+    // TOCTOU: the staging mkdir + writeFile run on an untrusted root. Re-run
+    // the realpath containment check on the staging directory IMMEDIATELY
+    // before mkdir/writeFile (a symlink swapped between resolveSandboxPath and
+    // staging would otherwise let the tmp write land outside the sandbox).
+    // Same bail shape as the pre-rename check.
+    const stageDrift = await assertRealpathStable(
+      path.dirname(guard.resolved),
+      guard.validatedRealRoot
+    )
+    if (stageDrift) {
+      await cleanupTmp()
+      return { ok: false, status: 403, code: stageDrift.code, error: stageDrift.error }
+    }
     // Collision-proof tmp name: a per-file random token guarantees uniqueness
     // even for two concurrent same-process syncs of the same selection (pid +
     // Date.now() + index alone collide within a millisecond, letting one
@@ -1039,6 +1116,26 @@ async function performCanvasProjectSync(
 // on a dev server), so the map is intentionally not pruned.
 const syncLocksByRoot = new Map<string, Promise<unknown>>()
 
+/**
+ * Lock key for the per-Root-B serialization. Two symlink-aliased targets that
+ * resolve to the SAME real directory must share one lock — otherwise the
+ * manifest read/merge/write interleaves and loses entries. Realpath the
+ * resolved components dir; on ENOENT (dir not created yet) fall back to the
+ * lexical resolved path.
+ */
+async function computeLockKey(
+  target: string,
+  componentsDirRaw: string
+): Promise<string> {
+  if (!target) return "<no-target>"
+  const lexical = path.resolve(target, componentsDirRaw)
+  try {
+    return await fs.realpath(lexical)
+  } catch {
+    return lexical
+  }
+}
+
 export async function applyCanvasProjectSyncRequest(
   body: CanvasProjectSyncBody,
   options: CanvasProjectSyncOptions
@@ -1046,7 +1143,7 @@ export async function applyCanvasProjectSyncRequest(
   const target = typeof body.target === "string" ? body.target.trim() : ""
   const componentsDirRaw =
     typeof body.componentsDir === "string" ? body.componentsDir.trim() : ""
-  const lockKey = target ? path.resolve(target, componentsDirRaw) : "<no-target>"
+  const lockKey = await computeLockKey(target, componentsDirRaw)
   const prior = syncLocksByRoot.get(lockKey) ?? Promise.resolve()
   // Run after `prior` settles whether it resolved or rejected, so one failed
   // sync never blocks the queue.

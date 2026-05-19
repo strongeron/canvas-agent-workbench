@@ -133,7 +133,7 @@ interface ComponentCreateClientResult {
     importName?: string
     componentSlug?: string
   }
-  files: Array<{ filePath: string; mtimeMs: number }>
+  files?: Array<{ filePath: string; mtimeMs: number }>
   error?: string
 }
 
@@ -2306,7 +2306,7 @@ export function CanvasTab({
       // stable create-time slug/path so a dropped rebind still resolves the
       // real file via `slug` (the create-then-rebind reconcile contract).
       const filePath = `projects/${projectId}/${primitive.filePath}`
-      const htmlFile = createResult.files.find(
+      const htmlFile = createResult.files?.find(
         (entry) => entry.filePath === primitive.filePath
       )
 
@@ -4097,6 +4097,7 @@ export function CanvasTab({
 
           {showPropsPanel && selectedHtmlItem && !selectedReactNodeSelection && (
             <CanvasHtmlPropsPanel
+              key={selectedHtmlItem.id}
               src={selectedHtmlItem.src}
               projectId={activeProjectId || "design-system-foundation"}
               title={selectedHtmlItem.title}
@@ -4221,6 +4222,7 @@ export function CanvasTab({
 
           {showPropsPanel && selectedArtboardItem && (
             <CanvasArtboardPropsPanel
+              key={selectedArtboardItem.id}
               name={selectedArtboardItem.name}
               background={selectedArtboardItem.background}
               layout={selectedArtboardItem.layout}
