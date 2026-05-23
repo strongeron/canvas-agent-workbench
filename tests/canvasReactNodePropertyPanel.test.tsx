@@ -335,6 +335,53 @@ describe("CanvasReactNodePropertyPanel", () => {
     })
   })
 
+  it("surfaces a compact editable summary for the selected node", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        node: {
+          canvasId: "abc:0",
+          tag: "a",
+          isHostElement: true,
+          attributes: [
+            {
+              name: "href",
+              value: "#",
+              kind: "literal-string",
+              editableInV1: true,
+            },
+            {
+              name: "className",
+              value: "button secondary",
+              kind: "literal-string",
+              editableInV1: true,
+            },
+          ],
+          textChildren: "Secondary",
+          hasNonTextChildren: false,
+          editableInV1: true,
+        },
+      }),
+    })
+
+    harness = await mount(
+      <CanvasReactNodePropertyPanel
+        selection={makeSelection({ tag: "a" })}
+        sourceReact={'export default function P() { return <a href="#" className="button secondary">Secondary</a> }'}
+        currentCompileGeneration={1}
+        sourceId="item-1"
+        onClose={() => {}}
+        onSourceReactChange={() => {}}
+      />
+    )
+
+    expect(harness.container.textContent).toContain("Editable now")
+    for (const label of ["text", "href", "className", "wrap", "swap tag", "reorder", "insert child", "delete"]) {
+      expect(harness.container.textContent).toContain(label)
+    }
+  })
+
   it("dispatches wrapSelection and rebases to the wrapped node id", async () => {
     const onSourceHtmlChange = vi.fn()
     const onSelectionChange = vi.fn()

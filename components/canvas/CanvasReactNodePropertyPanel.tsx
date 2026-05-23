@@ -282,6 +282,8 @@ function NodeBody({
   onApplyMutations: (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => void
   onOpenSourceMode?: () => void
 }) {
+  const editableSummary = useMemo(() => summarizeEditableCapabilities(node), [node])
+
   return (
     <div className="space-y-4">
       {writeState.status === "error" && (
@@ -305,6 +307,28 @@ function NodeBody({
             {node.isHostElement ? "host" : "component"}
           </span>
         </div>
+      </div>
+
+      <div>
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Editable now
+        </div>
+        {editableSummary.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {editableSummary.map((label) => (
+              <span
+                key={label}
+                className="rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[10px] font-medium text-brand-800"
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] italic text-muted-foreground">
+            No direct edits available here. Use source mode.
+          </p>
+        )}
       </div>
 
       {!node.editableInV1 && (
@@ -378,6 +402,29 @@ function NodeBody({
       />
     </div>
   )
+}
+
+function summarizeEditableCapabilities(node: AstNodeInfo): string[] {
+  const labels: string[] = []
+  if (node.textChildren && !node.hasNonTextChildren) labels.push("text")
+
+  const editableAttributes = node.attributes
+    .filter((attr) => attr.editableInV1 && attr.kind !== "spread")
+    .map((attr) => attr.name)
+
+  for (const name of editableAttributes) {
+    if (!labels.includes(name)) labels.push(name)
+  }
+
+  if (node.editableInV1) {
+    labels.push("wrap")
+    labels.push("swap tag")
+    labels.push("reorder")
+    labels.push("insert child")
+    labels.push("delete")
+  }
+
+  return labels
 }
 
 function StructureEditor({
