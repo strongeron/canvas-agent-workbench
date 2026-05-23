@@ -96,6 +96,27 @@ afterEach(() => {
 })
 
 describe("canvas html import flow", () => {
+  it("explains the difference between props-backed components and native shells", async () => {
+    const onAddNativeComponent = vi.fn()
+    const rendered = await renderSidebar({
+      onAddNativeComponent,
+    })
+
+    expect(rendered.host.textContent).toContain("These library items are props-backed.")
+    const button = Array.from(rendered.host.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.trim() === "Open native shells"
+    ) as HTMLButtonElement | undefined
+    expect(button).toBeTruthy()
+
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+    })
+
+    expect(onAddNativeComponent).toHaveBeenCalledTimes(1)
+
+    await rendered.cleanup()
+  })
+
   it("imports a picked standalone html file immediately", async () => {
     const onAddHtmlBundle = vi.fn(async (_input: HtmlBundleImportInput) => {})
     const rendered = await renderSidebar({ onAddHtmlBundle })

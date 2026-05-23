@@ -1388,6 +1388,21 @@ export function CanvasSidebar({
             <p className="mt-2 text-xs text-muted-foreground">
               Drag variants onto the canvas
             </p>
+            <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-900">
+              These library items are props-backed. For editable HTML structure, start from a
+              native component shell.
+              {onAddNativeComponent ? (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={onAddNativeComponent}
+                    className="rounded-md border border-blue-300 bg-white px-2 py-1 text-[11px] font-medium text-blue-900 hover:bg-blue-100"
+                  >
+                    Open native shells
+                  </button>
+                </div>
+              ) : null}
+            </div>
             <div className="mt-2 max-h-[40vh] overflow-y-auto rounded-md border border-default">
               {filteredCategories.map(({ category, components }) => (
                 <div key={category} className="border-b border-default last:border-b-0">
