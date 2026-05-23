@@ -1,0 +1,46 @@
+{
+  "ui": [
+    {
+      "id": "primitive/card",
+      "displayName": "Card",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Card.html",
+      "componentSlug": "card",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "article"
+        },
+        {
+          "name": "media",
+          "kind": "container",
+          "accepts": "image,svg,video",
+          "tag": "figure"
+        },
+        {
+          "name": "content",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "body",
+          "kind": "text",
+          "tag": "p"
+        },
+        {
+          "name": "actions",
+          "kind": "container",
+          "tag": "div"
+        }
+      ]
+    }
+  ],
+  "page": []
+}

@@ -3,9 +3,18 @@
 import React from "react"
 import { act } from "react"
 import { createRoot } from "react-dom/client"
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CanvasSidebar } from "../components/canvas/CanvasSidebar"
+
+vi.mock("../components/canvas/localAppsService", () => ({
+  fetchLocalApps: vi.fn(async () => ({
+    status: "ready",
+    apps: [],
+    source: "test",
+    scannedPorts: 0,
+  })),
+}))
 
 type HtmlBundleImportInput = {
   files?: File[]
@@ -70,6 +79,7 @@ function createRelativeFile(name: string, content: string, relativePath = name) 
 }
 
 let originalActEnvironmentDescriptor: PropertyDescriptor | undefined
+let fetchMock: ReturnType<typeof vi.fn>
 
 beforeAll(() => {
   originalActEnvironmentDescriptor = Object.getOwnPropertyDescriptor(
@@ -80,6 +90,17 @@ beforeAll(() => {
     configurable: true,
     value: true,
   })
+})
+
+beforeEach(() => {
+  fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      ok: true,
+      primitives: [],
+    }),
+  })
+  vi.stubGlobal("fetch", fetchMock)
 })
 
 afterAll(() => {
@@ -93,6 +114,7 @@ afterAll(() => {
 afterEach(() => {
   document.body.innerHTML = ""
   window.localStorage.clear()
+  vi.unstubAllGlobals()
 })
 
 describe("canvas html import flow", () => {
@@ -113,6 +135,60 @@ describe("canvas html import flow", () => {
     })
 
     expect(onAddNativeComponent).toHaveBeenCalledTimes(1)
+
+    await rendered.cleanup()
+  })
+
+  it("shows project-native html primitives in the components area and instantiates them", async () => {
+    const onAddInlineHtml = vi.fn(async () => {})
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          primitives: [
+            {
+              id: "primitive/card",
+              displayName: "Card",
+              category: "ui",
+              kind: "html",
+              filePath: "components/Card.html",
+              slots: [{ name: "title" }, { name: "body" }],
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          sourceHtml: "<article><h1>Card</h1></article>",
+          filePath: "projects/demo/components/Card.html",
+          mtimeMs: 1234,
+        }),
+      })
+
+    const rendered = await renderSidebar({ onAddInlineHtml })
+    await flushFrames(3)
+
+    expect(rendered.host.textContent).toContain("Project-native HTML")
+    const button = Array.from(rendered.host.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("Card")
+    ) as HTMLButtonElement | undefined
+    expect(button).toBeTruthy()
+
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+    })
+    await flushFrames()
+
+    expect(onAddInlineHtml).toHaveBeenCalledWith({
+      title: "Card",
+      sourceHtml: "<article><h1>Card</h1></article>",
+      sourcePath: "projects/demo/components/Card.html",
+      sourceHtmlFilePath: "projects/demo/components/Card.html",
+      sourceHtmlFileMtime: 1234,
+    })
 
     await rendered.cleanup()
   })

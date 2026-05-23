@@ -6,6 +6,11 @@ import { useLocalStorage } from "../../hooks/useLocalStorage"
 import type { GalleryEntry } from "../../core/types"
 import type { CanvasFileIndexEntry, CanvasHtmlBundleLibraryScanResult } from "../../types/canvas"
 import type { CanvasFolderTreeEntry } from "../../hooks/useCanvasFileBrowserState"
+import {
+  buildPrimitiveSnippet,
+  type CanvasRegistryPrimitive,
+} from "../../utils/canvasRegistry"
+import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
 import type { PaperImportQueueItem } from "./CanvasTab"
 import { fetchLocalApps, type LocalAppEntry } from "./localAppsService"
 import { inferMediaKindFromFile } from "./mediaStorageService"
@@ -50,6 +55,12 @@ type FileSystemDirectoryHandleLike = {
   kind: "directory"
   name: string
   values(): AsyncIterable<FileSystemDirectoryHandleLike | FileSystemFileHandleLike>
+}
+
+interface ProjectPrimitiveState {
+  status: "idle" | "loading" | "ready" | "error"
+  primitives: CanvasRegistryPrimitive[]
+  error: string | null
 }
 
 function normalizePickedFileRelativePath(file: File) {
@@ -351,6 +362,9 @@ interface CanvasSidebarProps {
     sourceHtml?: string
     sourceReact?: string
     sourceCss?: string
+    sourcePath?: string
+    sourceHtmlFilePath?: string
+    sourceHtmlFileMtime?: number
   }) => void | Promise<void>
   onAddNativeComponent?: () => void
   onAddHtmlBundleFromDirectory?: (input: {
@@ -472,6 +486,12 @@ export function CanvasSidebar({
   const [localAppsSource, setLocalAppsSource] = useState<string | null>(null)
   const [localAppsScannedPorts, setLocalAppsScannedPorts] = useState<number | null>(null)
   const [localAppsError, setLocalAppsError] = useState<string | null>(null)
+  const [projectPrimitiveState, setProjectPrimitiveState] = useState<ProjectPrimitiveState>({
+    status: "idle",
+    primitives: [],
+    error: null,
+  })
+  const [projectPrimitiveRefreshKey, setProjectPrimitiveRefreshKey] = useState(0)
   const [selectedLocalAppUrl, setSelectedLocalAppUrl] = useState("")
   const [htmlBundleTitle, setHtmlBundleTitle] = useState("")
   const [htmlBundleFiles, setHtmlBundleFiles] = useState<PickedHtmlBundleFile[]>([])
@@ -533,6 +553,103 @@ export function CanvasSidebar({
     typeof window !== "undefined" && "showDirectoryPicker" in window
   const supportsOpenFilePicker =
     typeof window !== "undefined" && "showOpenFilePicker" in window
+
+  const nativeProjectPrimitives = useMemo(
+    () => projectPrimitiveState.primitives.filter((primitive) => primitive.kind === "html"),
+    [projectPrimitiveState.primitives]
+  )
+
+  useEffect(() => {
+    if (!activeProjectId) return
+    const handleRegistryUpdated = () => {
+      setProjectPrimitiveRefreshKey((current) => current + 1)
+    }
+    window.addEventListener(CANVAS_REGISTRY_UPDATED_EVENT, handleRegistryUpdated)
+    return () => window.removeEventListener(CANVAS_REGISTRY_UPDATED_EVENT, handleRegistryUpdated)
+  }, [activeProjectId])
+
+  useEffect(() => {
+    if (!activeProjectId) {
+      setProjectPrimitiveState({ status: "idle", primitives: [], error: null })
+      return
+    }
+    const controller = new AbortController()
+    setProjectPrimitiveState((current) => ({
+      status: "loading",
+      primitives: current.primitives,
+      error: null,
+    }))
+    fetch("/api/canvas/registry/list", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: activeProjectId }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean
+          primitives?: CanvasRegistryPrimitive[]
+          error?: string
+        }
+        if (!response.ok || !payload.ok || !Array.isArray(payload.primitives)) {
+          throw new Error(payload.error || "Failed to load project primitives.")
+        }
+        setProjectPrimitiveState({
+          status: "ready",
+          primitives: payload.primitives,
+          error: null,
+        })
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setProjectPrimitiveState({
+          status: "error",
+          primitives: [],
+          error: error instanceof Error ? error.message : "Failed to load project primitives.",
+        })
+      })
+    return () => controller.abort()
+  }, [activeProjectId, projectPrimitiveRefreshKey])
+
+  const instantiateProjectPrimitive = useCallback(
+    async (primitive: CanvasRegistryPrimitive) => {
+      if (!onAddInlineHtml || !activeProjectId) return
+      if (primitive.kind === "html" && primitive.filePath) {
+        const response = await fetch("/api/canvas/ast/load", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filePath: `projects/${activeProjectId}/${primitive.filePath}`,
+          }),
+        })
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean
+          sourceHtml?: string
+          source?: string
+          filePath?: string
+          mtimeMs?: number
+          error?: string
+        }
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || "Failed to load HTML primitive.")
+        }
+        const filePath = `projects/${activeProjectId}/${primitive.filePath}`
+        await onAddInlineHtml({
+          title: primitive.displayName,
+          sourceHtml: payload.sourceHtml || payload.source || "",
+          sourcePath: filePath,
+          sourceHtmlFilePath: payload.filePath || filePath,
+          sourceHtmlFileMtime: payload.mtimeMs,
+        })
+        return
+      }
+      await onAddInlineHtml({
+        title: primitive.displayName,
+        sourceReact: buildPrimitiveSnippet(primitive),
+      })
+    },
+    [activeProjectId, onAddInlineHtml]
+  )
 
   const renderCanvasFileActions = useCallback(
     (file: CanvasFileIndexEntry, compact = false) => (
@@ -1403,6 +1520,48 @@ export function CanvasSidebar({
                 </div>
               ) : null}
             </div>
+            {onAddInlineHtml && nativeProjectPrimitives.length > 0 ? (
+              <div className="mt-2 rounded-md border border-default bg-white p-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Project-native HTML
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  File-backed editable primitives from the active project registry.
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  {nativeProjectPrimitives.map((primitive) => (
+                    <button
+                      key={primitive.id}
+                      type="button"
+                      onClick={() => void instantiateProjectPrimitive(primitive)}
+                      className="w-full rounded-md border border-default bg-surface-50 px-2.5 py-2 text-left text-[12px] hover:border-brand-300 hover:bg-brand-50"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-foreground">{primitive.displayName}</span>
+                        <span className="rounded bg-white px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                          html
+                        </span>
+                      </div>
+                      {primitive.slots && primitive.slots.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {primitive.slots.slice(0, 3).map((slot) => (
+                            <span
+                              key={`${primitive.id}:${slot.name}`}
+                              className="rounded-full border border-default bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                            >
+                              {slot.name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+                {projectPrimitiveState.status === "error" && projectPrimitiveState.error ? (
+                  <p className="mt-2 text-[10px] text-red-600">{projectPrimitiveState.error}</p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-2 max-h-[40vh] overflow-y-auto rounded-md border border-default">
               {filteredCategories.map(({ category, components }) => (
                 <div key={category} className="border-b border-default last:border-b-0">
