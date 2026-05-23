@@ -87,6 +87,7 @@ describe("CanvasIframeOverlay", () => {
       <CanvasIframeOverlay rect={{ left: 100, top: 50, width: 200, height: 80 }} />
     )
     expect(container.querySelectorAll("[data-canvas-overlay-handle]").length).toBe(9)
+    expect(container.querySelector("[data-canvas-overlay-outline='true']")).toBeTruthy()
     for (const kind of ["nw", "n", "ne", "e", "se", "s", "sw", "w", "move"]) {
       expect(findHandle(kind)).toBeTruthy()
     }
@@ -109,6 +110,19 @@ describe("CanvasIframeOverlay", () => {
     const n = findHandle("n")
     expect(n.style.left).toBe(`${100 - 5}px`)
     expect(n.style.top).toBe("-5px")
+  })
+
+  it("renders the move handle as a compact control instead of covering the whole selection", () => {
+    render(
+      <CanvasIframeOverlay rect={{ left: 100, top: 50, width: 200, height: 80 }} />
+    )
+    const move = findHandle("move")
+    const outline = container.querySelector("[data-canvas-overlay-outline='true']") as HTMLElement
+    expect(move.style.width).toBe("18px")
+    expect(move.style.height).toBe("18px")
+    expect(move.style.left).toBe("91px")
+    expect(move.style.top).toBe("6px")
+    expect(outline.style.pointerEvents).toBe("none")
   })
 
   it("emits preview deltas on pointermove relative to drag start", () => {
