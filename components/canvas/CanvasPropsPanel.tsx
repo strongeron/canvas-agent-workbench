@@ -268,6 +268,10 @@ export function CanvasPropsPanel({
 
       {/* Props Controls */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-900">
+          This is a props-backed component instance. Edit props and variants here. To change
+          internal HTML structure, use a native HTML component shell.
+        </div>
         {hasSchema ? (
           // Interactive schema controls
           <div className="space-y-4">
