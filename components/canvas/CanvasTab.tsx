@@ -35,9 +35,6 @@ import { CanvasNativeComponentDialog } from "./CanvasNativeComponentDialog"
 import {
   buildNativeComponentShell,
   escapeHtmlText,
-  NATIVE_COMPONENT_ELEMENT_PARTS,
-  NATIVE_COMPONENT_LAYOUT_PRIMITIVES,
-  NATIVE_COMPONENT_TEMPLATES,
   type NativeComponentTemplate,
 } from "../../utils/canvasNativeComponentShell"
 import type { CanvasLibraryDragPayload } from "../../utils/canvasLibraryDrag"
@@ -118,6 +115,7 @@ import { resolveHtmlSourceFilePath } from "../../utils/canvasHtmlSourceResolve"
 import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { hydrateNativeComponentShellFromProps } from "../../utils/canvasNativeShellHydration"
+import { suggestNativeTemplateForComponentName } from "../../utils/canvasNativeComponentSuggestion"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
 
 /**
@@ -139,26 +137,6 @@ interface ComponentCreateClientResult {
   }
   files?: Array<{ filePath: string; mtimeMs: number }>
   error?: string
-}
-
-function toTemplateSlug(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-}
-
-function suggestNativeTemplateForComponentName(name: string): NativeComponentTemplate {
-  const slug = toTemplateSlug(name)
-  const knownTemplateIds = new Set<NativeComponentTemplate>([
-    ...NATIVE_COMPONENT_TEMPLATES.map((template) => template.id),
-    ...NATIVE_COMPONENT_LAYOUT_PRIMITIVES,
-    ...NATIVE_COMPONENT_ELEMENT_PARTS,
-  ])
-  return knownTemplateIds.has(slug as NativeComponentTemplate)
-    ? (slug as NativeComponentTemplate)
-    : "section"
 }
 
 /** Props for injected Renderer component */
