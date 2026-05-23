@@ -45,6 +45,7 @@ afterEach(() => {
 
 describe("CanvasPropsPanel", () => {
   it("explains that library component instances are props-backed", () => {
+    const onCreateEditableShell = vi.fn()
     act(() => {
       root.render(
         <CanvasPropsPanel
@@ -70,11 +71,22 @@ describe("CanvasPropsPanel", () => {
           onDelete={vi.fn()}
           onClose={vi.fn()}
           onVariantChange={vi.fn()}
+          onCreateEditableShell={onCreateEditableShell}
         />
       )
     })
 
     expect(container.textContent).toContain("This is a props-backed component instance.")
     expect(container.textContent).toContain("native HTML component shell")
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.trim() === "Create editable shell"
+    ) as HTMLButtonElement | undefined
+    expect(button).toBeTruthy()
+
+    act(() => {
+      button?.click()
+    })
+
+    expect(onCreateEditableShell).toHaveBeenCalledTimes(1)
   })
 })

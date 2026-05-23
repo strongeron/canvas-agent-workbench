@@ -35,6 +35,7 @@ interface CanvasPropsPanelProps {
   onDelete: () => void
   onClose: () => void
   onVariantChange: (variantIndex: number) => void
+  onCreateEditableShell?: () => void
 }
 
 export function CanvasPropsPanel({
@@ -50,6 +51,7 @@ export function CanvasPropsPanel({
   onDelete,
   onClose,
   onVariantChange,
+  onCreateEditableShell,
 }: CanvasPropsPanelProps) {
   const [copied, setCopied] = useState(false)
   const [showJson, setShowJson] = useState(false)
@@ -271,6 +273,17 @@ export function CanvasPropsPanel({
         <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-900">
           This is a props-backed component instance. Edit props and variants here. To change
           internal HTML structure, use a native HTML component shell.
+          {onCreateEditableShell ? (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={onCreateEditableShell}
+                className="rounded-md border border-blue-300 bg-white px-2 py-1 text-[11px] font-medium text-blue-900 hover:bg-blue-100"
+              >
+                Create editable shell
+              </button>
+            </div>
+          ) : null}
         </div>
         {hasSchema ? (
           // Interactive schema controls

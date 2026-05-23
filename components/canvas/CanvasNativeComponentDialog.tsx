@@ -10,6 +10,8 @@ import {
 interface CanvasNativeComponentDialogProps {
   open: boolean
   artboardName?: string | null
+  initialTemplate?: NativeComponentTemplate
+  initialTitle?: string
   onClose: () => void
   onCreate: (input: {
     template: NativeComponentTemplate
@@ -20,6 +22,8 @@ interface CanvasNativeComponentDialogProps {
 export function CanvasNativeComponentDialog({
   open,
   artboardName,
+  initialTemplate = "section",
+  initialTitle = "",
   onClose,
   onCreate,
 }: CanvasNativeComponentDialogProps) {
@@ -29,9 +33,9 @@ export function CanvasNativeComponentDialog({
 
   useEffect(() => {
     if (!open) return
-    setSelectedTemplate("section")
-    setTitleValue("")
-  }, [open])
+    setSelectedTemplate(initialTemplate)
+    setTitleValue(initialTitle)
+  }, [initialTemplate, initialTitle, open])
 
   useEffect(() => {
     if (!open) return
@@ -62,10 +66,10 @@ export function CanvasNativeComponentDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Create native component"
-        className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-default bg-white shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-default bg-white shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-default px-5 py-4">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-default px-5 py-3">
           <div>
             <div className="text-sm font-semibold text-foreground">Create native component</div>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -82,13 +86,13 @@ export function CanvasNativeComponentDialog({
           </button>
         </div>
 
-        <div className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1.4fr)_280px]">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4 md:grid-cols-[minmax(0,1.4fr)_260px]">
           <div className="flex flex-col gap-4">
             <div>
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Templates &amp; layout primitives
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2.5 sm:grid-cols-2">
                 {NATIVE_COMPONENT_TEMPLATES.map((template) => {
                   const selected = template.id === selectedTemplate
                   return (
@@ -96,7 +100,7 @@ export function CanvasNativeComponentDialog({
                       key={template.id}
                       type="button"
                       onClick={() => setSelectedTemplate(template.id)}
-                      className={`rounded-2xl border p-4 text-left transition ${
+                      className={`rounded-xl border p-3 text-left transition ${
                         selected
                           ? "border-brand-300 bg-brand-50 shadow-sm"
                           : "border-default bg-white hover:border-brand-200 hover:bg-surface-50"
@@ -104,25 +108,25 @@ export function CanvasNativeComponentDialog({
                     >
                       <div className="flex items-center gap-2">
                         <div
-                          className={`rounded-full p-2 ${
+                          className={`rounded-full p-1.5 ${
                             selected
                               ? "bg-brand-100 text-brand-700"
                               : "bg-surface-100 text-foreground"
                           }`}
                         >
-                          <Layers3 className="h-4 w-4" />
+                          <Layers3 className="h-3.5 w-3.5" />
                         </div>
                         <div className="text-sm font-semibold text-foreground">
                           {template.label}
                         </div>
                       </div>
-                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
                         {template.description}
                       </p>
-                      <div className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Slots
                       </div>
-                      <div className="mt-1 text-xs leading-5 text-foreground">
+                      <div className="mt-0.5 truncate text-xs leading-5 text-foreground">
                         {template.slotSummary}
                       </div>
                     </button>
@@ -196,7 +200,7 @@ export function CanvasNativeComponentDialog({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-default px-5 py-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-default px-5 py-3">
           <button
             type="button"
             onClick={onClose}

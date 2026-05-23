@@ -35,6 +35,9 @@ import { CanvasNativeComponentDialog } from "./CanvasNativeComponentDialog"
 import {
   buildNativeComponentShell,
   escapeHtmlText,
+  NATIVE_COMPONENT_ELEMENT_PARTS,
+  NATIVE_COMPONENT_LAYOUT_PRIMITIVES,
+  NATIVE_COMPONENT_TEMPLATES,
   type NativeComponentTemplate,
 } from "../../utils/canvasNativeComponentShell"
 import type { CanvasLibraryDragPayload } from "../../utils/canvasLibraryDrag"
@@ -135,6 +138,26 @@ interface ComponentCreateClientResult {
   }
   files?: Array<{ filePath: string; mtimeMs: number }>
   error?: string
+}
+
+function toTemplateSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
+function suggestNativeTemplateForComponentName(name: string): NativeComponentTemplate {
+  const slug = toTemplateSlug(name)
+  const knownTemplateIds = new Set<NativeComponentTemplate>([
+    ...NATIVE_COMPONENT_TEMPLATES.map((template) => template.id),
+    ...NATIVE_COMPONENT_LAYOUT_PRIMITIVES,
+    ...NATIVE_COMPONENT_ELEMENT_PARTS,
+  ])
+  return knownTemplateIds.has(slug as NativeComponentTemplate)
+    ? (slug as NativeComponentTemplate)
+    : "section"
 }
 
 /** Props for injected Renderer component */
@@ -765,6 +788,13 @@ export function CanvasTab({
   }, [activeLibraryDrag])
   const [componentPasteDialogVisible, setComponentPasteDialogVisible] = useState(false)
   const [nativeComponentDialogVisible, setNativeComponentDialogVisible] = useState(false)
+  const [nativeComponentDialogDefaults, setNativeComponentDialogDefaults] = useState<{
+    template: NativeComponentTemplate
+    title: string
+  }>({
+    template: "section",
+    title: "",
+  })
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
   const [interactMode, setInteractMode] = useState(false)
@@ -3672,6 +3702,17 @@ export function CanvasTab({
   const dragOverlayComponent = activeDragData ? getComponentById(activeDragData.componentId) : null
   const dragOverlayVariant = dragOverlayComponent?.variants[activeDragData?.variantIndex ?? 0]
 
+  const openNativeComponentDialog = useCallback(
+    (defaults?: Partial<{ template: NativeComponentTemplate; title: string }>) => {
+      setNativeComponentDialogDefaults({
+        template: defaults?.template ?? "section",
+        title: defaults?.title ?? "",
+      })
+      setNativeComponentDialogVisible(true)
+    },
+    []
+  )
+
   // Show props panel for single selection
   const showPropsPanel =
     selectedItem && propsPanelVisible && !scenesPanelVisible && !layersPanelVisible && !themePanelVisible
@@ -3703,7 +3744,7 @@ export function CanvasTab({
           onToggleCopilotPanel={toggleCopilotPanel}
           onToggleInteractMode={toggleInteractMode}
           onAddArtboard={handleAddArtboard}
-          onAddNativeComponent={() => setNativeComponentDialogVisible(true)}
+          onAddNativeComponent={() => openNativeComponentDialog()}
           onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
           importKind={importKind}
           onImportKindChange={setImportKind}
@@ -3746,7 +3787,7 @@ export function CanvasTab({
                 onAddEmbed={handleAddEmbed}
                 onAddHtmlBundle={handleAddHtmlBundle}
                 onAddInlineHtml={handleAddInlineHtml}
-                onAddNativeComponent={() => setNativeComponentDialogVisible(true)}
+                onAddNativeComponent={() => openNativeComponentDialog()}
                 onAddHtmlBundleFromDirectory={handleAddHtmlBundleFromDirectory}
                 onScanHtmlBundleLibrary={scanCanvasHtmlBundleLibrary}
                 onAddMedia={handleAddMedia}
@@ -3822,6 +3863,8 @@ export function CanvasTab({
           <CanvasNativeComponentDialog
             open={nativeComponentDialogVisible}
             artboardName={nativeComponentTargetArtboard?.name ?? null}
+            initialTemplate={nativeComponentDialogDefaults.template}
+            initialTitle={nativeComponentDialogDefaults.title}
             onClose={() => setNativeComponentDialogVisible(false)}
             onCreate={async (input) => {
               try {
@@ -3898,6 +3941,12 @@ export function CanvasTab({
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
               onVariantChange={handleVariantChange}
+              onCreateEditableShell={() =>
+                openNativeComponentDialog({
+                  template: suggestNativeTemplateForComponentName(selectedComponent.name),
+                  title: selectedComponent.name,
+                })
+              }
             />
           )}
 
