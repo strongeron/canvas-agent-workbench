@@ -223,6 +223,11 @@ export function CanvasReactNodePropertyPanel({
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={selection.canvasId}>
             {selection.canvasId}
           </p>
+          {sourceFilePath ? (
+            <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground" title={sourceFilePath}>
+              {sourceFilePath}
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-1">
           <button

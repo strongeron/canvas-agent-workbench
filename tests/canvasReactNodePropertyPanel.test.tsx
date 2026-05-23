@@ -382,6 +382,38 @@ describe("CanvasReactNodePropertyPanel", () => {
     }
   })
 
+  it("shows the backing source file path when editing a file-backed node", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        node: {
+          canvasId: "abc:0",
+          tag: "button",
+          isHostElement: true,
+          attributes: [],
+          textChildren: "Click",
+          hasNonTextChildren: false,
+          editableInV1: true,
+        },
+      }),
+    })
+
+    harness = await mount(
+      <CanvasReactNodePropertyPanel
+        selection={makeSelection()}
+        sourceReact='export default function P() { return <button>Click</button> }'
+        currentCompileGeneration={1}
+        sourceId="projects/demo/components/Card.html"
+        sourceFilePath="projects/demo/components/Card.html"
+        onClose={() => {}}
+        onSourceReactChange={() => {}}
+      />
+    )
+
+    expect(harness.container.textContent).toContain("projects/demo/components/Card.html")
+  })
+
   it("dispatches wrapSelection and rebases to the wrapped node id", async () => {
     const onSourceHtmlChange = vi.fn()
     const onSelectionChange = vi.fn()
