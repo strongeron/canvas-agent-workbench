@@ -1520,7 +1520,10 @@ export function CanvasSidebar({
                 </div>
               ) : null}
             </div>
-            {onAddInlineHtml && nativeProjectPrimitives.length > 0 ? (
+            {onAddInlineHtml &&
+            (projectPrimitiveState.status === "loading" ||
+              projectPrimitiveState.status === "error" ||
+              nativeProjectPrimitives.length > 0) ? (
               <div className="mt-2 rounded-md border border-default bg-white p-2">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Project-native HTML
@@ -1528,35 +1531,40 @@ export function CanvasSidebar({
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   File-backed editable primitives from the active project registry.
                 </p>
-                <div className="mt-2 space-y-1.5">
-                  {nativeProjectPrimitives.map((primitive) => (
-                    <button
-                      key={primitive.id}
-                      type="button"
-                      onClick={() => void instantiateProjectPrimitive(primitive)}
-                      className="w-full rounded-md border border-default bg-surface-50 px-2.5 py-2 text-left text-[12px] hover:border-brand-300 hover:bg-brand-50"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-foreground">{primitive.displayName}</span>
-                        <span className="rounded bg-white px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                          html
-                        </span>
-                      </div>
-                      {primitive.slots && primitive.slots.length > 0 ? (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {primitive.slots.slice(0, 3).map((slot) => (
-                            <span
-                              key={`${primitive.id}:${slot.name}`}
-                              className="rounded-full border border-default bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                            >
-                              {slot.name}
-                            </span>
-                          ))}
+                {projectPrimitiveState.status === "loading" ? (
+                  <p className="mt-2 text-[11px] text-muted-foreground">Loading project primitives…</p>
+                ) : null}
+                {nativeProjectPrimitives.length > 0 ? (
+                  <div className="mt-2 space-y-1.5">
+                    {nativeProjectPrimitives.map((primitive) => (
+                      <button
+                        key={primitive.id}
+                        type="button"
+                        onClick={() => void instantiateProjectPrimitive(primitive)}
+                        className="w-full rounded-md border border-default bg-surface-50 px-2.5 py-2 text-left text-[12px] hover:border-brand-300 hover:bg-brand-50"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-foreground">{primitive.displayName}</span>
+                          <span className="rounded bg-white px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                            html
+                          </span>
                         </div>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
+                        {primitive.slots && primitive.slots.length > 0 ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {primitive.slots.slice(0, 3).map((slot) => (
+                              <span
+                                key={`${primitive.id}:${slot.name}`}
+                                className="rounded-full border border-default bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                              >
+                                {slot.name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 {projectPrimitiveState.status === "error" && projectPrimitiveState.error ? (
                   <p className="mt-2 text-[10px] text-red-600">{projectPrimitiveState.error}</p>
                 ) : null}
