@@ -117,6 +117,7 @@ import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
 import { resolveHtmlSourceFilePath } from "../../utils/canvasHtmlSourceResolve"
 import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
+import { hydrateNativeComponentShellFromProps } from "../../utils/canvasNativeShellHydration"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
 
 /**
@@ -791,6 +792,7 @@ export function CanvasTab({
   const [nativeComponentDialogDefaults, setNativeComponentDialogDefaults] = useState<{
     template: NativeComponentTemplate
     title: string
+    seedValues?: Record<string, unknown>
   }>({
     template: "section",
     title: "",
@@ -2291,10 +2293,18 @@ export function CanvasTab({
   const handleAddNativeComponent = useCallback(
     async (
       template: NativeComponentTemplate = "section",
-      title?: string
+      title?: string,
+      seedValues?: Record<string, unknown>
     ) => {
       const targetArtboardId = nativeComponentTargetArtboard?.id
       const shell = buildNativeComponentShell(template, title)
+      const hydratedSourceHtml = seedValues
+        ? hydrateNativeComponentShellFromProps({
+            sourceHtml: shell.sourceHtml,
+            sourceId: `native-shell:${template}:${title || shell.title}`,
+            values: seedValues,
+          })
+        : shell.sourceHtml
       const projectId = activeProjectId || "design-system-foundation"
 
       // File-backed-on-create (U3): write a real file via the U2 uniquifier
@@ -2310,7 +2320,7 @@ export function CanvasTab({
             projectId,
             name: shell.title,
             format: "html",
-            sourceHtml: shell.sourceHtml,
+            sourceHtml: hydratedSourceHtml,
           }),
         })
         createResult = (await response
@@ -2356,7 +2366,7 @@ export function CanvasTab({
           title: shell.title,
           // Keep the inline source for immediate render; the item is already
           // file-backed via the binding fields below.
-          sourceHtml: shell.sourceHtml,
+          sourceHtml: hydratedSourceHtml,
           sourcePath: filePath,
           sourceHtmlFilePath: filePath,
           sourceHtmlFileMtime: htmlFile?.mtimeMs,
@@ -2372,7 +2382,7 @@ export function CanvasTab({
 
       await handleAddInlineHtml({
         title: shell.title,
-        sourceHtml: shell.sourceHtml,
+        sourceHtml: hydratedSourceHtml,
         sourcePath: filePath,
         sourceHtmlFilePath: filePath,
         sourceHtmlFileMtime: htmlFile?.mtimeMs,
@@ -3703,10 +3713,15 @@ export function CanvasTab({
   const dragOverlayVariant = dragOverlayComponent?.variants[activeDragData?.variantIndex ?? 0]
 
   const openNativeComponentDialog = useCallback(
-    (defaults?: Partial<{ template: NativeComponentTemplate; title: string }>) => {
+    (defaults?: Partial<{
+      template: NativeComponentTemplate
+      title: string
+      seedValues: Record<string, unknown>
+    }>) => {
       setNativeComponentDialogDefaults({
         template: defaults?.template ?? "section",
         title: defaults?.title ?? "",
+        seedValues: defaults?.seedValues,
       })
       setNativeComponentDialogVisible(true)
     },
@@ -3868,7 +3883,11 @@ export function CanvasTab({
             onClose={() => setNativeComponentDialogVisible(false)}
             onCreate={async (input) => {
               try {
-                await handleAddNativeComponent(input.template, input.title)
+                await handleAddNativeComponent(
+                  input.template,
+                  input.title,
+                  nativeComponentDialogDefaults.seedValues
+                )
                 setNativeComponentDialogVisible(false)
               } catch (error) {
                 // Create failed → no orphan canvas item was added; keep the
@@ -3945,6 +3964,7 @@ export function CanvasTab({
                 openNativeComponentDialog({
                   template: suggestNativeTemplateForComponentName(selectedComponent.name),
                   title: selectedComponent.name,
+                  seedValues: selectedItemProps,
                 })
               }
             />
