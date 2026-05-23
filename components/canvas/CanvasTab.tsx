@@ -2176,6 +2176,7 @@ export function CanvasTab({
       position?: { x: number; y: number }
       size?: { width: number; height: number }
       rotation?: number
+      groupId?: string
       parentId?: string
       order?: number
     }) => {
@@ -2251,6 +2252,7 @@ export function CanvasTab({
         },
         size: { width: htmlWidth, height: htmlHeight },
         rotation: input?.rotation ?? 0,
+        groupId: input?.groupId,
         parentId: input?.parentId,
         order: input?.order,
       })
@@ -2406,6 +2408,7 @@ export function CanvasTab({
         },
         size: sourceItem.size,
         rotation: sourceItem.rotation,
+        groupId: sourceItem.groupId,
         parentId: sourceItem.parentId,
         order: sourceItem.order,
       })
