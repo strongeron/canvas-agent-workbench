@@ -8,7 +8,7 @@
     "slug": "source-backed-inline",
     "projectId": "demo",
     "createdAt": "2026-05-13T00:00:00.000Z",
-    "updatedAt": "2026-05-13T00:00:00.000Z",
+    "updatedAt": "2026-05-17T14:19:55.961Z",
     "tags": [
       "fixture",
       "source-backed"
@@ -26,27 +26,51 @@
         "sourceHtml": "<!doctype html>\n<html>\n  <head>\n    <meta charset=\"utf-8\" />\n    <style>\n      body {\n        margin: 0;\n        min-height: 100vh;\n        display: grid;\n        place-items: center;\n        font-family: Inter, system-ui, sans-serif;\n        background: #f8fafc;\n        color: #0f172a;\n      }\n      article {\n        width: min(420px, calc(100vw - 48px));\n        padding: 24px;\n        border: 1px solid #cbd5e1;\n        border-radius: 16px;\n        background: #ffffff;\n        box-shadow: 0 20px 40px rgb(15 23 42 / 0.08);\n      }\n      h1 {\n        margin: 0 0 12px;\n        font-size: 28px;\n        line-height: 1.1;\n      }\n      p {\n        margin: 0 0 16px;\n        color: #475569;\n        line-height: 1.5;\n      }\n      button {\n        border: 0;\n        border-radius: 9999px;\n        padding: 10px 16px;\n        font: inherit;\n        color: #ffffff;\n        background: #2563eb;\n      }\n    </style>\n  </head>\n  <body>\n    <article class=\"card\">\n      <h1>Hello</h1>\n      <p>Bridge verification target</p>\n      <button class=\"cta\">Click</button>\n    </article>\n  </body>\n</html>",
         "sandbox": "allow-scripts allow-same-origin allow-forms allow-modals allow-popups",
         "position": {
-          "x": 320,
-          "y": 220
+          "x": 252,
+          "y": 210
         },
         "size": {
           "width": 720,
           "height": 480
         },
         "rotation": 0,
-        "zIndex": 1
+        "zIndex": 3
+      },
+      {
+        "type": "artboard",
+        "name": "Artboard 1",
+        "position": {
+          "x": 80,
+          "y": 101
+        },
+        "size": {
+          "width": 960,
+          "height": 600
+        },
+        "rotation": 0,
+        "background": "white",
+        "layout": {
+          "display": "flex",
+          "direction": "column",
+          "align": "start",
+          "justify": "start",
+          "gap": 24,
+          "padding": 24
+        },
+        "id": "canvas-item-1779027205787-5kixsaq",
+        "zIndex": 22
       }
     ],
     "groups": [],
-    "nextZIndex": 2,
+    "nextZIndex": 23,
     "selectedIds": []
   },
   "view": {
     "transform": {
       "scale": 1,
       "offset": {
-        "x": 0,
-        "y": 0
+        "x": -19,
+        "y": 44
       }
     }
   }

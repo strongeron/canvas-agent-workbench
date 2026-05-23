@@ -228,6 +228,13 @@ export interface CanvasReactNodeEditCommitRequest {
   canvasId: string
 }
 
+export interface CanvasReactNodeInteractionModeRequest {
+  __canvasReactNodeBridge: true
+  version: number
+  type: "canvas/interaction-mode"
+  mode: "edit" | "interact"
+}
+
 /**
  * Parent → iframe drop-target hit-test, used by U4b when the user is dragging
  * a library primitive over the iframe. `x` and `y` are in iframe-local
@@ -271,6 +278,17 @@ export function buildEditCommitRequest(canvasId: string): CanvasReactNodeEditCom
     version: CANVAS_NODE_BRIDGE_VERSION,
     type: "canvas/edit-commit",
     canvasId,
+  }
+}
+
+export function buildInteractionModeRequest(
+  mode: "edit" | "interact"
+): CanvasReactNodeInteractionModeRequest {
+  return {
+    [CANVAS_NODE_BRIDGE_MARKER]: true,
+    version: CANVAS_NODE_BRIDGE_VERSION,
+    type: "canvas/interaction-mode",
+    mode,
   }
 }
 
@@ -407,6 +425,7 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
   let lastHoverId: string | null = null
   let rafScheduled = false
   let pendingMoveTarget: EventTarget | null = null
+  let interactionMode: "edit" | "interact" = "interact"
 
   function flushHover() {
     rafScheduled = false
@@ -423,8 +442,13 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
     (event) => {
       const el = findAncestor(event.target as Element | null)
       if (!el) return
-      // We do NOT preventDefault — clicks should still work for the page's
-      // own JS. The canvas opens the property panel as a side-effect.
+      // In edit mode the click is a source-selection gesture. Prevent anchors
+      // such as href="#" from navigating the srcdoc iframe into the host app,
+      // and keep button handlers from running while the user is editing.
+      if (interactionMode === "edit") {
+        event.preventDefault()
+        event.stopPropagation()
+      }
       // U12: a shift-held click is an additive multi-select, not a replace.
       postSelect(el, (event as MouseEvent).shiftKey === true)
     },
@@ -593,6 +617,7 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
     // their permissive contract for backwards compatibility with U8 MCP.
     const isV3Handler =
       type === "canvas/refresh-rect" ||
+      type === "canvas/interaction-mode" ||
       type === "canvas/edit-start" ||
       type === "canvas/edit-commit" ||
       type === "canvas/drop-target-hit-test"
@@ -614,6 +639,8 @@ function bridgeRuntime(options: { fileHint: string; marker: string; version: num
       const id = typeof data.canvasId === "string" ? data.canvasId : ""
       if (!id) return
       postRectUpdate(id, findById(id))
+    } else if (type === "canvas/interaction-mode") {
+      interactionMode = data.mode === "edit" ? "edit" : "interact"
     } else if (type === "canvas/edit-start") {
       const id = typeof data.canvasId === "string" ? data.canvasId : ""
       const el = findById(id)

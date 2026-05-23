@@ -18,7 +18,9 @@ import type {
   CanvasFileDocument,
   CanvasHtmlBundleFileInput,
   CanvasHtmlBundleImportInput,
+  CanvasItem,
   CanvasArtboardItem,
+  CanvasSectionItem,
   CanvasMediaItem,
   CanvasRemoteOperation,
   CanvasScene,
@@ -62,11 +64,15 @@ import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
 import { CanvasAgentPanel } from "./CanvasAgentPanel"
 import { CanvasLayersPanel } from "./CanvasLayersPanel"
+import type {
+  CanvasLayoutHeightMode,
+  CanvasLayoutWidthMode,
+} from "./CanvasLayoutSizingControls"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
 import { CanvasScenesPanel } from "./CanvasScenesPanel"
 import { CanvasSidebar } from "./CanvasSidebar"
 import { CanvasThemePanel } from "./CanvasThemePanel"
-import { CanvasToolbar } from "./CanvasToolbar"
+import { CanvasToolbar, type CanvasTool } from "./CanvasToolbar"
 import { CanvasWorkspace } from "./CanvasWorkspace"
 import {
   inferDiagramFileKind,
@@ -777,7 +783,9 @@ export function CanvasTab({
   })
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
-  const [interactMode, setInteractMode] = useState(false)
+  const [canvasTool, setCanvasTool] = useState<CanvasTool>("select")
+  const interactMode = canvasTool === "interact"
+  const editMode = canvasTool === "edit"
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 })
   const [isImportingPaper, setIsImportingPaper] = useState(false)
   const [importKind, setImportKind] = useState<"ui" | "page">("ui")
@@ -876,12 +884,93 @@ export function CanvasTab({
   const selectedMermaidItem = selectedItem?.type === "mermaid" ? selectedItem : null
   const selectedExcalidrawItem = selectedItem?.type === "excalidraw" ? selectedItem : null
   const selectedArtboardItem = selectedItem?.type === "artboard" ? selectedItem : null
-  const nativeComponentTargetArtboard: CanvasArtboardItem | null =
-    selectedArtboardItem ||
+  const selectedSectionItem = selectedItem?.type === "section" ? selectedItem : null
+  const selectedLayoutContainerItem: CanvasArtboardItem | CanvasSectionItem | null =
+    selectedArtboardItem || selectedSectionItem
+  const selectedItemLayoutParent =
+    selectedItem?.parentId && selectedItem.type !== "artboard"
+      ? (items.find(
+          (item): item is CanvasArtboardItem | CanvasSectionItem =>
+            item.id === selectedItem.parentId &&
+            (item.type === "artboard" || item.type === "section")
+        ) ?? null)
+      : null
+  const selectedItemParentInnerWidth = selectedItemLayoutParent
+    ? Math.max(
+        120,
+        selectedItemLayoutParent.size.width -
+          (selectedItemLayoutParent.layout.padding ?? 0) * 2
+      )
+    : undefined
+  const selectedItemParentInnerHeight = selectedItemLayoutParent
+    ? Math.max(
+        120,
+        selectedItemLayoutParent.size.height -
+          (selectedItemLayoutParent.layout.padding ?? 0) * 2
+      )
+    : undefined
+  const selectedItemWidthMode: CanvasLayoutWidthMode =
+    selectedItem?.layoutSizing?.width ??
+    (selectedItemLayoutParent &&
+    (selectedItemLayoutParent.layout.display === "grid" ||
+      selectedItemLayoutParent.layout.align === "stretch")
+      ? "fill"
+      : "hug")
+  const selectedItemHeightMode: CanvasLayoutHeightMode =
+    selectedItem?.layoutSizing?.height ?? "hug"
+  const selectedSectionParent = selectedSectionItem?.parentId
+    ? (items.find(
+        (item): item is CanvasArtboardItem | CanvasSectionItem =>
+          item.id === selectedSectionItem.parentId &&
+          (item.type === "artboard" || item.type === "section")
+      ) ?? null)
+    : null
+  const selectedSectionChildren = selectedSectionItem
+    ? items.filter((item) => item.parentId === selectedSectionItem.id && item.type !== "artboard")
+    : []
+  const selectedSectionContentHugHeight =
+    selectedSectionItem && selectedSectionChildren.length > 0
+      ? (() => {
+          const padding = selectedSectionItem.layout.padding ?? 0
+          const gap = selectedSectionItem.layout.gap ?? 0
+          if (
+            selectedSectionItem.layout.display === "flex" &&
+            selectedSectionItem.layout.direction !== "row"
+          ) {
+            return (
+              selectedSectionChildren.reduce((sum, child) => sum + child.size.height, 0) +
+              Math.max(0, selectedSectionChildren.length - 1) * gap +
+              padding * 2
+            )
+          }
+          if (selectedSectionItem.layout.display === "grid") {
+            const columns = Math.max(1, selectedSectionItem.layout.columns ?? 1)
+            const rowCount = Math.ceil(selectedSectionChildren.length / columns)
+            const rowHeights = Array.from({ length: rowCount }, (_, rowIndex) => {
+              const rowChildren = selectedSectionChildren.slice(
+                rowIndex * columns,
+                rowIndex * columns + columns
+              )
+              return Math.max(...rowChildren.map((child) => child.size.height), 0)
+            })
+            return (
+              rowHeights.reduce((sum, height) => sum + height, 0) +
+              Math.max(0, rowCount - 1) * gap +
+              padding * 2
+            )
+          }
+          return (
+            Math.max(...selectedSectionChildren.map((child) => child.size.height), 0) +
+            padding * 2
+          )
+        })()
+      : 120
+  const nativeComponentTargetArtboard: CanvasArtboardItem | CanvasSectionItem | null =
+    selectedLayoutContainerItem ||
     (selectedItem?.parentId
       ? (items.find(
-          (item): item is CanvasArtboardItem =>
-            item.id === selectedItem.parentId && item.type === "artboard"
+          (item): item is CanvasArtboardItem | CanvasSectionItem =>
+            item.id === selectedItem.parentId && (item.type === "artboard" || item.type === "section")
         ) ?? null)
       : null)
   const selectedEmbedRenderMode = selectedEmbedItem
@@ -1752,6 +1841,164 @@ export function CanvasTab({
     return groupIds.size === 1
   }, [selectedIds, items])
 
+  const moveIntoArtboardTarget = useMemo(() => {
+    const selectedItems = items.filter((item) => selectedIds.includes(item.id))
+    const selectedArtboards = selectedItems.filter(
+      (item): item is CanvasArtboardItem => item.type === "artboard"
+    )
+    if (selectedArtboards.length !== 1) return null
+    const artboard = selectedArtboards[0]
+    const movableItems = selectedItems.filter(
+      (item) => item.type !== "artboard" && item.parentId !== artboard.id
+    )
+    if (movableItems.length === 0) return null
+    return { artboard, movableItems }
+  }, [items, selectedIds])
+
+  const handleMoveSelectionToArtboard = useCallback(() => {
+    if (!moveIntoArtboardTarget) return
+    const { artboard, movableItems } = moveIntoArtboardTarget
+    const siblings = items.filter(
+      (item) => item.parentId === artboard.id && item.type !== "artboard"
+    )
+    const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+
+    movableItems.forEach((item, index) => {
+      updateItem(item.id, {
+        parentId: artboard.id,
+        order: maxOrder + index + 1,
+        position: { x: 0, y: 0 },
+        rotation: 0,
+      })
+    })
+    setHistoryToast({
+      id: Date.now(),
+      tone: "info",
+      message: `Moved ${movableItems.length} item${movableItems.length === 1 ? "" : "s"} into ${artboard.name}.`,
+    })
+  }, [items, moveIntoArtboardTarget, updateItem])
+
+  const wrapSelectionTarget = useMemo(() => {
+    if (selectedIds.length < 2) return null
+    const selectedItems = items.filter((item) => selectedIds.includes(item.id))
+    if (selectedItems.some((item) => item.type === "artboard" || item.type === "section")) return null
+
+    const parentIds = new Set(selectedItems.map((item) => item.parentId).filter(Boolean))
+    if (parentIds.size === 1) {
+      const [parentId] = Array.from(parentIds)
+      const parent = items.find(
+        (item): item is CanvasArtboardItem | CanvasSectionItem =>
+          item.id === parentId && (item.type === "artboard" || item.type === "section")
+      )
+      if (parent) return { parent, selectedItems, mode: "existing-parent" as const }
+    }
+
+    const allFreeform = selectedItems.every((item) => !item.parentId)
+    if (!allFreeform) return null
+
+    const candidateArtboards = items.filter(
+      (item): item is CanvasArtboardItem => item.type === "artboard"
+    )
+    const containingArtboards = candidateArtboards.filter((artboard) =>
+      selectedItems.every((item) => {
+        const centerX = item.position.x + item.size.width / 2
+        const centerY = item.position.y + item.size.height / 2
+        return (
+          centerX >= artboard.position.x &&
+          centerX <= artboard.position.x + artboard.size.width &&
+          centerY >= artboard.position.y &&
+          centerY <= artboard.position.y + artboard.size.height
+        )
+      })
+    )
+    if (containingArtboards.length !== 1) return null
+
+    return {
+      parent: containingArtboards[0],
+      selectedItems,
+      mode: "freeform-inside-artboard" as const,
+    }
+  }, [items, selectedIds])
+
+  const handleWrapSelectionInSection = useCallback(() => {
+    if (!wrapSelectionTarget) return
+    const { parent, selectedItems, mode } = wrapSelectionTarget
+    const orderedSelection = [...selectedItems].sort((a, b) =>
+      mode === "existing-parent"
+        ? (a.order ?? 0) - (b.order ?? 0)
+        : a.position.y === b.position.y
+          ? a.position.x - b.position.x
+          : a.position.y - b.position.y
+    )
+    const siblings = items.filter(
+      (item) => item.parentId === parent.id && item.type !== "artboard"
+    )
+    const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+    const insertOrder =
+      mode === "existing-parent"
+        ? Math.min(...orderedSelection.map((item) => item.order ?? 0))
+        : maxOrder + 1
+    const sectionId = `canvas-section-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const maxHeight = Math.max(...orderedSelection.map((item) => item.size.height))
+    const totalHeight = orderedSelection.reduce((sum, item) => sum + item.size.height, 0)
+    const parentPadding = parent.layout.padding ?? 0
+    const fillWidth = Math.max(120, parent.size.width - parentPadding * 2)
+    const nextItems = [
+      ...items.map((item) => {
+        if (!selectedIds.includes(item.id)) return item
+        return {
+          ...item,
+          parentId: sectionId,
+          order: orderedSelection.findIndex((selected) => selected.id === item.id),
+          position: { x: 0, y: 0 },
+          rotation: 0,
+        }
+      }),
+      {
+        id: sectionId,
+        type: "section" as const,
+        name: "Section",
+        parentId: parent.id,
+        order: insertOrder,
+        position: { x: 0, y: 0 },
+        size: {
+          width: fillWidth,
+          height: Math.max(maxHeight, totalHeight + (orderedSelection.length - 1) * 16),
+        },
+        layoutSizing: {
+          width: "fill" as const,
+          height: "hug" as const,
+          hugWidth: Math.max(...orderedSelection.map((item) => item.size.width)),
+          hugHeight: Math.max(maxHeight, totalHeight + (orderedSelection.length - 1) * 16),
+        },
+        rotation: 0,
+        zIndex: nextZIndex,
+        layout: {
+          display: "grid" as const,
+          columns: Math.min(orderedSelection.length, 3),
+          align: "stretch" as const,
+          justify: "start" as const,
+          gap: 16,
+          padding: 16,
+        },
+      },
+    ]
+    replaceState({
+      items: nextItems,
+      groups,
+      nextZIndex: nextZIndex + 1,
+      selectedIds: [sectionId],
+    })
+    setHistoryToast({
+      id: Date.now(),
+      tone: "info",
+      message:
+        mode === "freeform-inside-artboard"
+          ? `Wrapped ${orderedSelection.length} cards in a section inside ${parent.name}.`
+          : `Wrapped ${orderedSelection.length} cards in a section.`,
+    })
+  }, [groups, items, nextZIndex, replaceState, selectedIds, wrapSelectionTarget])
+
   // Handle prop changes for selected item - save to item's customProps
   const handlePropChange = useCallback(
     (propName: string, value: unknown) => {
@@ -1781,6 +2028,86 @@ export function CanvasTab({
     // Clear customProps to use default variant props
     updateItem(selectedComponentItem.id, { customProps: undefined })
   }, [selectedComponentItem, updateItem])
+
+  const handleSelectedItemLayoutWidthModeChange = useCallback(
+    (mode: CanvasLayoutWidthMode) => {
+      if (!selectedItem || !selectedItemLayoutParent) return
+
+      const currentSizing = selectedItem.layoutSizing
+      const hugWidth =
+        currentSizing?.hugWidth && currentSizing.hugWidth > 0
+          ? currentSizing.hugWidth
+          : selectedItem.size.width
+
+      if (mode === "fill") {
+        updateItem(selectedItem.id, {
+          layoutSizing: {
+            ...currentSizing,
+            width: "fill",
+            hugWidth,
+          },
+          size: {
+            ...selectedItem.size,
+            width: selectedItemParentInnerWidth ?? selectedItem.size.width,
+          },
+        })
+        return
+      }
+
+      updateItem(selectedItem.id, {
+        layoutSizing: {
+          ...currentSizing,
+          width: "hug",
+          hugWidth,
+        },
+        size: {
+          ...selectedItem.size,
+          width: hugWidth,
+        },
+      })
+    },
+    [selectedItem, selectedItemLayoutParent, selectedItemParentInnerWidth, updateItem]
+  )
+
+  const handleSelectedItemLayoutHeightModeChange = useCallback(
+    (mode: CanvasLayoutHeightMode) => {
+      if (!selectedItem || !selectedItemLayoutParent) return
+
+      const currentSizing = selectedItem.layoutSizing
+      const hugHeight =
+        currentSizing?.hugHeight && currentSizing.hugHeight > 0
+          ? currentSizing.hugHeight
+          : selectedItem.size.height
+
+      if (mode === "fill") {
+        updateItem(selectedItem.id, {
+          layoutSizing: {
+            ...currentSizing,
+            height: "fill",
+            hugHeight,
+          },
+          size: {
+            ...selectedItem.size,
+            height: selectedItemParentInnerHeight ?? selectedItem.size.height,
+          },
+        })
+        return
+      }
+
+      updateItem(selectedItem.id, {
+        layoutSizing: {
+          ...currentSizing,
+          height: "hug",
+          hugHeight,
+        },
+        size: {
+          ...selectedItem.size,
+          height: hugHeight,
+        },
+      })
+    },
+    [selectedItem, selectedItemLayoutParent, selectedItemParentInnerHeight, updateItem]
+  )
 
   // Handle variant change for selected item
   const handleVariantChange = useCallback(
@@ -1835,8 +2162,6 @@ export function CanvasTab({
   const toggleCopilotPanel = useCallback(() => {
     setCopilotPanelVisible((prev) => !prev)
   }, [])
-  const toggleInteractMode = useCallback(() => setInteractMode((prev) => !prev), [])
-
   useCopilotCanvasActions({
     items,
     selectedIds,
@@ -3455,7 +3780,23 @@ export function CanvasTab({
       const idMap = new Map<string, string>()
 
       const artboards = scene.items.filter((item) => item.type === "artboard")
-      const otherItems = scene.items.filter((item) => item.type !== "artboard")
+      const itemById = new Map(scene.items.map((item) => [item.id, item]))
+      const getItemDepth = (item: CanvasItem) => {
+        let depth = 0
+        let parentId = item.parentId
+        const seen = new Set<string>()
+        while (parentId && !seen.has(parentId)) {
+          seen.add(parentId)
+          const parent = itemById.get(parentId)
+          if (!parent) break
+          depth += 1
+          parentId = parent.parentId
+        }
+        return depth
+      }
+      const otherItems = scene.items
+        .filter((item) => item.type !== "artboard")
+        .sort((a, b) => getItemDepth(a) - getItemDepth(b) || (a.order ?? 0) - (b.order ?? 0))
 
       artboards.forEach((item) => {
         const newId = addItem({
@@ -3466,6 +3807,7 @@ export function CanvasTab({
           rotation: item.rotation,
           background: item.background,
           layout: { ...item.layout },
+          layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
         })
         idMap.set(item.id, newId)
       })
@@ -3510,6 +3852,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3534,6 +3877,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3562,6 +3906,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3579,6 +3924,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3607,6 +3953,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3626,6 +3973,25 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
+            parentId,
+            order: item.order,
+          })
+          idMap.set(item.id, newId)
+          return
+        }
+
+        if (item.type === "section") {
+          const newId = addItem({
+            type: "section",
+            name: item.name,
+            background: item.background,
+            themeId: item.themeId,
+            layout: { ...item.layout },
+            position: { ...item.position },
+            size: { ...item.size },
+            rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3640,6 +4006,7 @@ export function CanvasTab({
           position: { ...item.position },
           size: { ...item.size },
           rotation: item.rotation,
+          layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
           customProps: item.customProps ? { ...item.customProps } : undefined,
           parentId,
           order: item.order,
@@ -3787,7 +4154,8 @@ export function CanvasTab({
           onCreateComponentFromPaste={() => setComponentPasteDialogVisible(true)}
           onToggleThemePanel={toggleThemePanel}
           onToggleCopilotPanel={toggleCopilotPanel}
-          onToggleInteractMode={toggleInteractMode}
+          canvasTool={canvasTool}
+          onCanvasToolChange={setCanvasTool}
           onAddArtboard={handleAddArtboard}
           onAddNativeComponent={() => openNativeComponentDialog()}
           onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
@@ -3795,11 +4163,15 @@ export function CanvasTab({
           onImportKindChange={setImportKind}
           onGroupSelected={handleGroupSelected}
           onUngroupSelected={handleUngroupSelected}
+          onMoveSelectionToArtboard={handleMoveSelectionToArtboard}
+          onWrapSelectionInSection={handleWrapSelectionInSection}
           onDuplicateSelected={handleDuplicate}
           itemCount={items.length}
           selectedCount={selectedIds.length}
           canGroup={canGroup}
           canUngroup={canUngroup}
+          canMoveSelectionToArtboard={Boolean(moveIntoArtboardTarget)}
+          canWrapSelectionInSection={Boolean(wrapSelectionTarget)}
           interactMode={interactMode}
           sidebarVisible={sidebarVisible}
           scenesVisible={scenesPanelVisible}
@@ -3939,6 +4311,7 @@ export function CanvasTab({
             groups={groups}
             transform={transform}
             interactMode={interactMode}
+            editMode={editMode}
             Renderer={Renderer}
             getComponentById={getComponentById}
             selectedIds={selectedIds}
@@ -3990,6 +4363,27 @@ export function CanvasTab({
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
               onVariantChange={handleVariantChange}
+              size={selectedComponentItem.size}
+              layoutWidthMode={selectedItemWidthMode}
+              layoutHeightMode={selectedItemHeightMode}
+              canFillParent={Boolean(selectedItemLayoutParent)}
+              canFillHeight={Boolean(selectedItemLayoutParent)}
+              onSizeChange={(size) =>
+                updateItem(selectedComponentItem.id, {
+                  size,
+                  layoutSizing: {
+                    ...selectedComponentItem.layoutSizing,
+                    ...(selectedItemWidthMode === "hug" ? { hugWidth: size.width } : {}),
+                    ...(selectedItemHeightMode === "hug" ? { hugHeight: size.height } : {}),
+                  },
+                })
+              }
+              onLayoutWidthModeChange={
+                selectedItemLayoutParent ? handleSelectedItemLayoutWidthModeChange : undefined
+              }
+              onLayoutHeightModeChange={
+                selectedItemLayoutParent ? handleSelectedItemLayoutHeightModeChange : undefined
+              }
               onReplaceWithEditableShell={() =>
                 void handleReplaceComponentWithNativeShell(
                   suggestNativeTemplateForComponentName(selectedComponent.name),
@@ -4157,6 +4551,7 @@ export function CanvasTab({
               sourceHtml={selectedHtmlItem.sourceHtml || ""}
               sourceKind={selectedHtmlItem.sourceMode === "inline" ? "html" : "tsx"}
               currentCompileGeneration={selectedReactCompileGeneration}
+              projectId={activeProjectId || "design-system-foundation"}
               sourceId={
                 selectedHtmlItem.sourcePath ||
                 selectedHtmlItem.sourceHtmlFilePath ||
@@ -4224,11 +4619,31 @@ export function CanvasTab({
               sourceComponentFilePath={selectedHtmlItem.sourceComponentFilePath}
               syncSelection={htmlItemSyncSelection}
               size={selectedHtmlItem.size}
+              layoutWidthMode={selectedItemWidthMode}
+              layoutHeightMode={selectedItemHeightMode}
+              canFillParent={Boolean(selectedItemLayoutParent)}
+              canFillHeight={Boolean(selectedItemLayoutParent)}
               onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
               onResize={(width) =>
                 updateItem(selectedHtmlItem.id, {
                   size: { width, height: selectedHtmlItem.size.height },
                 })
+              }
+              onSizeChange={(size) =>
+                updateItem(selectedHtmlItem.id, {
+                  size,
+                  layoutSizing: {
+                    ...selectedHtmlItem.layoutSizing,
+                    ...(selectedItemWidthMode === "hug" ? { hugWidth: size.width } : {}),
+                    ...(selectedItemHeightMode === "hug" ? { hugHeight: size.height } : {}),
+                  },
+                })
+              }
+              onLayoutWidthModeChange={
+                selectedItemLayoutParent ? handleSelectedItemLayoutWidthModeChange : undefined
+              }
+              onLayoutHeightModeChange={
+                selectedItemLayoutParent ? handleSelectedItemLayoutHeightModeChange : undefined
               }
               onReplaceBundle={(input) =>
                 handleReplaceHtmlBundle(selectedHtmlItem.id, input)
@@ -4333,6 +4748,8 @@ export function CanvasTab({
               background={selectedArtboardItem.background}
               layout={selectedArtboardItem.layout}
               size={selectedArtboardItem.size}
+              layoutSizing={selectedArtboardItem.layoutSizing}
+              kind="artboard"
               themes={themes}
               activeThemeId={activeThemeId}
               themeId={selectedArtboardItem.themeId}
@@ -4347,6 +4764,66 @@ export function CanvasTab({
               projectId={activeProjectId || "design-system-foundation"}
               syncSelection={artboardSyncSelection}
               onChange={(updates) => updateItem(selectedArtboardItem.id, updates)}
+              onCreateStructureChild={async (template) => {
+                try {
+                  await handleAddNativeComponent(template)
+                } catch (error) {
+                  setHistoryToast({
+                    id: Date.now(),
+                    tone: "error",
+                    message:
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to create component.",
+                  })
+                }
+              }}
+              onDelete={handleDeleteSelected}
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedSectionItem && (
+            <CanvasArtboardPropsPanel
+              key={selectedSectionItem.id}
+              name={selectedSectionItem.name}
+              background={selectedSectionItem.background}
+              layout={selectedSectionItem.layout}
+              size={selectedSectionItem.size}
+              layoutSizing={selectedSectionItem.layoutSizing}
+              kind="section"
+              parentInnerWidth={
+                selectedSectionParent
+                  ? Math.max(
+                      120,
+                      selectedSectionParent.size.width -
+                        (selectedSectionParent.layout.padding ?? 0) * 2
+                    )
+                  : undefined
+              }
+              parentInnerHeight={
+                selectedSectionParent
+                  ? Math.max(
+                      120,
+                      selectedSectionParent.size.height -
+                        (selectedSectionParent.layout.padding ?? 0) * 2
+                    )
+                  : undefined
+              }
+              contentHugWidth={
+                selectedSectionChildren.length > 0
+                  ? Math.max(
+                      ...selectedSectionChildren.map((child) => child.size.width),
+                      120
+                    ) +
+                    (selectedSectionItem.layout.padding ?? 0) * 2
+                  : 120
+              }
+              contentHugHeight={selectedSectionContentHugHeight}
+              themes={themes}
+              activeThemeId={activeThemeId}
+              themeId={selectedSectionItem.themeId}
+              onChange={(updates) => updateItem(selectedSectionItem.id, updates)}
               onCreateStructureChild={async (template) => {
                 try {
                   await handleAddNativeComponent(template)

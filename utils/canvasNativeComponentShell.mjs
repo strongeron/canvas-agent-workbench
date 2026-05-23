@@ -197,10 +197,10 @@ const SHELL_HEAD_STYLE = `      :root {
       }
       body {
         margin: 0;
-        padding: 24px;
+        padding: 0;
         font: 16px/1.5 system-ui, sans-serif;
         color: #0f172a;
-        background: #f8fafc;
+        background: transparent;
       }`
 
 function namedShell(template, safeTitle, resolvedTitle) {

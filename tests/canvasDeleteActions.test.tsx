@@ -134,7 +134,8 @@ describe("canvas delete affordances", () => {
         onToggleScenes={() => {}}
         onToggleLayers={() => {}}
         onToggleLibraryPanel={() => {}}
-        onToggleInteractMode={() => {}}
+        canvasTool="select"
+        onCanvasToolChange={() => {}}
         onAddArtboard={() => {}}
         onAddNativeComponent={onAddNativeComponent}
         onGroupSelected={() => {}}
@@ -188,7 +189,8 @@ describe("canvas delete affordances", () => {
         onToggleScenes={() => {}}
         onToggleLayers={() => {}}
         onToggleLibraryPanel={() => {}}
-        onToggleInteractMode={() => {}}
+        canvasTool="select"
+        onCanvasToolChange={() => {}}
         onAddArtboard={() => {}}
         onAddNativeComponent={onAddNativeComponent}
         onGroupSelected={() => {}}

@@ -15,6 +15,11 @@ import { useState, useCallback, useMemo } from "react"
 import type { InteractivePropsSchema, ComponentVariant } from "../../core/types"
 import { PropControl } from "../PropControl"
 import { FONT_PAIR_PRESETS, getFontPairById } from "./fontPairs"
+import {
+  CanvasLayoutSizingControls,
+  type CanvasLayoutHeightMode,
+  type CanvasLayoutWidthMode,
+} from "./CanvasLayoutSizingControls"
 
 /** Minimal component info needed for the props panel */
 interface ComponentInfo {
@@ -37,6 +42,14 @@ interface CanvasPropsPanelProps {
   onVariantChange: (variantIndex: number) => void
   onCreateEditableShell?: () => void
   onReplaceWithEditableShell?: () => void
+  size?: { width: number; height: number }
+  layoutWidthMode?: CanvasLayoutWidthMode
+  layoutHeightMode?: CanvasLayoutHeightMode
+  canFillParent?: boolean
+  canFillHeight?: boolean
+  onSizeChange?: (size: { width: number; height: number }) => void
+  onLayoutWidthModeChange?: (mode: CanvasLayoutWidthMode) => void
+  onLayoutHeightModeChange?: (mode: CanvasLayoutHeightMode) => void
 }
 
 export function CanvasPropsPanel({
@@ -54,6 +67,14 @@ export function CanvasPropsPanel({
   onVariantChange,
   onCreateEditableShell,
   onReplaceWithEditableShell,
+  size,
+  layoutWidthMode,
+  layoutHeightMode,
+  canFillParent = false,
+  canFillHeight = canFillParent,
+  onSizeChange,
+  onLayoutWidthModeChange,
+  onLayoutHeightModeChange,
 }: CanvasPropsPanelProps) {
   const [copied, setCopied] = useState(false)
   const [showJson, setShowJson] = useState(false)
@@ -272,6 +293,21 @@ export function CanvasPropsPanel({
 
       {/* Props Controls */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
+        {onLayoutWidthModeChange ? (
+          <div className="mb-4">
+            <CanvasLayoutSizingControls
+              size={size}
+              widthMode={layoutWidthMode}
+              heightMode={layoutHeightMode}
+              canFillParent={canFillParent}
+              canFillHeight={canFillHeight}
+              onSizeChange={onSizeChange}
+              onWidthModeChange={onLayoutWidthModeChange}
+              onHeightModeChange={onLayoutHeightModeChange}
+            />
+          </div>
+        ) : null}
+
         <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-900">
           This is a props-backed component instance. Edit props and variants here. To change
           internal HTML structure, use a native HTML component shell.

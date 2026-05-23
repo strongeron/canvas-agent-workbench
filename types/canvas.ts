@@ -14,6 +14,7 @@ export type CanvasItem =
   | CanvasMermaidItem
   | CanvasExcalidrawItem
   | CanvasMarkdownItem
+  | CanvasSectionItem
   | CanvasArtboardItem
 
 export type CanvasItemInput =
@@ -24,6 +25,7 @@ export type CanvasItemInput =
   | Omit<CanvasMermaidItem, "id" | "zIndex">
   | Omit<CanvasExcalidrawItem, "id" | "zIndex">
   | Omit<CanvasMarkdownItem, "id" | "zIndex">
+  | Omit<CanvasSectionItem, "id" | "zIndex">
   | Omit<CanvasArtboardItem, "id" | "zIndex">
 
 export type CanvasItemUpdate =
@@ -34,6 +36,7 @@ export type CanvasItemUpdate =
   | Partial<Omit<CanvasMermaidItem, "id">>
   | Partial<Omit<CanvasExcalidrawItem, "id">>
   | Partial<Omit<CanvasMarkdownItem, "id">>
+  | Partial<Omit<CanvasSectionItem, "id">>
   | Partial<Omit<CanvasArtboardItem, "id">>
 
 export interface CanvasItemBase {
@@ -48,6 +51,15 @@ export interface CanvasItemBase {
   parentId?: string
   /** Order within a layout container */
   order?: number
+  /** Layout behavior when rendered as a child of an artboard or section. */
+  layoutSizing?: {
+    width?: "hug" | "fill"
+    height?: "hug" | "fill"
+    /** Last explicit content width to restore after toggling back from fill. */
+    hugWidth?: number
+    /** Last explicit content height to restore after toggling back from fill. */
+    hugHeight?: number
+  }
 }
 
 export interface CanvasComponentItem extends CanvasItemBase {
@@ -211,8 +223,7 @@ export interface CanvasMarkdownItem extends CanvasItemBase {
   sourceFileMtime?: number
 }
 
-export interface CanvasArtboardItem extends CanvasItemBase {
-  type: "artboard"
+export interface CanvasLayoutContainerItemBase extends CanvasItemBase {
   name: string
   background?: string
   themeId?: string
@@ -225,6 +236,14 @@ export interface CanvasArtboardItem extends CanvasItemBase {
     columns?: number
     padding?: number
   }
+}
+
+export interface CanvasArtboardItem extends CanvasLayoutContainerItemBase {
+  type: "artboard"
+}
+
+export interface CanvasSectionItem extends CanvasLayoutContainerItemBase {
+  type: "section"
 }
 
 export interface CanvasGroup {

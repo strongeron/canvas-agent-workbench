@@ -1,8 +1,10 @@
 import {
   Bot,
+  Code2,
   Copy,
   FolderOpen,
   Group,
+  Hand,
   HelpCircle,
   Layers3,
   LayoutGrid,
@@ -29,6 +31,7 @@ export interface ButtonComponentProps {
   disabled?: boolean
   children: React.ReactNode
   "aria-label"?: string
+  "aria-pressed"?: boolean
 }
 
 /** Props for injected Tooltip component */
@@ -38,6 +41,7 @@ export interface TooltipComponentProps {
 }
 
 export type PaperImportKind = "ui" | "page"
+export type CanvasTool = "select" | "edit" | "interact"
 
 interface CanvasToolbarProps {
   scale: number
@@ -53,7 +57,8 @@ interface CanvasToolbarProps {
   onToggleLayers: () => void
   onToggleLibraryPanel: () => void
   onCreateComponentFromPaste?: () => void
-  onToggleInteractMode: () => void
+  canvasTool: CanvasTool
+  onCanvasToolChange: (tool: CanvasTool) => void
   onAddArtboard: () => void
   onAddNativeComponent?: () => void
   onImportFromPaper?: () => void
@@ -61,6 +66,8 @@ interface CanvasToolbarProps {
   onImportKindChange?: (kind: PaperImportKind) => void
   onGroupSelected: () => void
   onUngroupSelected: () => void
+  onMoveSelectionToArtboard?: () => void
+  onWrapSelectionInSection?: () => void
   onDuplicateSelected: () => void
   onToggleThemePanel: () => void
   onToggleCopilotPanel: () => void
@@ -68,6 +75,8 @@ interface CanvasToolbarProps {
   selectedCount: number
   canGroup: boolean
   canUngroup: boolean
+  canMoveSelectionToArtboard?: boolean
+  canWrapSelectionInSection?: boolean
   interactMode: boolean
   sidebarVisible: boolean
   scenesVisible: boolean
@@ -96,7 +105,8 @@ export function CanvasToolbar({
   onToggleLayers,
   onToggleLibraryPanel,
   onCreateComponentFromPaste,
-  onToggleInteractMode,
+  canvasTool,
+  onCanvasToolChange,
   onAddArtboard,
   onAddNativeComponent,
   onImportFromPaper,
@@ -104,6 +114,8 @@ export function CanvasToolbar({
   onImportKindChange,
   onGroupSelected,
   onUngroupSelected,
+  onMoveSelectionToArtboard,
+  onWrapSelectionInSection,
   onDuplicateSelected,
   onToggleThemePanel,
   onToggleCopilotPanel,
@@ -111,6 +123,8 @@ export function CanvasToolbar({
   selectedCount,
   canGroup,
   canUngroup,
+  canMoveSelectionToArtboard = false,
+  canWrapSelectionInSection = false,
   interactMode,
   sidebarVisible,
   scenesVisible,
@@ -126,6 +140,9 @@ export function CanvasToolbar({
     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-500 focus-visible:ring-offset-1"
   const iconButtonClass = `h-10 w-10 p-0 text-foreground hover:bg-surface-100 ${focusRingClass}`
   const activeIconButtonClass = `h-10 w-10 p-0 bg-surface-200 text-foreground ${focusRingClass}`
+  const wrapSelectionTooltip = canWrapSelectionInSection
+    ? "Wrap selected cards in a layout section"
+    : "Select 2+ cards in the same artboard, or place freeform cards inside one artboard"
 
   return (
     <div className="flex items-center gap-2.5 rounded-lg border border-default bg-white px-3 py-2 shadow-lg">
@@ -273,19 +290,45 @@ export function CanvasToolbar({
 
       <div className="h-6 w-px bg-border-default" />
 
-      {/* Interact mode */}
-      <Tooltip content={interactMode ? "Exit interact mode" : "Interact with content"}>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleInteractMode}
-          className={interactMode ? activeIconButtonClass : iconButtonClass}
-          aria-label="Toggle interact mode"
-          aria-pressed={interactMode}
-        >
-          <MousePointer2 className="h-5 w-5" />
-        </Button>
-      </Tooltip>
+      {/* Canvas tools */}
+      <div className="flex items-center gap-0.5 rounded-md border border-default bg-white p-1">
+        <Tooltip content="Select and move canvas items">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onCanvasToolChange("select")}
+            className={canvasTool === "select" ? activeIconButtonClass : iconButtonClass}
+            aria-label="Select canvas items"
+            aria-pressed={canvasTool === "select"}
+          >
+            <MousePointer2 className="h-5 w-5" />
+          </Button>
+        </Tooltip>
+        <Tooltip content="Edit component elements">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onCanvasToolChange("edit")}
+            className={canvasTool === "edit" ? activeIconButtonClass : iconButtonClass}
+            aria-label="Edit component elements"
+            aria-pressed={canvasTool === "edit"}
+          >
+            <Code2 className="h-5 w-5" />
+          </Button>
+        </Tooltip>
+        <Tooltip content={interactMode ? "Interacting with content" : "Interact with live previews"}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onCanvasToolChange("interact")}
+            className={canvasTool === "interact" ? activeIconButtonClass : iconButtonClass}
+            aria-label="Interact with live previews"
+            aria-pressed={canvasTool === "interact"}
+          >
+            <Hand className="h-5 w-5" />
+          </Button>
+        </Tooltip>
+      </div>
 
       <div className="h-6 w-px bg-border-default" />
 
@@ -344,6 +387,40 @@ export function CanvasToolbar({
                 aria-label="Ungroup"
               >
                 <Ungroup className="h-5 w-5" />
+              </Button>
+            </Tooltip>
+          )}
+
+          {onMoveSelectionToArtboard && canMoveSelectionToArtboard && (
+            <Tooltip content="Move selected items into selected artboard">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onMoveSelectionToArtboard}
+                className={iconButtonClass}
+                aria-label="Move selected items into selected artboard"
+              >
+                <Layers3 className="h-5 w-5" />
+              </Button>
+            </Tooltip>
+          )}
+
+          {onWrapSelectionInSection && selectedCount > 1 && (
+            <Tooltip content={wrapSelectionTooltip}>
+              <Button
+                variant={canWrapSelectionInSection ? "outline" : "ghost"}
+                size="sm"
+                onClick={onWrapSelectionInSection}
+                disabled={!canWrapSelectionInSection}
+                className={`h-10 gap-2 px-3 text-foreground ${focusRingClass} ${
+                  canWrapSelectionInSection
+                    ? "border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
+                    : "text-muted-foreground"
+                }`}
+                aria-label="Wrap selected in section"
+              >
+                <LayoutGrid className="h-4 w-4" />
+                <span className="text-sm font-medium">Wrap section</span>
               </Button>
             </Tooltip>
           )}

@@ -1,0 +1,104 @@
+<!doctype html>
+<html data-component="hero">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 28px;
+        font: 16px/1.5 system-ui, sans-serif;
+        color: #e2e8f0;
+        background:
+          radial-gradient(circle at top left, #1d4ed8, transparent 40%),
+          linear-gradient(135deg, #0f172a, #1e293b 60%, #334155);
+      }
+      section {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+        gap: 24px;
+        min-height: 420px;
+        padding: 36px;
+        border-radius: 28px;
+        border: 1px solid rgb(148 163 184 / 0.28);
+        background: rgb(15 23 42 / 0.32);
+        backdrop-filter: blur(18px);
+      }
+      .copy {
+        display: grid;
+        align-content: center;
+        gap: 18px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 56px;
+        line-height: 0.95;
+        letter-spacing: -0.04em;
+      }
+      p {
+        margin: 0;
+        max-width: 46ch;
+        color: #cbd5e1;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0 18px;
+        border-radius: 999px;
+        background: white;
+        color: #0f172a;
+        text-decoration: none;
+      }
+      .button.secondary {
+        background: transparent;
+        color: white;
+        border: 1px solid rgb(226 232 240 / 0.4);
+      }
+      figure {
+        display: grid;
+        place-items: center;
+        min-height: 260px;
+        margin: 0;
+        border-radius: 24px;
+        border: 1px dashed rgb(191 219 254 / 0.65);
+        background: linear-gradient(160deg, rgb(59 130 246 / 0.24), rgb(15 23 42 / 0.08));
+      }
+      svg {
+        width: 120px;
+        height: 120px;
+      }
+    </style>
+  </head>
+  <body>
+    <section data-slot="root" data-slot-kind="container">
+      <div class="copy" data-slot="content" data-slot-kind="container">
+        <p data-slot="eyebrow" data-slot-kind="text">Native HTML composition</p>
+        <h1 data-slot="title" data-slot-kind="text">Hero</h1>
+        <p data-slot="body" data-slot-kind="text">Build sections, divs, text, and media with real HTML, then keep iterating through the same canvas and agent mutation path.</p>
+        <div class="actions" data-slot="actions" data-slot-kind="container">
+          <a class="button" href="#">Start composing</a>
+          <a class="button secondary" href="#">View structure</a>
+        </div>
+      </div>
+      <figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video">
+        <svg viewBox="0 0 120 120" fill="none" aria-hidden="true">
+          <rect x="14" y="22" width="92" height="76" rx="18" stroke="currentColor" stroke-width="4" />
+          <path d="M32 76L50 58L64 70L88 42L100 76" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="46" cy="44" r="6" fill="currentColor" />
+        </svg>
+      </figure>
+    </section>
+  </body>
+</html>

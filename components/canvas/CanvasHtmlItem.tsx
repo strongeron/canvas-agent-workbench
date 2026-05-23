@@ -26,6 +26,7 @@ interface CanvasHtmlItemProps {
   onBringToFront: () => void
   scale: number
   interactMode: boolean
+  editMode?: boolean
   activeReactNodeSelection?: CanvasReactNodeSelection | null
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
@@ -62,6 +63,7 @@ export function CanvasHtmlItem({
   onBringToFront,
   scale,
   interactMode,
+  editMode = false,
   activeReactNodeSelection = null,
   onReactNodeSelect,
   onReactCompileGenerationChange,
@@ -220,10 +222,10 @@ export function CanvasHtmlItem({
     }
   }, [dragStart, initialState, isDragging, isResizing, isRotating, onUpdate, resizeHandle, scale])
 
-  const borderStyle = isMultiSelected
-    ? "ring-4 ring-violet-500/20"
+  const selectionStyle = isMultiSelected
+    ? "ring-2 ring-violet-500"
     : isSelected
-      ? "ring-4 ring-brand-500/20"
+      ? "ring-2 ring-brand-500"
       : ""
 
   return (
@@ -252,7 +254,11 @@ export function CanvasHtmlItem({
       onContextMenu={handleContextMenu}
     >
       {!interactMode ? (
-        <CanvasHtmlNodeLabel item={item} isSelected={isSelected} />
+        <CanvasHtmlNodeLabel
+          item={item}
+          isSelected={isSelected}
+          onMouseDown={handleMouseDown}
+        />
       ) : null}
 
       {groupColor ? (
@@ -262,10 +268,11 @@ export function CanvasHtmlItem({
         />
       ) : null}
 
-      <div className={`h-full w-full rounded-xl shadow-card transition-shadow ${borderStyle}`}>
+      <div className={`h-full w-full bg-transparent ${selectionStyle}`}>
         <CanvasHtmlFrame
           item={item}
           interactMode={interactMode}
+          editMode={editMode}
           activeSelection={activeReactNodeSelection?.itemId === item.id ? activeReactNodeSelection : null}
           canvasScale={scale}
           onReactNodeSelect={onReactNodeSelect}
@@ -278,7 +285,7 @@ export function CanvasHtmlItem({
         />
       </div>
 
-      {isSelected && !interactMode ? (
+      {isSelected && !interactMode && !editMode ? (
         <>
           <div
             onMouseDown={handleRotateStart}
@@ -300,7 +307,7 @@ export function CanvasHtmlItem({
         </>
       ) : null}
 
-      {isSelected && !interactMode ? (
+      {isSelected && !interactMode && !editMode ? (
         <div className="absolute -bottom-6 left-0 whitespace-nowrap rounded bg-surface-800 px-2 py-0.5 text-xs text-white">
           {Math.round(item.size.width)} × {Math.round(item.size.height)} · {Math.round(item.rotation)}°
         </div>

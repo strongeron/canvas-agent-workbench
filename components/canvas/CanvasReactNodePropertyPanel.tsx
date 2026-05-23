@@ -4,6 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import type { AstAttributeInfo, AstNodeInfo } from "../../utils/canvasAstReader"
 import type { CanvasAstMutation } from "../../utils/canvasAstWriter"
 import type { CanvasHtmlMutation } from "../../utils/canvasHtmlEditor"
+import {
+  buildSlotNativePartInsertion,
+  listSlotNativePartOptions,
+  type CanvasNativePartKind,
+} from "../../utils/canvasNativeParts"
+import {
+  buildPrimitiveChildSource,
+  type CanvasRegistryPrimitive,
+} from "../../utils/canvasRegistry"
 import type { CanvasReactNodeSelection } from "./CanvasHtmlFrame"
 
 export interface CanvasReactNodePropertyPanelProps {
@@ -15,6 +24,7 @@ export interface CanvasReactNodePropertyPanelProps {
   sourceId: string
   sourceFilePath?: string
   sourceFileMtime?: number
+  projectId?: string
   onClose: () => void
   onSourceReactChange: (sourceReact: string, mtimeMs?: number) => void
   onSourceHtmlChange?: (sourceHtml: string, mtimeMs?: number) => void
@@ -51,6 +61,7 @@ export function CanvasReactNodePropertyPanel({
   sourceId,
   sourceFilePath,
   sourceFileMtime,
+  projectId,
   onClose,
   onSourceReactChange,
   onSourceHtmlChange,
@@ -64,6 +75,7 @@ export function CanvasReactNodePropertyPanel({
     status: "idle",
     error: "",
   })
+  const [registryPrimitives, setRegistryPrimitives] = useState<CanvasRegistryPrimitive[]>([])
 
   const stale = selection.compileGeneration < currentCompileGeneration
 
@@ -116,6 +128,30 @@ export function CanvasReactNodePropertyPanel({
   ])
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), [])
+
+  useEffect(() => {
+    if (sourceKind !== "html" || !projectId || registryPrimitives.length > 0) return
+    const controller = new AbortController()
+    fetch("/api/canvas/registry/list", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean
+          primitives?: CanvasRegistryPrimitive[]
+        }
+        if (response.ok && payload.ok && Array.isArray(payload.primitives)) {
+          setRegistryPrimitives(payload.primitives)
+        }
+      })
+      .catch(() => {
+        /* Registry is optional; selected HTML elements still expose native slot controls. */
+      })
+    return () => controller.abort()
+  }, [projectId, registryPrimitives.length, sourceKind])
 
   const applyMutations = useCallback(
     async (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => {
@@ -265,6 +301,7 @@ export function CanvasReactNodePropertyPanel({
             node={fetchState.node}
             sourceKind={sourceKind}
             writeState={writeState}
+            registryPrimitives={registryPrimitives}
             onApplyMutations={applyMutations}
             onOpenSourceMode={onOpenSourceMode}
           />
@@ -278,12 +315,14 @@ function NodeBody({
   node,
   sourceKind,
   writeState,
+  registryPrimitives,
   onApplyMutations,
   onOpenSourceMode,
 }: {
   node: AstNodeInfo
   sourceKind: "tsx" | "html"
   writeState: { status: "idle" | "saving" | "error"; error: string }
+  registryPrimitives: CanvasRegistryPrimitive[]
   onApplyMutations: (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => void
   onOpenSourceMode?: () => void
 }) {
@@ -399,6 +438,22 @@ function NodeBody({
         )}
       </div>
 
+      {sourceKind === "html" ? (
+        <>
+          <HtmlContentComposer
+            node={node}
+            disabled={writeState.status === "saving"}
+            registryPrimitives={registryPrimitives}
+            onApplyMutations={onApplyMutations}
+          />
+          <HtmlSlotEditor
+            node={node}
+            disabled={writeState.status === "saving"}
+            onApplyMutations={onApplyMutations}
+          />
+        </>
+      ) : null}
+
       <StructureEditor
         node={node}
         sourceKind={sourceKind}
@@ -430,6 +485,285 @@ function summarizeEditableCapabilities(node: AstNodeInfo): string[] {
   }
 
   return labels
+}
+
+function HtmlContentComposer({
+  node,
+  disabled,
+  registryPrimitives,
+  onApplyMutations,
+}: {
+  node: AstNodeInfo
+  disabled: boolean
+  registryPrimitives: CanvasRegistryPrimitive[]
+  onApplyMutations: (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => void
+}) {
+  const [partPick, setPartPick] = useState<CanvasNativePartKind>("image")
+  const [sourceUrl, setSourceUrl] = useState("")
+  const [componentPick, setComponentPick] = useState("")
+  const relation = getCanvasIdRelation(node.canvasId)
+  const slotName = getNodeAttributeValue(node, "data-slot") || defaultSlotNameForNode(node)
+  const actualAccepts = getNodeAttributeValue(node, "data-slot-accepts") || ""
+  const slotInfo = {
+    name: slotName,
+    canvasId: node.canvasId,
+    tag: node.tag,
+    kind: getNodeAttributeValue(node, "data-slot-kind") || defaultSlotKindForNode(node),
+    accepts: actualAccepts || "image,svg,video",
+    childElementCount: node.childElementCount ?? 0,
+  }
+  const nativePartOptions = listSlotNativePartOptions(slotInfo)
+  const pickedPrimitive = registryPrimitives.find((entry) => entry.id === componentPick)
+  const isMediaSlot = actualAccepts
+    .split(",")
+    .map((entry) => entry.trim())
+    .some((entry) => entry === "image" || entry === "svg" || entry === "video")
+  const pickedSource = pickedPrimitive
+    ? buildPrimitiveChildSource(pickedPrimitive)
+    : buildSlotNativePartInsertion({ ...slotInfo, childElementCount: 0 }, partPick, {
+        sourceUrl,
+      }).childSource
+
+  const insertInside = (position: number) => {
+    onApplyMutations([{ type: "insertChild", position, childSource: pickedSource }])
+  }
+
+  const insertSibling = (offset: 0 | 1) => {
+    if (!relation.parentCanvasId) return
+    onApplyMutations([
+      {
+        type: "insertChild",
+        parentCanvasId: relation.parentCanvasId,
+        position: relation.index + offset,
+        childSource: pickedSource,
+      },
+    ])
+  }
+
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Add content
+      </div>
+      <div className="space-y-2 rounded-md border border-default bg-white p-2">
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          Insert real rendered content relative to the selected <code className="font-mono">{node.tag}</code>.
+        </p>
+        <div className="grid gap-1.5">
+          <select
+            value={componentPick ? `component:${componentPick}` : `part:${partPick}`}
+            onChange={(event) => {
+              const value = event.target.value
+              if (value.startsWith("component:")) {
+                setComponentPick(value.slice("component:".length))
+                return
+              }
+              setComponentPick("")
+              setPartPick(value.replace("part:", "") as CanvasNativePartKind)
+            }}
+            disabled={disabled}
+            className="w-full rounded border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          >
+            {nativePartOptions.map((option) => (
+              <option key={option.kind} value={`part:${option.kind}`}>
+                {option.label}
+              </option>
+            ))}
+            {registryPrimitives.length > 0 ? (
+              <optgroup label="Library components">
+                {registryPrimitives.map((primitive) => (
+                  <option key={primitive.id} value={`component:${primitive.id}`}>
+                    {primitive.displayName}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+          </select>
+          {partUsesSourceUrl(componentPick ? "" : partPick) ? (
+            <input
+              type="url"
+              value={sourceUrl}
+              onChange={(event) => setSourceUrl(event.target.value)}
+              disabled={disabled}
+              placeholder="Optional image/link/video URL"
+              className="w-full rounded border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+            />
+          ) : null}
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {isMediaSlot && !componentPick ? (
+            <button
+              type="button"
+              onClick={() => onApplyMutations([{ type: "replaceChildren", childSource: pickedSource }])}
+              disabled={disabled}
+              className="col-span-2 rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Replace selected contents
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => insertInside(0)}
+            disabled={disabled}
+            className="rounded border border-brand-300 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Inside top
+          </button>
+          <button
+            type="button"
+            onClick={() => insertInside(node.childElementCount ?? 0)}
+            disabled={disabled}
+            className="rounded border border-brand-300 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Inside bottom
+          </button>
+          <button
+            type="button"
+            onClick={() => insertSibling(0)}
+            disabled={disabled || !relation.parentCanvasId}
+            className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Above
+          </button>
+          <button
+            type="button"
+            onClick={() => insertSibling(1)}
+            disabled={disabled || !relation.parentCanvasId}
+            className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Below
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function HtmlSlotEditor({
+  node,
+  disabled,
+  onApplyMutations,
+}: {
+  node: AstNodeInfo
+  disabled: boolean
+  onApplyMutations: (mutations: Array<CanvasAstMutation | CanvasHtmlMutation>) => void
+}) {
+  const slotName = getNodeAttributeValue(node, "data-slot")
+  const slotKind = getNodeAttributeValue(node, "data-slot-kind")
+  const accepts = getNodeAttributeValue(node, "data-slot-accepts")
+  const [draftName, setDraftName] = useState(slotName || defaultSlotNameForNode(node))
+  const [draftKind, setDraftKind] = useState(slotKind || defaultSlotKindForNode(node))
+  const [draftAccepts, setDraftAccepts] = useState(accepts || "")
+
+  useEffect(() => {
+    setDraftName(slotName || defaultSlotNameForNode(node))
+    setDraftKind(slotKind || defaultSlotKindForNode(node))
+    setDraftAccepts(accepts || "")
+  }, [accepts, node, slotKind, slotName])
+
+  const trimmedName = draftName.trim()
+  const trimmedKind = draftKind.trim()
+  const trimmedAccepts = draftAccepts.trim()
+  const applySlotMetadata = () => {
+    if (!trimmedName) return
+    onApplyMutations([
+      { type: "setAttribute", attrName: "data-slot", value: trimmedName },
+      { type: "setAttribute", attrName: "data-slot-kind", value: trimmedKind || null },
+      { type: "setAttribute", attrName: "data-slot-accepts", value: trimmedAccepts || null },
+    ])
+  }
+
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Slot
+      </div>
+      <div className="space-y-2 rounded-md border border-default bg-white p-2">
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          Slot metadata names this element for composition. It does not convert the
+          rendered content by itself.
+        </p>
+        <div className="grid gap-1.5">
+          <input
+            type="text"
+            value={draftName}
+            onChange={(event) => setDraftName(event.target.value)}
+            disabled={disabled}
+            placeholder="Slot name, e.g. media"
+            className="w-full rounded border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+          <div className="flex items-center gap-1.5">
+            <select
+              value={draftKind}
+              onChange={(event) => setDraftKind(event.target.value)}
+              disabled={disabled}
+              className="min-w-0 flex-1 rounded border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+            >
+              <option value="">Kind...</option>
+              <option value="text">text</option>
+              <option value="container">container</option>
+              <option value="image">image</option>
+              <option value="svg">svg</option>
+              <option value="video">video</option>
+            </select>
+            <button
+              type="button"
+              onClick={applySlotMetadata}
+              disabled={disabled || !trimmedName}
+              className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {slotName ? "Update slot" : "Add slot"}
+            </button>
+          </div>
+          <input
+            type="text"
+            value={draftAccepts}
+            onChange={(event) => setDraftAccepts(event.target.value)}
+            disabled={disabled}
+            placeholder="Accepts, e.g. image,svg,video"
+            className="w-full rounded border border-default bg-white px-2 py-1 text-[11px] text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function defaultSlotNameForNode(node: AstNodeInfo) {
+  if (/^h[1-6]$/.test(node.tag)) return "title"
+  if (node.tag === "p") return "body"
+  if (node.tag === "figure" || node.tag === "img" || node.tag === "svg" || node.tag === "video") return "media"
+  return node.tag === "button" || node.tag === "a" ? "action" : "content"
+}
+
+function defaultSlotKindForNode(node: AstNodeInfo) {
+  if (/^h[1-6]$/.test(node.tag) || node.tag === "p" || node.tag === "span") return "text"
+  if (node.tag === "img") return "image"
+  if (node.tag === "svg") return "svg"
+  if (node.tag === "video") return "video"
+  return "container"
+}
+
+function partUsesSourceUrl(part: CanvasNativePartKind | "") {
+  return part === "image" || part === "video" || part === "link"
+}
+
+function getCanvasIdRelation(canvasId: string) {
+  const [hash, path] = canvasId.split(":")
+  if (!hash || !path) return { parentCanvasId: null, index: 0 }
+  const parts = path.split(".")
+  const index = Number.parseInt(parts[parts.length - 1] ?? "0", 10)
+  if (parts.length <= 1 || !Number.isInteger(index)) {
+    return { parentCanvasId: null, index: Number.isInteger(index) ? index : 0 }
+  }
+  return {
+    parentCanvasId: `${hash}:${parts.slice(0, -1).join(".")}`,
+    index,
+  }
+}
+
+function getNodeAttributeValue(node: AstNodeInfo, name: string): string | undefined {
+  return node.attributes.find((attr) => attr.name === name)?.value
 }
 
 function StructureEditor({
@@ -493,7 +827,7 @@ function StructureEditor({
           <button
             type="button"
             onClick={() => onApplyMutations([{ type: "swapTag", newTag: normalizedSwapTag }])}
-            disabled={disabled || !normalizedSwapTag}
+            disabled={disabled || !normalizedSwapTag || normalizedSwapTag === node.tag}
             className="rounded border border-default bg-white px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Swap tag

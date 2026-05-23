@@ -16,6 +16,7 @@ interface CanvasLayoutHtmlItemProps {
   onUpdate: (updates: Partial<Omit<CanvasHtmlItemType, "id">>) => void
   scale: number
   interactMode: boolean
+  editMode?: boolean
   activeReactNodeSelection?: CanvasReactNodeSelection | null
   onReactNodeSelect?: (selection: CanvasReactNodeSelection) => void
   onReactCompileGenerationChange?: (itemId: string, generation: number) => void
@@ -36,6 +37,7 @@ export function CanvasLayoutHtmlItem({
   onUpdate,
   scale,
   interactMode,
+  editMode = false,
   activeReactNodeSelection = null,
   onReactNodeSelect,
   onReactCompileGenerationChange,
@@ -90,7 +92,7 @@ export function CanvasLayoutHtmlItem({
 
   return (
     <div
-      className={`group relative h-full w-full ${isSelected ? "ring-4 ring-brand-500/20" : ""}`}
+      className={`group relative h-full w-full bg-transparent ${isSelected ? "ring-2 ring-brand-500" : ""}`}
       data-canvas-item-id={item.id}
       data-canvas-item-type={item.type}
       onClick={(event) => {
@@ -102,6 +104,7 @@ export function CanvasLayoutHtmlItem({
       <CanvasHtmlFrame
         item={item}
         interactMode={interactMode}
+        editMode={editMode}
         activeSelection={activeReactNodeSelection?.itemId === item.id ? activeReactNodeSelection : null}
         canvasScale={scale}
         onReactNodeSelect={onReactNodeSelect}
@@ -117,7 +120,7 @@ export function CanvasLayoutHtmlItem({
         <CanvasHtmlNodeLabel item={item} isSelected={isSelected} />
       ) : null}
 
-      {isSelected && !interactMode ? (
+      {isSelected && !interactMode && !editMode ? (
         <>
           <div
             onMouseDown={handleResizeStart}

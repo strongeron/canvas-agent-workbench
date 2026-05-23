@@ -115,7 +115,46 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     vi.unstubAllGlobals()
   })
 
-  it("forwards canvas/select messages from its iframe to onReactNodeSelect", async () => {
+  it("keeps the select-mode shield interactive so iframe clicks move/select the canvas item", async () => {
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    const shield = harness.container.querySelector(
+      "[data-testid='canvas-html-frame-edit-shield']"
+    ) as HTMLElement
+    expect(shield).toBeTruthy()
+    expect(shield.className).not.toContain("pointer-events-none")
+  })
+
+  it("forwards canvas/select messages from its iframe to onReactNodeSelect in edit mode", async () => {
+    const onSelect = vi.fn()
+    harness = await mount(
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} editMode onReactNodeSelect={onSelect} />
+    )
+    const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
+    expect(iframe).toBeTruthy()
+
+    await act(async () => {
+      postFromIframe(iframe, {
+        [CANVAS_NODE_BRIDGE_MARKER]: true,
+        version: CANVAS_NODE_BRIDGE_VERSION,
+        type: "canvas/select",
+        canvasId: "abc:0",
+        tag: "button",
+        rect: { x: 1, y: 2, width: 50, height: 24 },
+        fileHint: "item-1",
+      })
+    })
+
+    expect(onSelect).toHaveBeenCalledWith({
+      itemId: "item-1",
+      canvasId: "abc:0",
+      tag: "button",
+      rect: { x: 1, y: 2, width: 50, height: 24 },
+      fileHint: "item-1",
+      compileGeneration: expect.any(Number),
+    })
+  })
+
+  it("forwards canvas/select messages from its iframe to onReactNodeSelect in interact mode", async () => {
     const onSelect = vi.fn()
     harness = await mount(
       <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={onSelect} />
@@ -366,9 +405,9 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     })
   }
 
-  it("renders CanvasIframeOverlay (8 handles + move) when interactMode is on and an element is selected", async () => {
+  it("renders CanvasIframeOverlay (8 handles + move) when editMode is on and an element is selected", async () => {
     harness = await mount(
-      <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={vi.fn()} />
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} editMode onReactNodeSelect={vi.fn()} />
     )
     const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
     await selectInIframe(iframe, "abc:0")
@@ -377,24 +416,21 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     ).toBe(9)
   })
 
-  it("renders the plain selection ring (no overlay) when interactMode is off", async () => {
+  it("does not render source-edit overlay handles in interact mode", async () => {
     harness = await mount(
-      <CanvasHtmlFrame item={makeItem()} interactMode={false} onReactNodeSelect={vi.fn()} />
+      <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={vi.fn()} />
     )
     const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
     await selectInIframe(iframe, "abc:0")
     expect(
       harness.container.querySelectorAll("[data-canvas-overlay-handle]").length
     ).toBe(0)
-    // The static ring uses ring-2 ring-brand-500; assert its class is present.
-    expect(
-      harness.container.querySelector(".ring-brand-500")
-    ).not.toBeNull()
+    expect(harness.container.querySelector(".ring-brand-500")).toBeNull()
   })
 
   it("applies canvas/rect-update to selectionRect when canvasId matches the active selection", async () => {
     harness = await mount(
-      <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={vi.fn()} />
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} editMode onReactNodeSelect={vi.fn()} />
     )
     const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
     await selectInIframe(iframe, "abc:0", { x: 10, y: 20, width: 100, height: 40 })
@@ -424,7 +460,7 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
 
   it("ignores canvas/rect-update for a canvasId that is not the active selection", async () => {
     harness = await mount(
-      <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={vi.fn()} />
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} editMode onReactNodeSelect={vi.fn()} />
     )
     const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
     await selectInIframe(iframe, "abc:0", { x: 10, y: 20, width: 100, height: 40 })
@@ -445,7 +481,7 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
 
   it("clears the selection when canvas/rect-update arrives with rect=null for the active id", async () => {
     harness = await mount(
-      <CanvasHtmlFrame item={makeItem()} interactMode onReactNodeSelect={vi.fn()} />
+      <CanvasHtmlFrame item={makeItem()} interactMode={false} editMode onReactNodeSelect={vi.fn()} />
     )
     const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
     await selectInIframe(iframe, "abc:0")
@@ -498,7 +534,8 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     harness = await mount(
       <CanvasHtmlFrame
         item={makeItem()}
-        interactMode
+        interactMode={false}
+        editMode
         onReactNodeSelect={vi.fn()}
         onReactNodeResize={onResize}
       />
@@ -521,7 +558,8 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     harness = await mount(
       <CanvasHtmlFrame
         item={makeItem()}
-        interactMode
+        interactMode={false}
+        editMode
         canvasScale={0.5}
         onReactNodeSelect={vi.fn()}
         onReactNodeResize={onResize}
@@ -540,7 +578,8 @@ describe("CanvasHtmlFrame — React TSX preview message handler", () => {
     harness = await mount(
       <CanvasHtmlFrame
         item={makeItem()}
-        interactMode
+        interactMode={false}
+        editMode
         onReactNodeSelect={vi.fn()}
         onReactNodeResize={onResize}
       />
@@ -1059,7 +1098,7 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
     // identity change — only a real recompile should clear it. Before the
     // fix, the clear lived in an effect keyed on activeSelection, so the set
     // was wiped the moment the shift-click's onReactNodeSelect round-tripped.
-    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} editMode />)
     const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
     await act(async () => {
       postSelect(iframe, "a:0", { x: 10, y: 10, width: 40, height: 20 })
@@ -1070,6 +1109,7 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
         <CanvasHtmlFrame
           item={makeItem()}
           interactMode={false}
+          editMode
           activeSelection={{
             itemId: "item-1",
             canvasId: "a:0",
@@ -1089,6 +1129,7 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
         <CanvasHtmlFrame
           item={makeItem()}
           interactMode={false}
+          editMode
           activeSelection={{
             itemId: "item-1",
             canvasId: "b:0",
@@ -1107,7 +1148,7 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
   })
 
   it("renders a union outline + count once two elements are shift-selected", async () => {
-    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} editMode />)
     const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
     await act(async () => {
       postSelect(iframe, "a:0", { x: 10, y: 10, width: 40, height: 20 })
@@ -1132,7 +1173,7 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
   })
 
   it("a plain (non-additive) select collapses the multi-set back to one", async () => {
-    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} editMode />)
     const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
     await act(async () => {
       postSelect(iframe, "a:0", { x: 0, y: 0, width: 10, height: 10 })
@@ -1151,7 +1192,7 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
   })
 
   it("shift-clicking an already-selected element toggles it back out", async () => {
-    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} />)
+    harness = await mount(<CanvasHtmlFrame item={makeItem()} interactMode={false} editMode />)
     const iframe = harness.container.querySelector("iframe") as HTMLIFrameElement
     await act(async () => {
       postSelect(iframe, "a:0", { x: 0, y: 0, width: 10, height: 10 })
@@ -1175,7 +1216,8 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
     harness = await mount(
       <CanvasHtmlFrame
         item={makeItem()}
-        interactMode
+        interactMode={false}
+        editMode
         onReactNodeGroupResize={onGroup}
       />
     )
@@ -1224,7 +1266,8 @@ describe("CanvasHtmlFrame — U12 single-iframe multi-select", () => {
     harness = await mount(
       <CanvasHtmlFrame
         item={makeItem()}
-        interactMode
+        interactMode={false}
+        editMode
         onReactNodeGroupResize={onGroup}
         onReactNodeResize={onResize}
       />

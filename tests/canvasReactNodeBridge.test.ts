@@ -320,6 +320,58 @@ describe("end-to-end: install bridge in jsdom and observe postMessage", () => {
     expect(selectCall![0].fileHint).toBe("fileA")
   })
 
+  it("prevents link activation while the iframe bridge is in edit mode", () => {
+    installBridgeForTesting(window, "fileA")
+    const link = makeEl("a", { "data-canvas-id": "abc:link", href: "#" }, "Primary")
+    document.body.appendChild(link)
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        data: {
+          [CANVAS_NODE_BRIDGE_MARKER]: true,
+          version: CANVAS_NODE_BRIDGE_VERSION,
+          type: "canvas/interaction-mode",
+          mode: "edit",
+        },
+      })
+    )
+
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true })
+    link.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    const selectCall = parentMock.postMessage.mock.calls.find(
+      (call) => call[0]?.type === "canvas/select"
+    )
+    expect(selectCall![0].canvasId).toBe("abc:link")
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        data: {
+          [CANVAS_NODE_BRIDGE_MARKER]: true,
+          version: CANVAS_NODE_BRIDGE_VERSION,
+          type: "canvas/interaction-mode",
+          mode: "interact",
+        },
+      })
+    )
+  })
+
+  it("preserves page event handling while the iframe bridge is in interact mode", () => {
+    installBridgeForTesting(window, "fileA")
+    const button = makeEl("button", { "data-canvas-id": "abc:button" }, "Primary")
+    const onButtonClick = vi.fn()
+    button.addEventListener("click", onButtonClick)
+    document.body.appendChild(button)
+
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true })
+    button.dispatchEvent(event)
+
+    expect(onButtonClick).toHaveBeenCalledOnce()
+  })
+
   it("flags a shift-held click as additive (U12) and a plain click as not", () => {
     installBridgeForTesting(window, "fileA")
     const button = makeEl("button", { "data-canvas-id": "abc:1.2" }, "x")

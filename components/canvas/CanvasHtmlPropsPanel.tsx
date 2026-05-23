@@ -27,6 +27,11 @@ import {
   type CanvasNativePartKind,
 } from "../../utils/canvasNativeParts"
 import {
+  CanvasLayoutSizingControls,
+  type CanvasLayoutHeightMode,
+  type CanvasLayoutWidthMode,
+} from "./CanvasLayoutSizingControls"
+import {
   canPickDirectory,
   isAbortSyncError,
   pickDirectoryHint,
@@ -56,6 +61,10 @@ interface CanvasHtmlPropsPanelProps {
   sourceComponentSlug?: string
   sourceComponentFilePath?: string
   size?: { width: number; height: number }
+  layoutWidthMode?: CanvasLayoutWidthMode
+  layoutHeightMode?: CanvasLayoutHeightMode
+  canFillParent?: boolean
+  canFillHeight?: boolean
   /** Project whose registry primitives populate the per-slot component picker. */
   projectId?: string
   /**
@@ -95,6 +104,9 @@ interface CanvasHtmlPropsPanelProps {
     sourceReactFileMtime?: number
   }) => void
   onResize?: (width: number) => void
+  onSizeChange?: (size: { width: number; height: number }) => void
+  onLayoutWidthModeChange?: (mode: CanvasLayoutWidthMode) => void
+  onLayoutHeightModeChange?: (mode: CanvasLayoutHeightMode) => void
   onReplaceBundle?: (input: {
     files?: File[]
     fileEntries?: Array<{ file: File; relativePath: string }>
@@ -682,9 +694,16 @@ export function CanvasHtmlPropsPanel({
   sourceComponentSlug,
   sourceComponentFilePath,
   size,
+  layoutWidthMode,
+  layoutHeightMode,
+  canFillParent = false,
+  canFillHeight = canFillParent,
   projectId = "design-system-foundation",
   onChange,
   onResize,
+  onSizeChange,
+  onLayoutWidthModeChange,
+  onLayoutHeightModeChange,
   onReplaceBundle,
   onReplaceBundleFromDirectory,
   onDelete,
@@ -1044,6 +1063,19 @@ export function CanvasHtmlPropsPanel({
       ) : null}
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        {onLayoutWidthModeChange ? (
+          <CanvasLayoutSizingControls
+            size={size}
+            widthMode={layoutWidthMode}
+            heightMode={layoutHeightMode}
+            canFillParent={canFillParent}
+            canFillHeight={canFillHeight}
+            onSizeChange={onSizeChange}
+            onWidthModeChange={onLayoutWidthModeChange}
+            onHeightModeChange={onLayoutHeightModeChange}
+          />
+        ) : null}
+
         <div>
           <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Title</label>
           <input

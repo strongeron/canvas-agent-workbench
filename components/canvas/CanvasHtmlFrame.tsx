@@ -1,11 +1,12 @@
 import { Code2 } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react"
 
 import type { CanvasHtmlItem } from "../../types/canvas"
 import { screenDeltaToIframeLocal } from "../../utils/canvasIframeCoordinates"
 import {
   buildDropTargetHitTestRequest,
   buildRefreshRectRequest,
+  buildInteractionModeRequest,
   isCanvasReactNodeMessage,
   type CanvasReactNodeDropTargetSibling,
   type CanvasReactNodeRect,
@@ -61,6 +62,7 @@ export interface CanvasReactNodeGroupResizeEvent {
 interface CanvasHtmlFrameProps {
   item: CanvasHtmlItem
   interactMode: boolean
+  editMode?: boolean
   activeSelection?: CanvasReactNodeSelection | null
   /**
    * Called when the user selects an element inside a React TSX preview node
@@ -111,6 +113,44 @@ function toDropZoneSibling(sibling: CanvasReactNodeDropTargetSibling): CanvasDro
   return { canvasId: sibling.canvasId, rect: toDropZoneRect(sibling.rect), index: sibling.index }
 }
 
+const CANVAS_VIEWPORT_FIT_STYLE = `<style data-canvas-viewport-fit>
+html,
+body {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+body {
+  display: block !important;
+  overflow: hidden !important;
+}
+body > [data-slot="root"],
+body > :not(script):not(style):not(link):not(meta) {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+</style>`
+
+function fitHtmlToCanvasViewport(html: string) {
+  if (!html || html.includes("data-canvas-viewport-fit")) return html
+  if (/<\/head\s*>/i.test(html)) {
+    return html.replace(/<\/head\s*>/i, `${CANVAS_VIEWPORT_FIT_STYLE}</head>`)
+  }
+  // Fragment-style HTML often starts with <meta>/<style>/<article> and has no
+  // real <head>. Append the canvas-only style last so it wins over authored
+  // preview-page CSS such as body centering and max-width cards.
+  return `${html}${CANVAS_VIEWPORT_FIT_STYLE}`
+}
+
 /**
  * Figma-style floating identity label for an HTML node. Rendered by the node
  * wrapper (outside the frame's clipped box), positioned just above the frame.
@@ -120,9 +160,12 @@ function toDropZoneSibling(sibling: CanvasReactNodeDropTargetSibling): CanvasDro
 export function CanvasHtmlNodeLabel({
   item,
   isSelected,
+  onMouseDown,
 }: {
   item: CanvasHtmlItem
   isSelected: boolean
+  /** Drag handle for moving the canvas item in edit mode (label sits above the iframe). */
+  onMouseDown?: (event: MouseEvent) => void
 }) {
   const title = item.title?.trim() || "HTML bundle"
   const typeLabel =
@@ -133,7 +176,10 @@ export function CanvasHtmlNodeLabel({
         : item.entryAsset || item.src || "HTML"
   return (
     <div
-      className={`pointer-events-none absolute -top-[22px] left-0 z-20 flex max-w-full items-center gap-1 overflow-hidden whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] leading-none transition-opacity duration-100 ${
+      onMouseDown={onMouseDown}
+      className={`absolute -top-[22px] left-0 z-20 flex max-w-full items-center gap-1 overflow-hidden whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] leading-none transition-opacity duration-100 ${
+        onMouseDown ? "pointer-events-auto cursor-grab active:cursor-grabbing" : "pointer-events-none"
+      } ${
         isSelected
           ? "bg-brand-500 text-white opacity-100"
           : "bg-surface-900/80 text-white opacity-0 group-hover:opacity-100"
@@ -149,6 +195,7 @@ export function CanvasHtmlNodeLabel({
 export function CanvasHtmlFrame({
   item,
   interactMode,
+  editMode = false,
   activeSelection = null,
   onReactNodeSelect,
   onReactCompileGenerationChange,
@@ -207,6 +254,7 @@ export function CanvasHtmlFrame({
   // exist (U6) this becomes the source file path so multiple instances of
   // the same component agree on ids.
   const sourceId = item.sourcePath || item.sourceReactFilePath || item.id
+  const canSelectReactNode = editMode || interactMode
   // Compile generation: bumped every time we kick off a new compile. The
   // parent attaches the *current* generation to outbound selections so a
   // stale canvasId from a previous compile (referencing an AST node that
@@ -341,6 +389,7 @@ export function CanvasHtmlFrame({
       if (!isCanvasReactNodeMessage(event.data)) return
       const message = event.data
       if (message.type === "canvas/select") {
+        if (!canSelectReactNode) return
         setSelectionRect(message.rect)
         setSelectedCanvasId(message.canvasId || null)
         if (message.canvasId) {
@@ -397,7 +446,7 @@ export function CanvasHtmlFrame({
     }
     window.addEventListener("message", handler)
     return () => window.removeEventListener("message", handler)
-  }, [shouldRenderInline, shouldRenderReact, onReactNodeSelect, item.id])
+  }, [canSelectReactNode, shouldRenderInline, shouldRenderReact, onReactNodeSelect, item.id])
 
   // Source changes invalidate the old measured rect, but the parent may
   // already have rebased the selection id via canvasIdMap. Keep the id if
@@ -419,8 +468,8 @@ export function CanvasHtmlFrame({
   }, [item.id, sourceHtml, sourceReact, sourceCss, sourceId])
 
   const frameSource = useMemo(() => {
-    if (shouldRenderReact) return compiledReactHtml
-    if (shouldRenderInline) return injectedInlineHtml || sourceHtml
+    if (shouldRenderReact) return fitHtmlToCanvasViewport(compiledReactHtml)
+    if (shouldRenderInline) return fitHtmlToCanvasViewport(injectedInlineHtml || sourceHtml)
     return ""
   }, [compiledReactHtml, injectedInlineHtml, shouldRenderInline, shouldRenderReact, sourceHtml])
 
@@ -452,6 +501,16 @@ export function CanvasHtmlFrame({
     if (!targetWindow) return
     targetWindow.postMessage(buildRefreshRectRequest(selectedCanvasId), window.location.origin)
   }, [canRefreshSelectionRect, selectedCanvasId, frameSource])
+
+  useEffect(() => {
+    if (!shouldRenderReact && !shouldRenderInline) return
+    const targetWindow = iframeRef.current?.contentWindow
+    if (!targetWindow) return
+    targetWindow.postMessage(
+      buildInteractionModeRequest(editMode ? "edit" : "interact"),
+      window.location.origin
+    )
+  }, [editMode, frameSource, shouldRenderInline, shouldRenderReact])
 
   // U4b. When the library drag ends (drop or cancel), the parent flips
   // `libraryDragActive` back to false. Clear any visible zones and any pending
@@ -548,10 +607,10 @@ export function CanvasHtmlFrame({
 
   return (
     <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-default bg-white"
+      className="flex h-full w-full flex-col overflow-hidden bg-transparent"
       style={{ background: item.background || undefined }}
     >
-      <div className="relative min-h-0 flex-1 bg-white">
+      <div className="relative min-h-0 flex-1 bg-transparent">
         {hasRenderableSource ? (
           <>
             <iframe
@@ -560,14 +619,14 @@ export function CanvasHtmlFrame({
               srcDoc={shouldRenderInline || shouldRenderReact ? frameSource : undefined}
               title={title}
               sandbox={item.sandbox || "allow-scripts allow-same-origin allow-forms allow-modals allow-popups"}
-              className="h-full w-full border-0 bg-white"
+              className="h-full w-full border-0 bg-transparent"
             />
             {/* U2: outline overlays for hover and selection. Anchored in
                 iframe-document coords; for v1 the iframe is not scaled
                 inside CanvasHtmlFrame so these align 1:1. The canvas-level
                 wrapper applies its own transform; outlines inside this
                 component work for the unscaled local case. */}
-            {(shouldRenderReact || shouldRenderInline) && hoverRect && interactMode && (
+            {(shouldRenderReact || shouldRenderInline) && hoverRect && editMode && (
               <div
                 className="pointer-events-none absolute rounded-sm ring-1 ring-brand-400/60"
                 style={{
@@ -578,7 +637,7 @@ export function CanvasHtmlFrame({
                 }}
               />
             )}
-            {(shouldRenderReact || shouldRenderInline) && selectionRect && !interactMode && (
+            {(shouldRenderReact || shouldRenderInline) && selectionRect && editMode && (
               <div
                 className="pointer-events-none absolute rounded-sm ring-2 ring-brand-500"
                 style={{
@@ -608,7 +667,7 @@ export function CanvasHtmlFrame({
             )}
             {(shouldRenderReact || shouldRenderInline) &&
               unionRect &&
-              interactMode && (
+              editMode && (
                 <CanvasIframeOverlay
                   rect={{
                     left: unionRect.x,
@@ -639,7 +698,7 @@ export function CanvasHtmlFrame({
             {(shouldRenderReact || shouldRenderInline) &&
               !unionRect &&
               selectionRect &&
-              interactMode && (
+              editMode && (
               <CanvasIframeOverlay
                 rect={{
                   left: selectionRect.x,
@@ -668,8 +727,12 @@ export function CanvasHtmlFrame({
                 }}
               />
             )}
-            {!interactMode && (
-              <div className="absolute inset-0" />
+            {!interactMode && !editMode && (
+              <div
+                data-testid="canvas-html-frame-edit-shield"
+                className="absolute inset-0"
+                aria-hidden
+              />
             )}
             {libraryDragActive && (shouldRenderReact || shouldRenderInline) && (
               <div
