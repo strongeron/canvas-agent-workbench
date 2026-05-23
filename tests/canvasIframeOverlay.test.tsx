@@ -121,7 +121,7 @@ describe("CanvasIframeOverlay", () => {
     expect(move.style.width).toBe("18px")
     expect(move.style.height).toBe("18px")
     expect(move.style.left).toBe("91px")
-    expect(move.style.top).toBe("6px")
+    expect(move.style.top).toBe("-9px")
     expect(outline.style.pointerEvents).toBe("none")
   })
 

@@ -155,7 +155,7 @@ export function CanvasIframeOverlay({
         style={{
           position: "absolute",
           left: Math.max(0, rect.width / 2 - MOVE_HANDLE_SIZE / 2),
-          top: Math.max(0, Math.min(6, rect.height - MOVE_HANDLE_SIZE)),
+          top: -MOVE_HANDLE_SIZE / 2,
           width: MOVE_HANDLE_SIZE,
           height: MOVE_HANDLE_SIZE,
           cursor: "move",
