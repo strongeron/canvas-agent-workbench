@@ -36,6 +36,7 @@ interface CanvasPropsPanelProps {
   onClose: () => void
   onVariantChange: (variantIndex: number) => void
   onCreateEditableShell?: () => void
+  onReplaceWithEditableShell?: () => void
 }
 
 export function CanvasPropsPanel({
@@ -52,6 +53,7 @@ export function CanvasPropsPanel({
   onClose,
   onVariantChange,
   onCreateEditableShell,
+  onReplaceWithEditableShell,
 }: CanvasPropsPanelProps) {
   const [copied, setCopied] = useState(false)
   const [showJson, setShowJson] = useState(false)
@@ -273,15 +275,28 @@ export function CanvasPropsPanel({
         <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-900">
           This is a props-backed component instance. Edit props and variants here. To change
           internal HTML structure, use a native HTML component shell.
-          {onCreateEditableShell ? (
+          {onReplaceWithEditableShell || onCreateEditableShell ? (
             <div className="mt-2">
-              <button
-                type="button"
-                onClick={onCreateEditableShell}
-                className="rounded-md border border-blue-300 bg-white px-2 py-1 text-[11px] font-medium text-blue-900 hover:bg-blue-100"
-              >
-                Create editable shell
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {onReplaceWithEditableShell ? (
+                  <button
+                    type="button"
+                    onClick={onReplaceWithEditableShell}
+                    className="rounded-md border border-blue-300 bg-white px-2 py-1 text-[11px] font-medium text-blue-900 hover:bg-blue-100"
+                  >
+                    Replace with editable shell
+                  </button>
+                ) : null}
+                {onCreateEditableShell ? (
+                  <button
+                    type="button"
+                    onClick={onCreateEditableShell}
+                    className="rounded-md border border-blue-300 bg-white px-2 py-1 text-[11px] font-medium text-blue-900 hover:bg-blue-100"
+                  >
+                    Open native shells
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>

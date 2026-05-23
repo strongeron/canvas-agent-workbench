@@ -365,7 +365,7 @@ interface CanvasSidebarProps {
     sourcePath?: string
     sourceHtmlFilePath?: string
     sourceHtmlFileMtime?: number
-  }) => void | Promise<void>
+  }) => void | Promise<unknown>
   onAddNativeComponent?: () => void
   onAddHtmlBundleFromDirectory?: (input: {
     directoryPath: string

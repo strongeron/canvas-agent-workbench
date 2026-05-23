@@ -2175,6 +2175,7 @@ export function CanvasTab({
       sourceComponentFilePath?: string
       position?: { x: number; y: number }
       size?: { width: number; height: number }
+      rotation?: number
       parentId?: string
       order?: number
     }) => {
@@ -2229,7 +2230,7 @@ export function CanvasTab({
   </body>
 </html>`
 
-      addItem({
+      const newId = addItem({
         type: "html",
         title,
         sourceMode: input?.sourceReact ? "react" : "inline",
@@ -2249,7 +2250,7 @@ export function CanvasTab({
           y: Math.max(0, targetY - htmlHeight / 2),
         },
         size: { width: htmlWidth, height: htmlHeight },
-        rotation: 0,
+        rotation: input?.rotation ?? 0,
         parentId: input?.parentId,
         order: input?.order,
       })
@@ -2257,6 +2258,7 @@ export function CanvasTab({
       if (typeof window !== "undefined" && window.innerWidth < 1100) {
         setSidebarVisible(false)
       }
+      return newId
     },
     [
       addItem,
@@ -2268,13 +2270,12 @@ export function CanvasTab({
     ]
   )
 
-  const handleAddNativeComponent = useCallback(
+  const createFileBackedNativeShell = useCallback(
     async (
       template: NativeComponentTemplate = "section",
       title?: string,
       seedValues?: Record<string, unknown>
     ) => {
-      const targetArtboardId = nativeComponentTargetArtboard?.id
       const shell = buildNativeComponentShell(template, title)
       const hydratedSourceHtml = seedValues
         ? hydrateNativeComponentShellFromProps({
@@ -2285,10 +2286,6 @@ export function CanvasTab({
         : shell.sourceHtml
       const projectId = activeProjectId || "design-system-foundation"
 
-      // File-backed-on-create (U3): write a real file via the U2 uniquifier
-      // BEFORE adding the canvas item. Default body, no `failOnExisting`, so a
-      // name clash never 409s — the slug is auto-uniquified server-side. On
-      // failure we throw and add NO orphan canvas item.
       let createResult: ComponentCreateClientResult
       try {
         const response = await fetch("/api/canvas/component/create", {
@@ -2313,26 +2310,37 @@ export function CanvasTab({
           throw new Error(createResult.error || "Failed to create component.")
         }
       } catch (error) {
-        throw error instanceof Error
-          ? error
-          : new Error("Failed to create component.")
+        throw error instanceof Error ? error : new Error("Failed to create component.")
       }
 
       const primitive = createResult.primitive
-      // The create response carries the resolved (possibly uniquified) slug +
-      // file path. We bind the item to BOTH the editable file path and the
-      // stable create-time slug/path so a dropped rebind still resolves the
-      // real file via `slug` (the create-then-rebind reconcile contract).
       const filePath = `projects/${projectId}/${primitive.filePath}`
-      const htmlFile = createResult.files?.find(
-        (entry) => entry.filePath === primitive.filePath
-      )
+      const htmlFile = createResult.files?.find((entry) => entry.filePath === primitive.filePath)
 
-      // Notify library/registry consumers of the new file-backed component
-      // (same signal `handleSaveAsComponent` used to emit).
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent(CANVAS_REGISTRY_UPDATED_EVENT))
       }
+
+      return {
+        shell,
+        primitive,
+        filePath,
+        hydratedSourceHtml,
+        htmlFileMtime: htmlFile?.mtimeMs,
+      }
+    },
+    [activeProjectId]
+  )
+
+  const handleAddNativeComponent = useCallback(
+    async (
+      template: NativeComponentTemplate = "section",
+      title?: string,
+      seedValues?: Record<string, unknown>
+    ) => {
+      const targetArtboardId = nativeComponentTargetArtboard?.id
+      const { shell, primitive, filePath, hydratedSourceHtml, htmlFileMtime } =
+        await createFileBackedNativeShell(template, title, seedValues)
 
       if (targetArtboardId) {
         const siblings = items.filter(
@@ -2347,7 +2355,7 @@ export function CanvasTab({
           sourceHtml: hydratedSourceHtml,
           sourcePath: filePath,
           sourceHtmlFilePath: filePath,
-          sourceHtmlFileMtime: htmlFile?.mtimeMs,
+          sourceHtmlFileMtime: htmlFileMtime,
           sourceComponentSlug: primitive.componentSlug,
           sourceComponentFilePath: filePath,
           parentId: targetArtboardId,
@@ -2363,13 +2371,49 @@ export function CanvasTab({
         sourceHtml: hydratedSourceHtml,
         sourcePath: filePath,
         sourceHtmlFilePath: filePath,
-        sourceHtmlFileMtime: htmlFile?.mtimeMs,
+        sourceHtmlFileMtime: htmlFileMtime,
         sourceComponentSlug: primitive.componentSlug,
         sourceComponentFilePath: filePath,
         size: shell.size,
       })
     },
-    [activeProjectId, handleAddInlineHtml, items, nativeComponentTargetArtboard]
+    [createFileBackedNativeShell, handleAddInlineHtml, items, nativeComponentTargetArtboard]
+  )
+
+  const handleReplaceComponentWithNativeShell = useCallback(
+    async (
+      template: NativeComponentTemplate = "section",
+      title?: string,
+      seedValues?: Record<string, unknown>
+    ) => {
+      if (!selectedComponentItem) return
+
+      const sourceItem = selectedComponentItem
+      const { shell, primitive, filePath, hydratedSourceHtml, htmlFileMtime } =
+        await createFileBackedNativeShell(template, title, seedValues)
+
+      const newId = await handleAddInlineHtml({
+        title: shell.title,
+        sourceHtml: hydratedSourceHtml,
+        sourcePath: filePath,
+        sourceHtmlFilePath: filePath,
+        sourceHtmlFileMtime: htmlFileMtime,
+        sourceComponentSlug: primitive.componentSlug,
+        sourceComponentFilePath: filePath,
+        position: {
+          x: sourceItem.position.x + sourceItem.size.width / 2,
+          y: sourceItem.position.y + sourceItem.size.height / 2,
+        },
+        size: sourceItem.size,
+        rotation: sourceItem.rotation,
+        parentId: sourceItem.parentId,
+        order: sourceItem.order,
+      })
+
+      updateItem(newId, { zIndex: sourceItem.zIndex })
+      removeItem(sourceItem.id)
+    },
+    [createFileBackedNativeShell, handleAddInlineHtml, removeItem, selectedComponentItem, updateItem]
   )
 
   const handleComponentPasteCreated = useCallback(
@@ -3938,6 +3982,13 @@ export function CanvasTab({
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
               onVariantChange={handleVariantChange}
+              onReplaceWithEditableShell={() =>
+                void handleReplaceComponentWithNativeShell(
+                  suggestNativeTemplateForComponentName(selectedComponent.name),
+                  selectedComponent.name,
+                  selectedItemProps
+                )
+              }
               onCreateEditableShell={() =>
                 openNativeComponentDialog({
                   template: suggestNativeTemplateForComponentName(selectedComponent.name),
