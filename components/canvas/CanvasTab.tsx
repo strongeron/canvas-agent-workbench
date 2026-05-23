@@ -2412,6 +2412,11 @@ export function CanvasTab({
 
       updateItem(newId, { zIndex: sourceItem.zIndex })
       removeItem(sourceItem.id)
+      setHistoryToast({
+        id: Date.now(),
+        tone: "info",
+        message: `Replaced ${title || sourceItem.componentId} with an editable shell`,
+      })
     },
     [createFileBackedNativeShell, handleAddInlineHtml, removeItem, selectedComponentItem, updateItem]
   )
