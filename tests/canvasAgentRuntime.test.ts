@@ -916,4 +916,218 @@ describe("canvas agent runtime", () => {
       "http://127.0.0.1:5178/api/projects/demo/canvases/html-bundles?rootPath=%2FUsers%2Fstrongeron%2FEvil+Martians%2FClaude+Code%2Fplayground"
     )
   })
+
+  it("reads the persisted sync-target mapping (allowlist source) through the project endpoint", async () => {
+    const runtime = await loadRuntime()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        syncTarget: {
+          rootPath: "/tmp/root-b",
+          resolvedRealPath: "/tmp/root-b",
+          componentsDir: "src/components",
+          format: "html",
+          mappedAt: "2026-05-17T10:00:00.000Z",
+        },
+        valid: true,
+        resolvedRealPath: "/tmp/root-b",
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = { serverUrl: "http://127.0.0.1:5178", projectId: "demo" }
+    await expect(runtime.readProjectSyncTarget(context as any)).resolves.toMatchObject({
+      ok: true,
+      syncTarget: { rootPath: "/tmp/root-b", componentsDir: "src/components" },
+      valid: true,
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:5178/api/canvas/project/sync-target",
+      expect.objectContaining({ method: "POST" })
+    )
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)
+    expect(body).toEqual({ projectId: "demo", mode: "read" })
+  })
+
+  it("returns operational sync errors (non-2xx) as a parsed body instead of crashing", async () => {
+    const runtime = await loadRuntime()
+    // The sync endpoint legitimately returns 409 (stale source), 403
+    // (traversal), etc. The soft post path must surface the JSON body, not
+    // hard-exit the MCP server.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ ok: false, status: 409, code: "stale-source", error: "changed" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = { serverUrl: "http://127.0.0.1:5178", projectId: "demo" }
+    await expect(
+      runtime.syncProjectToTarget(context as any, {
+        target: "/tmp/root-b",
+        componentsDir: "src/components",
+        format: "html",
+        selection: { type: "component", slug: "card", sourcePath: "projects/demo/components/Card.html" },
+      })
+    ).resolves.toEqual({ ok: false, status: 409, code: "stale-source", error: "changed" })
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:5178/api/canvas/project/sync",
+      expect.objectContaining({ method: "POST" })
+    )
+  })
+
+  it("detects the components dir for an allowlisted root", async () => {
+    const runtime = await loadRuntime()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        resolvedComponentsDir: "src/components",
+        candidates: [{ dir: "src/components", exists: true }],
+        resolvedRealPath: "/tmp/root-b",
+        frameworkSuggestion: "html+tsx",
+        escapedDisplayPath: "/tmp/root-b/src/components",
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const context = { serverUrl: "http://127.0.0.1:5178", projectId: "demo" }
+    await expect(
+      runtime.detectProjectComponentsDir(context as any, "/tmp/root-b")
+    ).resolves.toMatchObject({
+      ok: true,
+      resolvedComponentsDir: "src/components",
+      frameworkSuggestion: "html+tsx",
+    })
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)
+    expect(body).toEqual({ rootPath: "/tmp/root-b" })
+  })
+})
+
+async function loadOps() {
+  // @ts-ignore local shared CLI/MCP operations core is ESM-only and intentionally consumed directly in tests
+  return import("../utils/canvasAgentOperations.mjs")
+}
+
+describe("sync_to_project allowlist + selection resolution (pure helpers)", () => {
+  it("reuses the persisted mapping when target is omitted", async () => {
+    const { resolveSyncToProjectTarget } = await loadOps()
+    const persisted = {
+      rootPath: "/tmp/root-b",
+      resolvedRealPath: "/tmp/root-b",
+      componentsDir: "src/components",
+      format: "html+tsx",
+      mappedAt: "2026-05-17T10:00:00.000Z",
+    }
+    expect(resolveSyncToProjectTarget(undefined, persisted)).toEqual({
+      ok: true,
+      target: "/tmp/root-b",
+      componentsDir: "src/components",
+      format: "html+tsx",
+      reusedMapping: true,
+    })
+  })
+
+  it("allows a target equal to the user-confirmed root", async () => {
+    const { resolveSyncToProjectTarget } = await loadOps()
+    const persisted = {
+      rootPath: "/tmp/root-b",
+      componentsDir: "",
+      format: "html",
+      mappedAt: "x",
+    }
+    expect(resolveSyncToProjectTarget("/tmp/root-b", persisted)).toMatchObject({
+      ok: true,
+      target: "/tmp/root-b",
+      reusedMapping: false,
+    })
+  })
+
+  it("rejects a target NOT in the allowlist with a distinct allowlist error", async () => {
+    const { resolveSyncToProjectTarget } = await loadOps()
+    const persisted = { rootPath: "/tmp/root-b", componentsDir: "", format: "html", mappedAt: "x" }
+    const result = resolveSyncToProjectTarget("/tmp/evil", persisted)
+    expect(result.ok).toBe(false)
+    // Distinct from a traversal/symlink rejection.
+    expect(result.code).toBe("not-allowlisted")
+    expect(result.error).toContain("allowlist")
+  })
+
+  it("rejects when there is no persisted mapping at all", async () => {
+    const { resolveSyncToProjectTarget } = await loadOps()
+    expect(resolveSyncToProjectTarget("/tmp/root-b", null)).toMatchObject({
+      ok: false,
+      code: "no-mapping",
+    })
+    expect(resolveSyncToProjectTarget(undefined, null)).toMatchObject({
+      ok: false,
+      code: "no-mapping",
+    })
+  })
+
+  it("resolves a file-backed html item into the UI component sync shape", async () => {
+    const { resolveSyncSelectionFromState } = await loadOps()
+    const state = {
+      items: [
+        {
+          id: "promo",
+          type: "html",
+          sourceComponentSlug: "promo-card",
+          sourceComponentFilePath: "projects/demo/components/PromoCard.html",
+          sourceHtmlFileMtime: 789,
+        },
+      ],
+    }
+    expect(resolveSyncSelectionFromState(state, "promo")).toEqual({
+      ok: true,
+      selection: {
+        type: "component",
+        slug: "promo-card",
+        sourcePath: "projects/demo/components/PromoCard.html",
+        mtimeMs: 789,
+      },
+    })
+  })
+
+  it("resolves an artboard into the UI page sync shape with file-backed children", async () => {
+    const { resolveSyncSelectionFromState } = await loadOps()
+    const state = {
+      items: [
+        { id: "ab", type: "artboard", name: "Landing Page" },
+        {
+          id: "c1",
+          type: "html",
+          parentId: "ab",
+          sourceComponentSlug: "hero",
+          sourceComponentFilePath: "projects/demo/components/Hero.html",
+          sourceHtmlFileMtime: 11,
+        },
+      ],
+    }
+    expect(resolveSyncSelectionFromState(state, "ab")).toEqual({
+      ok: true,
+      selection: {
+        type: "artboard",
+        slug: "landing-page",
+        sourcePath: "projects/demo/components/Hero.html",
+        children: [
+          {
+            slug: "hero",
+            sourcePath: "projects/demo/components/Hero.html",
+            mtimeMs: 11,
+          },
+        ],
+      },
+    })
+  })
+
+  it("rejects a non-file-backed selection", async () => {
+    const { resolveSyncSelectionFromState } = await loadOps()
+    const state = { items: [{ id: "x", type: "html" }] }
+    expect(resolveSyncSelectionFromState(state, "x")).toMatchObject({
+      ok: false,
+      code: "not-file-backed",
+    })
+  })
 })

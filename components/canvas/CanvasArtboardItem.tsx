@@ -291,7 +291,7 @@ export function CanvasArtboardItem({
   const layoutClassName =
     layout.display === "flex"
       ? `flex ${layout.direction === "row" ? "flex-row" : "flex-col"} ${getAlignClass(layout.align)} ${getJustifyClass(layout.justify)}`
-      : `grid ${getGridColsClass(layout.columns)}`
+      : `grid ${getGridColsClass(layout.columns)} ${getAlignClass(layout.align)} ${getJustifyClass(layout.justify)}`
 
   const borderClass = isSelected
     ? "border border-brand-400 ring-2 ring-brand-400/15 shadow-sm"

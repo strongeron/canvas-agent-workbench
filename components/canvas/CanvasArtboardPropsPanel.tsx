@@ -1,7 +1,16 @@
-import { Trash2, X } from "lucide-react"
+import { Layers3, Trash2, X } from "lucide-react"
 
+import type { CanvasItem } from "../../types/canvas"
 import type { ThemeOption } from "../../types/theme"
 import { formatLc } from "../../utils/apca"
+import {
+  NATIVE_COMPONENT_ELEMENT_PARTS,
+  NATIVE_COMPONENT_TEMPLATES,
+  type NativeComponentTemplate,
+} from "../../utils/canvasNativeComponentShell"
+import { CanvasStructurePreview } from "./CanvasStructurePreview"
+import { SyncSection } from "./CanvasHtmlPropsPanel"
+import type { SyncSelection } from "./canvasSyncWiring"
 
 interface CanvasArtboardPropsPanelProps {
   name: string
@@ -23,6 +32,12 @@ interface CanvasArtboardPropsPanelProps {
     padding?: number
   }
   size: { width: number; height: number }
+  layoutSizing?: CanvasItem["layoutSizing"]
+  kind?: "artboard" | "section"
+  parentInnerWidth?: number
+  parentInnerHeight?: number
+  contentHugWidth?: number
+  contentHugHeight?: number
   onImportFromPaper?: () => void
   importKind?: "ui" | "page"
   onImportKindChange?: (kind: "ui" | "page") => void
@@ -32,7 +47,31 @@ interface CanvasArtboardPropsPanelProps {
     background?: string
     themeId?: string
     layout?: CanvasArtboardPropsPanelProps["layout"]
+    size?: CanvasArtboardPropsPanelProps["size"]
+    layoutSizing?: CanvasArtboardPropsPanelProps["layoutSizing"]
   }) => void
+  /**
+   * Lays a file-backed slotted shell as a child of the SELECTED artboard via
+   * the U3 file-backed-create path (mirrors how `CanvasNativeComponentDialog`
+   * triggers `handleAddNativeComponent`). When absent (no artboard target)
+   * the Structure picker is disabled — it can never orphan a shell.
+   */
+  onCreateStructureChild?: (
+    template: NativeComponentTemplate
+  ) => void | Promise<void>
+  /**
+   * Project whose `meta.syncTarget` mapping is read/persisted for Sync (U6).
+   * Used by the artboard Sync wiring (page + children).
+   */
+  projectId?: string
+  /**
+   * The artboard selection to publish (U6): the page plus every file-backed
+   * child. Built by CanvasTab from the selected artboard + its children. When
+   * absent the Sync section is hidden (nothing file-backed to publish).
+   */
+  syncSelection?: SyncSelection
+  /** Whether this artboard has been synced before (steady label). */
+  syncedBefore?: boolean
   onDelete: () => void
   onClose: () => void
 }
@@ -83,11 +122,21 @@ export function CanvasArtboardPropsPanel({
   liveAuditTargetLc,
   layout,
   size,
+  layoutSizing,
+  kind = "artboard",
+  parentInnerWidth,
+  parentInnerHeight,
+  contentHugWidth,
+  contentHugHeight,
   onImportFromPaper,
   importKind,
   onImportKindChange,
   importingPaper,
   onChange,
+  onCreateStructureChild,
+  projectId = "design-system-foundation",
+  syncSelection,
+  syncedBefore = false,
   onDelete,
   onClose,
 }: CanvasArtboardPropsPanelProps) {
@@ -111,8 +160,12 @@ export function CanvasArtboardPropsPanel({
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
       <div className="flex items-center justify-between border-b border-default px-4 py-3">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-foreground">Artboard</h3>
-          <p className="truncate text-xs text-muted-foreground">Layout settings</p>
+          <h3 className="truncate text-sm font-semibold text-foreground">
+            {kind === "section" ? "Section" : "Artboard"}
+          </h3>
+          <p className="truncate text-xs text-muted-foreground">
+            {kind === "section" ? "Nested layout settings" : "Layout settings"}
+          </p>
         </div>
         <div className="ml-2 flex items-center gap-1">
           <button
@@ -134,8 +187,38 @@ export function CanvasArtboardPropsPanel({
         </div>
       </div>
 
+      {syncSelection ? (
+        <div className="border-b border-default bg-surface-50 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Sync to project
+            </span>
+          </div>
+          <SyncSection
+            projectId={projectId}
+            selection={syncSelection}
+            syncedBefore={syncedBefore}
+            blurb="Publishes this page (with its file-backed children) into your picked project folder."
+          />
+        </div>
+      ) : null}
+
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="space-y-4">
+          <StructureSection
+            layout={layout}
+            layoutDefaults={layoutDefaults}
+            size={size}
+            layoutSizing={layoutSizing}
+            kind={kind}
+            parentInnerWidth={parentInnerWidth}
+            parentInnerHeight={parentInnerHeight}
+            contentHugWidth={contentHugWidth}
+            contentHugHeight={contentHugHeight}
+            onChange={onChange}
+            onCreateStructureChild={onCreateStructureChild}
+          />
+
           {themes && themes.length > 0 && (
             <div>
               <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Theme</label>
@@ -350,147 +433,6 @@ export function CanvasArtboardPropsPanel({
             </div>
           )}
 
-          <div>
-            <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Layout</label>
-            <div className="flex gap-2">
-              {(["flex", "grid"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => onChange({ layout: { ...layoutDefaults, display: value } })}
-                  className={`flex-1 rounded-md border px-3 py-1.5 text-xs font-semibold ${
-                    layout.display === value
-                      ? "border-brand-500 bg-brand-50 text-brand-700"
-                      : "border-default text-muted-foreground hover:bg-surface-100"
-                  }`}
-                >
-                  {value === "flex" ? "Flex" : "Grid"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {layout.display === "flex" && (
-            <div className="space-y-3">
-              <div>
-                <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
-                  Direction
-                </label>
-                <div className="flex gap-2">
-                  {(["row", "column"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() =>
-                        onChange({ layout: { ...layoutDefaults, direction: value } })
-                      }
-                      className={`flex-1 rounded-md border px-3 py-1.5 text-xs font-semibold ${
-                        layoutDefaults.direction === value
-                          ? "border-brand-500 bg-brand-50 text-brand-700"
-                          : "border-default text-muted-foreground hover:bg-surface-100"
-                      }`}
-                    >
-                      {value === "row" ? "Row" : "Column"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
-                  Align Items
-                </label>
-                <select
-                  value={layoutDefaults.align}
-                  onChange={(e) =>
-                    onChange({
-                      layout: { ...layoutDefaults, align: e.target.value as typeof layoutDefaults.align },
-                    })
-                  }
-                  className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-                >
-                  {ALIGN_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
-                  Justify Content
-                </label>
-                <select
-                  value={layoutDefaults.justify}
-                  onChange={(e) =>
-                    onChange({
-                      layout: {
-                        ...layoutDefaults,
-                        justify: e.target.value as typeof layoutDefaults.justify,
-                      },
-                    })
-                  }
-                  className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-                >
-                  {JUSTIFY_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
-
-          {layout.display === "grid" && (
-            <div>
-              <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
-                Columns
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={6}
-                value={layoutDefaults.columns}
-                onChange={(e) =>
-                  onChange({
-                    layout: {
-                      ...layoutDefaults,
-                      columns: Math.max(1, Math.min(6, Number(e.target.value) || 1)),
-                    },
-                  })
-                }
-                className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
-              />
-              <p className="mt-1 text-[11px] text-muted-foreground">Maps to `grid-cols-*`.</p>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <ArtboardSpacingField
-              label="Gap"
-              value={layoutDefaults.gap}
-              note="Maps to `gap-*`."
-              sliderLabel="Gap slider"
-              onChange={(gap) =>
-                onChange({
-                  layout: { ...layoutDefaults, gap },
-                })
-              }
-            />
-            <ArtboardSpacingField
-              label="Padding"
-              value={layoutDefaults.padding}
-              note="Maps to `p-*`."
-              sliderLabel="Padding slider"
-              onChange={(padding) =>
-                onChange({
-                  layout: { ...layoutDefaults, padding },
-                })
-              }
-            />
-          </div>
         </div>
       </div>
     </div>
@@ -532,5 +474,444 @@ function ArtboardSpacingField({
       />
       <p className="mt-1 text-[11px] text-muted-foreground">{note}</p>
     </div>
+  )
+}
+
+// The single authoritative layout control for the artboard. It replaces the
+// former standalone Flex/Grid toggle + Columns input + Gap field — there is now
+// exactly one set of layout inputs, all routed through the same
+// `onChange({ layout })` callback and the existing `layout` shape. It also
+// hosts a structural preview and a template/element picker that lays a
+// file-backed slotted shell into the SELECTED artboard via the U3 path.
+function StructureSection({
+  layout,
+  layoutDefaults,
+  size,
+  layoutSizing,
+  kind,
+  parentInnerWidth,
+  parentInnerHeight,
+  contentHugWidth,
+  contentHugHeight,
+  onChange,
+  onCreateStructureChild,
+}: {
+  layout: CanvasArtboardPropsPanelProps["layout"]
+  layoutDefaults: {
+    display: "flex" | "grid"
+    direction: "row" | "column"
+    align: "start" | "center" | "end" | "stretch"
+    justify: "start" | "center" | "end" | "between"
+    gap: number
+    padding: number
+    columns: number
+  }
+  size: CanvasArtboardPropsPanelProps["size"]
+  layoutSizing?: CanvasArtboardPropsPanelProps["layoutSizing"]
+  kind: "artboard" | "section"
+  parentInnerWidth?: number
+  parentInnerHeight?: number
+  contentHugWidth?: number
+  contentHugHeight?: number
+  onChange: CanvasArtboardPropsPanelProps["onChange"]
+  onCreateStructureChild?: CanvasArtboardPropsPanelProps["onCreateStructureChild"]
+}) {
+  const pickerEnabled = typeof onCreateStructureChild === "function"
+  const canFillParent = kind === "section" && typeof parentInnerWidth === "number"
+  const canFillParentHeight = kind === "section" && typeof parentInnerHeight === "number"
+  const fillWidth = canFillParent ? Math.max(120, parentInnerWidth) : size.width
+  const fillHeight = canFillParentHeight ? Math.max(120, parentInnerHeight) : size.height
+  const hugWidth = Math.max(120, contentHugWidth ?? size.width)
+  const hugHeight = Math.max(80, contentHugHeight ?? size.height)
+  const widthMode =
+    layoutSizing?.width ?? (canFillParent && Math.abs(size.width - fillWidth) <= 1 ? "fill" : "hug")
+  const heightMode =
+    layoutSizing?.height ??
+    (canFillParentHeight && Math.abs(size.height - fillHeight) <= 1 ? "fill" : "hug")
+
+  return (
+    <section data-testid="artboard-structure-section" className="space-y-3">
+      <div>
+        <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
+          Structure
+        </label>
+        <div className="flex gap-2" role="group" aria-label="Layout mode">
+          {(["flex", "grid"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onChange({ layout: { ...layoutDefaults, display: value } })}
+              className={`flex-1 rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                layout.display === value
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-default text-muted-foreground hover:bg-surface-100"
+              }`}
+            >
+              {value === "flex" ? "Flex" : "Grid"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {kind === "section" ? (
+        <div className="space-y-3 rounded-md border border-default bg-surface-50 p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Section size
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                Width
+              </span>
+              <input
+                type="number"
+                min={1}
+                value={Math.round(size.width)}
+                onChange={(event) =>
+                  onChange({
+                    size: { ...size, width: Math.max(1, Number(event.target.value) || 1) },
+                    layoutSizing: {
+                      ...layoutSizing,
+                      width: "hug",
+                      hugWidth: Math.max(1, Number(event.target.value) || 1),
+                    },
+                  })
+                }
+                className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                Height
+              </span>
+              <input
+                type="number"
+                min={1}
+                value={Math.round(size.height)}
+                onChange={(event) =>
+                  onChange({
+                    size: { ...size, height: Math.max(1, Number(event.target.value) || 1) },
+                    layoutSizing: {
+                      ...layoutSizing,
+                      height: "hug",
+                      hugHeight: Math.max(1, Number(event.target.value) || 1),
+                    },
+                  })
+                }
+                className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+              />
+            </label>
+          </div>
+
+          <label className="block text-[11px] font-medium text-muted-foreground">
+            Width behavior
+          </label>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Section width">
+            <button
+              type="button"
+              disabled={!canFillParent}
+              onClick={() =>
+                onChange({
+                  size: { ...size, width: fillWidth },
+                  layoutSizing: {
+                    ...layoutSizing,
+                    width: "fill",
+                    hugWidth: layoutSizing?.hugWidth ?? size.width,
+                  },
+                })
+              }
+              className={`rounded-md border px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                widthMode === "fill"
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-default text-muted-foreground hover:bg-surface-100"
+              }`}
+            >
+              Fill parent
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  size: { ...size, width: layoutSizing?.hugWidth ?? hugWidth },
+                  layoutSizing: {
+                    ...layoutSizing,
+                    width: "hug",
+                    hugWidth: layoutSizing?.hugWidth ?? hugWidth,
+                  },
+                })
+              }
+              className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                widthMode === "hug"
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-default text-muted-foreground hover:bg-surface-100"
+              }`}
+            >
+              Hug content
+            </button>
+          </div>
+          <label className="block text-[11px] font-medium text-muted-foreground">
+            Height behavior
+          </label>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Section height">
+            <button
+              type="button"
+              disabled={!canFillParentHeight}
+              onClick={() =>
+                onChange({
+                  size: { ...size, height: fillHeight },
+                  layoutSizing: {
+                    ...layoutSizing,
+                    height: "fill",
+                    hugHeight: layoutSizing?.hugHeight ?? size.height,
+                  },
+                })
+              }
+              className={`rounded-md border px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                heightMode === "fill"
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-default text-muted-foreground hover:bg-surface-100"
+              }`}
+            >
+              Fill parent
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  size: { ...size, height: layoutSizing?.hugHeight ?? hugHeight },
+                  layoutSizing: {
+                    ...layoutSizing,
+                    height: "hug",
+                    hugHeight: layoutSizing?.hugHeight ?? hugHeight,
+                  },
+                })
+              }
+              className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                heightMode === "hug"
+                  ? "border-brand-500 bg-brand-50 text-brand-700"
+                  : "border-default text-muted-foreground hover:bg-surface-100"
+              }`}
+            >
+              Hug content
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Fill makes this section span the available parent area.
+          </p>
+        </div>
+      ) : null}
+
+      {layout.display === "flex" ? (
+        <div>
+          <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
+            Direction
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {(["row", "column"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onChange({ layout: { ...layoutDefaults, direction: value } })}
+                className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                  layoutDefaults.direction === value
+                    ? "border-brand-500 bg-brand-50 text-brand-700"
+                    : "border-default text-muted-foreground hover:bg-surface-100"
+                }`}
+              >
+                {value === "row" ? "Row" : "Column"}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Row makes columns of cards. Column makes a vertical page stack.
+          </p>
+        </div>
+      ) : null}
+
+      {layout.display === "grid" && (
+        <div>
+          <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
+            Columns
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={5}
+            value={layoutDefaults.columns}
+            aria-label="Columns"
+            onChange={(e) =>
+              onChange({
+                layout: {
+                  ...layoutDefaults,
+                  columns: Math.max(1, Math.min(5, Number(e.target.value) || 1)),
+                },
+              })
+            }
+            className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          />
+          <p className="mt-1 text-[11px] text-muted-foreground">Maps to `grid-cols-*` (1–5).</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
+            Align items
+          </label>
+          <select
+            value={layoutDefaults.align}
+            onChange={(e) =>
+              onChange({
+                layout: {
+                  ...layoutDefaults,
+                  align: e.target.value as typeof layoutDefaults.align,
+                },
+              })
+            }
+            className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          >
+            {ALIGN_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">
+            Distribute
+          </label>
+          <select
+            value={layoutDefaults.justify}
+            onChange={(e) =>
+              onChange({
+                layout: {
+                  ...layoutDefaults,
+                  justify: e.target.value as typeof layoutDefaults.justify,
+                },
+              })
+            }
+            className="w-full rounded-md border border-default bg-white px-2 py-1.5 text-xs text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+          >
+            {JUSTIFY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <p className="rounded-md border border-default bg-surface-50 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+        Select a child card to resize it. Use the up/down buttons on selected
+        children to reorder. Choose <span className="font-semibold text-foreground">Stretch</span>{" "}
+        to make cards fill the row or grid column width.
+      </p>
+
+      <div>
+        <label className="mb-1.5 block text-[11px] font-medium text-muted-foreground">Gap</label>
+        <input
+          type="number"
+          min={0}
+          value={layoutDefaults.gap}
+          onChange={(e) =>
+            onChange({
+              layout: {
+                ...layoutDefaults,
+                gap: Math.max(0, Number(e.target.value) || 0),
+              },
+            })
+          }
+          className="w-full rounded-md border border-default bg-white px-3 py-1.5 text-sm text-foreground focus:border-brand-300 focus:outline-none focus:ring-1 focus:ring-brand-300"
+        />
+        <input
+          type="range"
+          min={0}
+          max={128}
+          step={1}
+          value={layoutDefaults.gap}
+          aria-label="Gap slider"
+          onChange={(e) =>
+            onChange({ layout: { ...layoutDefaults, gap: Number(e.target.value) } })
+          }
+          className="mt-2 w-full accent-brand-600"
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">Maps to `gap-*`.</p>
+      </div>
+
+      <ArtboardSpacingField
+        label="Padding"
+        value={layoutDefaults.padding}
+        note="Maps to `p-*`."
+        sliderLabel="Padding slider"
+        onChange={(padding) =>
+          onChange({
+            layout: { ...layoutDefaults, padding },
+          })
+        }
+      />
+
+      <div>
+        <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">Preview</div>
+        <CanvasStructurePreview layout={layout} />
+      </div>
+
+      <div>
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-[11px] font-medium text-muted-foreground">
+            Templates &amp; layout primitives
+          </span>
+          {!pickerEnabled && (
+            <span className="text-[10px] text-muted-foreground">
+              Select an artboard to add
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {NATIVE_COMPONENT_TEMPLATES.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              disabled={!pickerEnabled}
+              aria-label={`Add ${template.label}`}
+              onClick={() => void onCreateStructureChild?.(template.id)}
+              className="flex flex-col gap-1 rounded-md border border-default bg-white p-2 text-left transition hover:border-brand-200 hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-default disabled:hover:bg-white"
+            >
+              <span className="flex items-center gap-1.5">
+                <Layers3 className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-semibold text-foreground">
+                  {template.label}
+                </span>
+              </span>
+              <span className="text-[10px] leading-4 text-muted-foreground">
+                {template.slotSummary}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+          Element parts
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {NATIVE_COMPONENT_ELEMENT_PARTS.map((part) => (
+            <button
+              key={part}
+              type="button"
+              disabled={!pickerEnabled}
+              aria-label={`Add <${part}>`}
+              onClick={() => void onCreateStructureChild?.(part)}
+              className="rounded-md border border-default bg-white px-2 py-1 font-mono text-[11px] text-foreground transition hover:border-brand-200 hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-default disabled:hover:bg-white"
+            >
+              {`<${part}>`}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }

@@ -142,4 +142,346 @@ describe("CanvasArtboardPropsPanel", () => {
       })
     )
   })
+
+  it("updates columns through the Structure section grid control", async () => {
+    const onChange = vi.fn()
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Board"
+        background="#ffffff"
+        layout={{ display: "grid", columns: 2, gap: 12, padding: 24 }}
+        size={{ width: 800, height: 600 }}
+        onChange={onChange}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const columns = harness.container.querySelector(
+      'input[aria-label="Columns"]'
+    ) as HTMLInputElement
+    expect(columns).toBeTruthy()
+
+    await act(async () => {
+      dispatchInput(columns, "4")
+      await Promise.resolve()
+    })
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        layout: expect.objectContaining({ columns: 4, display: "grid" }),
+      })
+    )
+  })
+
+  it("updates the Structure gap and the preview reflects it", async () => {
+    const onChange = vi.fn()
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Board"
+        background="#ffffff"
+        layout={{
+          display: "flex",
+          direction: "row",
+          gap: 16,
+          padding: 24,
+        }}
+        size={{ width: 800, height: 600 }}
+        onChange={onChange}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const slider = harness.container.querySelector(
+      'input[aria-label="Gap slider"]'
+    ) as HTMLInputElement
+    await act(async () => {
+      dispatchInput(slider, "32")
+      await Promise.resolve()
+    })
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        layout: expect.objectContaining({ gap: 32 }),
+      })
+    )
+
+    const preview = harness.container.querySelector(
+      '[data-testid="canvas-structure-preview"]'
+    ) as HTMLElement
+    expect(preview).toBeTruthy()
+    expect(preview.getAttribute("data-display")).toBe("flex")
+    expect(preview.getAttribute("data-direction")).toBe("row")
+  })
+
+  it("has exactly ONE set of layout controls (old standalone block removed)", async () => {
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Board"
+        background="#ffffff"
+        layout={{ display: "grid", columns: 3, gap: 12, padding: 24 }}
+        size={{ width: 800, height: 600 }}
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    // Exactly one Structure section, one Flex/Grid group, one Columns input,
+    // one Gap slider — no duplicate standalone layout block.
+    expect(
+      harness.container.querySelectorAll(
+        '[data-testid="artboard-structure-section"]'
+      ).length
+    ).toBe(1)
+    expect(
+      harness.container.querySelectorAll('[role="group"][aria-label="Layout mode"]')
+        .length
+    ).toBe(1)
+    expect(
+      harness.container.querySelectorAll('input[aria-label="Columns"]').length
+    ).toBe(1)
+    expect(
+      harness.container.querySelectorAll('input[aria-label="Gap slider"]').length
+    ).toBe(1)
+    // The legacy standalone "Layout" label must be gone.
+    const labels = Array.from(
+      harness.container.querySelectorAll("label")
+    ).map((node) => node.textContent?.trim())
+    expect(labels).not.toContain("Layout")
+    expect(labels).toContain("Structure")
+  })
+
+  it("swaps the preview between flex and grid via the toggle", async () => {
+    const onChange = vi.fn()
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Board"
+        background="#ffffff"
+        layout={{ display: "flex", direction: "column", gap: 16, padding: 24 }}
+        size={{ width: 800, height: 600 }}
+        onChange={onChange}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    let preview = harness.container.querySelector(
+      '[data-testid="canvas-structure-preview"]'
+    ) as HTMLElement
+    expect(preview.getAttribute("data-display")).toBe("flex")
+    expect(preview.getAttribute("data-direction")).toBe("column")
+
+    const gridButton = Array.from(
+      harness.container.querySelectorAll("button")
+    ).find((node) => node.textContent?.trim() === "Grid") as HTMLButtonElement
+    await act(async () => {
+      gridButton.click()
+      await Promise.resolve()
+    })
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        layout: expect.objectContaining({ display: "grid" }),
+      })
+    )
+
+    // Re-render in grid mode and assert the preview becomes a column-count grid.
+    await act(async () => {
+      harness!.root.render(
+        <CanvasArtboardPropsPanel
+          name="Board"
+          background="#ffffff"
+          layout={{ display: "grid", columns: 3, gap: 16, padding: 24 }}
+          size={{ width: 800, height: 600 }}
+          onChange={onChange}
+          onDelete={() => {}}
+          onClose={() => {}}
+        />
+      )
+      await Promise.resolve()
+    })
+    preview = harness.container.querySelector(
+      '[data-testid="canvas-structure-preview"]'
+    ) as HTMLElement
+    expect(preview.getAttribute("data-display")).toBe("grid")
+    expect(preview.getAttribute("data-columns")).toBe("3")
+    expect(preview.getAttribute("data-direction")).toBeNull()
+  })
+
+  it("triggers the file-backed-create path for the selected artboard when a template is picked", async () => {
+    const onChange = vi.fn()
+    const onCreateStructureChild = vi.fn()
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Board"
+        background="#ffffff"
+        layout={{ display: "flex", direction: "column", gap: 16, padding: 24 }}
+        size={{ width: 800, height: 600 }}
+        onChange={onChange}
+        onCreateStructureChild={onCreateStructureChild}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const cardButton = harness.container.querySelector(
+      'button[aria-label="Add Card"]'
+    ) as HTMLButtonElement
+    expect(cardButton).toBeTruthy()
+    expect(cardButton.disabled).toBe(false)
+
+    await act(async () => {
+      cardButton.click()
+      await Promise.resolve()
+    })
+    expect(onCreateStructureChild).toHaveBeenCalledWith("card")
+
+    const divPart = harness.container.querySelector(
+      'button[aria-label="Add <div>"]'
+    ) as HTMLButtonElement
+    await act(async () => {
+      divPart.click()
+      await Promise.resolve()
+    })
+    expect(onCreateStructureChild).toHaveBeenCalledWith("div")
+  })
+
+  it("artboard sync publishes the page + children via the reused mapping (U6)", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : {}
+      calls.push({ url, body })
+      if (url === "/api/canvas/project/sync-target") {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            syncTarget: {
+              rootPath: "/picked/project",
+              resolvedRealPath: "/real/picked",
+              componentsDir: "src/components",
+              format: "html",
+              mappedAt: "2026-05-17T00:00:00.000Z",
+            },
+            valid: true,
+          }),
+        }
+      }
+      if (url === "/api/canvas/project/sync") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            writtenPaths: ["home.html", "card.html"],
+            notWritten: [],
+            manifestPath: "/real/picked/src/components/manifest.json",
+            perFile: [
+              { path: "home.html", status: "written" },
+              { path: "card.html", status: "written" },
+            ],
+          }),
+        }
+      }
+      return { ok: true, json: async () => ({ ok: true }) }
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Home"
+        background="#ffffff"
+        layout={{ display: "flex", direction: "column", gap: 16, padding: 24 }}
+        size={{ width: 800, height: 600 }}
+        projectId="demo"
+        syncSelection={{
+          type: "artboard",
+          slug: "home",
+          sourcePath: "projects/demo/components/card.html",
+          children: [
+            { slug: "card", sourcePath: "projects/demo/components/card.html" },
+          ],
+        }}
+        syncedBefore
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const syncBtn = harness.container.querySelector(
+      'button[aria-label="Sync component"]'
+    ) as HTMLButtonElement
+    expect(syncBtn).not.toBeNull()
+
+    await act(async () => {
+      syncBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const syncCall = calls.find((c) => c.url === "/api/canvas/project/sync")
+    expect(syncCall).toBeTruthy()
+    const selection = syncCall!.body.selection as Record<string, unknown>
+    expect(selection.type).toBe("artboard")
+    expect(selection.slug).toBe("home")
+    expect((selection.children as unknown[]).length).toBe(1)
+
+    const notice = harness.container.querySelector(
+      '[data-testid="sync-overwrite-notice"]'
+    ) as HTMLElement
+    expect(notice.textContent).toContain("home.html")
+    expect(notice.textContent).toContain("card.html")
+    // The component-only format toggle is NOT shown for the artboard panel.
+    expect(
+      harness.container.querySelector('[role="group"][aria-label="Export format"]')
+    ).toBeNull()
+  })
+
+  it("hides the Sync section when there is no file-backed selection", async () => {
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Home"
+        background="#ffffff"
+        layout={{ display: "flex", direction: "column", gap: 16, padding: 24 }}
+        size={{ width: 800, height: 600 }}
+        projectId="demo"
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+    expect(
+      harness.container.querySelector('button[aria-label="Sync component"]')
+    ).toBeNull()
+  })
+
+  it("disables the picker when no artboard target is provided", async () => {
+    const onCreate = vi.fn()
+    harness = await mount(
+      <CanvasArtboardPropsPanel
+        name="Board"
+        background="#ffffff"
+        layout={{ display: "flex", direction: "column", gap: 16, padding: 24 }}
+        size={{ width: 800, height: 600 }}
+        onChange={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const cardButton = harness.container.querySelector(
+      'button[aria-label="Add Card"]'
+    ) as HTMLButtonElement
+    expect(cardButton.disabled).toBe(true)
+
+    await act(async () => {
+      cardButton.click()
+      await Promise.resolve()
+    })
+    expect(onCreate).not.toHaveBeenCalled()
+  })
 })

@@ -14,6 +14,7 @@ export type CanvasHtmlMutation =
   | CanvasAstMutation
   | { type: "setTextContent"; value: string }
   | { type: "setAttribute"; attrName: string; value: string | number | boolean | null }
+  | { type: "replaceChildren"; childSource: string }
 
 export interface CanvasHtmlIdInfo {
   canvasId: string
@@ -45,6 +46,7 @@ export interface CanvasHtmlNodeInfo {
   textChildren: string
   hasElementChildren: boolean
   hasNonTextChildren: boolean
+  childElementCount: number
   editableInV1: boolean
   editableInV2: boolean
   reasonNotEditable?: string
@@ -139,6 +141,7 @@ export function readCanvasHtmlNode(
     textChildren: textContent,
     hasElementChildren: elementChildren.length > 0,
     hasNonTextChildren: elementChildren.length > 0,
+    childElementCount: elementChildren.length,
     editableInV1: true,
     editableInV2: true,
   }
@@ -340,21 +343,26 @@ function buildHtmlReplacement(
   return { ok: false, code: "unsupported-mutation", error: "Unsupported HTML mutation type" }
 }
 
-function isHtmlStructuralMutation(mutation: CanvasHtmlMutation): mutation is CanvasAstStructuralMutation {
+type CanvasHtmlStructuralMutation =
+  | CanvasAstStructuralMutation
+  | { type: "replaceChildren"; canvasId?: string; childSource: string }
+
+function isHtmlStructuralMutation(mutation: CanvasHtmlMutation): mutation is CanvasHtmlStructuralMutation {
   return (
     mutation.type === "insertChild" ||
     mutation.type === "removeNode" ||
     mutation.type === "reorderSibling" ||
     mutation.type === "wrapSelection" ||
     mutation.type === "unwrap" ||
-    mutation.type === "swapTag"
+    mutation.type === "swapTag" ||
+    mutation.type === "replaceChildren"
   )
 }
 
 function applyHtmlStructuralMutation(
   sourceHtml: string,
   fallbackCanvasId: string,
-  mutation: CanvasAstStructuralMutation,
+  mutation: CanvasHtmlStructuralMutation,
   options: { sourceId: string }
 ):
   | {
@@ -384,7 +392,11 @@ function applyHtmlStructuralMutation(
   const oldCanvasIds = collectElementCanvasIds(fragment, options.sourceId)
 
   try {
-    if (mutation.type === "removeNode") {
+    if (mutation.type === "replaceChildren") {
+      const validated = parseValidatedHtmlChildFragment(mutation.childSource)
+      if (!validated.ok) return validated
+      replaceHtmlChildren(resolved.element, validated.nodes)
+    } else if (mutation.type === "removeNode") {
       const parent = resolved.element.parentNode
       if (!parent || !hasChildNodes(parent)) {
         return {
@@ -630,6 +642,13 @@ function insertHtmlChildren(parent: HtmlElement, position: number, nodes: HtmlCh
   }
   nextChildren.splice(normalizedInsertAt, 0, ...nodes)
   parent.childNodes = nextChildren
+}
+
+function replaceHtmlChildren(parent: HtmlElement, nodes: HtmlChildNode[]): void {
+  for (const node of nodes) {
+    node.parentNode = parent
+  }
+  parent.childNodes = nodes
 }
 
 function reorderHtmlSibling(element: HtmlElement, direction: "up" | "down"): void {

@@ -1,0 +1,93 @@
+
+
+  
+    <meta charset="utf-8">
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font: 16px/1.5 system-ui, sans-serif;
+        color: #0f172a;
+        background: transparent;
+      }
+      article {
+        display: grid;
+        gap: 20px;
+        padding: 24px;
+        border: 1px solid #dbe2ea;
+        border-radius: 24px;
+        background: white;
+        box-shadow: 0 24px 48px rgb(15 23 42 / 0.08);
+      }
+      figure {
+        display: grid;
+        place-items: center;
+        min-height: 180px;
+        margin: 0;
+        border: 1px dashed #94a3b8;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #eff6ff, #f8fafc);
+        color: #475569;
+      }
+      svg {
+        width: 72px;
+        height: 72px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.1;
+      }
+      p {
+        margin: 0;
+        color: #475569;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 16px;
+        border-radius: 999px;
+        text-decoration: none;
+        background: #0f172a;
+        color: white;
+      }
+      .button.secondary {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+    </style>
+  
+  
+    <article data-slot="root" data-slot-kind="container">
+      <figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video">
+        <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <rect x="8" y="10" width="48" height="44" rx="12" stroke="currentColor" stroke-width="3"></rect>
+          <path d="M18 42L28 32L36 38L46 26L52 42" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+          <circle cx="24" cy="24" r="4" fill="currentColor"></circle>
+        </svg>
+        <figcaption>Media slot accepts image, SVG, or video.</figcaption>
+      </figure>
+      <div data-slot="content" data-slot-kind="container">
+        <h1 data-slot="title" data-slot-kind="text">Test test test test Test test test testTest test test testTest test test testTest test test testTest test test testTest test test test</h1>
+        <p data-slot="body" data-slot-kind="text">Group native text and media elements, then promote or save this shell as a reusable component.</p>
+      </div>
+      <div class="actions" data-slot="actions" data-slot-kind="container">
+        
+        <a class="button" href="#">Primary action</a><a class="button secondary" href="#">Secondary</a>
+      </div>
+    </article>
+  
+

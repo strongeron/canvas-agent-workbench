@@ -343,6 +343,15 @@ function sanitizeCanvasItem(item: CanvasItem) {
     }
   }
 
+  if (item.type === "section") {
+    return {
+      ...base,
+      title: item.name || "Section",
+      background: item.background || null,
+      layout: item.layout,
+    }
+  }
+
   return {
     ...base,
     src: item.src,

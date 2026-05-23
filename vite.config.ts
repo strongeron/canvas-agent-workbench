@@ -16,6 +16,9 @@ import { applyCanvasMarkdownWriteRequest } from './vite/api/canvasMarkdownWrite'
 import { applyCanvasRegistryListRequest } from './vite/api/canvasRegistryList'
 import { applyCanvasComponentCreateRequest } from './vite/api/canvasComponentCreate'
 import { applyCanvasComponentPromoteRequest } from './vite/api/canvasComponentPromote'
+import { applyCanvasProjectSyncRequest } from './vite/api/canvasProjectSync'
+import { applyCanvasProjectDetectComponentsDirRequest } from './vite/api/canvasProjectDetectComponentsDir'
+import { computeWrittenSyncTarget } from './vite/api/syncTargetState'
 import { listProjectDesignTokens, writeProjectDesignToken } from './utils/canvasTokenCss'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
@@ -206,6 +209,44 @@ async function readJson(req) {
   const body = Buffer.concat(chunks).toString('utf8')
   if (!body) return {}
   return JSON.parse(body)
+}
+
+// Localhost/origin guard for the high-risk Root B sync endpoint.
+//
+// `/api/canvas/project/sync` writes to ARBITRARY external filesystem paths.
+// The primary control is the dev server binding 127.0.0.1, but this is
+// defense-in-depth: reject any request whose Origin/Host header is not a
+// loopback address so a misconfigured non-loopback bind or a cross-origin
+// browser context cannot reach it. Returns null when allowed, or an error
+// string when the request must be rejected (403).
+function isLoopbackHostname(hostname) {
+  const lower = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '')
+  if (!lower) return false
+  if (lower === 'localhost') return true
+  if (lower === '::1') return true
+  if (lower === '0.0.0.0') return false
+  if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lower)) return true
+  return false
+}
+
+function rejectIfNotLocalhost(req) {
+  const hostHeader = req.headers?.host || ''
+  const hostname = String(hostHeader).split(':')[0]
+  if (!isLoopbackHostname(hostname)) {
+    return `Host "${hostHeader}" is not localhost. The sync endpoint only accepts loopback requests.`
+  }
+  const origin = req.headers?.origin
+  if (origin) {
+    try {
+      const url = new URL(origin)
+      if (!isLoopbackHostname(url.hostname)) {
+        return `Origin "${origin}" is not localhost. The sync endpoint only accepts loopback requests.`
+      }
+    } catch {
+      return `Origin "${origin}" is not a valid URL.`
+    }
+  }
+  return null
 }
 
 function escapeHtmlText(value) {
@@ -691,6 +732,73 @@ async function writeProjectMeta(projectDir, meta) {
 
   await fs.writeFile(metaPath, nextRaw)
   return true
+}
+
+// `meta.syncTarget` is a sibling key to `meta.localScan` on `project.json`.
+// It records the user-confirmed external Root B mapping so a re-sync reuses
+// it (and is the allowlist an agent's `target` must match). Shape:
+//   { rootPath, resolvedRealPath, componentsDir, format, mappedAt }
+// `resolvedRealPath` is the realpath at `mappedAt`; every re-sync re-runs
+// `fs.realpath(rootPath)` and compares — existence alone is insufficient (a
+// swapped symlink passes an existence check).
+function normalizeSyncTargetState(syncTarget) {
+  if (!syncTarget || typeof syncTarget !== 'object') return null
+  const rootPath =
+    typeof syncTarget.rootPath === 'string' && syncTarget.rootPath.trim()
+      ? path.resolve(syncTarget.rootPath.trim())
+      : ''
+  if (!rootPath) return null
+  const resolvedRealPath =
+    typeof syncTarget.resolvedRealPath === 'string' && syncTarget.resolvedRealPath.trim()
+      ? syncTarget.resolvedRealPath.trim()
+      : ''
+  const componentsDir =
+    typeof syncTarget.componentsDir === 'string' ? syncTarget.componentsDir.trim() : ''
+  const format = syncTarget.format === 'html+tsx' ? 'html+tsx' : 'html'
+  const mappedAt =
+    typeof syncTarget.mappedAt === 'string' && syncTarget.mappedAt.trim()
+      ? syncTarget.mappedAt
+      : ''
+  return { rootPath, resolvedRealPath, componentsDir, format, mappedAt }
+}
+
+async function readProjectSyncTarget(projectDir, projectId) {
+  const meta = await readProjectMeta(projectDir, projectId)
+  return normalizeSyncTargetState(meta?.syncTarget)
+}
+
+async function writeProjectSyncTarget(projectDir, projectId, syncTarget) {
+  const meta = await readProjectMeta(projectDir, projectId)
+  await writeProjectMeta(projectDir, {
+    ...meta,
+    syncTarget,
+  })
+  return normalizeSyncTargetState(syncTarget)
+}
+
+/**
+ * Re-validate a persisted sync target on every re-sync. Existence AND realpath
+ * match are BOTH required: a deleted/moved root fails the realpath call, and a
+ * symlink swapped to point elsewhere passes an existence check but fails the
+ * realpath comparison. Returns `{ ok: true, resolvedRealPath }` when the
+ * mapping is still valid, else `{ ok: false }` (caller prompts re-pick; never
+ * silently creates a tree).
+ */
+async function revalidateSyncTargetRealpath(syncTarget) {
+  if (!syncTarget || !syncTarget.rootPath) return { ok: false }
+  let resolvedRealPath
+  try {
+    resolvedRealPath = await fs.realpath(syncTarget.rootPath)
+  } catch {
+    return { ok: false }
+  }
+  if (
+    syncTarget.resolvedRealPath &&
+    resolvedRealPath !== syncTarget.resolvedRealPath
+  ) {
+    return { ok: false }
+  }
+  return { ok: true, resolvedRealPath }
 }
 
 async function writeTextFileIfChanged(filePath, content) {
@@ -4495,6 +4603,143 @@ function paperImportPlugin() {
             return sendJson(res, 400, {
               ok: false,
               error: error?.message || 'Failed to promote subtree.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/project/sync') {
+          // Localhost/origin guard FIRST — this endpoint writes to arbitrary
+          // external paths, so a non-loopback request must never reach the
+          // handler. The 127.0.0.1 bind is the primary control; this is
+          // defense-in-depth.
+          const localhostError = rejectIfNotLocalhost(req)
+          if (localhostError) {
+            return sendJson(res, 403, { ok: false, code: 'forbidden-origin', error: localhostError })
+          }
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasProjectSyncRequest(body, { workspaceRoot: __dirname })
+            if (!result.ok) {
+              return sendJson(res, result.status, {
+                ok: false,
+                code: result.code,
+                error: result.error,
+                ...(result.writtenPaths ? { writtenPaths: result.writtenPaths } : {}),
+                ...(result.notWritten ? { notWritten: result.notWritten } : {}),
+                ...(result.partialFailure ? { partialFailure: true } : {}),
+              })
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to sync project.',
+            })
+          }
+        }
+
+        if (
+          req.method === 'POST' &&
+          pathname === '/api/canvas/project/detect-components-dir'
+        ) {
+          // Same localhost/origin guard as the sync endpoint — this reads
+          // inside an arbitrary external root, so a non-loopback request must
+          // never reach the handler.
+          const localhostError = rejectIfNotLocalhost(req)
+          if (localhostError) {
+            return sendJson(res, 403, {
+              ok: false,
+              code: 'forbidden-origin',
+              error: localhostError,
+            })
+          }
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasProjectDetectComponentsDirRequest(body)
+            if (!result.ok) {
+              return sendJson(res, result.status, {
+                ok: false,
+                code: result.code,
+                error: result.error,
+              })
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to detect components directory.',
+            })
+          }
+        }
+
+        if (
+          req.method === 'POST' &&
+          pathname === '/api/canvas/project/sync-target'
+        ) {
+          // Read or persist the user-confirmed Root B mapping in
+          // `project.json` `meta.syncTarget`. `{ mode: "read" }` returns the
+          // (realpath-revalidated) mapping; `{ mode: "write", syncTarget }`
+          // persists it. Localhost-guarded like the sibling endpoints.
+          const localhostError = rejectIfNotLocalhost(req)
+          if (localhostError) {
+            return sendJson(res, 403, {
+              ok: false,
+              code: 'forbidden-origin',
+              error: localhostError,
+            })
+          }
+          try {
+            const body = await readJson(req)
+            const projectId =
+              typeof body?.projectId === 'string' && body.projectId.trim()
+                ? body.projectId.trim()
+                : ''
+            if (!projectId) {
+              return sendJson(res, 400, {
+                ok: false,
+                code: 'bad-input',
+                error: 'projectId is required.',
+              })
+            }
+            const projectDir = path.join(PROJECTS_ROOT, projectId)
+            if (body?.mode === 'write') {
+              // The client-supplied resolvedRealPath is NOT trusted: recompute
+              // it server-side via fs.realpath(rootPath) and reject if the
+              // root does not resolve. Persisting a client-pinned realpath
+              // would defeat the re-sync revalidation.
+              const computed = await computeWrittenSyncTarget(body?.syncTarget)
+              if (!computed.ok) {
+                return sendJson(res, 400, {
+                  ok: false,
+                  code: 'bad-input',
+                  error: computed.error,
+                })
+              }
+              const saved = await writeProjectSyncTarget(
+                projectDir,
+                projectId,
+                computed.syncTarget
+              )
+              return sendJson(res, 200, { ok: true, syncTarget: saved })
+            }
+            // Default: read + realpath-revalidate.
+            const stored = await readProjectSyncTarget(projectDir, projectId)
+            if (!stored) {
+              return sendJson(res, 200, { ok: true, syncTarget: null })
+            }
+            const revalidated = await revalidateSyncTargetRealpath(stored)
+            return sendJson(res, 200, {
+              ok: true,
+              syncTarget: stored,
+              valid: revalidated.ok,
+              ...(revalidated.ok
+                ? { resolvedRealPath: revalidated.resolvedRealPath }
+                : {}),
+            })
+          } catch (error) {
+            return sendJson(res, 400, {
+              ok: false,
+              error: error?.message || 'Failed to read/write the sync target.',
             })
           }
         }

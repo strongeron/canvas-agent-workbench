@@ -179,6 +179,24 @@ describe("canvas HTML editor", () => {
     expect(Object.keys(result.canvasIdMap ?? {}).length).toBeGreaterThan(0)
   })
 
+  it("replaces all children of an HTML element", () => {
+    const source = `<figure data-slot="media" data-slot-accepts="image,svg,video"><svg></svg><figcaption>Old</figcaption></figure>`
+    const figureId = findIdByTag(source, "figure")
+
+    const result = writeCanvasHtmlNode(
+      source,
+      figureId,
+      [{ type: "replaceChildren", childSource: `<img src="https://placehold.co/640x360/png?text=Media" alt="Media" />` }],
+      { sourceId: SOURCE_ID }
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source).toBe(
+      `<figure data-slot="media" data-slot-accepts="image,svg,video"><img src="https://placehold.co/640x360/png?text=Media" alt="Media"></figure>`
+    )
+  })
+
   it("rejects insertChild HTML with top-level non-element content", () => {
     const source = `<div><p>World</p></div>`
     const divId = findIdByTag(source, "div")

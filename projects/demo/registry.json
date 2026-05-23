@@ -1,0 +1,215 @@
+{
+  "ui": [
+    {
+      "id": "primitive/card",
+      "displayName": "Card",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Card.html",
+      "componentSlug": "card",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "article"
+        },
+        {
+          "name": "media",
+          "kind": "container",
+          "accepts": "image,svg,video",
+          "tag": "figure"
+        },
+        {
+          "name": "content",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "body",
+          "kind": "text",
+          "tag": "p"
+        },
+        {
+          "name": "actions",
+          "kind": "container",
+          "tag": "div"
+        }
+      ]
+    },
+    {
+      "id": "primitive/card-2",
+      "displayName": "Card2",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Card2.html",
+      "componentSlug": "card-2",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "article"
+        },
+        {
+          "name": "media",
+          "kind": "container",
+          "accepts": "image,svg,video",
+          "tag": "figure"
+        },
+        {
+          "name": "content",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "body",
+          "kind": "text",
+          "tag": "p"
+        },
+        {
+          "name": "actions",
+          "kind": "container",
+          "tag": "div"
+        }
+      ]
+    },
+    {
+      "id": "primitive/card-3",
+      "displayName": "Card3",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Card3.html",
+      "componentSlug": "card-3",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "article"
+        },
+        {
+          "name": "media",
+          "kind": "container",
+          "accepts": "image,svg,video",
+          "tag": "figure"
+        },
+        {
+          "name": "content",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "body",
+          "kind": "text",
+          "tag": "p"
+        },
+        {
+          "name": "actions",
+          "kind": "container",
+          "tag": "div"
+        }
+      ]
+    },
+    {
+      "id": "primitive/card-4",
+      "displayName": "Card4",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Card4.html",
+      "componentSlug": "card-4",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "article"
+        },
+        {
+          "name": "media",
+          "kind": "container",
+          "accepts": "image,svg,video",
+          "tag": "figure"
+        },
+        {
+          "name": "content",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "body",
+          "kind": "text",
+          "tag": "p"
+        },
+        {
+          "name": "actions",
+          "kind": "container",
+          "tag": "div"
+        }
+      ]
+    },
+    {
+      "id": "primitive/hero",
+      "displayName": "Hero",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Hero.html",
+      "componentSlug": "hero",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "section"
+        },
+        {
+          "name": "content",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "eyebrow",
+          "kind": "text",
+          "tag": "p"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "body",
+          "kind": "text",
+          "tag": "p"
+        },
+        {
+          "name": "actions",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "media",
+          "kind": "container",
+          "accepts": "image,svg,video",
+          "tag": "figure"
+        }
+      ]
+    }
+  ],
+  "page": []
+}

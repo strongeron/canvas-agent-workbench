@@ -14,6 +14,7 @@ import type {
   CanvasMarkdownItem as CanvasMarkdownItemType,
   CanvasMediaItem as CanvasMediaItemType,
   CanvasArtboardItem as CanvasArtboardItemType,
+  CanvasSectionItem as CanvasSectionItemType,
   CanvasTransform,
   CanvasGroup,
 } from "../../types/canvas"
@@ -48,6 +49,40 @@ interface SelectionBox {
   endY: number
 }
 
+function getJustifyClass(value?: string) {
+  switch (value) {
+    case "center":
+      return "justify-center"
+    case "end":
+      return "justify-end"
+    case "between":
+      return "justify-between"
+    default:
+      return "justify-start"
+  }
+}
+
+function getAlignClass(value?: string) {
+  switch (value) {
+    case "center":
+      return "items-center"
+    case "end":
+      return "items-end"
+    case "stretch":
+      return "items-stretch"
+    default:
+      return "items-start"
+  }
+}
+
+function getGridColsClass(count?: number) {
+  if (!count || count < 1) return "grid-cols-1"
+  if (count === 2) return "grid-cols-2"
+  if (count === 3) return "grid-cols-3"
+  if (count === 4) return "grid-cols-4"
+  return "grid-cols-5"
+}
+
 /** Props for injected Renderer component */
 interface RendererComponentProps {
   componentName: string
@@ -62,6 +97,7 @@ interface CanvasWorkspaceProps {
   groups: CanvasGroup[]
   transform: CanvasTransform
   interactMode: boolean
+  editMode?: boolean
   selectedIds: string[]
   onSelectItem: (id: string, addToSelection?: boolean) => void
   onSelectItems: (ids: string[]) => void
@@ -101,6 +137,7 @@ export function CanvasWorkspace({
   groups,
   transform,
   interactMode,
+  editMode = false,
   selectedIds,
   onSelectItem,
   onSelectItems,
@@ -187,8 +224,16 @@ export function CanvasWorkspace({
     () => items.filter((item) => item.type === "artboard") as CanvasArtboardItemType[],
     [items]
   )
+  const layoutContainers = useMemo(
+    () =>
+      items.filter(
+        (item): item is CanvasArtboardItemType | CanvasSectionItemType =>
+          item.type === "artboard" || item.type === "section"
+      ),
+    [items]
+  )
   const freeformItems = useMemo(
-    () => items.filter((item) => item.type !== "artboard" && !item.parentId),
+    () => items.filter((item) => item.type !== "artboard" && item.type !== "section" && !item.parentId),
     [items]
   )
   const sortedArtboards = useMemo(() => [...artboards].sort((a, b) => a.zIndex - b.zIndex), [artboards])
@@ -214,7 +259,8 @@ export function CanvasWorkspace({
             | CanvasMediaItemType
             | CanvasMermaidItemType
             | CanvasExcalidrawItemType
-            | CanvasMarkdownItemType =>
+            | CanvasMarkdownItemType
+            | CanvasSectionItemType =>
             item.type !== "artboard" && item.parentId === artboardId
         )
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -231,20 +277,64 @@ export function CanvasWorkspace({
         | CanvasMediaItemType
         | CanvasMermaidItemType
         | CanvasExcalidrawItemType
-        | CanvasMarkdownItemType,
+        | CanvasMarkdownItemType
+        | CanvasSectionItemType,
       index: number,
       siblingCount: number
     ) => {
       const isSelected = selectedIds.includes(child.id)
       const showReorderControls = isSelected && !interactMode && Boolean(onMoveLayer)
       const childShellClassName = "relative"
+      const parentLayoutContainer = layoutContainers.find((container) => container.id === child.parentId)
+      const parentLayout = parentLayoutContainer?.layout
+      const widthMode = child.layoutSizing?.width
+      const heightMode = child.layoutSizing?.height
+      const shouldStretchChild =
+        widthMode === "fill" ||
+        (!widthMode && (parentLayout?.align === "stretch" || parentLayout?.display === "grid"))
+      const shouldFillChildHeight = heightMode === "fill"
+      const childShellStyle = {
+        width: shouldStretchChild ? "100%" : child.size.width,
+        height: shouldFillChildHeight ? "100%" : child.size.height,
+      }
+
+      if (child.type === "section") {
+        const nestedChildren = getArtboardChildren(child.id)
+        return (
+          <div
+            key={child.id}
+            className={childShellClassName}
+            style={childShellStyle}
+            data-artboard-child="true"
+          >
+            <LayoutSectionBox
+              item={child}
+              isSelected={isSelected}
+              interactMode={interactMode}
+              onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
+            >
+              {nestedChildren.map((nestedChild, nestedIndex) =>
+                renderLayoutChild(nestedChild, nestedIndex, nestedChildren.length)
+              )}
+            </LayoutSectionBox>
+            {showReorderControls ? (
+              <ArtboardChildReorderControls
+                disableUp={index === 0}
+                disableDown={index === siblingCount - 1}
+                onMoveUp={() => onMoveLayer?.(child.id, "up")}
+                onMoveDown={() => onMoveLayer?.(child.id, "down")}
+              />
+            ) : null}
+          </div>
+        )
+      }
 
       if (child.type === "embed") {
         return (
           <div
             key={child.id}
             className={childShellClassName}
-            style={{ width: child.size.width, height: child.size.height }}
+            style={childShellStyle}
             data-artboard-child="true"
           >
             <CanvasLayoutEmbedItem
@@ -272,7 +362,7 @@ export function CanvasWorkspace({
           <div
             key={child.id}
             className={childShellClassName}
-            style={{ width: child.size.width, height: child.size.height }}
+            style={childShellStyle}
             data-artboard-child="true"
           >
             <CanvasLayoutMediaItem
@@ -300,7 +390,7 @@ export function CanvasWorkspace({
           <div
             key={child.id}
             className={childShellClassName}
-            style={{ width: child.size.width, height: child.size.height }}
+            style={childShellStyle}
             data-artboard-child="true"
           >
             <CanvasLayoutHtmlItem
@@ -310,6 +400,7 @@ export function CanvasWorkspace({
               onUpdate={(updates) => onUpdateItem(child.id, updates)}
               scale={transform.scale}
               interactMode={interactMode}
+              editMode={editMode}
               activeReactNodeSelection={activeReactNodeSelection}
               onReactNodeSelect={onReactNodeSelect}
               onReactCompileGenerationChange={onReactCompileGenerationChange}
@@ -336,7 +427,7 @@ export function CanvasWorkspace({
           <div
             key={child.id}
             className={childShellClassName}
-            style={{ width: child.size.width, height: child.size.height }}
+            style={childShellStyle}
             data-artboard-child="true"
           >
             <CanvasLayoutMermaidItem
@@ -364,7 +455,7 @@ export function CanvasWorkspace({
           <div
             key={child.id}
             className={childShellClassName}
-            style={{ width: child.size.width, height: child.size.height }}
+            style={childShellStyle}
             data-artboard-child="true"
           >
             <CanvasLayoutExcalidrawItem
@@ -392,7 +483,7 @@ export function CanvasWorkspace({
           <div
             key={child.id}
             className={childShellClassName}
-            style={{ width: child.size.width, height: child.size.height }}
+            style={childShellStyle}
             data-artboard-child="true"
           >
             <CanvasLayoutMarkdownItem
@@ -420,7 +511,7 @@ export function CanvasWorkspace({
         <div
           key={child.id}
           className={childShellClassName}
-          style={{ width: child.size.width, height: child.size.height }}
+          style={childShellStyle}
           data-artboard-child="true"
         >
           <CanvasLayoutComponentItem
@@ -446,8 +537,11 @@ export function CanvasWorkspace({
     },
     [
       activeReactNodeSelection,
+      getArtboardChildren,
+      layoutContainers,
       selectedIds,
       interactMode,
+      editMode,
       onSelectItem,
       onUpdateItem,
       onReactCompileGenerationChange,
@@ -808,6 +902,7 @@ export function CanvasWorkspace({
             onBringToFront: () => onBringToFront(item.id),
             scale: transform.scale,
             interactMode,
+                editMode,
           }
 
           if (item.type === "embed") {
@@ -1019,6 +1114,49 @@ function ArtboardChildReorderControls({
       >
         <ChevronDown className="h-3.5 w-3.5" />
       </button>
+    </div>
+  )
+}
+
+function LayoutSectionBox({
+  item,
+  isSelected,
+  interactMode,
+  onSelect,
+  children,
+}: {
+  item: CanvasSectionItemType
+  isSelected: boolean
+  interactMode: boolean
+  onSelect: (addToSelection?: boolean) => void
+  children: React.ReactNode
+}) {
+  const layout = item.layout
+  const layoutClassName =
+    layout.display === "flex"
+      ? `flex ${layout.direction === "row" ? "flex-row" : "flex-col"} ${getAlignClass(layout.align)} ${getJustifyClass(layout.justify)}`
+      : `grid ${getGridColsClass(layout.columns)} ${getAlignClass(layout.align)} ${getJustifyClass(layout.justify)}`
+
+  return (
+    <div
+      className={`relative h-full w-full overflow-hidden rounded-xl bg-white ${
+        isSelected ? "ring-2 ring-brand-500" : "border border-default"
+      }`}
+      style={{ background: item.background || "white" }}
+      data-canvas-item-id={item.id}
+      data-canvas-item-type={item.type}
+      onClick={(event) => {
+        if (interactMode) return
+        event.stopPropagation()
+        onSelect(event.shiftKey)
+      }}
+    >
+      <div
+        className={`h-full w-full ${layoutClassName}`}
+        style={{ gap: layout.gap ?? 12, padding: layout.padding ?? 16 }}
+      >
+        {children}
+      </div>
     </div>
   )
 }

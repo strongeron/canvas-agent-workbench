@@ -62,6 +62,7 @@ const RESIZE_HANDLES: HandleSpec[] = [
 ]
 
 const HANDLE_SIZE = 10
+const MOVE_HANDLE_SIZE = 18
 
 interface DragState {
   kind: CanvasOverlayDragKind
@@ -136,6 +137,16 @@ export function CanvasIframeOverlay({
       }}
     >
       <div
+        data-canvas-overlay-outline="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          border: "1px solid rgb(96 165 250)",
+          background: "transparent",
+        }}
+      />
+      <div
         data-canvas-overlay-handle="move"
         onPointerDown={beginDrag("move")}
         onPointerMove={handlePointerMove}
@@ -143,14 +154,17 @@ export function CanvasIframeOverlay({
         onPointerCancel={endDrag}
         style={{
           position: "absolute",
-          inset: 0,
+          left: Math.max(0, rect.width / 2 - MOVE_HANDLE_SIZE / 2),
+          top: -MOVE_HANDLE_SIZE / 2,
+          width: MOVE_HANDLE_SIZE,
+          height: MOVE_HANDLE_SIZE,
           cursor: "move",
           pointerEvents: "auto",
-          // Border draws the selection outline. Existing CanvasHtmlFrame
-          // selectionRect overlay used border-2 brand; we use the lighter
-          // single-pixel border that the polish slice settled on.
+          background: "white",
           border: "1px solid rgb(96 165 250)",
-          background: "transparent",
+          borderRadius: 999,
+          boxSizing: "border-box",
+          boxShadow: "0 1px 2px rgba(15, 23, 42, 0.15)",
         }}
       />
       {RESIZE_HANDLES.map((spec) => (

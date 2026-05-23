@@ -18,7 +18,9 @@ import type {
   CanvasFileDocument,
   CanvasHtmlBundleFileInput,
   CanvasHtmlBundleImportInput,
+  CanvasItem,
   CanvasArtboardItem,
+  CanvasSectionItem,
   CanvasMediaItem,
   CanvasRemoteOperation,
   CanvasScene,
@@ -32,6 +34,11 @@ import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
 import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
 import { CanvasNativeComponentDialog } from "./CanvasNativeComponentDialog"
+import {
+  buildNativeComponentShell,
+  escapeHtmlText,
+  type NativeComponentTemplate,
+} from "../../utils/canvasNativeComponentShell"
 import type { CanvasLibraryDragPayload } from "../../utils/canvasLibraryDrag"
 import {
   dispatchCanvasLibraryDrop,
@@ -42,6 +49,7 @@ import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
 import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "./CanvasFileDialogs"
 import { CanvasHtmlPropsPanel } from "./CanvasHtmlPropsPanel"
+import type { SyncSelection } from "./canvasSyncWiring"
 import {
   CanvasReactNodePropertyPanel,
   type CanvasReactNodeWriteSuccess,
@@ -56,11 +64,15 @@ import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
 import { CanvasAgentPanel } from "./CanvasAgentPanel"
 import { CanvasLayersPanel } from "./CanvasLayersPanel"
+import type {
+  CanvasLayoutHeightMode,
+  CanvasLayoutWidthMode,
+} from "./CanvasLayoutSizingControls"
 import { CanvasPropsPanel } from "./CanvasPropsPanel"
 import { CanvasScenesPanel } from "./CanvasScenesPanel"
 import { CanvasSidebar } from "./CanvasSidebar"
 import { CanvasThemePanel } from "./CanvasThemePanel"
-import { CanvasToolbar } from "./CanvasToolbar"
+import { CanvasToolbar, type CanvasTool } from "./CanvasToolbar"
 import { CanvasWorkspace } from "./CanvasWorkspace"
 import {
   inferDiagramFileKind,
@@ -104,9 +116,34 @@ import {
   type CanvasSourceMutation,
 } from "../../utils/canvasMutationHistory"
 import { cycleVariantIndex } from "../../utils/canvasVariantCycle"
+import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
+import { resolveHtmlSourceFilePath } from "../../utils/canvasHtmlSourceResolve"
 import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
+import { hydrateNativeComponentShellFromProps } from "../../utils/canvasNativeShellHydration"
+import { suggestNativeTemplateForComponentName } from "../../utils/canvasNativeComponentSuggestion"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
+
+/**
+ * Client-side shape of the `/api/canvas/component/create` response (U2/U3).
+ * Mirrors the server `CanvasComponentCreateResponse` success branch plus the
+ * `{ ok:false, error }` failure branch the panel/handler need.
+ */
+interface ComponentCreateClientResult {
+  ok?: boolean
+  projectId?: string
+  primitive?: {
+    id: string
+    displayName: string
+    kind: "html" | "tsx"
+    filePath?: string
+    cssPath?: string
+    importName?: string
+    componentSlug?: string
+  }
+  files?: Array<{ filePath: string; mtimeMs: number }>
+  error?: string
+}
 
 /** Props for injected Renderer component */
 interface RendererComponentProps {
@@ -223,463 +260,6 @@ function stripFileExtension(fileName: string) {
   return trimmed.replace(/\.[^.]+$/, "")
 }
 
-function escapeHtmlText(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-}
-
-type NativeComponentTemplate = "blank" | "card" | "section" | "hero" | "media-object"
-
-function buildNativeComponentShell(
-  template: NativeComponentTemplate = "section",
-  title?: string
-) {
-  const defaultTitle =
-    template === "blank"
-      ? "Blank Native Component"
-      : template === "card"
-        ? "Card"
-        : template === "hero"
-          ? "Hero"
-          : template === "media-object"
-            ? "Media Object"
-            : "Section"
-  const resolvedTitle = title?.trim() || defaultTitle
-  const safeTitle = escapeHtmlText(resolvedTitle)
-
-  if (template === "blank") {
-    return {
-      title: resolvedTitle,
-      size: { width: 720, height: 480 },
-      sourceHtml: `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      :root {
-        color-scheme: light;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        padding: 24px;
-        font: 16px/1.5 system-ui, sans-serif;
-        color: #0f172a;
-        background: #f8fafc;
-      }
-      section {
-        min-height: 320px;
-        padding: 32px;
-        border: 1px dashed #cbd5e1;
-        border-radius: 24px;
-        background: white;
-      }
-    </style>
-  </head>
-  <body>
-    <section data-slot="root" data-slot-kind="container">
-      <h1 data-slot="title" data-slot-kind="text">${safeTitle}</h1>
-      <p data-slot="body" data-slot-kind="text">Compose this component with native HTML elements.</p>
-    </section>
-  </body>
-</html>`,
-    }
-  }
-
-  if (template === "card") {
-    return {
-      title: resolvedTitle,
-      size: { width: 560, height: 420 },
-      sourceHtml: `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      :root {
-        color-scheme: light;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        padding: 24px;
-        font: 16px/1.5 system-ui, sans-serif;
-        color: #0f172a;
-        background: #f8fafc;
-      }
-      article {
-        display: grid;
-        gap: 20px;
-        padding: 24px;
-        border: 1px solid #dbe2ea;
-        border-radius: 24px;
-        background: white;
-        box-shadow: 0 24px 48px rgb(15 23 42 / 0.08);
-      }
-      figure {
-        display: grid;
-        place-items: center;
-        min-height: 180px;
-        margin: 0;
-        border: 1px dashed #94a3b8;
-        border-radius: 18px;
-        background: linear-gradient(135deg, #eff6ff, #f8fafc);
-        color: #475569;
-      }
-      svg {
-        width: 72px;
-        height: 72px;
-      }
-      h1 {
-        margin: 0;
-        font-size: 28px;
-        line-height: 1.1;
-      }
-      p {
-        margin: 0;
-        color: #475569;
-      }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-      }
-      .button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 40px;
-        padding: 0 16px;
-        border-radius: 999px;
-        text-decoration: none;
-        background: #0f172a;
-        color: white;
-      }
-      .button.secondary {
-        background: #e2e8f0;
-        color: #0f172a;
-      }
-    </style>
-  </head>
-  <body>
-    <article data-slot="root" data-slot-kind="container">
-      <figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video">
-        <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
-          <rect x="8" y="10" width="48" height="44" rx="12" stroke="currentColor" stroke-width="3" />
-          <path d="M18 42L28 32L36 38L46 26L52 42" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
-          <circle cx="24" cy="24" r="4" fill="currentColor" />
-        </svg>
-        <figcaption>Media slot accepts image, SVG, or video.</figcaption>
-      </figure>
-      <div data-slot="content" data-slot-kind="container">
-        <h1 data-slot="title" data-slot-kind="text">${safeTitle}</h1>
-        <p data-slot="body" data-slot-kind="text">Group native text and media elements, then promote or save this shell as a reusable component.</p>
-      </div>
-      <div class="actions" data-slot="actions" data-slot-kind="container">
-        <a class="button" href="#">Primary action</a>
-        <a class="button secondary" href="#">Secondary</a>
-      </div>
-    </article>
-  </body>
-</html>`,
-    }
-  }
-
-  if (template === "hero") {
-    return {
-      title: resolvedTitle,
-      size: { width: 880, height: 520 },
-      sourceHtml: `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      :root {
-        color-scheme: light;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        padding: 28px;
-        font: 16px/1.5 system-ui, sans-serif;
-        color: #e2e8f0;
-        background:
-          radial-gradient(circle at top left, #1d4ed8, transparent 40%),
-          linear-gradient(135deg, #0f172a, #1e293b 60%, #334155);
-      }
-      section {
-        display: grid;
-        grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
-        gap: 24px;
-        min-height: 420px;
-        padding: 36px;
-        border-radius: 28px;
-        border: 1px solid rgb(148 163 184 / 0.28);
-        background: rgb(15 23 42 / 0.32);
-        backdrop-filter: blur(18px);
-      }
-      .copy {
-        display: grid;
-        align-content: center;
-        gap: 18px;
-      }
-      h1 {
-        margin: 0;
-        font-size: 56px;
-        line-height: 0.95;
-        letter-spacing: -0.04em;
-      }
-      p {
-        margin: 0;
-        max-width: 46ch;
-        color: #cbd5e1;
-      }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-      }
-      .button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 44px;
-        padding: 0 18px;
-        border-radius: 999px;
-        background: white;
-        color: #0f172a;
-        text-decoration: none;
-      }
-      .button.secondary {
-        background: transparent;
-        color: white;
-        border: 1px solid rgb(226 232 240 / 0.4);
-      }
-      figure {
-        display: grid;
-        place-items: center;
-        min-height: 260px;
-        margin: 0;
-        border-radius: 24px;
-        border: 1px dashed rgb(191 219 254 / 0.65);
-        background: linear-gradient(160deg, rgb(59 130 246 / 0.24), rgb(15 23 42 / 0.08));
-      }
-      svg {
-        width: 120px;
-        height: 120px;
-      }
-    </style>
-  </head>
-  <body>
-    <section data-slot="root" data-slot-kind="container">
-      <div class="copy" data-slot="content" data-slot-kind="container">
-        <p data-slot="eyebrow" data-slot-kind="text">Native HTML composition</p>
-        <h1 data-slot="title" data-slot-kind="text">${safeTitle}</h1>
-        <p data-slot="body" data-slot-kind="text">Build sections, divs, text, and media with real HTML, then keep iterating through the same canvas and agent mutation path.</p>
-        <div class="actions" data-slot="actions" data-slot-kind="container">
-          <a class="button" href="#">Start composing</a>
-          <a class="button secondary" href="#">View structure</a>
-        </div>
-      </div>
-      <figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video">
-        <svg viewBox="0 0 120 120" fill="none" aria-hidden="true">
-          <rect x="14" y="22" width="92" height="76" rx="18" stroke="currentColor" stroke-width="4" />
-          <path d="M32 76L50 58L64 70L88 42L100 76" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-          <circle cx="46" cy="44" r="6" fill="currentColor" />
-        </svg>
-      </figure>
-    </section>
-  </body>
-</html>`,
-    }
-  }
-
-  if (template === "media-object") {
-    return {
-      title: resolvedTitle,
-      size: { width: 760, height: 340 },
-      sourceHtml: `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        padding: 24px;
-        font: 16px/1.5 system-ui, sans-serif;
-        color: #0f172a;
-        background: #f8fafc;
-      }
-      article {
-        display: grid;
-        grid-template-columns: 220px minmax(0, 1fr);
-        gap: 24px;
-        padding: 24px;
-        border-radius: 22px;
-        background: white;
-        border: 1px solid #dbe2ea;
-      }
-      figure {
-        display: grid;
-        place-items: center;
-        min-height: 220px;
-        margin: 0;
-        border-radius: 18px;
-        border: 1px dashed #94a3b8;
-        background: linear-gradient(180deg, #eff6ff, #e2e8f0);
-      }
-      h1 {
-        margin: 0 0 12px;
-        font-size: 32px;
-        line-height: 1.05;
-      }
-      p {
-        margin: 0;
-        color: #475569;
-      }
-    </style>
-  </head>
-  <body>
-    <article data-slot="root" data-slot-kind="container">
-      <figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video">
-        <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
-          <rect x="10" y="10" width="44" height="44" rx="14" stroke="currentColor" stroke-width="3" />
-          <path d="M20 40L28 32L36 36L44 24L48 40" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </figure>
-      <div data-slot="content" data-slot-kind="container">
-        <h1 data-slot="title" data-slot-kind="text">${safeTitle}</h1>
-        <p data-slot="body" data-slot-kind="text">Use this starter when you want an image, SVG, or video block paired with text content and actions.</p>
-      </div>
-    </article>
-  </body>
-</html>`,
-    }
-  }
-
-  return {
-    title: resolvedTitle,
-    size: { width: 760, height: 420 },
-    sourceHtml: `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      :root {
-        color-scheme: light;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        padding: 24px;
-        font: 16px/1.5 system-ui, sans-serif;
-        color: #0f172a;
-        background: #f8fafc;
-      }
-      section {
-        display: grid;
-        gap: 20px;
-        padding: 28px;
-        border: 1px solid #dbe2ea;
-        border-radius: 24px;
-        background: white;
-      }
-      .header {
-        display: grid;
-        gap: 10px;
-      }
-      h1 {
-        margin: 0;
-        font-size: 36px;
-        line-height: 1.05;
-      }
-      p {
-        margin: 0;
-        color: #475569;
-      }
-      .body {
-        display: grid;
-        grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
-        gap: 20px;
-      }
-      .stack {
-        display: grid;
-        gap: 14px;
-      }
-      figure {
-        display: grid;
-        place-items: center;
-        min-height: 220px;
-        margin: 0;
-        border-radius: 20px;
-        border: 1px dashed #94a3b8;
-        background: linear-gradient(180deg, #eff6ff, #f8fafc);
-        color: #475569;
-      }
-      svg {
-        width: 84px;
-        height: 84px;
-      }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-      }
-      .button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 40px;
-        padding: 0 16px;
-        border-radius: 999px;
-        text-decoration: none;
-        background: #0f172a;
-        color: white;
-      }
-    </style>
-  </head>
-  <body>
-    <section data-slot="root" data-slot-kind="container">
-      <div class="header" data-slot="header" data-slot-kind="container">
-        <p data-slot="eyebrow" data-slot-kind="text">Editable native section</p>
-        <h1 data-slot="title" data-slot-kind="text">${safeTitle}</h1>
-        <p data-slot="body" data-slot-kind="text">Add divs, text, and media inside this shell, then keep iterating manually or with the agent.</p>
-      </div>
-      <div class="body" data-slot="content" data-slot-kind="container">
-        <div class="stack" data-slot="copy" data-slot-kind="container">
-          <p data-slot="detail" data-slot-kind="text">This starter already marks text and container slots with authored HTML attributes so the structure stays visible in source control.</p>
-          <div class="actions" data-slot="actions" data-slot-kind="container">
-            <a class="button" href="#">Primary action</a>
-          </div>
-        </div>
-        <figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video">
-          <svg viewBox="0 0 84 84" fill="none" aria-hidden="true">
-            <rect x="12" y="12" width="60" height="60" rx="18" stroke="currentColor" stroke-width="3" />
-            <path d="M24 54L36 42L46 48L60 30L66 54" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
-            <circle cx="34" cy="30" r="5" fill="currentColor" />
-          </svg>
-          <figcaption>Media slot</figcaption>
-        </figure>
-      </div>
-    </section>
-  </body>
-</html>`,
-  }
-}
 
 function getCaptureNodeSize(target: EmbedCaptureTarget, viewport?: { width?: number; height?: number }) {
   const fallback = target === "mobile"
@@ -1193,9 +773,19 @@ export function CanvasTab({
   }, [activeLibraryDrag])
   const [componentPasteDialogVisible, setComponentPasteDialogVisible] = useState(false)
   const [nativeComponentDialogVisible, setNativeComponentDialogVisible] = useState(false)
+  const [nativeComponentDialogDefaults, setNativeComponentDialogDefaults] = useState<{
+    template: NativeComponentTemplate
+    title: string
+    seedValues?: Record<string, unknown>
+  }>({
+    template: "section",
+    title: "",
+  })
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
-  const [interactMode, setInteractMode] = useState(false)
+  const [canvasTool, setCanvasTool] = useState<CanvasTool>("select")
+  const interactMode = canvasTool === "interact"
+  const editMode = canvasTool === "edit"
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 })
   const [isImportingPaper, setIsImportingPaper] = useState(false)
   const [importKind, setImportKind] = useState<"ui" | "page">("ui")
@@ -1294,12 +884,93 @@ export function CanvasTab({
   const selectedMermaidItem = selectedItem?.type === "mermaid" ? selectedItem : null
   const selectedExcalidrawItem = selectedItem?.type === "excalidraw" ? selectedItem : null
   const selectedArtboardItem = selectedItem?.type === "artboard" ? selectedItem : null
-  const nativeComponentTargetArtboard: CanvasArtboardItem | null =
-    selectedArtboardItem ||
+  const selectedSectionItem = selectedItem?.type === "section" ? selectedItem : null
+  const selectedLayoutContainerItem: CanvasArtboardItem | CanvasSectionItem | null =
+    selectedArtboardItem || selectedSectionItem
+  const selectedItemLayoutParent =
+    selectedItem?.parentId && selectedItem.type !== "artboard"
+      ? (items.find(
+          (item): item is CanvasArtboardItem | CanvasSectionItem =>
+            item.id === selectedItem.parentId &&
+            (item.type === "artboard" || item.type === "section")
+        ) ?? null)
+      : null
+  const selectedItemParentInnerWidth = selectedItemLayoutParent
+    ? Math.max(
+        120,
+        selectedItemLayoutParent.size.width -
+          (selectedItemLayoutParent.layout.padding ?? 0) * 2
+      )
+    : undefined
+  const selectedItemParentInnerHeight = selectedItemLayoutParent
+    ? Math.max(
+        120,
+        selectedItemLayoutParent.size.height -
+          (selectedItemLayoutParent.layout.padding ?? 0) * 2
+      )
+    : undefined
+  const selectedItemWidthMode: CanvasLayoutWidthMode =
+    selectedItem?.layoutSizing?.width ??
+    (selectedItemLayoutParent &&
+    (selectedItemLayoutParent.layout.display === "grid" ||
+      selectedItemLayoutParent.layout.align === "stretch")
+      ? "fill"
+      : "hug")
+  const selectedItemHeightMode: CanvasLayoutHeightMode =
+    selectedItem?.layoutSizing?.height ?? "hug"
+  const selectedSectionParent = selectedSectionItem?.parentId
+    ? (items.find(
+        (item): item is CanvasArtboardItem | CanvasSectionItem =>
+          item.id === selectedSectionItem.parentId &&
+          (item.type === "artboard" || item.type === "section")
+      ) ?? null)
+    : null
+  const selectedSectionChildren = selectedSectionItem
+    ? items.filter((item) => item.parentId === selectedSectionItem.id && item.type !== "artboard")
+    : []
+  const selectedSectionContentHugHeight =
+    selectedSectionItem && selectedSectionChildren.length > 0
+      ? (() => {
+          const padding = selectedSectionItem.layout.padding ?? 0
+          const gap = selectedSectionItem.layout.gap ?? 0
+          if (
+            selectedSectionItem.layout.display === "flex" &&
+            selectedSectionItem.layout.direction !== "row"
+          ) {
+            return (
+              selectedSectionChildren.reduce((sum, child) => sum + child.size.height, 0) +
+              Math.max(0, selectedSectionChildren.length - 1) * gap +
+              padding * 2
+            )
+          }
+          if (selectedSectionItem.layout.display === "grid") {
+            const columns = Math.max(1, selectedSectionItem.layout.columns ?? 1)
+            const rowCount = Math.ceil(selectedSectionChildren.length / columns)
+            const rowHeights = Array.from({ length: rowCount }, (_, rowIndex) => {
+              const rowChildren = selectedSectionChildren.slice(
+                rowIndex * columns,
+                rowIndex * columns + columns
+              )
+              return Math.max(...rowChildren.map((child) => child.size.height), 0)
+            })
+            return (
+              rowHeights.reduce((sum, height) => sum + height, 0) +
+              Math.max(0, rowCount - 1) * gap +
+              padding * 2
+            )
+          }
+          return (
+            Math.max(...selectedSectionChildren.map((child) => child.size.height), 0) +
+            padding * 2
+          )
+        })()
+      : 120
+  const nativeComponentTargetArtboard: CanvasArtboardItem | CanvasSectionItem | null =
+    selectedLayoutContainerItem ||
     (selectedItem?.parentId
       ? (items.find(
-          (item): item is CanvasArtboardItem =>
-            item.id === selectedItem.parentId && item.type === "artboard"
+          (item): item is CanvasArtboardItem | CanvasSectionItem =>
+            item.id === selectedItem.parentId && (item.type === "artboard" || item.type === "section")
         ) ?? null)
       : null)
   const selectedEmbedRenderMode = selectedEmbedItem
@@ -1311,6 +982,62 @@ export function CanvasTab({
     : "iframe"
   const selectedComponent = selectedComponentItem ? getComponentById(selectedComponentItem.componentId) : null
   const selectedVariant = selectedComponent?.variants[selectedComponentItem?.variantIndex ?? 0]
+
+  // --- U6 Sync selection plumbing -----------------------------------------
+  // A file-backed html item maps to a `component` sync selection: its slug
+  // (the create-time `sourceComponentSlug`) + its Root A `projects/<id>/...`
+  // source path + last-known mtime. A non-file-backed item yields no
+  // selection (the Sync section then hides / blocks with a per-child error).
+  const htmlItemSyncSelection = useMemo<SyncSelection | undefined>(() => {
+    if (!selectedHtmlItem) return undefined
+    const slug = selectedHtmlItem.sourceComponentSlug
+    const sourcePath =
+      selectedHtmlItem.sourceComponentFilePath ||
+      selectedHtmlItem.sourceHtmlFilePath
+    if (!slug || !sourcePath) return undefined
+    return {
+      type: "component",
+      slug,
+      sourcePath,
+      mtimeMs: selectedHtmlItem.sourceHtmlFileMtime,
+    }
+  }, [selectedHtmlItem])
+
+  // An artboard sync = the page + every file-backed child. A child that is
+  // not file-backed is still included (slug undefined) so the server returns
+  // the per-child "non-file-backed child" error the panel surfaces.
+  const artboardSyncSelection = useMemo<SyncSelection | undefined>(() => {
+    if (!selectedArtboardItem) return undefined
+    const children = items.filter(
+      (item) => item.parentId === selectedArtboardItem.id && item.type === "html"
+    ) as CanvasHtmlItem[]
+    const fileBackedChildren = children
+      .map((child) => {
+        const slug = child.sourceComponentSlug
+        const sourcePath =
+          child.sourceComponentFilePath || child.sourceHtmlFilePath
+        if (!slug || !sourcePath) return null
+        return { slug, sourcePath, mtimeMs: child.sourceHtmlFileMtime }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    if (fileBackedChildren.length === 0) return undefined
+    const pageSlug =
+      selectedArtboardItem.name
+        ?.trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || `artboard-${selectedArtboardItem.id}`
+    return {
+      type: "artboard",
+      slug: pageSlug,
+      // The page itself has no single Root A source; the server reads each
+      // child. Use the first child's path as a benign placeholder (the
+      // endpoint resolves children individually).
+      sourcePath: fileBackedChildren[0].sourcePath,
+      children: fileBackedChildren,
+    }
+  }, [items, selectedArtboardItem])
+
   const artboardThemeId = selectedArtboardItem?.themeId || activeThemeId
   const [artboardTokenValues, setArtboardTokenValues] = useState<Record<string, string>>(tokenValues)
   const [liveAuditPairs, setLiveAuditPairs] = useState<LiveAuditPair[]>([])
@@ -1389,7 +1116,9 @@ export function CanvasTab({
           htmlItem.id,
         sourceReact: htmlItem.sourceReact,
         sourceHtml: htmlItem.sourceHtml,
-        filePath: isHtmlMode ? htmlItem.sourceHtmlFilePath : htmlItem.sourceReactFilePath,
+        filePath: isHtmlMode
+          ? resolveHtmlSourceFilePath(htmlItem)
+          : htmlItem.sourceReactFilePath,
         mtimeMs: isHtmlMode ? htmlItem.sourceHtmlFileMtime : htmlItem.sourceReactFileMtime,
         onSourceReactChange: (sourceReact, mtimeMs) =>
           updateItem(itemId, {
@@ -1665,7 +1394,7 @@ export function CanvasTab({
         sourceReact: htmlItem.sourceReact,
         sourceHtml: htmlItem.sourceHtml,
         filePath: isHtmlMode
-          ? htmlItem.sourceHtmlFilePath
+          ? resolveHtmlSourceFilePath(htmlItem)
           : htmlItem.sourceReactFilePath,
         mtimeMs: isHtmlMode
           ? htmlItem.sourceHtmlFileMtime
@@ -1720,7 +1449,9 @@ export function CanvasTab({
             htmlItem.id,
           sourceReact: htmlItem.sourceReact,
           sourceHtml: htmlItem.sourceHtml,
-          filePath: isHtmlMode ? htmlItem.sourceHtmlFilePath : htmlItem.sourceReactFilePath,
+          filePath: isHtmlMode
+          ? resolveHtmlSourceFilePath(htmlItem)
+          : htmlItem.sourceReactFilePath,
           mtimeMs: isHtmlMode ? htmlItem.sourceHtmlFileMtime : htmlItem.sourceReactFileMtime,
           onSourceReactChange: (sourceReact, mtimeMs) =>
             updateItem(event.itemId, {
@@ -2110,6 +1841,164 @@ export function CanvasTab({
     return groupIds.size === 1
   }, [selectedIds, items])
 
+  const moveIntoArtboardTarget = useMemo(() => {
+    const selectedItems = items.filter((item) => selectedIds.includes(item.id))
+    const selectedArtboards = selectedItems.filter(
+      (item): item is CanvasArtboardItem => item.type === "artboard"
+    )
+    if (selectedArtboards.length !== 1) return null
+    const artboard = selectedArtboards[0]
+    const movableItems = selectedItems.filter(
+      (item) => item.type !== "artboard" && item.parentId !== artboard.id
+    )
+    if (movableItems.length === 0) return null
+    return { artboard, movableItems }
+  }, [items, selectedIds])
+
+  const handleMoveSelectionToArtboard = useCallback(() => {
+    if (!moveIntoArtboardTarget) return
+    const { artboard, movableItems } = moveIntoArtboardTarget
+    const siblings = items.filter(
+      (item) => item.parentId === artboard.id && item.type !== "artboard"
+    )
+    const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+
+    movableItems.forEach((item, index) => {
+      updateItem(item.id, {
+        parentId: artboard.id,
+        order: maxOrder + index + 1,
+        position: { x: 0, y: 0 },
+        rotation: 0,
+      })
+    })
+    setHistoryToast({
+      id: Date.now(),
+      tone: "info",
+      message: `Moved ${movableItems.length} item${movableItems.length === 1 ? "" : "s"} into ${artboard.name}.`,
+    })
+  }, [items, moveIntoArtboardTarget, updateItem])
+
+  const wrapSelectionTarget = useMemo(() => {
+    if (selectedIds.length < 2) return null
+    const selectedItems = items.filter((item) => selectedIds.includes(item.id))
+    if (selectedItems.some((item) => item.type === "artboard" || item.type === "section")) return null
+
+    const parentIds = new Set(selectedItems.map((item) => item.parentId).filter(Boolean))
+    if (parentIds.size === 1) {
+      const [parentId] = Array.from(parentIds)
+      const parent = items.find(
+        (item): item is CanvasArtboardItem | CanvasSectionItem =>
+          item.id === parentId && (item.type === "artboard" || item.type === "section")
+      )
+      if (parent) return { parent, selectedItems, mode: "existing-parent" as const }
+    }
+
+    const allFreeform = selectedItems.every((item) => !item.parentId)
+    if (!allFreeform) return null
+
+    const candidateArtboards = items.filter(
+      (item): item is CanvasArtboardItem => item.type === "artboard"
+    )
+    const containingArtboards = candidateArtboards.filter((artboard) =>
+      selectedItems.every((item) => {
+        const centerX = item.position.x + item.size.width / 2
+        const centerY = item.position.y + item.size.height / 2
+        return (
+          centerX >= artboard.position.x &&
+          centerX <= artboard.position.x + artboard.size.width &&
+          centerY >= artboard.position.y &&
+          centerY <= artboard.position.y + artboard.size.height
+        )
+      })
+    )
+    if (containingArtboards.length !== 1) return null
+
+    return {
+      parent: containingArtboards[0],
+      selectedItems,
+      mode: "freeform-inside-artboard" as const,
+    }
+  }, [items, selectedIds])
+
+  const handleWrapSelectionInSection = useCallback(() => {
+    if (!wrapSelectionTarget) return
+    const { parent, selectedItems, mode } = wrapSelectionTarget
+    const orderedSelection = [...selectedItems].sort((a, b) =>
+      mode === "existing-parent"
+        ? (a.order ?? 0) - (b.order ?? 0)
+        : a.position.y === b.position.y
+          ? a.position.x - b.position.x
+          : a.position.y - b.position.y
+    )
+    const siblings = items.filter(
+      (item) => item.parentId === parent.id && item.type !== "artboard"
+    )
+    const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+    const insertOrder =
+      mode === "existing-parent"
+        ? Math.min(...orderedSelection.map((item) => item.order ?? 0))
+        : maxOrder + 1
+    const sectionId = `canvas-section-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const maxHeight = Math.max(...orderedSelection.map((item) => item.size.height))
+    const totalHeight = orderedSelection.reduce((sum, item) => sum + item.size.height, 0)
+    const parentPadding = parent.layout.padding ?? 0
+    const fillWidth = Math.max(120, parent.size.width - parentPadding * 2)
+    const nextItems = [
+      ...items.map((item) => {
+        if (!selectedIds.includes(item.id)) return item
+        return {
+          ...item,
+          parentId: sectionId,
+          order: orderedSelection.findIndex((selected) => selected.id === item.id),
+          position: { x: 0, y: 0 },
+          rotation: 0,
+        }
+      }),
+      {
+        id: sectionId,
+        type: "section" as const,
+        name: "Section",
+        parentId: parent.id,
+        order: insertOrder,
+        position: { x: 0, y: 0 },
+        size: {
+          width: fillWidth,
+          height: Math.max(maxHeight, totalHeight + (orderedSelection.length - 1) * 16),
+        },
+        layoutSizing: {
+          width: "fill" as const,
+          height: "hug" as const,
+          hugWidth: Math.max(...orderedSelection.map((item) => item.size.width)),
+          hugHeight: Math.max(maxHeight, totalHeight + (orderedSelection.length - 1) * 16),
+        },
+        rotation: 0,
+        zIndex: nextZIndex,
+        layout: {
+          display: "grid" as const,
+          columns: Math.min(orderedSelection.length, 3),
+          align: "stretch" as const,
+          justify: "start" as const,
+          gap: 16,
+          padding: 16,
+        },
+      },
+    ]
+    replaceState({
+      items: nextItems,
+      groups,
+      nextZIndex: nextZIndex + 1,
+      selectedIds: [sectionId],
+    })
+    setHistoryToast({
+      id: Date.now(),
+      tone: "info",
+      message:
+        mode === "freeform-inside-artboard"
+          ? `Wrapped ${orderedSelection.length} cards in a section inside ${parent.name}.`
+          : `Wrapped ${orderedSelection.length} cards in a section.`,
+    })
+  }, [groups, items, nextZIndex, replaceState, selectedIds, wrapSelectionTarget])
+
   // Handle prop changes for selected item - save to item's customProps
   const handlePropChange = useCallback(
     (propName: string, value: unknown) => {
@@ -2139,6 +2028,86 @@ export function CanvasTab({
     // Clear customProps to use default variant props
     updateItem(selectedComponentItem.id, { customProps: undefined })
   }, [selectedComponentItem, updateItem])
+
+  const handleSelectedItemLayoutWidthModeChange = useCallback(
+    (mode: CanvasLayoutWidthMode) => {
+      if (!selectedItem || !selectedItemLayoutParent) return
+
+      const currentSizing = selectedItem.layoutSizing
+      const hugWidth =
+        currentSizing?.hugWidth && currentSizing.hugWidth > 0
+          ? currentSizing.hugWidth
+          : selectedItem.size.width
+
+      if (mode === "fill") {
+        updateItem(selectedItem.id, {
+          layoutSizing: {
+            ...currentSizing,
+            width: "fill",
+            hugWidth,
+          },
+          size: {
+            ...selectedItem.size,
+            width: selectedItemParentInnerWidth ?? selectedItem.size.width,
+          },
+        })
+        return
+      }
+
+      updateItem(selectedItem.id, {
+        layoutSizing: {
+          ...currentSizing,
+          width: "hug",
+          hugWidth,
+        },
+        size: {
+          ...selectedItem.size,
+          width: hugWidth,
+        },
+      })
+    },
+    [selectedItem, selectedItemLayoutParent, selectedItemParentInnerWidth, updateItem]
+  )
+
+  const handleSelectedItemLayoutHeightModeChange = useCallback(
+    (mode: CanvasLayoutHeightMode) => {
+      if (!selectedItem || !selectedItemLayoutParent) return
+
+      const currentSizing = selectedItem.layoutSizing
+      const hugHeight =
+        currentSizing?.hugHeight && currentSizing.hugHeight > 0
+          ? currentSizing.hugHeight
+          : selectedItem.size.height
+
+      if (mode === "fill") {
+        updateItem(selectedItem.id, {
+          layoutSizing: {
+            ...currentSizing,
+            height: "fill",
+            hugHeight,
+          },
+          size: {
+            ...selectedItem.size,
+            height: selectedItemParentInnerHeight ?? selectedItem.size.height,
+          },
+        })
+        return
+      }
+
+      updateItem(selectedItem.id, {
+        layoutSizing: {
+          ...currentSizing,
+          height: "hug",
+          hugHeight,
+        },
+        size: {
+          ...selectedItem.size,
+          height: hugHeight,
+        },
+      })
+    },
+    [selectedItem, selectedItemLayoutParent, selectedItemParentInnerHeight, updateItem]
+  )
 
   // Handle variant change for selected item
   const handleVariantChange = useCallback(
@@ -2193,8 +2162,6 @@ export function CanvasTab({
   const toggleCopilotPanel = useCallback(() => {
     setCopilotPanelVisible((prev) => !prev)
   }, [])
-  const toggleInteractMode = useCallback(() => setInteractMode((prev) => !prev), [])
-
   useCopilotCanvasActions({
     items,
     selectedIds,
@@ -2529,8 +2496,12 @@ export function CanvasTab({
       sourceHtmlFileMtime?: number
       sourceReactFilePath?: string
       sourceReactFileMtime?: number
+      sourceComponentSlug?: string
+      sourceComponentFilePath?: string
       position?: { x: number; y: number }
       size?: { width: number; height: number }
+      rotation?: number
+      groupId?: string
       parentId?: string
       order?: number
     }) => {
@@ -2585,7 +2556,7 @@ export function CanvasTab({
   </body>
 </html>`
 
-      addItem({
+      const newId = addItem({
         type: "html",
         title,
         sourceMode: input?.sourceReact ? "react" : "inline",
@@ -2597,13 +2568,16 @@ export function CanvasTab({
         sourceHtmlFileMtime: input?.sourceHtmlFileMtime,
         sourceReactFilePath: input?.sourceReactFilePath,
         sourceReactFileMtime: input?.sourceReactFileMtime,
+        sourceComponentSlug: input?.sourceComponentSlug,
+        sourceComponentFilePath: input?.sourceComponentFilePath,
         sandbox: "allow-scripts allow-same-origin allow-forms allow-modals allow-popups",
         position: {
           x: Math.max(0, targetX - htmlWidth / 2),
           y: Math.max(0, targetY - htmlHeight / 2),
         },
         size: { width: htmlWidth, height: htmlHeight },
-        rotation: 0,
+        rotation: input?.rotation ?? 0,
+        groupId: input?.groupId,
         parentId: input?.parentId,
         order: input?.order,
       })
@@ -2611,6 +2585,7 @@ export function CanvasTab({
       if (typeof window !== "undefined" && window.innerWidth < 1100) {
         setSidebarVisible(false)
       }
+      return newId
     },
     [
       addItem,
@@ -2622,13 +2597,77 @@ export function CanvasTab({
     ]
   )
 
+  const createFileBackedNativeShell = useCallback(
+    async (
+      template: NativeComponentTemplate = "section",
+      title?: string,
+      seedValues?: Record<string, unknown>
+    ) => {
+      const shell = buildNativeComponentShell(template, title)
+      const hydratedSourceHtml = seedValues
+        ? hydrateNativeComponentShellFromProps({
+            sourceHtml: shell.sourceHtml,
+            sourceId: `native-shell:${template}:${title || shell.title}`,
+            values: seedValues,
+          })
+        : shell.sourceHtml
+      const projectId = activeProjectId || "design-system-foundation"
+
+      let createResult: ComponentCreateClientResult
+      try {
+        const response = await fetch("/api/canvas/component/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            name: shell.title,
+            format: "html",
+            sourceHtml: hydratedSourceHtml,
+          }),
+        })
+        createResult = (await response
+          .json()
+          .catch(() => ({}))) as ComponentCreateClientResult
+        if (
+          !response.ok ||
+          !createResult.ok ||
+          createResult.primitive?.kind !== "html" ||
+          !createResult.primitive.filePath
+        ) {
+          throw new Error(createResult.error || "Failed to create component.")
+        }
+      } catch (error) {
+        throw error instanceof Error ? error : new Error("Failed to create component.")
+      }
+
+      const primitive = createResult.primitive
+      const filePath = `projects/${projectId}/${primitive.filePath}`
+      const htmlFile = createResult.files?.find((entry) => entry.filePath === primitive.filePath)
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(CANVAS_REGISTRY_UPDATED_EVENT))
+      }
+
+      return {
+        shell,
+        primitive,
+        filePath,
+        hydratedSourceHtml,
+        htmlFileMtime: htmlFile?.mtimeMs,
+      }
+    },
+    [activeProjectId]
+  )
+
   const handleAddNativeComponent = useCallback(
     async (
       template: NativeComponentTemplate = "section",
-      title?: string
+      title?: string,
+      seedValues?: Record<string, unknown>
     ) => {
       const targetArtboardId = nativeComponentTargetArtboard?.id
-      const shell = buildNativeComponentShell(template, title)
+      const { shell, primitive, filePath, hydratedSourceHtml, htmlFileMtime } =
+        await createFileBackedNativeShell(template, title, seedValues)
 
       if (targetArtboardId) {
         const siblings = items.filter(
@@ -2638,7 +2677,14 @@ export function CanvasTab({
 
         await handleAddInlineHtml({
           title: shell.title,
-          sourceHtml: shell.sourceHtml,
+          // Keep the inline source for immediate render; the item is already
+          // file-backed via the binding fields below.
+          sourceHtml: hydratedSourceHtml,
+          sourcePath: filePath,
+          sourceHtmlFilePath: filePath,
+          sourceHtmlFileMtime: htmlFileMtime,
+          sourceComponentSlug: primitive.componentSlug,
+          sourceComponentFilePath: filePath,
           parentId: targetArtboardId,
           order: maxOrder + 1,
           position: { x: shell.size.width / 2, y: shell.size.height / 2 },
@@ -2649,11 +2695,58 @@ export function CanvasTab({
 
       await handleAddInlineHtml({
         title: shell.title,
-        sourceHtml: shell.sourceHtml,
+        sourceHtml: hydratedSourceHtml,
+        sourcePath: filePath,
+        sourceHtmlFilePath: filePath,
+        sourceHtmlFileMtime: htmlFileMtime,
+        sourceComponentSlug: primitive.componentSlug,
+        sourceComponentFilePath: filePath,
         size: shell.size,
       })
     },
-    [handleAddInlineHtml, items, nativeComponentTargetArtboard]
+    [createFileBackedNativeShell, handleAddInlineHtml, items, nativeComponentTargetArtboard]
+  )
+
+  const handleReplaceComponentWithNativeShell = useCallback(
+    async (
+      template: NativeComponentTemplate = "section",
+      title?: string,
+      seedValues?: Record<string, unknown>
+    ) => {
+      if (!selectedComponentItem) return
+
+      const sourceItem = selectedComponentItem
+      const { shell, primitive, filePath, hydratedSourceHtml, htmlFileMtime } =
+        await createFileBackedNativeShell(template, title, seedValues)
+
+      const newId = await handleAddInlineHtml({
+        title: shell.title,
+        sourceHtml: hydratedSourceHtml,
+        sourcePath: filePath,
+        sourceHtmlFilePath: filePath,
+        sourceHtmlFileMtime: htmlFileMtime,
+        sourceComponentSlug: primitive.componentSlug,
+        sourceComponentFilePath: filePath,
+        position: {
+          x: sourceItem.position.x + sourceItem.size.width / 2,
+          y: sourceItem.position.y + sourceItem.size.height / 2,
+        },
+        size: sourceItem.size,
+        rotation: sourceItem.rotation,
+        groupId: sourceItem.groupId,
+        parentId: sourceItem.parentId,
+        order: sourceItem.order,
+      })
+
+      updateItem(newId, { zIndex: sourceItem.zIndex })
+      removeItem(sourceItem.id)
+      setHistoryToast({
+        id: Date.now(),
+        tone: "info",
+        message: `Replaced ${title || sourceItem.componentId} with an editable shell`,
+      })
+    },
+    [createFileBackedNativeShell, handleAddInlineHtml, removeItem, selectedComponentItem, updateItem]
   )
 
   const handleComponentPasteCreated = useCallback(
@@ -3687,7 +3780,23 @@ export function CanvasTab({
       const idMap = new Map<string, string>()
 
       const artboards = scene.items.filter((item) => item.type === "artboard")
-      const otherItems = scene.items.filter((item) => item.type !== "artboard")
+      const itemById = new Map(scene.items.map((item) => [item.id, item]))
+      const getItemDepth = (item: CanvasItem) => {
+        let depth = 0
+        let parentId = item.parentId
+        const seen = new Set<string>()
+        while (parentId && !seen.has(parentId)) {
+          seen.add(parentId)
+          const parent = itemById.get(parentId)
+          if (!parent) break
+          depth += 1
+          parentId = parent.parentId
+        }
+        return depth
+      }
+      const otherItems = scene.items
+        .filter((item) => item.type !== "artboard")
+        .sort((a, b) => getItemDepth(a) - getItemDepth(b) || (a.order ?? 0) - (b.order ?? 0))
 
       artboards.forEach((item) => {
         const newId = addItem({
@@ -3698,6 +3807,7 @@ export function CanvasTab({
           rotation: item.rotation,
           background: item.background,
           layout: { ...item.layout },
+          layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
         })
         idMap.set(item.id, newId)
       })
@@ -3742,6 +3852,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3766,6 +3877,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3794,6 +3906,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3811,6 +3924,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3839,6 +3953,7 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3858,6 +3973,25 @@ export function CanvasTab({
             position: { ...item.position },
             size: { ...item.size },
             rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
+            parentId,
+            order: item.order,
+          })
+          idMap.set(item.id, newId)
+          return
+        }
+
+        if (item.type === "section") {
+          const newId = addItem({
+            type: "section",
+            name: item.name,
+            background: item.background,
+            themeId: item.themeId,
+            layout: { ...item.layout },
+            position: { ...item.position },
+            size: { ...item.size },
+            rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
             parentId,
             order: item.order,
           })
@@ -3872,6 +4006,7 @@ export function CanvasTab({
           position: { ...item.position },
           size: { ...item.size },
           rotation: item.rotation,
+          layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
           customProps: item.customProps ? { ...item.customProps } : undefined,
           parentId,
           order: item.order,
@@ -3974,6 +4109,22 @@ export function CanvasTab({
   const dragOverlayComponent = activeDragData ? getComponentById(activeDragData.componentId) : null
   const dragOverlayVariant = dragOverlayComponent?.variants[activeDragData?.variantIndex ?? 0]
 
+  const openNativeComponentDialog = useCallback(
+    (defaults?: Partial<{
+      template: NativeComponentTemplate
+      title: string
+      seedValues: Record<string, unknown>
+    }>) => {
+      setNativeComponentDialogDefaults({
+        template: defaults?.template ?? "section",
+        title: defaults?.title ?? "",
+        seedValues: defaults?.seedValues,
+      })
+      setNativeComponentDialogVisible(true)
+    },
+    []
+  )
+
   // Show props panel for single selection
   const showPropsPanel =
     selectedItem && propsPanelVisible && !scenesPanelVisible && !layersPanelVisible && !themePanelVisible
@@ -4003,19 +4154,24 @@ export function CanvasTab({
           onCreateComponentFromPaste={() => setComponentPasteDialogVisible(true)}
           onToggleThemePanel={toggleThemePanel}
           onToggleCopilotPanel={toggleCopilotPanel}
-          onToggleInteractMode={toggleInteractMode}
+          canvasTool={canvasTool}
+          onCanvasToolChange={setCanvasTool}
           onAddArtboard={handleAddArtboard}
-          onAddNativeComponent={() => setNativeComponentDialogVisible(true)}
+          onAddNativeComponent={() => openNativeComponentDialog()}
           onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
           importKind={importKind}
           onImportKindChange={setImportKind}
           onGroupSelected={handleGroupSelected}
           onUngroupSelected={handleUngroupSelected}
+          onMoveSelectionToArtboard={handleMoveSelectionToArtboard}
+          onWrapSelectionInSection={handleWrapSelectionInSection}
           onDuplicateSelected={handleDuplicate}
           itemCount={items.length}
           selectedCount={selectedIds.length}
           canGroup={canGroup}
           canUngroup={canUngroup}
+          canMoveSelectionToArtboard={Boolean(moveIntoArtboardTarget)}
+          canWrapSelectionInSection={Boolean(wrapSelectionTarget)}
           interactMode={interactMode}
           sidebarVisible={sidebarVisible}
           scenesVisible={scenesPanelVisible}
@@ -4048,7 +4204,7 @@ export function CanvasTab({
                 onAddEmbed={handleAddEmbed}
                 onAddHtmlBundle={handleAddHtmlBundle}
                 onAddInlineHtml={handleAddInlineHtml}
-                onAddNativeComponent={() => setNativeComponentDialogVisible(true)}
+                onAddNativeComponent={() => openNativeComponentDialog()}
                 onAddHtmlBundleFromDirectory={handleAddHtmlBundleFromDirectory}
                 onScanHtmlBundleLibrary={scanCanvasHtmlBundleLibrary}
                 onAddMedia={handleAddMedia}
@@ -4124,10 +4280,29 @@ export function CanvasTab({
           <CanvasNativeComponentDialog
             open={nativeComponentDialogVisible}
             artboardName={nativeComponentTargetArtboard?.name ?? null}
+            initialTemplate={nativeComponentDialogDefaults.template}
+            initialTitle={nativeComponentDialogDefaults.title}
             onClose={() => setNativeComponentDialogVisible(false)}
             onCreate={async (input) => {
-              await handleAddNativeComponent(input.template, input.title)
-              setNativeComponentDialogVisible(false)
+              try {
+                await handleAddNativeComponent(
+                  input.template,
+                  input.title,
+                  nativeComponentDialogDefaults.seedValues
+                )
+                setNativeComponentDialogVisible(false)
+              } catch (error) {
+                // Create failed → no orphan canvas item was added; keep the
+                // dialog open and surface the error inline.
+                setHistoryToast({
+                  id: Date.now(),
+                  tone: "error",
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : "Failed to create component.",
+                })
+              }
             }}
           />
 
@@ -4136,6 +4311,7 @@ export function CanvasTab({
             groups={groups}
             transform={transform}
             interactMode={interactMode}
+            editMode={editMode}
             Renderer={Renderer}
             getComponentById={getComponentById}
             selectedIds={selectedIds}
@@ -4187,6 +4363,41 @@ export function CanvasTab({
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
               onVariantChange={handleVariantChange}
+              size={selectedComponentItem.size}
+              layoutWidthMode={selectedItemWidthMode}
+              layoutHeightMode={selectedItemHeightMode}
+              canFillParent={Boolean(selectedItemLayoutParent)}
+              canFillHeight={Boolean(selectedItemLayoutParent)}
+              onSizeChange={(size) =>
+                updateItem(selectedComponentItem.id, {
+                  size,
+                  layoutSizing: {
+                    ...selectedComponentItem.layoutSizing,
+                    ...(selectedItemWidthMode === "hug" ? { hugWidth: size.width } : {}),
+                    ...(selectedItemHeightMode === "hug" ? { hugHeight: size.height } : {}),
+                  },
+                })
+              }
+              onLayoutWidthModeChange={
+                selectedItemLayoutParent ? handleSelectedItemLayoutWidthModeChange : undefined
+              }
+              onLayoutHeightModeChange={
+                selectedItemLayoutParent ? handleSelectedItemLayoutHeightModeChange : undefined
+              }
+              onReplaceWithEditableShell={() =>
+                void handleReplaceComponentWithNativeShell(
+                  suggestNativeTemplateForComponentName(selectedComponent.name),
+                  selectedComponent.name,
+                  selectedItemProps
+                )
+              }
+              onCreateEditableShell={() =>
+                openNativeComponentDialog({
+                  template: suggestNativeTemplateForComponentName(selectedComponent.name),
+                  title: selectedComponent.name,
+                  seedValues: selectedItemProps,
+                })
+              }
             />
           )}
 
@@ -4340,6 +4551,7 @@ export function CanvasTab({
               sourceHtml={selectedHtmlItem.sourceHtml || ""}
               sourceKind={selectedHtmlItem.sourceMode === "inline" ? "html" : "tsx"}
               currentCompileGeneration={selectedReactCompileGeneration}
+              projectId={activeProjectId || "design-system-foundation"}
               sourceId={
                 selectedHtmlItem.sourcePath ||
                 selectedHtmlItem.sourceHtmlFilePath ||
@@ -4386,6 +4598,7 @@ export function CanvasTab({
 
           {showPropsPanel && selectedHtmlItem && !selectedReactNodeSelection && (
             <CanvasHtmlPropsPanel
+              key={selectedHtmlItem.id}
               src={selectedHtmlItem.src}
               projectId={activeProjectId || "design-system-foundation"}
               title={selectedHtmlItem.title}
@@ -4402,12 +4615,35 @@ export function CanvasTab({
               sourceHtmlFileMtime={selectedHtmlItem.sourceHtmlFileMtime}
               sourceReactFilePath={selectedHtmlItem.sourceReactFilePath}
               sourceReactFileMtime={selectedHtmlItem.sourceReactFileMtime}
+              sourceComponentSlug={selectedHtmlItem.sourceComponentSlug}
+              sourceComponentFilePath={selectedHtmlItem.sourceComponentFilePath}
+              syncSelection={htmlItemSyncSelection}
               size={selectedHtmlItem.size}
+              layoutWidthMode={selectedItemWidthMode}
+              layoutHeightMode={selectedItemHeightMode}
+              canFillParent={Boolean(selectedItemLayoutParent)}
+              canFillHeight={Boolean(selectedItemLayoutParent)}
               onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
               onResize={(width) =>
                 updateItem(selectedHtmlItem.id, {
                   size: { width, height: selectedHtmlItem.size.height },
                 })
+              }
+              onSizeChange={(size) =>
+                updateItem(selectedHtmlItem.id, {
+                  size,
+                  layoutSizing: {
+                    ...selectedHtmlItem.layoutSizing,
+                    ...(selectedItemWidthMode === "hug" ? { hugWidth: size.width } : {}),
+                    ...(selectedItemHeightMode === "hug" ? { hugHeight: size.height } : {}),
+                  },
+                })
+              }
+              onLayoutWidthModeChange={
+                selectedItemLayoutParent ? handleSelectedItemLayoutWidthModeChange : undefined
+              }
+              onLayoutHeightModeChange={
+                selectedItemLayoutParent ? handleSelectedItemLayoutHeightModeChange : undefined
               }
               onReplaceBundle={(input) =>
                 handleReplaceHtmlBundle(selectedHtmlItem.id, input)
@@ -4507,10 +4743,13 @@ export function CanvasTab({
 
           {showPropsPanel && selectedArtboardItem && (
             <CanvasArtboardPropsPanel
+              key={selectedArtboardItem.id}
               name={selectedArtboardItem.name}
               background={selectedArtboardItem.background}
               layout={selectedArtboardItem.layout}
               size={selectedArtboardItem.size}
+              layoutSizing={selectedArtboardItem.layoutSizing}
+              kind="artboard"
               themes={themes}
               activeThemeId={activeThemeId}
               themeId={selectedArtboardItem.themeId}
@@ -4522,7 +4761,83 @@ export function CanvasTab({
               importKind={importKind}
               onImportKindChange={setImportKind}
               importingPaper={isImportingPaper}
+              projectId={activeProjectId || "design-system-foundation"}
+              syncSelection={artboardSyncSelection}
               onChange={(updates) => updateItem(selectedArtboardItem.id, updates)}
+              onCreateStructureChild={async (template) => {
+                try {
+                  await handleAddNativeComponent(template)
+                } catch (error) {
+                  setHistoryToast({
+                    id: Date.now(),
+                    tone: "error",
+                    message:
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to create component.",
+                  })
+                }
+              }}
+              onDelete={handleDeleteSelected}
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedSectionItem && (
+            <CanvasArtboardPropsPanel
+              key={selectedSectionItem.id}
+              name={selectedSectionItem.name}
+              background={selectedSectionItem.background}
+              layout={selectedSectionItem.layout}
+              size={selectedSectionItem.size}
+              layoutSizing={selectedSectionItem.layoutSizing}
+              kind="section"
+              parentInnerWidth={
+                selectedSectionParent
+                  ? Math.max(
+                      120,
+                      selectedSectionParent.size.width -
+                        (selectedSectionParent.layout.padding ?? 0) * 2
+                    )
+                  : undefined
+              }
+              parentInnerHeight={
+                selectedSectionParent
+                  ? Math.max(
+                      120,
+                      selectedSectionParent.size.height -
+                        (selectedSectionParent.layout.padding ?? 0) * 2
+                    )
+                  : undefined
+              }
+              contentHugWidth={
+                selectedSectionChildren.length > 0
+                  ? Math.max(
+                      ...selectedSectionChildren.map((child) => child.size.width),
+                      120
+                    ) +
+                    (selectedSectionItem.layout.padding ?? 0) * 2
+                  : 120
+              }
+              contentHugHeight={selectedSectionContentHugHeight}
+              themes={themes}
+              activeThemeId={activeThemeId}
+              themeId={selectedSectionItem.themeId}
+              onChange={(updates) => updateItem(selectedSectionItem.id, updates)}
+              onCreateStructureChild={async (template) => {
+                try {
+                  await handleAddNativeComponent(template)
+                } catch (error) {
+                  setHistoryToast({
+                    id: Date.now(),
+                    tone: "error",
+                    message:
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to create component.",
+                  })
+                }
+              }}
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />

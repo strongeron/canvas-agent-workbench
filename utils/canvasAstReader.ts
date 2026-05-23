@@ -66,6 +66,8 @@ export interface AstNodeInfo {
   textChildren: string
   /** True if the element has any nested JSX or expression children. */
   hasNonTextChildren: boolean
+  /** Direct element child count when known. Used by HTML slot composition controls. */
+  childElementCount?: number
   /** Whether the element fits the v1 TSX-mutation subset for U4. */
   editableInV1: boolean
   reasonNotEditable?: string

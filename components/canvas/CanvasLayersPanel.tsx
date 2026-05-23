@@ -70,6 +70,7 @@ export function CanvasLayersPanel({
     if (item.type === "mermaid") return item.title || "Mermaid diagram"
     if (item.type === "excalidraw") return item.title || "Excalidraw sketch"
     if (item.type === "markdown") return item.title || "Markdown note"
+    if (item.type === "section") return item.name || "Section"
     const component = getComponentById(item.componentId)
     return component?.name || item.componentId
   }

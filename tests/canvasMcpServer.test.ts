@@ -259,6 +259,12 @@ describe("canvas MCP server", () => {
     let htmlWriteRequestBody: Record<string, any> | null = null
     let markdownWriteRequestBody: Record<string, any> | null = null
     let componentCreateRequestBody: Record<string, any> | null = null
+    let syncTargetRequestBody: Record<string, any> | null = null
+    let detectComponentsDirRequestBody: Record<string, any> | null = null
+    let projectSyncRequestBody: Record<string, any> | null = null
+    // Mutable so a test step can simulate a stale/invalid persisted mapping
+    // (the read endpoint realpath-revalidates and returns `valid`).
+    let syncTargetValid = true
 
     server = createServer((req, res) => {
       const requestUrl = new URL(req.url || "/", "http://127.0.0.1")
@@ -404,6 +410,7 @@ describe("canvas MCP server", () => {
                 displayName: isTsx ? "Badge" : "PromoCard",
                 category: "ui",
                 kind: isTsx ? "tsx" : "html",
+                componentSlug: isTsx ? "badge" : "promo-card",
                 filePath: isTsx ? "components/Badge.tsx" : "components/PromoCard.html",
               },
               files: [
@@ -411,6 +418,88 @@ describe("canvas MCP server", () => {
                   filePath: isTsx ? "components/Badge.tsx" : "components/PromoCard.html",
                   mtimeMs: 789,
                 },
+              ],
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/project/sync-target") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          syncTargetRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              // The user-confirmed allowlisted Root B mapping.
+              syncTarget: {
+                rootPath: "/tmp/allowlisted-root-b",
+                resolvedRealPath: "/tmp/allowlisted-root-b",
+                componentsDir: "src/components",
+                format: "html",
+                mappedAt: "2026-05-17T10:00:00.000Z",
+              },
+              valid: syncTargetValid,
+              ...(syncTargetValid
+                ? { resolvedRealPath: "/tmp/allowlisted-root-b" }
+                : {}),
+            })
+          )
+        })
+        return
+      }
+
+      if (
+        req.method === "POST" &&
+        requestUrl.pathname === "/api/canvas/project/detect-components-dir"
+      ) {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          detectComponentsDirRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              resolvedComponentsDir: "src/components",
+              candidates: [{ dir: "src/components", exists: true }],
+              resolvedRealPath: "/tmp/allowlisted-root-b",
+              frameworkSuggestion: "html",
+              escapedDisplayPath: "/tmp/allowlisted-root-b/src/components",
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/project/sync") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          projectSyncRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              writtenPaths: ["promo-card.html", "promo-card.css", "manifest.json"],
+              notWritten: [],
+              manifestPath: "/tmp/allowlisted-root-b/src/components/manifest.json",
+              perFile: [
+                { path: "promo-card.html", status: "written" },
+                { path: "promo-card.css", status: "written" },
+                { path: "manifest.json", status: "written" },
               ],
             })
           )
@@ -1567,6 +1656,11 @@ describe("canvas MCP server", () => {
       const batchCreateResult = await batchCreatePromise
       expect(batchCreateResult.result?.structuredContent?.ok).toBe(true)
 
+      // U7: create_native_component_shell is FILE-BACKED. It POSTs the shared
+      // builder markup to /api/canvas/component/create FIRST, then enqueues the
+      // canvas item bound to the written file path + slug (parity with the UI
+      // U3 path so agent and UI shells cannot diverge).
+      componentCreateRequestBody = null
       const nativeShellPromise = sendRpc({
         jsonrpc: "2.0",
         id: "5e-native-shell",
@@ -1576,6 +1670,7 @@ describe("canvas MCP server", () => {
           arguments: {
             template: "card",
             title: "Promo Card",
+            projectId: "demo",
             artboardId: "artboard-1",
             select: true,
           },
@@ -1590,9 +1685,13 @@ describe("canvas MCP server", () => {
           select: true,
           item: {
             type: "html",
-            title: "Promo Card",
             sourceMode: "inline",
             parentId: "artboard-1",
+            // bound to the file written by /api/canvas/component/create
+            sourcePath: "projects/demo/components/PromoCard.html",
+            sourceHtmlFilePath: "projects/demo/components/PromoCard.html",
+            sourceComponentSlug: "promo-card",
+            sourceComponentFilePath: "projects/demo/components/PromoCard.html",
           },
         },
       })
@@ -1606,8 +1705,140 @@ describe("canvas MCP server", () => {
         state: { items: [], groups: [], nextZIndex: 1, selectedIds: ["html-shell-1"] },
       })
       const nativeShellResult = await nativeShellPromise
-      expect(nativeShellResult.result?.structuredContent?.ok).toBe(true)
+      expect(componentCreateRequestBody).toMatchObject({
+        projectId: "demo",
+        name: "Promo Card",
+        format: "html",
+        sourceHtml: expect.stringContaining('data-slot="media"'),
+      })
+      expect(nativeShellResult.result?.structuredContent?.result?.ok).toBe(true)
       expect(nativeShellResult.result?.structuredContent?.item?.type).toBe("html")
+      expect(
+        nativeShellResult.result?.structuredContent?.component?.primitive?.componentSlug
+      ).toBe("promo-card")
+
+      // --- U7: sync_to_project allowlist + reuse of the U5 handler ---------
+      // Temporarily rewrite the live state so a file-backed html component is
+      // resolvable (matching the UI sync-selection shape), then restore it so
+      // downstream assertions see the original state.
+      const originalStateJson = await readFile(
+        path.join(tempDir, "state.json"),
+        "utf8"
+      )
+      await writeFile(
+        path.join(tempDir, "state.json"),
+        JSON.stringify(
+          {
+            state: {
+              items: [
+                {
+                  id: "promo-card-item",
+                  type: "html",
+                  title: "Promo Card",
+                  sourceMode: "inline",
+                  sourceHtmlFilePath: "projects/demo/components/PromoCard.html",
+                  sourceHtmlFileMtime: 789,
+                  sourceComponentSlug: "promo-card",
+                  sourceComponentFilePath: "projects/demo/components/PromoCard.html",
+                  position: { x: 0, y: 0 },
+                  size: { width: 320, height: 200 },
+                  rotation: 0,
+                  zIndex: 1,
+                },
+              ],
+              groups: [],
+              nextZIndex: 2,
+              selectedIds: ["promo-card-item"],
+            },
+          },
+          null,
+          2
+        )
+      )
+
+      // Error: target NOT in the user-confirmed allowlist → distinct
+      // allowlist rejection (NOT a traversal/symlink rejection).
+      const blockedSyncResult = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-sync-blocked",
+        method: "tools/call",
+        params: {
+          name: "sync_to_project",
+          arguments: {
+            selection: "promo-card-item",
+            target: "/tmp/some-other-root",
+            projectId: "demo",
+          },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text: string }> } }
+      expect(blockedSyncResult.result?.isError).toBe(true)
+      expect(blockedSyncResult.result?.content?.[0]?.text).toContain("not-allowlisted")
+
+      // Happy: allowlisted target (here omitted → reuses the persisted
+      // mapping) → reuses the U5 sync handler, same Root B output as the UI.
+      projectSyncRequestBody = null
+      const okSyncResult = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-sync-ok",
+        method: "tools/call",
+        params: {
+          name: "sync_to_project",
+          arguments: {
+            selection: "promo-card-item",
+            projectId: "demo",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+
+      // Allowlist resolution reused the persisted mapping (target omitted).
+      expect(syncTargetRequestBody).toMatchObject({ projectId: "demo", mode: "read" })
+      // The U5 sync endpoint received the UI-shaped component selection.
+      expect(projectSyncRequestBody).toMatchObject({
+        target: "/tmp/allowlisted-root-b",
+        componentsDir: "src/components",
+        selection: {
+          type: "component",
+          slug: "promo-card",
+          sourcePath: "projects/demo/components/PromoCard.html",
+          mtimeMs: 789,
+        },
+      })
+      expect(okSyncResult.result?.structuredContent?.ok).toBe(true)
+      expect(okSyncResult.result?.structuredContent?.writtenPaths).toEqual([
+        "promo-card.html",
+        "promo-card.css",
+        "manifest.json",
+      ])
+      expect(okSyncResult.result?.structuredContent?.reusedMapping).toBe(true)
+
+      // Stale/invalid persisted mapping: the read endpoint realpath-
+      // revalidates and returns `valid: false`. The agent has no folder
+      // picker, so sync_to_project must REJECT (re-pick required) instead of
+      // proceeding to publish into a moved/missing/symlink-swapped root.
+      syncTargetValid = false
+      projectSyncRequestBody = null
+      const staleSyncResult = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-sync-stale",
+        method: "tools/call",
+        params: {
+          name: "sync_to_project",
+          arguments: {
+            selection: "promo-card-item",
+            projectId: "demo",
+          },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text: string }> } }
+      expect(staleSyncResult.result?.isError).toBe(true)
+      expect(staleSyncResult.result?.content?.[0]?.text).toContain(
+        "stale-sync-target"
+      )
+      // It bailed BEFORE hitting the sync endpoint.
+      expect(projectSyncRequestBody).toBeNull()
+      syncTargetValid = true
+
+      // Restore the original live state for the downstream assertions.
+      await writeFile(path.join(tempDir, "state.json"), originalStateJson)
 
       const updateGroupPromise = sendRpc({
         jsonrpc: "2.0",

@@ -42,6 +42,9 @@ function normalizeItem(item: CanvasItem | any): CanvasItem {
   if (item?.type === "artboard") {
     return { ...item, type: "artboard" }
   }
+  if (item?.type === "section") {
+    return { ...item, type: "section" }
+  }
   return { ...item, type: "component" }
 }
 
@@ -61,11 +64,16 @@ function deriveNextZIndex(items: CanvasItem[]) {
 
 function collectCascadeDeleteIds(prev: CanvasState, ids: string[]) {
   const idsToRemove = new Set(ids)
-  prev.items.forEach((item) => {
-    if (item.parentId && idsToRemove.has(item.parentId)) {
-      idsToRemove.add(item.id)
-    }
-  })
+  let changed = true
+  while (changed) {
+    changed = false
+    prev.items.forEach((item) => {
+      if (item.parentId && idsToRemove.has(item.parentId) && !idsToRemove.has(item.id)) {
+        idsToRemove.add(item.id)
+        changed = true
+      }
+    })
+  }
   return idsToRemove
 }
 

@@ -46,6 +46,27 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_items")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_native_component_shell")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "insert_native_slot_part")).toBe(true)
+
+    // U7: create_native_component_shell description reflects the shipped
+    // file-backed + extended-template behavior (not the old inline copy).
+    const nativeShellTool = canvasWorkspace?.tools.find(
+      (tool) => tool.id === "create_native_component_shell"
+    )
+    expect(nativeShellTool?.status).toBe("ready")
+    expect(nativeShellTool?.description).toContain("FILE-BACKED")
+    expect(nativeShellTool?.description).toContain("layout primitive")
+    expect(nativeShellTool?.description).toContain("element part")
+
+    // U7: the new allowlisted sync_to_project tool is present, ready, and
+    // marked destructive (it writes outside the repo).
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "sync_to_project")).toBe(true)
+    const syncToProjectTool = canvasWorkspace?.tools.find(
+      (tool) => tool.id === "sync_to_project"
+    )
+    expect(syncToProjectTool?.status).toBe("ready")
+    expect(syncToProjectTool?.destructive).toBe(true)
+    expect(syncToProjectTool?.description).toContain("allowlist")
+    expect(syncToProjectTool?.description).toContain("meta.syncTarget")
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_group")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "list_canvas_files")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "save_canvas_file")).toBe(true)

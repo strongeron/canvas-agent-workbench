@@ -6,6 +6,9 @@ import {
   captureWorkspaceScreenshot,
   createComponentFromSource,
   promoteSubtreeToComponent,
+  readProjectSyncTarget,
+  detectProjectComponentsDir,
+  syncProjectToTarget,
   createProjectCanvasFile,
   deleteProjectCanvasFile,
   duplicateProjectCanvasFile,
@@ -52,6 +55,9 @@ import {
   createDeleteItemsOperation,
   createHtmlCanvasItem,
   createNativeComponentShellItem,
+  buildNativeComponentShellCreateInput,
+  resolveSyncToProjectTarget,
+  resolveSyncSelectionFromState,
   createPrimitiveCanvasItem,
   createSetViewportOperation,
   createSelectItemsOperation,
@@ -972,22 +978,76 @@ const TOOL_DEFINITIONS = [
   {
     name: 'create_native_component_shell',
     description:
-      'Create a source-backed inline HTML shell with authored slot metadata for native canvas composition.',
+      'Create a FILE-BACKED native HTML component shell from the shared builder and place it on canvas. The file is written under projects/<projectId>/components/ via the same create endpoint + auto-slug uniquifier as the UI, so agent and UI shells cannot diverge.',
     inputSchema: {
       type: 'object',
       properties: {
         template: {
           type: 'string',
-          enum: ['blank', 'card', 'section', 'hero', 'media-object'],
+          enum: [
+            'blank',
+            'card',
+            'section',
+            'hero',
+            'media-object',
+            'stack',
+            'row',
+            'grid',
+            'split',
+            'center',
+            'cover',
+            'frame',
+            'div',
+            'header',
+            'footer',
+            'figure',
+            'h1',
+            'h2',
+            'h3',
+            'h4',
+            'h5',
+            'h6',
+            'p',
+            'span',
+            'ul',
+            'ol',
+            'li',
+            'a',
+            'button',
+            'img',
+            'svg',
+            'video',
+          ],
         },
         title: { type: 'string' },
+        name: { type: 'string' },
+        grid: { type: 'object' },
+        slots: { type: 'object' },
         position: positionSchema(),
         size: sizeSchema(),
         parentId: { type: 'string' },
         artboardId: { type: 'string' },
+        projectId: { type: 'string' },
         background: { type: 'string' },
         select: { type: 'boolean' },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'sync_to_project',
+    description:
+      'Publish a file-backed component or an artboard page (with its children) into a user-confirmed external project folder. `target` MUST match a folder a user confirmed in the canvas Sync panel (allowlist, recorded in project.json meta.syncTarget); omit `target` to reuse the persisted mapping. Reuses the same normalize + atomic-publish pipeline as the UI Sync button.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selection: { type: 'string' },
+        target: { type: 'string' },
+        componentsDir: { type: 'string' },
+        format: { type: 'string', enum: ['html', 'html+tsx'] },
+        projectId: { type: 'string' },
+      },
+      required: ['selection'],
       additionalProperties: false,
     },
   },
@@ -2078,6 +2138,8 @@ async function callTool(name, args) {
       return runCreateArtboard(args)
     case 'create_native_component_shell':
       return runCreateNativeComponentShell(args)
+    case 'sync_to_project':
+      return runSyncToProject(args)
     case 'insert_native_slot_part':
       return runInsertNativeSlotPart(args)
     case 'create_primitive_item':
@@ -2299,13 +2361,159 @@ async function runCreateArtboard(args) {
 }
 
 async function runCreateNativeComponentShell(args) {
+  // FILE-BACKED on create (R11). The shared U1 builder produces the markup;
+  // the create endpoint (U2 uniquifier) writes the real file under
+  // projects/<projectId>/components/. The canvas item is then bound to that
+  // file path — exactly the UI U3 path — so agent and UI cannot diverge.
+  const projectId = normalizeString(args.projectId) || context.projectId
+  const createInput = buildNativeComponentShellCreateInput(args)
+  const component = await createComponentFromSource(context, {
+    projectId,
+    name: createInput.name,
+    format: 'html',
+    sourceHtml: createInput.sourceHtml,
+    description: createInput.description,
+  })
+  const filePath = component?.primitive?.filePath
+    ? `projects/${projectId}/${component.primitive.filePath}`
+    : undefined
+  const slug = component?.primitive?.componentSlug || undefined
+  const mtimeMs =
+    Array.isArray(component?.files) && typeof component.files[0]?.mtimeMs === 'number'
+      ? component.files[0].mtimeMs
+      : undefined
+
+  if (args.createItem === false) return asToolResult({ component })
+
   const state = await readCanvasAgentState(context)
-  const item = createNativeComponentShellItem(state, args)
-  return applyOperation(
+  const item = createHtmlCanvasItem(state, {
+    title: component?.primitive?.displayName || createInput.shell.title,
+    sourceHtml: createInput.shell.sourceHtml,
+    sourceMode: 'inline',
+    sourcePath: filePath,
+    background: normalizeString(args.background) || undefined,
+    parentId: normalizeString(args.parentId || args.artboardId) || undefined,
+    position: args.position,
+    size: args.size || createInput.shell.size,
+    sandbox: normalizeString(args.sandbox) || undefined,
+  })
+  // Bind the file-backed identity the same way the UI U3 rebind does so a
+  // later sync_to_project resolves Root A sources by slug + path.
+  if (filePath) item.sourceHtmlFilePath = filePath
+  if (typeof mtimeMs === 'number') item.sourceHtmlFileMtime = mtimeMs
+  if (slug) item.sourceComponentSlug = slug
+  if (filePath) item.sourceComponentFilePath = filePath
+
+  const result = await enqueueCanvasAgentOperation(
+    context,
     'create_native_component_shell',
     createCreateItemOperation(item, args.select !== false),
-    { item }
+    { source: 'canvas-agent-mcp' }
   )
+  if (!result.ok) {
+    return asToolError(result.error || 'Failed to create native component shell.')
+  }
+  return asToolResult({ component, item, result })
+}
+
+async function runSyncToProject(args) {
+  const selectionId = normalizeString(args.selection)
+  if (!selectionId) return asToolError('selection is required.')
+
+  const projectId = normalizeString(args.projectId) || context.projectId
+
+  // 1. Allowlist gate FIRST. The agent has no folder picker; it can ONLY sync
+  //    to the user-confirmed Root B persisted in project.json meta.syncTarget.
+  //    This rejection is distinct from the sync endpoint's traversal guard.
+  let persisted = null
+  try {
+    const mapping = await readProjectSyncTarget(context, projectId)
+    persisted = mapping?.syncTarget || null
+    // The read endpoint realpath-revalidates the persisted mapping and
+    // returns `valid`. A stale/invalid mapping (root deleted/moved/symlink-
+    // swapped) must NOT be synced to — the agent has no folder picker, so
+    // there is no safe recovery; require a user re-pick in the UI.
+    if (persisted && mapping?.valid === false) {
+      return asToolError(
+        '[stale-sync-target] The persisted sync folder is missing, moved, or its realpath changed. A user must re-pick the project folder in the canvas UI before the agent can sync.'
+      )
+    }
+  } catch (error) {
+    return asToolError(
+      error instanceof Error
+        ? `Failed to read the project sync mapping: ${error.message}`
+        : 'Failed to read the project sync mapping.'
+    )
+  }
+  const allow = resolveSyncToProjectTarget(args.target, persisted)
+  if (!allow.ok) {
+    return asToolError(`[${allow.code}] ${allow.error}`)
+  }
+
+  // 2. Resolve the selection into the EXACT shape the UI sends so agent and
+  //    UI publish identical Root B trees + manifest.
+  const state = await readCanvasAgentState(context)
+  const resolvedSelection = resolveSyncSelectionFromState(state, selectionId)
+  if (!resolvedSelection.ok) {
+    return asToolError(`[${resolvedSelection.code}] ${resolvedSelection.error}`)
+  }
+
+  // 3. componentsDir: explicit override > persisted mapping > server detect.
+  //    Ambiguous detection with no override is an error, not a guess.
+  let componentsDir = normalizeString(args.componentsDir) || allow.componentsDir
+  let format = args.format === 'html+tsx' || args.format === 'html' ? args.format : allow.format
+  if (!componentsDir) {
+    let detected
+    try {
+      detected = await detectProjectComponentsDir(context, allow.target)
+    } catch (error) {
+      return asToolError(
+        error instanceof Error
+          ? `Components-dir detection failed: ${error.message}`
+          : 'Components-dir detection failed.'
+      )
+    }
+    if (detected?.resolvedComponentsDir) {
+      componentsDir = detected.resolvedComponentsDir
+    } else {
+      return asToolError(
+        '[ambiguous-detection] Could not auto-detect a components directory in the sync folder and no `componentsDir` was supplied. Pass an explicit `componentsDir` — this is not guessed.'
+      )
+    }
+    if (!format && (detected.frameworkSuggestion === 'html+tsx' || detected.frameworkSuggestion === 'html')) {
+      format = detected.frameworkSuggestion
+    }
+  }
+
+  // 4. Reuse the U5 sync handler — never reimplement sync.
+  let syncResult
+  try {
+    syncResult = await syncProjectToTarget(context, {
+      target: allow.target,
+      componentsDir,
+      format: format || 'html',
+      selection: resolvedSelection.selection,
+    })
+  } catch (error) {
+    return asToolError(
+      error instanceof Error ? `Sync failed: ${error.message}` : 'Sync failed.'
+    )
+  }
+  if (!syncResult || syncResult.ok !== true) {
+    return asToolError(
+      `[${syncResult?.code || 'sync-failed'}] ${
+        syncResult?.error || 'Sync did not complete.'
+      }`
+    )
+  }
+  return asToolResult({
+    ok: true,
+    writtenPaths: Array.isArray(syncResult.writtenPaths) ? syncResult.writtenPaths : [],
+    notWritten: Array.isArray(syncResult.notWritten) ? syncResult.notWritten : [],
+    manifestPath: syncResult.manifestPath,
+    perFile: Array.isArray(syncResult.perFile) ? syncResult.perFile : [],
+    reusedMapping: allow.reusedMapping === true,
+  })
 }
 
 async function runInsertNativeSlotPart(args) {

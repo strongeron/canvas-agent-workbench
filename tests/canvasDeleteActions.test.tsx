@@ -134,7 +134,8 @@ describe("canvas delete affordances", () => {
         onToggleScenes={() => {}}
         onToggleLayers={() => {}}
         onToggleLibraryPanel={() => {}}
-        onToggleInteractMode={() => {}}
+        canvasTool="select"
+        onCanvasToolChange={() => {}}
         onAddArtboard={() => {}}
         onAddNativeComponent={onAddNativeComponent}
         onGroupSelected={() => {}}
@@ -188,7 +189,8 @@ describe("canvas delete affordances", () => {
         onToggleScenes={() => {}}
         onToggleLayers={() => {}}
         onToggleLibraryPanel={() => {}}
-        onToggleInteractMode={() => {}}
+        canvasTool="select"
+        onCanvasToolChange={() => {}}
         onAddArtboard={() => {}}
         onAddNativeComponent={onAddNativeComponent}
         onGroupSelected={() => {}}
@@ -263,6 +265,34 @@ describe("canvas delete affordances", () => {
     await clickAsync(createButton!)
 
     expect(onCreate).toHaveBeenCalledWith({ template: "hero", title: "Launch Hero" })
+
+    await rendered.cleanup()
+  })
+
+  it("honors suggested native shell defaults when opened from another flow", async () => {
+    const onCreate = vi.fn()
+    const rendered = await renderNode(
+      <CanvasNativeComponentDialog
+        open={true}
+        artboardName="Landing Board"
+        initialTemplate="card"
+        initialTitle="Card"
+        onClose={() => {}}
+        onCreate={onCreate}
+      />
+    )
+
+    const titleInput = rendered.host.querySelector('input[type="text"]') as HTMLInputElement | null
+    expect(titleInput?.value).toBe("Card")
+
+    const createButton = Array.from(rendered.host.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Create shell")
+    )
+    expect(createButton).not.toBeNull()
+
+    await clickAsync(createButton!)
+
+    expect(onCreate).toHaveBeenCalledWith({ template: "card", title: "Card" })
 
     await rendered.cleanup()
   })

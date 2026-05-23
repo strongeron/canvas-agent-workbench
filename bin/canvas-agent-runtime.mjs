@@ -285,6 +285,34 @@ async function postAgentNativeJson(context, pathname, body) {
   return response.json()
 }
 
+/**
+ * Like `postAgentNativeJson` but returns the parsed JSON body even on a
+ * non-2xx status instead of hard-`fail()`-ing the process. Used by the project
+ * sync / detection / mapping endpoints, whose 4xx/5xx responses are legitimate
+ * operational outcomes (stale source, allowlist, ambiguous detection, …) that
+ * the calling tool must surface to the agent — not crash the MCP server.
+ */
+async function postAgentNativeJsonSoft(context, pathname, body) {
+  const url = buildAgentNativeUrl(context, pathname)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+  try {
+    return await response.json()
+  } catch {
+    return {
+      ok: false,
+      status: response.status,
+      code: 'bad-response',
+      error: `Agent-native request returned a non-JSON ${response.status} response for ${url}.`,
+    }
+  }
+}
+
 export async function readAgentNativeManifest(context) {
   const payload = await readAgentNativeJson(context, '/api/agent-native/manifest')
   return payload?.manifest ?? null
@@ -560,6 +588,45 @@ export async function promoteSubtreeToComponent(context, input) {
     sourceHtml: input?.sourceHtml,
     canvasId: input?.canvasId,
     sourceId: input?.sourceId,
+  })
+}
+
+/**
+ * Read the user-confirmed Root B mapping persisted in `project.json`
+ * `meta.syncTarget`. This is the allowlist `sync_to_project` enforces — an
+ * agent can only sync to a folder a user already confirmed in the UI. Returns
+ * `{ syncTarget, valid?, resolvedRealPath? }` (syncTarget is null when none).
+ */
+export async function readProjectSyncTarget(context, projectId = context.projectId) {
+  return postAgentNativeJsonSoft(context, '/api/canvas/project/sync-target', {
+    projectId: projectId || context.projectId,
+    mode: 'read',
+  })
+}
+
+/**
+ * Probe a user-confirmed external root for its components dir + framework
+ * sniff. The picked root must come from the persisted mapping (the allowlist) —
+ * the agent never nominates an arbitrary path here.
+ */
+export async function detectProjectComponentsDir(context, rootPath) {
+  return postAgentNativeJsonSoft(context, '/api/canvas/project/detect-components-dir', {
+    rootPath,
+  })
+}
+
+/**
+ * Publish a normalized component / artboard page into Root B through the SAME
+ * `/api/canvas/project/sync` endpoint the UI Sync button uses (the normalize +
+ * atomic-publish pipeline is reused, never reimplemented). Response:
+ * `{ ok, writtenPaths[], notWritten[], manifestPath, perFile:[{path,status}] }`.
+ */
+export async function syncProjectToTarget(context, input) {
+  return postAgentNativeJsonSoft(context, '/api/canvas/project/sync', {
+    target: input?.target,
+    componentsDir: input?.componentsDir,
+    format: input?.format,
+    selection: input?.selection,
   })
 }
 
