@@ -558,6 +558,19 @@ export function CanvasSidebar({
     () => projectPrimitiveState.primitives.filter((primitive) => primitive.kind === "html"),
     [projectPrimitiveState.primitives]
   )
+  const filteredNativeProjectPrimitives = useMemo(() => {
+    const lowerQuery = searchQuery.trim().toLowerCase()
+    if (!lowerQuery) return nativeProjectPrimitives
+    return nativeProjectPrimitives.filter((primitive) => {
+      const haystacks = [
+        primitive.displayName,
+        primitive.description,
+        primitive.id,
+        ...(primitive.slots?.map((slot) => slot.name) ?? []),
+      ]
+      return haystacks.some((value) => value?.toLowerCase().includes(lowerQuery))
+    })
+  }, [nativeProjectPrimitives, searchQuery])
 
   useEffect(() => {
     if (!activeProjectId) return
@@ -1523,7 +1536,7 @@ export function CanvasSidebar({
             {onAddInlineHtml &&
             (projectPrimitiveState.status === "loading" ||
               projectPrimitiveState.status === "error" ||
-              nativeProjectPrimitives.length > 0) ? (
+              filteredNativeProjectPrimitives.length > 0) ? (
               <div className="mt-2 rounded-md border border-default bg-white p-2">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Project-native HTML
@@ -1534,9 +1547,9 @@ export function CanvasSidebar({
                 {projectPrimitiveState.status === "loading" ? (
                   <p className="mt-2 text-[11px] text-muted-foreground">Loading project primitives…</p>
                 ) : null}
-                {nativeProjectPrimitives.length > 0 ? (
+                {filteredNativeProjectPrimitives.length > 0 ? (
                   <div className="mt-2 space-y-1.5">
-                    {nativeProjectPrimitives.map((primitive) => (
+                    {filteredNativeProjectPrimitives.map((primitive) => (
                       <button
                         key={primitive.id}
                         type="button"

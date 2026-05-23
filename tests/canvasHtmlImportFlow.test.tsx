@@ -69,6 +69,19 @@ function setInputFiles(input: HTMLInputElement, files: File[]) {
   })
 }
 
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set
+  setter?.call(input, value)
+  input.dispatchEvent(
+    new InputEvent("input", {
+      bubbles: true,
+      data: value,
+      inputType: "insertText",
+    })
+  )
+  input.dispatchEvent(new Event("change", { bubbles: true }))
+}
+
 function createRelativeFile(name: string, content: string, relativePath = name) {
   const file = new File([content], name, { type: "text/html" })
   Object.defineProperty(file, "webkitRelativePath", {
@@ -177,8 +190,34 @@ describe("canvas html import flow", () => {
     ) as HTMLButtonElement | undefined
     expect(button).toBeTruthy()
 
+    const searchInput = rendered.host.querySelector(
+      'input[placeholder="Search components..."]'
+    ) as HTMLInputElement | null
+    expect(searchInput).toBeTruthy()
+
     await act(async () => {
-      button?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+      setInputValue(searchInput!, "hero")
+    })
+    await flushFrames()
+
+    expect(
+      Array.from(rendered.host.querySelectorAll("button")).find((candidate) =>
+        candidate.textContent?.includes("Card")
+      )
+    ).toBeUndefined()
+
+    await act(async () => {
+      setInputValue(searchInput!, "card")
+    })
+    await flushFrames()
+
+    const filteredButton = Array.from(rendered.host.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("Card")
+    ) as HTMLButtonElement | undefined
+    expect(filteredButton).toBeTruthy()
+
+    await act(async () => {
+      filteredButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
     })
     await flushFrames()
 
