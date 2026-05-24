@@ -1974,6 +1974,138 @@ describe("canvas MCP server", () => {
       expect(focusItemsResult.result?.structuredContent?.ids).toEqual(["item-1", "item-2"])
       expect(focusItemsResult.result?.structuredContent?.padding).toBe(88)
 
+      // duplicate_items: mirrors UI cmd-D — clones selected items with a
+      // position offset and fresh ids, ships them via create_items, returns
+      // { newIds }.
+      const duplicateItemsPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-duplicate-items",
+        method: "tools/call",
+        params: {
+          name: "duplicate_items",
+          arguments: {
+            ids: ["item-1", "item-2"],
+            offset: { dx: 32, dy: 16 },
+            select: true,
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedDuplicateItems = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedDuplicateItems.request).toMatchObject({
+        toolName: "duplicate_items",
+        operation: {
+          type: "create_items",
+          select: true,
+        },
+      })
+      const duplicatedItemBatch = queuedDuplicateItems.request.operation.items as Array<{
+        id: string
+        position: { x: number; y: number }
+        groupId?: unknown
+      }>
+      expect(duplicatedItemBatch).toHaveLength(2)
+      expect(duplicatedItemBatch[0]?.position).toEqual({ x: 100 + 32, y: 80 + 16 })
+      expect(duplicatedItemBatch[1]?.position).toEqual({ x: 280 + 32, y: 120 + 16 })
+      expect(duplicatedItemBatch[0]?.groupId).toBeUndefined()
+      await queuedDuplicateItems.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:05.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const duplicateItemsResult = await duplicateItemsPromise
+      expect(duplicateItemsResult.result?.structuredContent?.newIds).toEqual(
+        duplicatedItemBatch.map((entry) => entry.id)
+      )
+
+      // set_canvas_active_theme: paired write for get_canvas_themes — fires
+      // the UI handler so resolved token values update on the live board.
+      const setActiveThemePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-set-active-theme",
+        method: "tools/call",
+        params: {
+          name: "set_canvas_active_theme",
+          arguments: { themeId: "default" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedSetActiveTheme = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedSetActiveTheme.request).toMatchObject({
+        toolName: "set_canvas_active_theme",
+        operation: {
+          type: "set_active_theme",
+          themeId: "default",
+        },
+      })
+      await queuedSetActiveTheme.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const setActiveThemeResult = await setActiveThemePromise
+      expect(setActiveThemeResult.result?.structuredContent?.themeId).toBe("default")
+
+      // undo_source_mutation / redo_source_mutation: cmd-Z / cmd-shift-Z
+      // parity. The MCP tool enqueues the op; the UI bridge routes it to
+      // handleUndoMutation/handleRedoMutation which re-apply the stored
+      // snapshot via the existing AST writer.
+      const undoSourcePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-undo-source",
+        method: "tools/call",
+        params: {
+          name: "undo_source_mutation",
+          arguments: {},
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedUndoSource = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedUndoSource.request).toMatchObject({
+        toolName: "undo_source_mutation",
+        operation: {
+          type: "undo_source_mutation",
+          scope: "active-file",
+        },
+      })
+      await queuedUndoSource.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:07.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const undoSourceResult = await undoSourcePromise
+      expect(undoSourceResult.result?.structuredContent?.scope).toBe("active-file")
+
+      const redoSourcePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-redo-source",
+        method: "tools/call",
+        params: {
+          name: "redo_source_mutation",
+          arguments: {
+            scope: "log-entry",
+            logEntryId: "entry-1",
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedRedoSource = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedRedoSource.request).toMatchObject({
+        toolName: "redo_source_mutation",
+        operation: {
+          type: "redo_source_mutation",
+          scope: "log-entry",
+          logEntryId: "entry-1",
+        },
+      })
+      await queuedRedoSource.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:08.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const redoSourceResult = await redoSourcePromise
+      expect(redoSourceResult.result?.structuredContent?.scope).toBe("log-entry")
+
       const movedCanvasFile = (await sendRpc({
         jsonrpc: "2.0",
         id: "5f",

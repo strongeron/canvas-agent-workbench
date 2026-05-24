@@ -444,6 +444,20 @@ export type CanvasRemoteOperation =
       padding?: number
       select?: boolean
     }
+  | {
+      type: "set_active_theme"
+      themeId: string
+    }
+  | {
+      type: "undo_source_mutation"
+      scope?: "active-file" | "log-entry"
+      logEntryId?: string
+    }
+  | {
+      type: "redo_source_mutation"
+      scope?: "active-file" | "log-entry"
+      logEntryId?: string
+    }
 
 export interface CanvasAgentDefinition {
   id: string

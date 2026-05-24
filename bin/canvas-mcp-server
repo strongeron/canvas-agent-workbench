@@ -61,6 +61,10 @@ import {
   createPrimitiveCanvasItem,
   createSetViewportOperation,
   createSelectItemsOperation,
+  createSetActiveThemeOperation,
+  createUndoSourceMutationOperation,
+  createRedoSourceMutationOperation,
+  buildDuplicateItemsResult,
   createUpdateGroupOperation,
   createUpdateItemOperation,
   exportCanvasBoard,
@@ -1282,6 +1286,71 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'duplicate_items',
+    description:
+      'Duplicate one or more canvas items with a position offset and fresh ids. Mirrors the UI duplicate (cmd-D) path — same id format, default 20px offset, group association dropped — and returns { newIds } so the agent can chain follow-up edits.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+        },
+        offset: {
+          type: 'object',
+          properties: {
+            dx: { type: 'number' },
+            dy: { type: 'number' },
+          },
+          additionalProperties: false,
+        },
+        select: { type: 'boolean' },
+      },
+      required: ['ids'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_canvas_active_theme',
+    description:
+      'Set the active Canvas theme by id. Paired write for get_canvas_themes — same UI handler as picking a theme in CanvasThemePanel, so resolved token values update immediately on the live board.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        themeId: { type: 'string' },
+      },
+      required: ['themeId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'undo_source_mutation',
+    description:
+      'Undo the most recent source mutation for the active file (cmd-Z parity). The UI re-applies the previous snapshot via the same AST writer that handled the original mutation. `scope: "log-entry"` plus `logEntryId` targets a specific entry; default is the active-file head.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scope: { type: 'string', enum: ['active-file', 'log-entry'] },
+        logEntryId: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'redo_source_mutation',
+    description:
+      'Redo the most recently undone source mutation for the active file (cmd-shift-Z parity). The UI re-applies the post-snapshot via the same AST writer. `scope: "log-entry"` plus `logEntryId` targets a specific redo entry; default is the active-file head.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scope: { type: 'string', enum: ['active-file', 'log-entry'] },
+        logEntryId: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+  },
 ]
 
 const RESOURCE_DEFINITIONS = [
@@ -2168,6 +2237,14 @@ async function callTool(name, args) {
       return runClearCanvas()
     case 'export_board':
       return runExportBoard(args)
+    case 'duplicate_items':
+      return runDuplicateItems(args)
+    case 'set_canvas_active_theme':
+      return runSetCanvasActiveTheme(args)
+    case 'undo_source_mutation':
+      return runUndoSourceMutation(args)
+    case 'redo_source_mutation':
+      return runRedoSourceMutation(args)
     default:
       return asToolError(`Unknown tool: ${name}`)
   }
@@ -3103,6 +3180,44 @@ async function runDeleteSystemEdge(args) {
     type: 'delete-edge',
     edgeId,
   })
+}
+
+async function runDuplicateItems(args) {
+  const state = await readCanvasAgentState(context)
+  const result = buildDuplicateItemsResult(state, args)
+  if (!result.ok) return asToolError(`[${result.code}] ${result.error}`)
+  const select = args.select !== false
+  return applyOperation(
+    'duplicate_items',
+    createCreateItemsOperation(result.items, select),
+    { newIds: result.newIds }
+  )
+}
+
+async function runSetCanvasActiveTheme(args) {
+  const themeId = normalizeString(args.themeId)
+  if (!themeId) return asToolError('themeId is required.')
+  return applyOperation(
+    'set_canvas_active_theme',
+    createSetActiveThemeOperation(themeId),
+    { themeId }
+  )
+}
+
+async function runUndoSourceMutation(args) {
+  return applyOperation(
+    'undo_source_mutation',
+    createUndoSourceMutationOperation(args),
+    { scope: args.scope === 'log-entry' ? 'log-entry' : 'active-file' }
+  )
+}
+
+async function runRedoSourceMutation(args) {
+  return applyOperation(
+    'redo_source_mutation',
+    createRedoSourceMutationOperation(args),
+    { scope: args.scope === 'log-entry' ? 'log-entry' : 'active-file' }
+  )
 }
 
 async function applyOperation(toolName, operation, meta = {}) {

@@ -163,6 +163,13 @@ export function applyCanvasRemoteOperationToState(state, operation) {
       }
     case 'set_viewport':
     case 'focus_items':
+    case 'set_active_theme':
+    case 'undo_source_mutation':
+    case 'redo_source_mutation':
+      // UI-side effects only — no canvas state mutation. The dev server still
+      // records the operation in the event log and broadcasts it so the
+      // browser bridge can call the matching UI handler (setActiveThemeId,
+      // handleUndoMutation, handleRedoMutation).
       return current
     default:
       return current
@@ -302,6 +309,76 @@ export function createSelectItemsOperation(ids) {
 
 export function createClearCanvasOperation() {
   return { type: 'clear_canvas' }
+}
+
+export function createSetActiveThemeOperation(themeId) {
+  return {
+    type: 'set_active_theme',
+    themeId: normalizeString(themeId),
+  }
+}
+
+export function createUndoSourceMutationOperation(args = {}) {
+  const scope = args.scope === 'log-entry' ? 'log-entry' : 'active-file'
+  return {
+    type: 'undo_source_mutation',
+    scope,
+    logEntryId: normalizeString(args.logEntryId) || undefined,
+  }
+}
+
+export function createRedoSourceMutationOperation(args = {}) {
+  const scope = args.scope === 'log-entry' ? 'log-entry' : 'active-file'
+  return {
+    type: 'redo_source_mutation',
+    scope,
+    logEntryId: normalizeString(args.logEntryId) || undefined,
+  }
+}
+
+/**
+ * Mirror the UI duplicate-selected path: clone each item with a fresh id,
+ * apply a position offset, bump z-index, and drop the group association.
+ * Returns the new items plus their ids so an MCP tool can ship them through
+ * the `create_items` operation and report `{ newIds }` to the agent.
+ *
+ * Pure helper — no fs/node:* access — so it can run inside the MCP server
+ * AND in tests next to the canvas state code.
+ */
+export function buildDuplicateItemsResult(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const ids = normalizeIdList(args.ids)
+  if (ids.length === 0) {
+    return { ok: false, code: 'bad-input', error: 'ids is required.' }
+  }
+  const dx = Number.isFinite(args.offset?.dx) ? Number(args.offset.dx) : 20
+  const dy = Number.isFinite(args.offset?.dy) ? Number(args.offset.dy) : 20
+
+  const selected = current.items.filter((item) => ids.includes(item.id))
+  if (selected.length === 0) {
+    return { ok: false, code: 'not-found', error: 'No matching canvas items for the provided ids.' }
+  }
+
+  const baseTimestamp = Date.now()
+  const newItems = selected.map((item, index) => {
+    const newId = `canvas-item-${baseTimestamp}-${index}-${Math.random().toString(36).slice(2, 9)}`
+    return {
+      ...item,
+      id: newId,
+      position: {
+        x: Number(item.position?.x || 0) + dx,
+        y: Number(item.position?.y || 0) + dy,
+      },
+      zIndex: current.nextZIndex + index,
+      groupId: undefined,
+    }
+  })
+
+  return {
+    ok: true,
+    items: newItems,
+    newIds: newItems.map((item) => item.id),
+  }
 }
 
 export function createArtboardItem(state, args = {}) {

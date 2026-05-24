@@ -518,6 +518,9 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
             }
           case "set_viewport":
           case "focus_items":
+          case "set_active_theme":
+          case "undo_source_mutation":
+          case "redo_source_mutation":
             return prev
           default:
             return prev

@@ -1517,9 +1517,36 @@ export function CanvasTab({
         return
       }
 
+      if (operation.type === "set_active_theme") {
+        const themeId = typeof operation.themeId === "string" ? operation.themeId.trim() : ""
+        if (themeId) {
+          setActiveThemeId(themeId)
+        }
+        return
+      }
+
+      if (operation.type === "undo_source_mutation") {
+        void handleUndoMutation()
+        return
+      }
+
+      if (operation.type === "redo_source_mutation") {
+        void handleRedoMutation()
+        return
+      }
+
       applyRemoteOperation(operation)
     },
-    [applyRemoteOperation, fitToView, items, selectItems, setViewport]
+    [
+      applyRemoteOperation,
+      fitToView,
+      handleRedoMutation,
+      handleUndoMutation,
+      items,
+      selectItems,
+      setActiveThemeId,
+      setViewport,
+    ]
   )
   const agentBridge = useCanvasAgentBridge({
     projectId: activeProjectId,
