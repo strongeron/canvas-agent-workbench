@@ -26,7 +26,6 @@ import type {
   CanvasScene,
   CanvasTransform,
   CanvasMermaidItem,
-  CanvasMcpAppItem,
   CanvasExcalidrawItem,
   CanvasHtmlItem,
   CanvasMarkdownItem,
