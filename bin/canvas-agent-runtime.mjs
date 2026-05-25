@@ -630,6 +630,41 @@ export async function syncProjectToTarget(context, input) {
   })
 }
 
+export async function connectMcpApp(context, input) {
+  return postAgentNativeJsonSoft(context, '/api/canvas/mcp-app/connect', {
+    projectId: input?.projectId || context.projectId,
+    nodeId: input?.nodeId,
+    appName: input?.appName,
+    transport: input?.transport,
+    confirmed: input?.confirmed === true,
+  })
+}
+
+export async function disconnectMcpApp(context, input) {
+  return postAgentNativeJsonSoft(context, '/api/canvas/mcp-app/disconnect', {
+    projectId: input?.projectId || context.projectId,
+    nodeId: input?.nodeId,
+  })
+}
+
+export async function invokeMcpAppTool(context, input) {
+  return postAgentNativeJsonSoft(context, '/api/canvas/mcp-app/invoke-tool', {
+    projectId: input?.projectId || context.projectId,
+    nodeId: input?.nodeId,
+    toolName: input?.toolName,
+    args: input?.args,
+    callerDepth: input?.callerDepth,
+  })
+}
+
+export async function getMcpAppLog(context, input) {
+  return postAgentNativeJsonSoft(context, '/api/canvas/mcp-app/log', {
+    projectId: input?.projectId || context.projectId,
+    nodeId: input?.nodeId,
+    limit: input?.limit,
+  })
+}
+
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
   return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
 }

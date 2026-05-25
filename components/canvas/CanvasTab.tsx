@@ -26,10 +26,12 @@ import type {
   CanvasScene,
   CanvasTransform,
   CanvasMermaidItem,
+  CanvasMcpAppItem,
   CanvasExcalidrawItem,
   CanvasHtmlItem,
   CanvasMarkdownItem,
 } from "../../types/canvas"
+import { CanvasAddMcpAppDialog } from "./CanvasAddMcpAppDialog"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
 import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
@@ -60,6 +62,7 @@ import type { CanvasReactNodeRect } from "../../utils/canvasReactNodeBridge"
 import { dispatchCanvasResize } from "../../utils/canvasResizeDispatch"
 import { dispatchCanvasGroupResize } from "../../utils/canvasGroupResizeDispatch"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
+import { CanvasMcpAppPropsPanel } from "./CanvasMcpAppPropsPanel"
 import { CanvasMediaPropsPanel } from "./CanvasMediaPropsPanel"
 import { CanvasMermaidPropsPanel } from "./CanvasMermaidPropsPanel"
 import { CanvasAgentPanel } from "./CanvasAgentPanel"
@@ -123,6 +126,7 @@ import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdown
 import { hydrateNativeComponentShellFromProps } from "../../utils/canvasNativeShellHydration"
 import { suggestNativeTemplateForComponentName } from "../../utils/canvasNativeComponentSuggestion"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
+import type { CanvasMcpAppTransport } from "../../utils/mcpApp"
 
 /**
  * Client-side shape of the `/api/canvas/component/create` response (U2/U3).
@@ -773,6 +777,7 @@ export function CanvasTab({
   }, [activeLibraryDrag])
   const [componentPasteDialogVisible, setComponentPasteDialogVisible] = useState(false)
   const [nativeComponentDialogVisible, setNativeComponentDialogVisible] = useState(false)
+  const [mcpAppDialogVisible, setMcpAppDialogVisible] = useState(false)
   const [nativeComponentDialogDefaults, setNativeComponentDialogDefaults] = useState<{
     template: NativeComponentTemplate
     title: string
@@ -882,6 +887,7 @@ export function CanvasTab({
   const selectedMediaItem = selectedItem?.type === "media" ? selectedItem : null
   const selectedMarkdownItem = selectedItem?.type === "markdown" ? selectedItem : null
   const selectedMermaidItem = selectedItem?.type === "mermaid" ? selectedItem : null
+  const selectedMcpAppItem = selectedItem?.type === "mcp-app" ? selectedItem : null
   const selectedExcalidrawItem = selectedItem?.type === "excalidraw" ? selectedItem : null
   const selectedArtboardItem = selectedItem?.type === "artboard" ? selectedItem : null
   const selectedSectionItem = selectedItem?.type === "section" ? selectedItem : null
@@ -3070,6 +3076,36 @@ export function CanvasTab({
     [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
+  const handleAddMcpApp = useCallback(
+    (input: {
+      appName?: string
+      transport: CanvasMcpAppTransport
+      position?: { x: number; y: number }
+    }) => {
+      const panelWidth = 760
+      const panelHeight = 480
+      const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+      const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+      const targetX = input?.position ? input.position.x : centerX
+      const targetY = input?.position ? input.position.y : centerY
+
+      addItem({
+        type: "mcp-app",
+        appName: input.appName?.trim() || "MCP app",
+        transport: input.transport,
+        status: "disconnected",
+        position: {
+          x: Math.max(0, targetX - panelWidth / 2),
+          y: Math.max(0, targetY - panelHeight / 2),
+        },
+        size: { width: panelWidth, height: panelHeight },
+        rotation: 0,
+      })
+      setPropsPanelVisible(true)
+    },
+    [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+  )
+
   const handleAddMarkdown = useCallback(
     (input?: {
       source?: string
@@ -3999,6 +4035,23 @@ export function CanvasTab({
           return
         }
 
+        if (item.type === "mcp-app") {
+          const newId = addItem({
+            type: "mcp-app",
+            appName: item.appName,
+            transport: item.transport,
+            status: "disconnected",
+            position: { ...item.position },
+            size: { ...item.size },
+            rotation: item.rotation,
+            layoutSizing: item.layoutSizing ? { ...item.layoutSizing } : undefined,
+            parentId,
+            order: item.order,
+          })
+          idMap.set(item.id, newId)
+          return
+        }
+
         const newId = addItem({
           type: "component",
           componentId: item.componentId,
@@ -4205,6 +4258,7 @@ export function CanvasTab({
                 onAddHtmlBundle={handleAddHtmlBundle}
                 onAddInlineHtml={handleAddInlineHtml}
                 onAddNativeComponent={() => openNativeComponentDialog()}
+                onAddMcpApp={() => setMcpAppDialogVisible(true)}
                 onAddHtmlBundleFromDirectory={handleAddHtmlBundleFromDirectory}
                 onScanHtmlBundleLibrary={scanCanvasHtmlBundleLibrary}
                 onAddMedia={handleAddMedia}
@@ -4306,8 +4360,18 @@ export function CanvasTab({
             }}
           />
 
+          <CanvasAddMcpAppDialog
+            open={mcpAppDialogVisible}
+            onClose={() => setMcpAppDialogVisible(false)}
+            onCreate={async (input) => {
+              handleAddMcpApp(input)
+              setMcpAppDialogVisible(false)
+            }}
+          />
+
           <CanvasWorkspace
             items={items}
+            projectId={activeProjectId || "demo"}
             groups={groups}
             transform={transform}
             interactMode={interactMode}
@@ -4703,6 +4767,16 @@ export function CanvasTab({
               onConvertToExcalidraw={() =>
                 void handleConvertMermaidToExcalidraw(selectedMermaidItem.id)
               }
+              onDelete={handleDeleteSelected}
+              onClose={handleClosePropsPanel}
+            />
+          )}
+
+          {showPropsPanel && selectedMcpAppItem && activeProjectId && (
+            <CanvasMcpAppPropsPanel
+              projectId={activeProjectId}
+              item={selectedMcpAppItem}
+              onChange={(updates) => updateItem(selectedMcpAppItem.id, updates)}
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
             />

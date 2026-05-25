@@ -15,6 +15,7 @@ export const DEFAULT_ARTBOARD_LAYOUT = {
 export const DEFAULT_ARTBOARD_SIZE = { width: 1440, height: 900 }
 export const DEFAULT_ARTBOARD_POSITION = { x: 120, y: 120 }
 export const DEFAULT_HTML_ITEM_SIZE = { width: 720, height: 480 }
+export const DEFAULT_MCP_APP_ITEM_SIZE = { width: 760, height: 480 }
 export const DEFAULT_EXPORT_FORMAT = 'react-tailwind'
 export const EXPORT_FORMATS = new Set(['react-tailwind', 'react-css-vars'])
 export const GROUP_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
@@ -380,6 +381,37 @@ export function createHtmlCanvasItem(state, args = {}) {
     sourceImportedAt: normalizeString(args.sourceImportedAt) || undefined,
     position: normalizePosition(args.position, DEFAULT_ARTBOARD_POSITION),
     size: normalizeSize(args.size, DEFAULT_HTML_ITEM_SIZE),
+    rotation: 0,
+    zIndex: current.nextZIndex,
+    parentId: normalizeString(args.parentId) || undefined,
+  }
+}
+
+export function createMcpAppCanvasItem(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const transport = args.transport && typeof args.transport === 'object' ? args.transport : null
+  if (!transport || (transport.kind !== 'http' && transport.kind !== 'stdio')) {
+    throw new Error('MCP app transport is required.')
+  }
+
+  if (transport.kind === 'http') {
+    const url = normalizeString(transport.url)
+    if (!url) throw new Error('HTTP MCP app transport requires a url.')
+  } else {
+    const command = normalizeString(transport.command)
+    if (!command) throw new Error('stdio MCP app transport requires a command.')
+  }
+
+  return {
+    id: createCanvasItemId('mcp-app'),
+    type: 'mcp-app',
+    appName: normalizeString(args.appName) || 'MCP app',
+    transport,
+    status: ['connecting', 'connected', 'error'].includes(args.status)
+      ? args.status
+      : 'disconnected',
+    position: normalizePosition(args.position, DEFAULT_ARTBOARD_POSITION),
+    size: normalizeSize(args.size, DEFAULT_MCP_APP_ITEM_SIZE),
     rotation: 0,
     zIndex: current.nextZIndex,
     parentId: normalizeString(args.parentId) || undefined,

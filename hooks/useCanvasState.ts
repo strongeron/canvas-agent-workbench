@@ -20,6 +20,19 @@ const DEFAULT_STATE: CanvasState = {
   selectedIds: [],
 }
 
+function resetMcpAppConnectionState(item: CanvasItem): CanvasItem {
+  if (item.type !== "mcp-app") return item
+  return {
+    ...item,
+    status: "disconnected",
+    lastError: undefined,
+    toolsCache: undefined,
+    resourcesCache: undefined,
+    promptsCache: undefined,
+    recentCalls: undefined,
+  }
+}
+
 function normalizeItem(item: CanvasItem | any): CanvasItem {
   if (item?.type === "embed") {
     return { ...item, type: "embed" }
@@ -38,6 +51,18 @@ function normalizeItem(item: CanvasItem | any): CanvasItem {
   }
   if (item?.type === "markdown") {
     return { ...item, type: "markdown" }
+  }
+  if (item?.type === "mcp-app") {
+    return {
+      ...item,
+      type: "mcp-app",
+      status:
+        item?.status === "connecting" ||
+        item?.status === "connected" ||
+        item?.status === "error"
+          ? item.status
+          : "disconnected",
+    }
   }
   if (item?.type === "artboard") {
     return { ...item, type: "artboard" }
@@ -357,7 +382,7 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
       )
 
       const newItems = selectedItems.map((item, index) => ({
-        ...item,
+        ...resetMcpAppConnectionState(item),
         id: `canvas-item-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
         position: {
           x: item.position.x + 20,
@@ -384,7 +409,7 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
 
         const newId = `canvas-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
         const newItem = {
-          ...item,
+          ...resetMcpAppConnectionState(item),
           id: newId,
           position: {
             x: item.position.x + 20,

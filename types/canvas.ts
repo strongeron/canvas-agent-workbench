@@ -5,6 +5,13 @@ import type {
 import type { DesignSystemScaleConfig } from "../projects/design-system-foundation/designSystemApi"
 import type { ColorCanvasState } from "./colorCanvas"
 import type { ThemeOption } from "./theme"
+import type {
+  CanvasMcpAppTransport,
+  McpCallRecord,
+  McpPromptDescriptor,
+  McpResourceDescriptor,
+  McpToolDescriptor,
+} from "../utils/mcpApp"
 
 export type CanvasItem =
   | CanvasComponentItem
@@ -14,6 +21,7 @@ export type CanvasItem =
   | CanvasMermaidItem
   | CanvasExcalidrawItem
   | CanvasMarkdownItem
+  | CanvasMcpAppItem
   | CanvasSectionItem
   | CanvasArtboardItem
 
@@ -25,6 +33,7 @@ export type CanvasItemInput =
   | Omit<CanvasMermaidItem, "id" | "zIndex">
   | Omit<CanvasExcalidrawItem, "id" | "zIndex">
   | Omit<CanvasMarkdownItem, "id" | "zIndex">
+  | Omit<CanvasMcpAppItem, "id" | "zIndex">
   | Omit<CanvasSectionItem, "id" | "zIndex">
   | Omit<CanvasArtboardItem, "id" | "zIndex">
 
@@ -36,6 +45,7 @@ export type CanvasItemUpdate =
   | Partial<Omit<CanvasMermaidItem, "id">>
   | Partial<Omit<CanvasExcalidrawItem, "id">>
   | Partial<Omit<CanvasMarkdownItem, "id">>
+  | Partial<Omit<CanvasMcpAppItem, "id">>
   | Partial<Omit<CanvasSectionItem, "id">>
   | Partial<Omit<CanvasArtboardItem, "id">>
 
@@ -221,6 +231,18 @@ export interface CanvasMarkdownItem extends CanvasItemBase {
   sourcePath?: string
   sourceImportedAt?: string
   sourceFileMtime?: number
+}
+
+export interface CanvasMcpAppItem extends CanvasItemBase {
+  type: "mcp-app"
+  appName: string
+  transport: CanvasMcpAppTransport
+  status: "disconnected" | "connecting" | "connected" | "error"
+  lastError?: string
+  toolsCache?: McpToolDescriptor[]
+  resourcesCache?: McpResourceDescriptor[]
+  promptsCache?: McpPromptDescriptor[]
+  recentCalls?: McpCallRecord[]
 }
 
 export interface CanvasLayoutContainerItemBase extends CanvasItemBase {

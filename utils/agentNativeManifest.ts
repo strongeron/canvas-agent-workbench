@@ -17,7 +17,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       "Freeform board with artboards, components, embeds, local HTML bundles, media, Mermaid diagrams, Excalidraw sketches, and markdown notes.",
     syncMode: "live-bridge",
     mutationMode: "event-log",
-    entities: ["artboard", "component", "embed", "html", "media", "mermaid", "excalidraw", "markdown"],
+    entities: ["artboard", "component", "embed", "html", "media", "mermaid", "excalidraw", "markdown", "mcp-app"],
     capabilities: [
       "read-state",
       "read-selection",
@@ -285,6 +285,37 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         title: "Capture canvas items screenshot",
         description: "Capture a canvas screenshot focused around specific item ids using the app-owned renderer.",
         status: "ready",
+      },
+      {
+        id: "register_mcp_app",
+        title: "Register MCP app",
+        description: "Create and connect a live MCP-app canvas node backed by an HTTP/SSE endpoint or an allowlisted stdio command.",
+        status: "ready",
+      },
+      {
+        id: "list_mcp_app_tools",
+        title: "List MCP app tools",
+        description: "Read the tool palette exposed by a connected MCP-app node.",
+        status: "ready",
+      },
+      {
+        id: "invoke_mcp_app_tool",
+        title: "Invoke MCP app tool",
+        description: "Call a tool exposed by a connected MCP-app node through the localhost-guarded proxy with recursion bounds and log redaction.",
+        status: "ready",
+      },
+      {
+        id: "get_mcp_app_log",
+        title: "Get MCP app log",
+        description: "Read the recent redacted tool-call log for a connected MCP-app node.",
+        status: "ready",
+      },
+      {
+        id: "disconnect_mcp_app",
+        title: "Disconnect MCP app",
+        description: "Close a connected MCP-app node and clean up any underlying transport or subprocess.",
+        status: "ready",
+        destructive: true,
       },
       {
         id: "clear_canvas",

@@ -352,6 +352,16 @@ function sanitizeCanvasItem(item: CanvasItem) {
     }
   }
 
+  if (item.type === "mcp-app") {
+    return {
+      ...base,
+      title: item.appName || "MCP app",
+      transport: item.transport,
+      status: item.status,
+      toolCount: Array.isArray(item.toolsCache) ? item.toolsCache.length : 0,
+    }
+  }
+
   return {
     ...base,
     src: item.src,
