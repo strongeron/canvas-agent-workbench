@@ -2701,13 +2701,12 @@ async function runCreatePrimitiveItem(args) {
 async function runRegisterMcpApp(args) {
   try {
     const state = await readCanvasAgentState(context)
+    // The item is built up-front to lock in a stable id + position, but it
+    // is NOT committed to canvas state until the connection actually
+    // succeeds. The previous ordering created the canvas item first and
+    // left an orphan node behind whenever the user-confirm or the upstream
+    // handshake failed.
     const item = createMcpAppCanvasItem(state, args)
-    const createResult = await applyOperation(
-      'register_mcp_app',
-      createCreateItemOperation(item, args.select !== false),
-      { item }
-    )
-    if (createResult.isError) return createResult
 
     const connectResult = await connectMcpApp(context, {
       projectId: context.projectId,
@@ -2717,29 +2716,53 @@ async function runRegisterMcpApp(args) {
       confirmed: args.confirmed === true,
     })
     if (!connectResult?.ok) {
-      return asToolError(connectResult?.error || 'Failed to connect MCP app.')
+      // Surface the structured error to the agent so it can detect the
+      // requires-user-confirm path and retry with confirmed: true without
+      // first having to clean up a stray canvas node.
+      return asToolError(
+        connectResult?.error || 'Failed to connect MCP app.',
+        connectResult?.code
+          ? {
+              code: connectResult.code,
+              status: connectResult.status,
+              nodeId: item.id,
+              transportSignature: item.transport,
+            }
+          : undefined
+      )
     }
 
-    const statusUpdate = await enqueueCanvasAgentOperation(
-      context,
-      'register_mcp_app_connect',
-      createUpdateItemOperation(item.id, {
-        status: 'connected',
-        toolsCache: Array.isArray(connectResult.tools) ? connectResult.tools : [],
-        resourcesCache: Array.isArray(connectResult.resources) ? connectResult.resources : [],
-        promptsCache: Array.isArray(connectResult.prompts) ? connectResult.prompts : [],
-      }),
-      { source: 'canvas-agent-mcp' }
+    // Only after a successful connect do we commit the canvas item AND
+    // its connected status / tool caches in a single state update.
+    const createResult = await applyOperation(
+      'register_mcp_app',
+      createCreateItemOperation(
+        {
+          ...item,
+          status: 'connected',
+          toolsCache: Array.isArray(connectResult.tools) ? connectResult.tools : [],
+          resourcesCache: Array.isArray(connectResult.resources) ? connectResult.resources : [],
+          promptsCache: Array.isArray(connectResult.prompts) ? connectResult.prompts : [],
+        },
+        args.select !== false
+      ),
+      { item }
     )
-    if (!statusUpdate.ok) {
-      return asToolError(statusUpdate.error || 'Failed to sync MCP app caches into canvas state.')
+    if (createResult.isError) {
+      // Roll back the live connection so we do not leave a connected
+      // transport behind for an item that never made it into the canvas.
+      try {
+        await disconnectMcpApp(context, { projectId: context.projectId, nodeId: item.id })
+      } catch {
+        // best-effort rollback
+      }
+      return createResult
     }
 
     return asToolResult({
       item,
       connect: connectResult,
       create: createResult,
-      statusUpdate,
     })
   } catch (error) {
     return asToolError(error instanceof Error ? error.message : 'Failed to register MCP app.')
@@ -3431,16 +3454,21 @@ function asToolResult(payload) {
   }
 }
 
-function asToolError(message) {
-  return {
+function asToolError(message, structuredContent) {
+  const text = String(message || 'Canvas MCP tool failed.')
+  const result = {
     isError: true,
     content: [
       {
         type: 'text',
-        text: String(message || 'Canvas MCP tool failed.'),
+        text,
       },
     ],
   }
+  if (structuredContent && typeof structuredContent === 'object') {
+    result.structuredContent = structuredContent
+  }
+  return result
 }
 
 function asResourceResult(uri, payload) {

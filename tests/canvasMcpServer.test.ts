@@ -1897,6 +1897,12 @@ describe("canvas MCP server", () => {
         },
       }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
 
+      // Ordering changed (P1 fix): the agent now CONNECTS first and only
+      // creates the canvas item if the connect succeeds, with status +
+      // toolsCache + resourcesCache + promptsCache populated in a single
+      // create_item operation. Previously two ops were queued (create
+      // disconnected, then update to connected), which left orphan nodes
+      // behind whenever the connect failed or required user confirm.
       const queuedMcpCreate = await waitForQueuedCanvasOperation(tempDir)
       expect(queuedMcpCreate.request).toMatchObject({
         toolName: "register_mcp_app",
@@ -1910,7 +1916,8 @@ describe("canvas MCP server", () => {
               kind: "http",
               url: "http://127.0.0.1:4010/mcp",
             },
-            status: "disconnected",
+            status: "connected",
+            toolsCache: [{ name: "search_docs" }],
           },
         },
       })
@@ -1918,24 +1925,6 @@ describe("canvas MCP server", () => {
       await queuedMcpCreate.respond({
         ok: true,
         updatedAt: "2026-05-24T10:00:00.200Z",
-        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [createdMcpAppId] },
-      })
-
-      const queuedMcpStatus = await waitForQueuedCanvasOperation(tempDir)
-      expect(queuedMcpStatus.request).toMatchObject({
-        toolName: "register_mcp_app_connect",
-        operation: {
-          type: "update_item",
-          id: createdMcpAppId,
-          updates: {
-            status: "connected",
-            toolsCache: [{ name: "search_docs" }],
-          },
-        },
-      })
-      await queuedMcpStatus.respond({
-        ok: true,
-        updatedAt: "2026-05-24T10:00:00.300Z",
         state: { items: [], groups: [], nextZIndex: 1, selectedIds: [createdMcpAppId] },
       })
 
