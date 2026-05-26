@@ -7,6 +7,7 @@ import type {
   McpResourceDescriptor,
   McpToolDescriptor,
 } from "../../../utils/mcpApp"
+import { buildSafeStdioEnv } from "./stdioEnv"
 
 function mapTools(payload: any): McpToolDescriptor[] {
   return Array.isArray(payload?.tools)
@@ -65,7 +66,7 @@ export class McpStdioProcess {
         command: this.transport.command,
         args: this.transport.args,
         cwd: this.transport.cwd,
-        env: this.options.env,
+        env: buildSafeStdioEnv(this.options.env),
         stderr: "pipe",
       })
       nextTransport.onerror = (error: Error) => {

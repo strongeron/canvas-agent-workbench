@@ -6,6 +6,7 @@ import {
   validateInFlightDepth,
 } from "../vite/api/mcpProxy/recursionBound"
 import { __setRegistryEntryForTest, invokeMcpAppTool } from "../vite/api/mcpProxy/registry"
+import { buildSafeStdioEnv } from "../vite/api/mcpProxy/stdioEnv"
 import {
   describeTransportSignature,
   isBuiltInAllowedTransport,
@@ -131,6 +132,33 @@ describe("mcp app proxy helpers", () => {
     } finally {
       teardown()
     }
+  })
+
+  it("strips code-injection env vars and only forwards canonical names + safe inherited base", () => {
+    const hostEnv = { PATH: "/usr/bin", HOME: "/root", SECRET_FROM_HOST: "leak" } as NodeJS.ProcessEnv
+    const filtered = buildSafeStdioEnv(
+      {
+        NODE_OPTIONS: "--require=/tmp/evil.js",
+        LD_PRELOAD: "/tmp/x.so",
+        DYLD_INSERT_LIBRARIES: "/tmp/x.dylib",
+        PYTHONSTARTUP: "/tmp/x.py",
+        API_KEY: "abc",
+        lower_case: "x",
+        "INVALID-DASH": "y",
+      },
+      hostEnv
+    )
+    expect(filtered.API_KEY).toBe("abc")
+    expect(filtered.PATH).toBe("/usr/bin")
+    expect(filtered.HOME).toBe("/root")
+    expect(filtered).not.toHaveProperty("NODE_OPTIONS")
+    expect(filtered).not.toHaveProperty("LD_PRELOAD")
+    expect(filtered).not.toHaveProperty("DYLD_INSERT_LIBRARIES")
+    expect(filtered).not.toHaveProperty("PYTHONSTARTUP")
+    expect(filtered).not.toHaveProperty("lower_case")
+    expect(filtered).not.toHaveProperty("INVALID-DASH")
+    // host secrets that don't match the safe inherit list MUST NOT leak.
+    expect(filtered).not.toHaveProperty("SECRET_FROM_HOST")
   })
 
   it("rejects substring smuggling (e.g. claude-code-mcp-evil) and runners that are not in the allowlist", () => {
