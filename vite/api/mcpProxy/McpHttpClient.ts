@@ -133,12 +133,19 @@ export class McpHttpClient {
   async connect() {
     this.status = "connecting"
     this.lastError = null
+    const withConnectTimeout = <T>(p: Promise<T>) =>
+      Promise.race<T>([
+        p,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error("MCP HTTP connect timed out after 10000ms")), 10_000)
+        ),
+      ])
     try {
-      await this.connectWithTransport("streamable")
+      await withConnectTimeout(this.connectWithTransport("streamable"))
       this.status = "connected"
     } catch (streamableError) {
       try {
-        await this.connectWithTransport("sse")
+        await withConnectTimeout(this.connectWithTransport("sse"))
         this.status = "connected"
       } catch (sseError) {
         this.status = "error"

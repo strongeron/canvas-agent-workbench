@@ -78,6 +78,20 @@ export class McpStdioProcess {
       }
       this.transportInstance = nextTransport
       await this.client.connect(nextTransport)
+      // Drain stderr. The SDK pipes the child's stderr into an in-memory
+      // PassThrough stream; if nothing consumes it the child eventually
+      // blocks on write once the kernel pipe buffer (64 KiB) fills up.
+      // We void-pipe it here so the child can keep emitting logs forever.
+      const stderr = nextTransport.stderr
+      if (stderr) {
+        stderr.on("data", () => {
+          // intentionally drained; SDK exposes stderr for callers that
+          // want to surface logs, but we don't currently surface them.
+        })
+        stderr.on("error", () => {
+          // ignore — child died, the close handler will propagate.
+        })
+      }
       this.status = "connected"
     } catch (error) {
       this.status = "error"

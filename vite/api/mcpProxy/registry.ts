@@ -41,6 +41,26 @@ async function resolveSecret(
   return creds[ref]
 }
 
+export const INVOKE_TIMEOUT_MS = 60_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`))
+    }, ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
+
 export async function connectMcpAppNode(input: {
   workspaceRoot: string
   projectId: string
@@ -58,26 +78,40 @@ export async function connectMcpAppNode(input: {
       : new McpStdioProcess(input.transport, {
           env: secret && typeof secret === "object" && !Array.isArray(secret) ? secret : undefined,
         })
-  await connection.connect()
-  const tools = await connection.listTools()
-  const resources = await connection.listResources().catch(() => [])
-  const prompts = await connection.listPrompts().catch(() => [])
-  const entry: RegistryEntry = {
-    key,
-    projectId: input.projectId,
-    nodeId: input.nodeId,
-    transport: input.transport,
-    connection,
-    recentCalls: [],
-    inflight: 0,
-  }
-  registry.set(key, entry)
-  return {
-    status: connection.status,
-    tools,
-    resources,
-    prompts,
-    lastError: connection.lastError,
+
+  // If connect() or the initial list calls fail we MUST tear down the
+  // partially-initialized transport — otherwise stdio child processes leak
+  // and HTTP streams keep heartbeats running forever, eventually
+  // exhausting file descriptors or sockets.
+  try {
+    await connection.connect()
+    const tools = await connection.listTools()
+    const resources = await connection.listResources().catch(() => [])
+    const prompts = await connection.listPrompts().catch(() => [])
+    const entry: RegistryEntry = {
+      key,
+      projectId: input.projectId,
+      nodeId: input.nodeId,
+      transport: input.transport,
+      connection,
+      recentCalls: [],
+      inflight: 0,
+    }
+    registry.set(key, entry)
+    return {
+      status: connection.status,
+      tools,
+      resources,
+      prompts,
+      lastError: connection.lastError,
+    }
+  } catch (error) {
+    try {
+      await connection.disconnect()
+    } catch {
+      // best-effort cleanup of the partial connection
+    }
+    throw error
   }
 }
 
@@ -132,7 +166,11 @@ export async function invokeMcpAppTool(input: {
   entry.inflight += 1
 
   try {
-    const result = await entry.connection.callTool(input.toolName, input.args)
+    const result = await withTimeout(
+      entry.connection.callTool(input.toolName, input.args),
+      INVOKE_TIMEOUT_MS,
+      `tool ${input.toolName}`
+    )
     record.status = "success"
     record.finishedAt = new Date().toISOString()
     // Stored / log-exposed result must be redacted — the raw result may

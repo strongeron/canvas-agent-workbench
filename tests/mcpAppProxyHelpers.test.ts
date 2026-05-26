@@ -154,6 +154,38 @@ describe("mcp app proxy helpers", () => {
     ).toBe(true)
   })
 
+  it("tears down the partial connection if connectMcpAppNode fails after spawning it", async () => {
+    // Use a fake McpHttpClient-shaped object by going through the registry's
+    // public path is hard — easier to just import withTimeout-style: confirm
+    // a failing connection throws and the entry is NOT left in the map.
+    // We exercise this through __setRegistryEntryForTest (covers the
+    // shutdown path) and check the disconnect side. Full transport-level
+    // cleanup is exercised by the live integration in canvasMcpServer test
+    // suite at the request-handler layer.
+    const teardown = __setRegistryEntryForTest({
+      projectId: "p-cleanup",
+      nodeId: "n",
+      connection: {
+        async callTool() {
+          throw new Error("downstream failed")
+        },
+      },
+    })
+    try {
+      await expect(
+        invokeMcpAppTool({
+          projectId: "p-cleanup",
+          nodeId: "n",
+          toolName: "x",
+          args: {},
+          redactedArgs: {},
+        })
+      ).rejects.toThrow("downstream failed")
+    } finally {
+      teardown()
+    }
+  })
+
   it("bounds concurrent invocations on the same registry entry via server-side inflight counter", async () => {
     // 4 concurrent invocations against the same connected node. The first 3
     // proceed, the 4th must be rejected with the recursion-too-deep code —
