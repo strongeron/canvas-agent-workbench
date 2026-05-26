@@ -1,8 +1,9 @@
 import { redactToolArgs } from "./logRedaction"
+import { sanitizeProjectId } from "./projectIdSafety"
 import { invokeMcpAppTool } from "./registry"
 
 export async function applyCanvasMcpAppInvokeToolRequest(body: any) {
-  const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : ""
+  const projectId = sanitizeProjectId(body?.projectId)
   const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : ""
   const toolName = typeof body?.toolName === "string" ? body.toolName.trim() : ""
   const args =

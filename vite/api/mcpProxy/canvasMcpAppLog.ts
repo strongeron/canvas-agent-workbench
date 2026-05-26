@@ -1,7 +1,8 @@
+import { sanitizeProjectId } from "./projectIdSafety"
 import { getMcpAppLog } from "./registry"
 
 export async function applyCanvasMcpAppLogRequest(body: any) {
-  const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : ""
+  const projectId = sanitizeProjectId(body?.projectId)
   const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : ""
   const limit = Number.isFinite(body?.limit) ? Number(body.limit) : 20
   if (!projectId || !nodeId) {

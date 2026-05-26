@@ -5,6 +5,9 @@ import {
   MAX_MCP_APP_CALLER_DEPTH,
   validateInFlightDepth,
 } from "../vite/api/mcpProxy/recursionBound"
+import { applyCanvasMcpAppCredentialsRequest } from "../vite/api/mcpProxy/canvasMcpAppCredentials"
+import { applyCanvasMcpAppConnectRequest } from "../vite/api/mcpProxy/canvasMcpAppConnect"
+import { sanitizeProjectId } from "../vite/api/mcpProxy/projectIdSafety"
 import { __setRegistryEntryForTest, invokeMcpAppTool } from "../vite/api/mcpProxy/registry"
 import { buildSafeStdioEnv } from "../vite/api/mcpProxy/stdioEnv"
 import {
@@ -201,6 +204,50 @@ describe("mcp app proxy helpers", () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
+  })
+
+  it("rejects path-traversal projectId values at the sanitizer", () => {
+    expect(sanitizeProjectId("../../../etc")).toBe("")
+    expect(sanitizeProjectId("..")).toBe("")
+    expect(sanitizeProjectId("foo/bar")).toBe("")
+    expect(sanitizeProjectId("foo\\bar")).toBe("")
+    expect(sanitizeProjectId("foo\0bar")).toBe("")
+    expect(sanitizeProjectId(".hidden")).toBe("")
+    expect(sanitizeProjectId("")).toBe("")
+    expect(sanitizeProjectId(null)).toBe("")
+    expect(sanitizeProjectId(undefined)).toBe("")
+    expect(sanitizeProjectId(123 as unknown as string)).toBe("")
+    expect(sanitizeProjectId("demo")).toBe("demo")
+    expect(sanitizeProjectId("app-signal-mobile")).toBe("app-signal-mobile")
+    expect(sanitizeProjectId("design_system_foundation")).toBe("design_system_foundation")
+  })
+
+  it("rejects path-traversal projectId at the credentials endpoint without touching disk", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "mcp-creds-traversal-"))
+    try {
+      const result = await applyCanvasMcpAppCredentialsRequest(
+        { projectId: "../../../etc", ref: "API_KEY", secret: "x" },
+        { workspaceRoot: root }
+      )
+      expect(result).toMatchObject({ ok: false, code: "bad-input" })
+      // No project.json was written outside the projects dir.
+      const { promises: fs } = await import("node:fs")
+      await expect(fs.access(path.join(root, "etc", "project.json"))).rejects.toThrow()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("rejects path-traversal projectId at the connect endpoint", async () => {
+    const result = await applyCanvasMcpAppConnectRequest(
+      {
+        projectId: "../../../etc",
+        nodeId: "n",
+        transport: { kind: "stdio", command: "node", args: [] },
+      },
+      { workspaceRoot: tmpdir() }
+    )
+    expect(result).toMatchObject({ ok: false, code: "bad-input" })
   })
 
   it("strips code-injection env vars and only forwards canonical names + safe inherited base", () => {

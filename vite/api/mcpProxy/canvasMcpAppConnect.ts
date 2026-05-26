@@ -6,6 +6,7 @@ import {
   isHttpTransportAllowlisted,
   persistAllowlistedHttpTransport,
 } from "./httpAllowlist"
+import { sanitizeProjectId } from "./projectIdSafety"
 import { connectMcpAppNode } from "./registry"
 import {
   describeTransportSignature,
@@ -17,7 +18,7 @@ export async function applyCanvasMcpAppConnectRequest(
   body: any,
   options: { workspaceRoot: string }
 ) {
-  const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : ""
+  const projectId = sanitizeProjectId(body?.projectId)
   const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : ""
   const appName = typeof body?.appName === "string" ? body.appName.trim() : "MCP app"
   const transport = body?.transport as CanvasMcpAppTransport | undefined
