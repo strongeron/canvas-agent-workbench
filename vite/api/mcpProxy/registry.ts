@@ -4,6 +4,7 @@ import type { CanvasMcpAppTransport, McpCallRecord } from "../../../utils/mcpApp
 import { McpHttpClient } from "./McpHttpClient"
 import { McpStdioProcess } from "./McpStdioProcess"
 import { readMcpAppCreds } from "./projectMeta"
+import { validateInFlightDepth } from "./recursionBound"
 
 type McpConnection = McpHttpClient | McpStdioProcess
 
@@ -14,6 +15,7 @@ interface RegistryEntry {
   transport: CanvasMcpAppTransport
   connection: McpConnection
   recentCalls: McpCallRecord[]
+  inflight: number
 }
 
 const registry = new Map<string, RegistryEntry>()
@@ -66,6 +68,7 @@ export async function connectMcpAppNode(input: {
     transport: input.transport,
     connection,
     recentCalls: [],
+    inflight: 0,
   }
   registry.set(key, entry)
   return {
@@ -108,6 +111,14 @@ export async function invokeMcpAppTool(input: {
     throw new Error("MCP app node is not connected.")
   }
 
+  const depthGate = validateInFlightDepth(entry.inflight)
+  if (!depthGate.ok) {
+    const err = new Error(depthGate.error) as Error & { code?: string; status?: number }
+    err.code = depthGate.code
+    err.status = depthGate.status
+    throw err
+  }
+
   const record: McpCallRecord = {
     id: `mcp-call-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     nodeId: input.nodeId,
@@ -117,6 +128,7 @@ export async function invokeMcpAppTool(input: {
     args: input.redactedArgs,
   }
   pushRecentCall(entry, record)
+  entry.inflight += 1
 
   try {
     const result = await entry.connection.callTool(input.toolName, input.args)
@@ -132,6 +144,36 @@ export async function invokeMcpAppTool(input: {
     record.finishedAt = new Date().toISOString()
     record.error = error instanceof Error ? error.message : "Tool invocation failed."
     throw error
+  } finally {
+    entry.inflight = Math.max(0, entry.inflight - 1)
+  }
+}
+
+/**
+ * Test-only: install a fake connection in the registry without exercising
+ * real transport spawn / network. Returns a teardown function.
+ */
+export function __setRegistryEntryForTest(input: {
+  projectId: string
+  nodeId: string
+  connection: {
+    callTool: (toolName: string, args: Record<string, unknown>) => Promise<unknown>
+    disconnect?: () => Promise<void>
+  }
+}) {
+  const key = buildKey(input.projectId, input.nodeId)
+  const entry: RegistryEntry = {
+    key,
+    projectId: input.projectId,
+    nodeId: input.nodeId,
+    transport: { kind: "http", url: "http://test.invalid" },
+    connection: input.connection as unknown as McpConnection,
+    recentCalls: [],
+    inflight: 0,
+  }
+  registry.set(key, entry)
+  return () => {
+    registry.delete(key)
   }
 }
 

@@ -1317,14 +1317,13 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: 'invoke_mcp_app_tool',
-    description: 'Invoke a tool on a connected MCP-app node through the proxy with recursion bounds.',
+    description: 'Invoke a tool on a connected MCP-app node through the proxy. Recursion is bounded server-side per connection.',
     inputSchema: {
       type: 'object',
       properties: {
         nodeId: { type: 'string' },
         toolName: { type: 'string' },
         args: { type: 'object' },
-        callerDepth: { type: 'number' },
       },
       required: ['nodeId', 'toolName'],
       additionalProperties: false,
@@ -2741,7 +2740,6 @@ async function runInvokeMcpAppTool(args) {
     nodeId,
     toolName,
     args: args.args && typeof args.args === 'object' ? args.args : {},
-    callerDepth: Number.isFinite(args.callerDepth) ? Number(args.callerDepth) : 0,
   })
   if (!invokeResult?.ok) return asToolError(invokeResult?.error || 'Failed to invoke MCP app tool.')
 

@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest"
 import { redactToolArgs } from "../vite/api/mcpProxy/logRedaction"
 import {
   MAX_MCP_APP_CALLER_DEPTH,
-  validateCallerDepth,
+  validateInFlightDepth,
 } from "../vite/api/mcpProxy/recursionBound"
+import { __setRegistryEntryForTest, invokeMcpAppTool } from "../vite/api/mcpProxy/registry"
 import {
   describeTransportSignature,
   isBuiltInAllowedTransport,
@@ -29,15 +30,16 @@ describe("mcp app proxy helpers", () => {
     })
   })
 
-  it("rejects caller depths above the bound", () => {
-    expect(validateCallerDepth(MAX_MCP_APP_CALLER_DEPTH + 1)).toMatchObject({
+  it("rejects in-flight depths at or above the bound", () => {
+    expect(validateInFlightDepth(MAX_MCP_APP_CALLER_DEPTH)).toMatchObject({
       ok: false,
       code: "recursion-too-deep",
     })
-    expect(validateCallerDepth(MAX_MCP_APP_CALLER_DEPTH)).toEqual({
+    expect(validateInFlightDepth(MAX_MCP_APP_CALLER_DEPTH - 1)).toEqual({
       ok: true,
-      callerDepth: MAX_MCP_APP_CALLER_DEPTH,
+      depth: MAX_MCP_APP_CALLER_DEPTH,
     })
+    expect(validateInFlightDepth(0)).toEqual({ ok: true, depth: 1 })
   })
 
   it("recognizes built-in stdio presets and stable signatures", () => {
@@ -85,6 +87,50 @@ describe("mcp app proxy helpers", () => {
     expect(
       isBuiltInAllowedTransport({ kind: "stdio", command: "claude-code-mcp", args: [] })
     ).toBe(true)
+  })
+
+  it("bounds concurrent invocations on the same registry entry via server-side inflight counter", async () => {
+    // 4 concurrent invocations against the same connected node. The first 3
+    // proceed, the 4th must be rejected with the recursion-too-deep code —
+    // bound is MAX_MCP_APP_CALLER_DEPTH (3) per registry entry, server side.
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const teardown = __setRegistryEntryForTest({
+      projectId: "p",
+      nodeId: "n",
+      connection: {
+        async callTool() {
+          await gate
+          return { ok: true }
+        },
+      },
+    })
+    try {
+      const calls = [0, 1, 2, 3].map(() =>
+        invokeMcpAppTool({
+          projectId: "p",
+          nodeId: "n",
+          toolName: "any",
+          args: {},
+          redactedArgs: {},
+        })
+      )
+      const settledFast = await Promise.allSettled([calls[3]])
+      expect(settledFast[0].status).toBe("rejected")
+      if (settledFast[0].status === "rejected") {
+        const err = settledFast[0].reason as Error & { code?: string }
+        expect(err.code).toBe("recursion-too-deep")
+      }
+      release()
+      const settledRest = await Promise.allSettled([calls[0], calls[1], calls[2]])
+      for (const r of settledRest) {
+        expect(r.status).toBe("fulfilled")
+      }
+    } finally {
+      teardown()
+    }
   })
 
   it("rejects substring smuggling (e.g. claude-code-mcp-evil) and runners that are not in the allowlist", () => {

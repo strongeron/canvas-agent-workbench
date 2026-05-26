@@ -1,6 +1,5 @@
 import { redactToolArgs } from "./logRedaction"
 import { invokeMcpAppTool } from "./registry"
-import { validateCallerDepth } from "./recursionBound"
 
 export async function applyCanvasMcpAppInvokeToolRequest(body: any) {
   const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : ""
@@ -17,20 +16,34 @@ export async function applyCanvasMcpAppInvokeToolRequest(body: any) {
       error: "projectId, nodeId, and toolName are required.",
     }
   }
-  const depthResult = validateCallerDepth(body?.callerDepth)
-  if (!depthResult.ok) return depthResult
 
-  const result = await invokeMcpAppTool({
-    projectId,
-    nodeId,
-    toolName,
-    args,
-    redactedArgs: redactToolArgs(args) as Record<string, unknown>,
-  })
-  return {
-    ok: true,
-    callerDepth: depthResult.callerDepth,
-    result: result.result,
-    recentCalls: result.recentCalls,
+  // Note: depth bounding is enforced server-side per registry entry in
+  // invokeMcpAppTool. The client-supplied callerDepth header has been removed
+  // because any peer (including a malicious embedded MCP server) could simply
+  // omit it.
+  try {
+    const result = await invokeMcpAppTool({
+      projectId,
+      nodeId,
+      toolName,
+      args,
+      redactedArgs: redactToolArgs(args) as Record<string, unknown>,
+    })
+    return {
+      ok: true,
+      result: result.result,
+      recentCalls: result.recentCalls,
+    }
+  } catch (error) {
+    const err = error as Error & { code?: string; status?: number }
+    if (err?.code === "recursion-too-deep") {
+      return {
+        ok: false,
+        status: err.status ?? 429,
+        code: err.code,
+        error: err.message,
+      }
+    }
+    throw error
   }
 }

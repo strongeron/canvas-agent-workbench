@@ -2007,8 +2007,10 @@ describe("canvas MCP server", () => {
           path: "/tmp/demo.txt",
           token: "secret-value",
         },
-        callerDepth: 0,
       })
+      // Recursion depth is enforced server-side per registry entry, no
+      // client-supplied callerDepth header is sent. (P0 security fix.)
+      expect(mcpAppInvokeToolRequestBody).not.toHaveProperty("callerDepth")
       expect(invokeMcpAppToolResult.result?.structuredContent?.result?.content?.[0]?.text).toBe("done")
       expect(invokeMcpAppToolResult.result?.structuredContent?.recentCalls?.[0]?.args?.token).toBe(
         "[redacted]"
