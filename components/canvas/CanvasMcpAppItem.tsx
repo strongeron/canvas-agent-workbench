@@ -239,6 +239,7 @@ export function CanvasMcpAppItem({
               projectId={projectId}
               nodeId={item.id}
               tools={item.toolsCache}
+              recentCalls={item.recentCalls}
               onCallsUpdate={(recentCalls) => onUpdate({ recentCalls })}
             />
           </div>

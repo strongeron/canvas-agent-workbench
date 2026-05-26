@@ -1,5 +1,5 @@
 import { Trash2, X } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import type { CanvasMcpAppItem } from "../../types/canvas"
 
@@ -32,6 +32,37 @@ export function CanvasMcpAppPropsPanel({
   const [busy, setBusy] = useState<null | "connect" | "disconnect" | "secret">(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Track mount + per-action AbortControllers so we can cancel in-flight
+  // connect/disconnect/secret requests when the panel unmounts (the node
+  // got deleted, the panel got closed, the active project changed). Without
+  // this, the fetch resolves long after the React tree is gone and we run
+  // onChange / setBusy / setError against an unmounted tree — at best a
+  // memory leak, at worst we resurrect a deleted node's status into the
+  // canvas.
+  const mountedRef = useRef(true)
+  const connectAbortRef = useRef<AbortController | null>(null)
+  const disconnectAbortRef = useRef<AbortController | null>(null)
+  const secretAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      connectAbortRef.current?.abort()
+      disconnectAbortRef.current?.abort()
+      secretAbortRef.current?.abort()
+    }
+  }, [])
+
+  const safeSetBusy: typeof setBusy = (value) => {
+    if (mountedRef.current) setBusy(value)
+  }
+  const safeSetError: typeof setError = (value) => {
+    if (mountedRef.current) setError(value)
+  }
+  const safeOnChange: typeof onChange = (updates) => {
+    if (mountedRef.current) onChange(updates)
+  }
+
   const updateHttpTransport = (updates: Partial<Extract<CanvasMcpAppItem["transport"], { kind: "http" }>>) => {
     if (item.transport.kind !== "http") return
     onChange({ transport: { ...item.transport, ...updates } })
@@ -46,22 +77,30 @@ export function CanvasMcpAppPropsPanel({
 
   async function persistSecretIfNeeded() {
     if (!secretRef.trim() || !secretValue.trim()) return
-    setBusy("secret")
-    const response = await fetch("/api/canvas/mcp-app/credentials", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectId,
-        ref: secretRef.trim(),
-        secret: secretValue.trim(),
-      }),
-    })
-    const payload = await response.json().catch(() => ({}))
-    setBusy(null)
-    if (!response.ok || !payload?.ok) {
-      throw new Error(payload?.error || "Failed to save MCP app secret.")
+    safeSetBusy("secret")
+    secretAbortRef.current?.abort()
+    const controller = new AbortController()
+    secretAbortRef.current = controller
+    try {
+      const response = await fetch("/api/canvas/mcp-app/credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          ref: secretRef.trim(),
+          secret: secretValue.trim(),
+        }),
+        signal: controller.signal,
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error || "Failed to save MCP app secret.")
+      }
+      if (mountedRef.current) setSecretValue("")
+    } finally {
+      if (secretAbortRef.current === controller) secretAbortRef.current = null
+      safeSetBusy(null)
     }
-    setSecretValue("")
   }
 
   return (
@@ -235,8 +274,11 @@ export function CanvasMcpAppPropsPanel({
             type="button"
             disabled={busy === "connect"}
             onClick={async () => {
-              setBusy("connect")
-              setError(null)
+              safeSetBusy("connect")
+              safeSetError(null)
+              connectAbortRef.current?.abort()
+              const controller = new AbortController()
+              connectAbortRef.current = controller
               try {
                 await persistSecretIfNeeded()
                 const response = await fetch("/api/canvas/mcp-app/connect", {
@@ -248,12 +290,13 @@ export function CanvasMcpAppPropsPanel({
                     appName: item.appName,
                     transport: item.transport,
                   }),
+                  signal: controller.signal,
                 })
                 const payload = await response.json().catch(() => ({}))
                 if (!response.ok || !payload?.ok) {
                   throw new Error(payload?.error || "Failed to connect MCP app.")
                 }
-                onChange({
+                safeOnChange({
                   status: "connected",
                   lastError: undefined,
                   toolsCache: Array.isArray(payload.tools) ? payload.tools : [],
@@ -261,15 +304,17 @@ export function CanvasMcpAppPropsPanel({
                   promptsCache: Array.isArray(payload.prompts) ? payload.prompts : [],
                 })
               } catch (connectError) {
-                onChange({
+                if ((connectError as Error)?.name === "AbortError") return
+                safeOnChange({
                   status: "error",
                   lastError: connectError instanceof Error ? connectError.message : "Failed to connect MCP app.",
                 })
-                setError(
+                safeSetError(
                   connectError instanceof Error ? connectError.message : "Failed to connect MCP app."
                 )
               } finally {
-                setBusy(null)
+                if (connectAbortRef.current === controller) connectAbortRef.current = null
+                safeSetBusy(null)
               }
             }}
             className="rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
@@ -280,8 +325,11 @@ export function CanvasMcpAppPropsPanel({
             type="button"
             disabled={busy === "disconnect"}
             onClick={async () => {
-              setBusy("disconnect")
-              setError(null)
+              safeSetBusy("disconnect")
+              safeSetError(null)
+              disconnectAbortRef.current?.abort()
+              const controller = new AbortController()
+              disconnectAbortRef.current = controller
               try {
                 const response = await fetch("/api/canvas/mcp-app/disconnect", {
                   method: "POST",
@@ -290,24 +338,27 @@ export function CanvasMcpAppPropsPanel({
                     projectId,
                     nodeId: item.id,
                   }),
+                  signal: controller.signal,
                 })
                 const payload = await response.json().catch(() => ({}))
                 if (!response.ok || !payload?.ok) {
                   throw new Error(payload?.error || "Failed to disconnect MCP app.")
                 }
-                onChange({
+                safeOnChange({
                   status: "disconnected",
                   lastError: undefined,
                   recentCalls: Array.isArray(payload.recentCalls) ? payload.recentCalls : item.recentCalls,
                 })
               } catch (disconnectError) {
-                setError(
+                if ((disconnectError as Error)?.name === "AbortError") return
+                safeSetError(
                   disconnectError instanceof Error
                     ? disconnectError.message
                     : "Failed to disconnect MCP app."
                 )
               } finally {
-                setBusy(null)
+                if (disconnectAbortRef.current === controller) disconnectAbortRef.current = null
+                safeSetBusy(null)
               }
             }}
             className="rounded-md border border-default bg-white px-3 py-2 text-sm font-semibold text-foreground hover:bg-surface-50 disabled:opacity-60"

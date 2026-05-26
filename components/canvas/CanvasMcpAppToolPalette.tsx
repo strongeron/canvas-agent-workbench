@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import type { McpCallRecord, McpToolDescriptor } from "../../utils/mcpApp"
 import { parseJsonObjectInput } from "../../utils/mcpApp"
@@ -7,18 +7,66 @@ interface CanvasMcpAppToolPaletteProps {
   projectId: string
   nodeId: string
   tools?: McpToolDescriptor[]
+  recentCalls?: McpCallRecord[]
   onCallsUpdate: (calls: McpCallRecord[]) => void
+}
+
+// Merge a freshly returned recentCalls snapshot into the prior one by id,
+// keeping the most-recent record per id and bounded by the same 100-record
+// cap the server uses. Avoids the wholesale-replace race where a slow
+// in-flight call returns a stale snapshot that drops records belonging to
+// a parallel-but-already-completed call.
+export function mergeRecentCallsById(
+  prior: McpCallRecord[],
+  next: McpCallRecord[]
+): McpCallRecord[] {
+  const byId = new Map<string, McpCallRecord>()
+  for (const record of prior) {
+    if (record?.id) byId.set(record.id, record)
+  }
+  for (const record of next) {
+    if (!record?.id) continue
+    const existing = byId.get(record.id)
+    if (!existing) {
+      byId.set(record.id, record)
+      continue
+    }
+    // Prefer the more-progressed record (finished > running) so a stale
+    // snapshot cannot overwrite a completed record back into "running".
+    if (existing.status === "running" && record.status !== "running") {
+      byId.set(record.id, record)
+    }
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""))
+    .slice(0, 100)
 }
 
 export function CanvasMcpAppToolPalette({
   projectId,
   nodeId,
   tools = [],
+  recentCalls = [],
   onCallsUpdate,
 }: CanvasMcpAppToolPaletteProps) {
   const [busyToolName, setBusyToolName] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+
+  // Keep the prior recentCalls available in a ref so the invoke handler can
+  // merge into the latest snapshot without depending on stale closure state.
+  const recentCallsRef = useRef<McpCallRecord[]>(recentCalls)
+  useEffect(() => {
+    recentCallsRef.current = recentCalls
+  }, [recentCalls])
+
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   if (tools.length === 0) {
     return (
@@ -71,13 +119,20 @@ export function CanvasMcpAppToolPalette({
                   if (!response.ok || !payload?.ok) {
                     throw new Error(payload?.error || "Tool invocation failed.")
                   }
-                  onCallsUpdate(Array.isArray(payload.recentCalls) ? payload.recentCalls : [])
+                  const incoming = Array.isArray(payload.recentCalls) ? payload.recentCalls : []
+                  const merged = mergeRecentCallsById(recentCallsRef.current, incoming)
+                  recentCallsRef.current = merged
+                  if (mountedRef.current) onCallsUpdate(merged)
                 } catch (invokeError) {
-                  setError(
-                    invokeError instanceof Error ? invokeError.message : "Tool invocation failed."
-                  )
+                  if (mountedRef.current) {
+                    setError(
+                      invokeError instanceof Error ? invokeError.message : "Tool invocation failed."
+                    )
+                  }
                 } finally {
-                  setBusyToolName((current) => (current === tool.name ? null : current))
+                  if (mountedRef.current) {
+                    setBusyToolName((current) => (current === tool.name ? null : current))
+                  }
                 }
               }}
               className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
