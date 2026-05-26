@@ -8,6 +8,15 @@ import {
 import { __setRegistryEntryForTest, invokeMcpAppTool } from "../vite/api/mcpProxy/registry"
 import { buildSafeStdioEnv } from "../vite/api/mcpProxy/stdioEnv"
 import {
+  describeHttpTransportSignature,
+  isBuiltInAllowedHttpTransport,
+  isHttpTransportAllowlisted,
+  persistAllowlistedHttpTransport,
+} from "../vite/api/mcpProxy/httpAllowlist"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import {
   describeTransportSignature,
   isBuiltInAllowedTransport,
 } from "../vite/api/mcpProxy/stdioAllowlist"
@@ -131,6 +140,66 @@ describe("mcp app proxy helpers", () => {
       }
     } finally {
       teardown()
+    }
+  })
+
+  it("allows localhost HTTP transports by default and rejects public hosts without user confirm", async () => {
+    expect(
+      isBuiltInAllowedHttpTransport({ kind: "http", url: "http://localhost:3001/mcp" })
+    ).toBe(true)
+    expect(
+      isBuiltInAllowedHttpTransport({ kind: "http", url: "http://127.0.0.1:8080" })
+    ).toBe(true)
+    expect(
+      isBuiltInAllowedHttpTransport({ kind: "http", url: "http://[::1]:8080" })
+    ).toBe(true)
+    expect(
+      isBuiltInAllowedHttpTransport({ kind: "http", url: "https://evil.example.com" })
+    ).toBe(false)
+    // SSRF-classic targets: cloud-metadata, link-local. These must NOT be
+    // considered built-in safe.
+    expect(
+      isBuiltInAllowedHttpTransport({ kind: "http", url: "http://169.254.169.254/latest" })
+    ).toBe(false)
+  })
+
+  it("normalizes the persisted HTTP allowlist key to the URL origin (not the full URL)", () => {
+    expect(
+      describeHttpTransportSignature({ kind: "http", url: "https://api.example.com:443/foo?bar=1" })
+    ).toBe("https://api.example.com")
+  })
+
+  it("persists confirmed HTTP transports and recognizes them on the next request", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "mcp-http-allowlist-"))
+    try {
+      const projectId = "demo"
+      const projectDir = path.join(root, "projects", projectId)
+      const { promises: fs } = await import("node:fs")
+      await fs.mkdir(projectDir, { recursive: true })
+
+      const transport = { kind: "http" as const, url: "https://mcp.zapier.com/api" }
+      expect(await isHttpTransportAllowlisted(projectDir, projectId, transport)).toBe(false)
+
+      const origin = await persistAllowlistedHttpTransport(projectDir, projectId, transport)
+      expect(origin).toBe("https://mcp.zapier.com")
+
+      expect(await isHttpTransportAllowlisted(projectDir, projectId, transport)).toBe(true)
+      // Different path on same origin is still allowed (origin-keyed).
+      expect(
+        await isHttpTransportAllowlisted(projectDir, projectId, {
+          kind: "http",
+          url: "https://mcp.zapier.com/different/path",
+        })
+      ).toBe(true)
+      // Different origin is NOT allowed.
+      expect(
+        await isHttpTransportAllowlisted(projectDir, projectId, {
+          kind: "http",
+          url: "https://mcp.zapier.com.evil.example/api",
+        })
+      ).toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
     }
   })
 

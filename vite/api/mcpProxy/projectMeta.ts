@@ -6,6 +6,7 @@ export interface ProjectMetaRecord {
   label?: string
   mcpAppCreds?: Record<string, string | Record<string, string>>
   mcpAppStdioAllowlist?: string[]
+  mcpAppHttpAllowlist?: string[]
   [key: string]: unknown
 }
 

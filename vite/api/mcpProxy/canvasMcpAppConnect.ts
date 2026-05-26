@@ -1,6 +1,11 @@
 import path from "node:path"
 
 import type { CanvasMcpAppTransport } from "../../../utils/mcpApp"
+import {
+  describeHttpTransportSignature,
+  isHttpTransportAllowlisted,
+  persistAllowlistedHttpTransport,
+} from "./httpAllowlist"
 import { connectMcpAppNode } from "./registry"
 import {
   describeTransportSignature,
@@ -33,6 +38,23 @@ export async function applyCanvasMcpAppConnectRequest(
     }
     if (body?.confirmed === true) {
       await persistAllowlistedTransport(projectDir, projectId, transport)
+    }
+  } else if (transport.kind === "http") {
+    if (typeof transport.url !== "string" || !transport.url.trim()) {
+      return { ok: false, status: 400, code: "bad-input", error: "transport.url is required." }
+    }
+    const projectDir = path.join(options.workspaceRoot, "projects", projectId)
+    const allowlisted = await isHttpTransportAllowlisted(projectDir, projectId, transport)
+    if (!allowlisted && body?.confirmed !== true) {
+      return {
+        ok: false,
+        status: 403,
+        code: "requires-user-confirm",
+        error: `HTTP transport requires user confirmation: ${describeHttpTransportSignature(transport)}`,
+      }
+    }
+    if (body?.confirmed === true) {
+      await persistAllowlistedHttpTransport(projectDir, projectId, transport)
     }
   }
 
