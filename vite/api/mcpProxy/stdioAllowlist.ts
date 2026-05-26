@@ -13,9 +13,15 @@ function buildSignature(command: string, args: string[] = []) {
 }
 
 export function isBuiltInAllowedTransport(transport: CanvasMcpStdioTransport) {
-  const signature = buildSignature(transport.command, transport.args)
-  if (BUILTIN_ALLOWED_TOKENS.some((token) => signature.includes(token))) return true
-  return BUILTIN_ALLOWED_TOKENS.includes(transport.command.trim())
+  // Exact-token match across the command + every arg. Using `signature.includes`
+  // here would let a malicious caller smuggle a built-in token as a substring
+  // (e.g. `claude-code-mcp-evil` would match `claude-code-mcp`). The signature
+  // is still recorded for persistence; the allow check operates on discrete
+  // tokens.
+  const tokens = [transport.command, ...(transport.args ?? [])]
+    .map((token) => token?.trim())
+    .filter((token): token is string => Boolean(token))
+  return tokens.some((token) => BUILTIN_ALLOWED_TOKENS.includes(token))
 }
 
 export async function readPersistedAllowlist(projectDir: string, projectId: string) {
