@@ -27,8 +27,20 @@ export async function writeProjectMetaAtomic(projectDir: string, meta: ProjectMe
   const nextRaw = JSON.stringify(meta, null, 2)
   const token = randomBytes(6).toString("hex")
   const tmpPath = `${metaPath}.${token}.tmp`
-  await fs.writeFile(tmpPath, nextRaw, "utf8")
+  // 0o600: owner read+write only. project.json holds plaintext MCP-app
+  // credentials, so group / other readability would expose them to any
+  // other user on the host. The mode applies to the new tmp file and is
+  // preserved across rename.
+  await fs.writeFile(tmpPath, nextRaw, { encoding: "utf8", mode: 0o600 })
   await fs.rename(tmpPath, metaPath)
+  // Defensive chmod in case the file pre-existed with a wider mode and
+  // the previous writer did not narrow it. Best-effort: on platforms that
+  // ignore mode (Windows) this is a no-op.
+  try {
+    await fs.chmod(metaPath, 0o600)
+  } catch {
+    // ignore — best-effort tightening
+  }
 }
 
 export async function readMcpAppCreds(projectDir: string, projectId: string) {

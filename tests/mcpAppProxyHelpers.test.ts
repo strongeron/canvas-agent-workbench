@@ -7,6 +7,7 @@ import {
 } from "../vite/api/mcpProxy/recursionBound"
 import { applyCanvasMcpAppCredentialsRequest } from "../vite/api/mcpProxy/canvasMcpAppCredentials"
 import { applyCanvasMcpAppConnectRequest } from "../vite/api/mcpProxy/canvasMcpAppConnect"
+import { filterHeaders } from "../vite/api/mcpProxy/McpHttpClient"
 import { sanitizeProjectId } from "../vite/api/mcpProxy/projectIdSafety"
 import { __setRegistryEntryForTest, invokeMcpAppTool } from "../vite/api/mcpProxy/registry"
 import { buildSafeStdioEnv } from "../vite/api/mcpProxy/stdioEnv"
@@ -40,6 +41,57 @@ describe("mcp app proxy helpers", () => {
         apiKey: "[redacted]",
         ok: "value",
       },
+    })
+  })
+
+  it("redacts the expanded set of secret-like field names (password / authorization / cookie / private_key / etc.)", () => {
+    expect(
+      redactToolArgs({
+        password: "p",
+        Authorization: "Bearer x",
+        cookie: "session=abc",
+        privateKey: "y",
+        private_key: "y2",
+        client_secret: "z",
+        bearer: "b",
+        session: "s",
+        accessToken: "a",
+        refresh_token: "r",
+        keep: "ok",
+      })
+    ).toMatchObject({
+      password: "[redacted]",
+      Authorization: "[redacted]",
+      cookie: "[redacted]",
+      privateKey: "[redacted]",
+      private_key: "[redacted]",
+      client_secret: "[redacted]",
+      bearer: "[redacted]",
+      session: "[redacted]",
+      accessToken: "[redacted]",
+      refresh_token: "[redacted]",
+      keep: "ok",
+    })
+  })
+
+  it("filters request-smuggling headers and rejects CR/LF injection in header values", () => {
+    expect(
+      filterHeaders({
+        Host: "evil.example",
+        "Content-Length": "0",
+        "Transfer-Encoding": "chunked",
+        Connection: "close",
+        Upgrade: "websocket",
+        Authorization: "Bearer good",
+        "X-Custom": "ok",
+        "Accept-Encoding": "gzip",
+        Cookie: "should-not-pass",
+        "X-Inject": "value\r\nX-Smuggled: 1",
+      })
+    ).toEqual({
+      Authorization: "Bearer good",
+      "X-Custom": "ok",
+      "Accept-Encoding": "gzip",
     })
   })
 

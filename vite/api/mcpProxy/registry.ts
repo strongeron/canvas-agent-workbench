@@ -1,6 +1,7 @@
 import path from "node:path"
 
 import type { CanvasMcpAppTransport, McpCallRecord } from "../../../utils/mcpApp"
+import { redactMcpValue } from "../../../utils/mcpApp"
 import { McpHttpClient } from "./McpHttpClient"
 import { McpStdioProcess } from "./McpStdioProcess"
 import { readMcpAppCreds } from "./projectMeta"
@@ -134,7 +135,13 @@ export async function invokeMcpAppTool(input: {
     const result = await entry.connection.callTool(input.toolName, input.args)
     record.status = "success"
     record.finishedAt = new Date().toISOString()
-    record.result = result
+    // Stored / log-exposed result must be redacted — the raw result may
+    // contain tokens that the embedded server echoed back. The raw result
+    // is still returned to the caller of this function (the agent that
+    // initiated the invoke), so the agent receives the full body once,
+    // but anything queried later through getMcpAppLog or recentCalls is
+    // already scrubbed.
+    record.result = redactMcpValue(result)
     return {
       result,
       recentCalls: entry.recentCalls,

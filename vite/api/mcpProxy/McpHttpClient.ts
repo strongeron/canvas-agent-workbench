@@ -9,10 +9,52 @@ import type {
   McpToolDescriptor,
 } from "../../../utils/mcpApp"
 
+// Strip request-smuggling primitives and other framing headers an attacker
+// could inject through a stored credential object. Forwarding `Host` lets
+// the caller pivot to an unrelated vhost; `Content-Length` /
+// `Transfer-Encoding` enables request smuggling against upstream proxies;
+// `Connection` / `Upgrade` can flip the connection into a different
+// protocol mid-stream.
+const HEADER_DENYLIST = new Set([
+  "host",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+  "upgrade",
+  "te",
+  "trailer",
+  "proxy-connection",
+  "expect",
+])
+
+// Conservative allowlist: things a real MCP server might legitimately
+// require as auth / negotiation. Anything outside this list is dropped.
+const HEADER_ALLOWLIST_PREFIXES = ["x-", "accept", "accept-"]
+const HEADER_ALLOWLIST_EXACT = new Set(["authorization", "user-agent"])
+
+function isAllowedHeaderName(name: string): boolean {
+  const lower = name.toLowerCase()
+  if (HEADER_DENYLIST.has(lower)) return false
+  if (HEADER_ALLOWLIST_EXACT.has(lower)) return true
+  return HEADER_ALLOWLIST_PREFIXES.some((prefix) => lower.startsWith(prefix))
+}
+
+export function filterHeaders(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [name, value] of Object.entries(headers)) {
+    if (typeof name !== "string" || typeof value !== "string") continue
+    if (!isAllowedHeaderName(name)) continue
+    // Defense in depth: reject embedded CR / LF (header-splitting).
+    if (/[\r\n]/.test(value)) continue
+    out[name] = value
+  }
+  return out
+}
+
 function toHeaders(secret: string | Record<string, string> | undefined) {
   if (!secret) return undefined
-  if (typeof secret === "string") return { Authorization: secret }
-  return secret
+  if (typeof secret === "string") return filterHeaders({ Authorization: secret })
+  return filterHeaders(secret)
 }
 
 function mapTools(payload: any): McpToolDescriptor[] {

@@ -128,7 +128,22 @@ export const MCP_APP_PRESETS: McpAppPreset[] = [
   },
 ]
 
-const REDACT_FIELD_PATTERNS = [/token$/i, /api[-_]?key$/i, /secret$/i, /_token$/i]
+const REDACT_FIELD_PATTERNS = [
+  /token$/i,
+  /api[-_]?key$/i,
+  /secret$/i,
+  /_token$/i,
+  /password$/i,
+  /^authorization$/i,
+  /^cookie$/i,
+  /private[-_]?key$/i,
+  /client[-_]?secret$/i,
+  /bearer$/i,
+  /^session$/i,
+  /[-_]session$/i,
+  /access[-_]?token$/i,
+  /refresh[-_]?token$/i,
+]
 
 export function isSecretLikeKey(key: string) {
   return REDACT_FIELD_PATTERNS.some((pattern) => pattern.test(key))
