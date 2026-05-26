@@ -322,6 +322,29 @@ describe("mcp app proxy helpers", () => {
     }
   })
 
+  it("returns a consistent error envelope: every error path has ok=false, status, code, error", async () => {
+    const badProjectId = await applyCanvasMcpAppCredentialsRequest(
+      { projectId: "", ref: "x", secret: "y" },
+      { workspaceRoot: tmpdir() }
+    )
+    expect(badProjectId).toMatchObject({
+      ok: false,
+      status: 400,
+      code: "bad-input",
+    })
+    expect(typeof (badProjectId as { error?: string }).error).toBe("string")
+
+    const traversal = await applyCanvasMcpAppCredentialsRequest(
+      { projectId: "../etc", ref: "x", secret: "y" },
+      { workspaceRoot: tmpdir() }
+    )
+    expect(traversal).toMatchObject({
+      ok: false,
+      status: 400,
+      code: "bad-input",
+    })
+  })
+
   it("rejects path-traversal projectId at the connect endpoint", async () => {
     const result = await applyCanvasMcpAppConnectRequest(
       {

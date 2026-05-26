@@ -1294,7 +1294,37 @@ const TOOL_DEFINITIONS = [
       type: 'object',
       properties: {
         appName: { type: 'string' },
-        transport: { type: 'object' },
+        transport: {
+          oneOf: [
+            {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', enum: ['http'] },
+                url: { type: 'string' },
+                headersRef: { type: 'string' },
+              },
+              required: ['kind', 'url'],
+              additionalProperties: false,
+            },
+            {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', enum: ['stdio'] },
+                command: { type: 'string' },
+                args: { type: 'array', items: { type: 'string' } },
+                cwd: { type: 'string' },
+                envRef: { type: 'string' },
+              },
+              required: ['kind', 'command'],
+              additionalProperties: false,
+            },
+          ],
+        },
+        // When the proxy rejects an unconfirmed transport with
+        // code: 'requires-user-confirm', the agent can retry with
+        // confirmed: true to persist the transport into the project
+        // allowlist (stdio signature or HTTP origin) and proceed.
+        confirmed: { type: 'boolean' },
         position: positionSchema(),
         size: sizeSchema(),
         select: { type: 'boolean' },
@@ -2684,6 +2714,7 @@ async function runRegisterMcpApp(args) {
       nodeId: item.id,
       appName: item.appName,
       transport: item.transport,
+      confirmed: args.confirmed === true,
     })
     if (!connectResult?.ok) {
       return asToolError(connectResult?.error || 'Failed to connect MCP app.')

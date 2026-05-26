@@ -4773,8 +4773,9 @@ function paperImportPlugin() {
             }
             return sendJson(res, 200, result)
           } catch (error) {
-            return sendJson(res, 400, {
+            return sendJson(res, 500, {
               ok: false,
+              code: 'internal-error',
               error: error?.message || 'Failed to connect MCP app.',
             })
           }
@@ -4793,8 +4794,9 @@ function paperImportPlugin() {
             }
             return sendJson(res, 200, result)
           } catch (error) {
-            return sendJson(res, 400, {
+            return sendJson(res, 500, {
               ok: false,
+              code: 'internal-error',
               error: error?.message || 'Failed to disconnect MCP app.',
             })
           }
@@ -4813,8 +4815,9 @@ function paperImportPlugin() {
             }
             return sendJson(res, 200, result)
           } catch (error) {
-            return sendJson(res, 400, {
+            return sendJson(res, 500, {
               ok: false,
+              code: 'internal-error',
               error: error?.message || 'Failed to invoke MCP app tool.',
             })
           }
@@ -4846,8 +4849,9 @@ function paperImportPlugin() {
             }
             return sendJson(res, 200, result)
           } catch (error) {
-            return sendJson(res, 400, {
+            return sendJson(res, 500, {
               ok: false,
+              code: 'internal-error',
               error: error?.message || 'Failed to read MCP app log.',
             })
           }
@@ -4866,8 +4870,9 @@ function paperImportPlugin() {
             }
             return sendJson(res, 200, result)
           } catch (error) {
-            return sendJson(res, 400, {
+            return sendJson(res, 500, {
               ok: false,
+              code: 'internal-error',
               error: error?.message || 'Failed to store MCP app credentials.',
             })
           }

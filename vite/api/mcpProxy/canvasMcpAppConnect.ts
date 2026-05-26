@@ -68,7 +68,11 @@ export async function applyCanvasMcpAppConnectRequest(
   return {
     ok: true,
     appName,
-    status: result.status,
+    // Renamed from `status` to disambiguate from the HTTP status code used on
+    // error responses (HTTP 400 / 403 / 429 etc.). `connectionStatus` is the
+    // MCP-app connection lifecycle state ("connecting" | "connected" |
+    // "disconnected" | "error").
+    connectionStatus: result.status,
     tools: result.tools,
     resources: result.resources,
     prompts: result.prompts,
