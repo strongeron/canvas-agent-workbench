@@ -363,7 +363,7 @@ export function buildDuplicateItemsResult(state, args = {}) {
   const baseTimestamp = Date.now()
   const newItems = selected.map((item, index) => {
     const newId = `canvas-item-${baseTimestamp}-${index}-${Math.random().toString(36).slice(2, 9)}`
-    return {
+    const clone = {
       ...item,
       id: newId,
       position: {
@@ -373,6 +373,19 @@ export function buildDuplicateItemsResult(state, args = {}) {
       zIndex: current.nextZIndex + index,
       groupId: undefined,
     }
+    // Mirror the UI duplicate path (resetMcpAppConnectionState in
+    // useCanvasState.ts): a cloned MCP-app node shares no live proxy
+    // connection, so it must start cold — copying status/caches would report a
+    // phantom "connected" node to the agent.
+    if (clone.type === 'mcp-app') {
+      clone.status = 'disconnected'
+      clone.lastError = undefined
+      clone.toolsCache = undefined
+      clone.resourcesCache = undefined
+      clone.promptsCache = undefined
+      clone.recentCalls = undefined
+    }
+    return clone
   })
 
   return {

@@ -2439,10 +2439,7 @@ describe("canvas MCP server", () => {
         method: "tools/call",
         params: {
           name: "redo_source_mutation",
-          arguments: {
-            scope: "log-entry",
-            logEntryId: "entry-1",
-          },
+          arguments: {},
         },
       }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
 
@@ -2451,8 +2448,7 @@ describe("canvas MCP server", () => {
         toolName: "redo_source_mutation",
         operation: {
           type: "redo_source_mutation",
-          scope: "log-entry",
-          logEntryId: "entry-1",
+          scope: "active-file",
         },
       })
       await queuedRedoSource.respond({
@@ -2461,7 +2457,22 @@ describe("canvas MCP server", () => {
         state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
       })
       const redoSourceResult = await redoSourcePromise
-      expect(redoSourceResult.result?.structuredContent?.scope).toBe("log-entry")
+      expect(redoSourceResult.result?.structuredContent?.scope).toBe("active-file")
+
+      // scope: "log-entry" is not yet wired (the mutation log is browser-only),
+      // so it must be rejected explicitly rather than silently redoing the head
+      // and reporting success.
+      const redoLogEntryResult = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-redo-source-log-entry",
+        method: "tools/call",
+        params: {
+          name: "redo_source_mutation",
+          arguments: { scope: "log-entry", logEntryId: "entry-1" },
+        },
+      })) as { result?: { isError?: boolean; structuredContent?: Record<string, any> } }
+      expect(redoLogEntryResult.result?.isError).toBe(true)
+      expect(redoLogEntryResult.result?.structuredContent?.code).toBe("not-implemented")
 
       const movedCanvasFile = (await sendRpc({
         jsonrpc: "2.0",

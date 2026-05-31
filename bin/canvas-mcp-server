@@ -1333,7 +1333,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'undo_source_mutation',
     description:
-      'Undo the most recent source mutation for the active file (cmd-Z parity). The UI re-applies the previous snapshot via the same AST writer that handled the original mutation. `scope: "log-entry"` plus `logEntryId` targets a specific entry; default is the active-file head.',
+      'Undo the most recent source mutation for the active file (cmd-Z parity). The UI re-applies the previous snapshot via the same AST writer that handled the original mutation. Targets the active-file history head; `scope: "log-entry"` + `logEntryId` is reserved for future per-entry targeting and is currently rejected.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1346,7 +1346,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'redo_source_mutation',
     description:
-      'Redo the most recently undone source mutation for the active file (cmd-shift-Z parity). The UI re-applies the post-snapshot via the same AST writer. `scope: "log-entry"` plus `logEntryId` targets a specific redo entry; default is the active-file head.',
+      'Redo the most recently undone source mutation for the active file (cmd-shift-Z parity). The UI re-applies the post-snapshot via the same AST writer. Targets the active-file history head; `scope: "log-entry"` + `logEntryId` is reserved for future per-entry targeting and is currently rejected.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -3471,20 +3471,33 @@ async function runSetCanvasActiveTheme(args) {
   )
 }
 
+// `log-entry` targeting is not yet wired: the mutation log lives only in the
+// browser, and the UI undo/redo handlers operate on the history head. Reject it
+// explicitly instead of silently undoing the head and reporting success.
+function rejectUnsupportedLogEntryScope(args) {
+  if (args?.scope === 'log-entry') {
+    return asToolError(
+      'scope "log-entry" is not yet supported — undo/redo currently target the active-file history head only. Omit scope or pass scope: "active-file".',
+      { code: 'not-implemented' }
+    )
+  }
+  return null
+}
+
 async function runUndoSourceMutation(args) {
-  return applyOperation(
-    'undo_source_mutation',
-    createUndoSourceMutationOperation(args),
-    { scope: args.scope === 'log-entry' ? 'log-entry' : 'active-file' }
-  )
+  const rejected = rejectUnsupportedLogEntryScope(args)
+  if (rejected) return rejected
+  return applyOperation('undo_source_mutation', createUndoSourceMutationOperation(args), {
+    scope: 'active-file',
+  })
 }
 
 async function runRedoSourceMutation(args) {
-  return applyOperation(
-    'redo_source_mutation',
-    createRedoSourceMutationOperation(args),
-    { scope: args.scope === 'log-entry' ? 'log-entry' : 'active-file' }
-  )
+  const rejected = rejectUnsupportedLogEntryScope(args)
+  if (rejected) return rejected
+  return applyOperation('redo_source_mutation', createRedoSourceMutationOperation(args), {
+    scope: 'active-file',
+  })
 }
 
 async function applyOperation(toolName, operation, meta = {}) {

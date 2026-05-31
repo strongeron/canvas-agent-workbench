@@ -170,4 +170,46 @@ describe("canvas agent operations core", () => {
     expect(item.sourceReact).toContain("function Preview")
     expect(item.sourceCss).toContain("padding")
   })
+
+  it("duplicate_items clears mcp-app connection state so the clone starts cold", async () => {
+    const ops = await loadCanvasAgentOperations()
+    const state = {
+      items: [
+        {
+          id: "mcp-1",
+          type: "mcp-app",
+          position: { x: 10, y: 10 },
+          zIndex: 2,
+          status: "connected",
+          lastError: "stale error",
+          toolsCache: [{ name: "search" }],
+          resourcesCache: [{ uri: "res://x" }],
+          promptsCache: [{ name: "p" }],
+          recentCalls: [{ id: "call-1" }],
+          transport: { kind: "http", url: "http://127.0.0.1:9/mcp", headersRef: "h1" },
+        },
+      ],
+      groups: [],
+      nextZIndex: 5,
+      selectedIds: [],
+    }
+
+    const result = ops.buildDuplicateItemsResult(state, { ids: ["mcp-1"] })
+    expect(result.ok).toBe(true)
+    const clone = result.items[0]
+    expect(clone.id).not.toBe("mcp-1")
+    // A cloned MCP-app node shares no live proxy connection — it must start cold.
+    expect(clone.status).toBe("disconnected")
+    expect(clone.lastError).toBeUndefined()
+    expect(clone.toolsCache).toBeUndefined()
+    expect(clone.resourcesCache).toBeUndefined()
+    expect(clone.promptsCache).toBeUndefined()
+    expect(clone.recentCalls).toBeUndefined()
+    // Transport config (ref-only, no secrets) is preserved.
+    expect(clone.transport).toEqual({
+      kind: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headersRef: "h1",
+    })
+  })
 })

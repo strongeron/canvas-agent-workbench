@@ -229,28 +229,6 @@ export async function readCanvasAgentThemes(context) {
   }
 }
 
-/**
- * Read the in-browser source mutation log (U5). The log lives in client
- * memory only — this adapter returns a normalized empty snapshot so MCP
- * tools that target the log can degrade gracefully when no session env is
- * mirroring it. Future revisions can flesh out a server-mirrored log;
- * keeping this helper here keeps the MCP server file FS-only.
- */
-export async function readCanvasAgentMutationLog(context) {
-  const envelope = await readCanvasAgentStateEnvelope(context).catch(() => null)
-  const log = envelope?.mutationLog && typeof envelope.mutationLog === 'object'
-    ? envelope.mutationLog
-    : null
-  return {
-    entries: Array.isArray(log?.entries) ? log.entries : [],
-    redoStack: Array.isArray(log?.redoStack) ? log.redoStack : [],
-    activeFilePath:
-      typeof log?.activeFilePath === 'string' && log.activeFilePath.trim()
-        ? log.activeFilePath.trim()
-        : null,
-  }
-}
-
 export async function readCanvasAgentSelection(context) {
   const state = await readCanvasAgentState(context)
   return Array.isArray(state?.selectedIds) ? state.selectedIds : []
