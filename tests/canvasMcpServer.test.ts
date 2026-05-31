@@ -562,7 +562,11 @@ describe("canvas MCP server", () => {
           res.end(
             JSON.stringify({
               ok: true,
-              status: "connected",
+              // Mirror the real /api/canvas/mcp-app/connect success envelope:
+              // `connectionStatus` (renamed from `status` to disambiguate from
+              // the HTTP status code on error responses) plus the echoed appName.
+              appName: "Docs MCP",
+              connectionStatus: "connected",
               tools: [
                 {
                   name: "search_docs",
@@ -1938,8 +1942,15 @@ describe("canvas MCP server", () => {
           url: "http://127.0.0.1:4010/mcp",
         },
       })
+      // Security (spec R7): the agent path must NEVER self-confirm a transport.
+      // `confirmed: true` may only originate from a human UI action; the agent
+      // can connect allowlisted/preset transports but a non-allowlisted one
+      // must be rejected with requires-user-confirm, not silently bypassed.
+      expect(mcpAppConnectRequestBody).not.toHaveProperty("confirmed")
       expect(registerMcpAppResult.result?.structuredContent?.item?.type).toBe("mcp-app")
-      expect(registerMcpAppResult.result?.structuredContent?.connect?.status).toBe("connected")
+      expect(registerMcpAppResult.result?.structuredContent?.connect?.connectionStatus).toBe(
+        "connected"
+      )
 
       const listMcpAppToolsResult = (await sendRpc({
         jsonrpc: "2.0",

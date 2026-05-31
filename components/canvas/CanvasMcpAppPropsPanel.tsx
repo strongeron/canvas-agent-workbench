@@ -254,7 +254,7 @@ export function CanvasMcpAppPropsPanel({
           />
           <button
             type="button"
-            disabled={busy === "secret" || !secretRef.trim() || !secretValue.trim()}
+            disabled={busy !== null || !secretRef.trim() || !secretValue.trim()}
             onClick={async () => {
               setError(null)
               try {
@@ -272,7 +272,7 @@ export function CanvasMcpAppPropsPanel({
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            disabled={busy === "connect"}
+            disabled={busy !== null}
             onClick={async () => {
               safeSetBusy("connect")
               safeSetError(null)
@@ -323,7 +323,7 @@ export function CanvasMcpAppPropsPanel({
           </button>
           <button
             type="button"
-            disabled={busy === "disconnect"}
+            disabled={busy !== null}
             onClick={async () => {
               safeSetBusy("disconnect")
               safeSetError(null)

@@ -61,10 +61,17 @@ export function CanvasMcpAppToolPalette({
   }, [recentCalls])
 
   const mountedRef = useRef(true)
+  // Track every in-flight invoke so unmount (node deleted / panel closed)
+  // aborts them instead of leaving the fetches running and resolving against
+  // a torn-down component.
+  const inFlightRef = useRef<Set<AbortController>>(new Set())
   useEffect(() => {
     mountedRef.current = true
+    const inFlight = inFlightRef.current
     return () => {
       mountedRef.current = false
+      for (const controller of inFlight) controller.abort()
+      inFlight.clear()
     }
   }, [])
 
@@ -103,6 +110,8 @@ export function CanvasMcpAppToolPalette({
               onClick={async () => {
                 setBusyToolName(tool.name)
                 setError(null)
+                const controller = new AbortController()
+                inFlightRef.current.add(controller)
                 try {
                   const args = parseJsonObjectInput(drafts[tool.name] ?? "{}")
                   const response = await fetch("/api/canvas/mcp-app/invoke-tool", {
@@ -114,22 +123,26 @@ export function CanvasMcpAppToolPalette({
                       toolName: tool.name,
                       args,
                     }),
+                    signal: controller.signal,
                   })
                   const payload = await response.json().catch(() => ({}))
                   if (!response.ok || !payload?.ok) {
                     throw new Error(payload?.error || "Tool invocation failed.")
                   }
                   const incoming = Array.isArray(payload.recentCalls) ? payload.recentCalls : []
-                  const merged = mergeRecentCallsById(recentCallsRef.current, incoming)
-                  recentCallsRef.current = merged
-                  if (mountedRef.current) onCallsUpdate(merged)
-                } catch (invokeError) {
                   if (mountedRef.current) {
+                    const merged = mergeRecentCallsById(recentCallsRef.current, incoming)
+                    recentCallsRef.current = merged
+                    onCallsUpdate(merged)
+                  }
+                } catch (invokeError) {
+                  if (mountedRef.current && (invokeError as Error)?.name !== "AbortError") {
                     setError(
                       invokeError instanceof Error ? invokeError.message : "Tool invocation failed."
                     )
                   }
                 } finally {
+                  inFlightRef.current.delete(controller)
                   if (mountedRef.current) {
                     setBusyToolName((current) => (current === tool.name ? null : current))
                   }

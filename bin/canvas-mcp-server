@@ -1320,11 +1320,9 @@ const TOOL_DEFINITIONS = [
             },
           ],
         },
-        // When the proxy rejects an unconfirmed transport with
-        // code: 'requires-user-confirm', the agent can retry with
-        // confirmed: true to persist the transport into the project
-        // allowlist (stdio signature or HTTP origin) and proceed.
-        confirmed: { type: 'boolean' },
+        // No `confirmed` field by design: the agent may only connect
+        // already-allowlisted transports (spec R7). See connectMcpApp in
+        // bin/canvas-agent-runtime.mjs for the enforcement rationale.
         position: positionSchema(),
         size: sizeSchema(),
         select: { type: 'boolean' },
@@ -2713,12 +2711,11 @@ async function runRegisterMcpApp(args) {
       nodeId: item.id,
       appName: item.appName,
       transport: item.transport,
-      confirmed: args.confirmed === true,
     })
     if (!connectResult?.ok) {
       // Surface the structured error to the agent so it can detect the
-      // requires-user-confirm path and retry with confirmed: true without
-      // first having to clean up a stray canvas node.
+      // requires-user-confirm path and tell the user to confirm the transport
+      // in the UI — without first leaving a stray canvas node behind.
       return asToolError(
         connectResult?.error || 'Failed to connect MCP app.',
         connectResult?.code

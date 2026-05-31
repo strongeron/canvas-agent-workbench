@@ -42,6 +42,11 @@ async function resolveSecret(
 }
 
 export const INVOKE_TIMEOUT_MS = 60_000
+// Bounds the connect handshake (spawn/connect + the initial list calls).
+// stdio has no internal timeout and HTTP's listTools is unbounded, so a slow
+// or unresponsive MCP server would otherwise hold the HTTP request open
+// indefinitely.
+export const CONNECT_TIMEOUT_MS = 15_000
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -84,10 +89,18 @@ export async function connectMcpAppNode(input: {
   // and HTTP streams keep heartbeats running forever, eventually
   // exhausting file descriptors or sockets.
   try {
-    await connection.connect()
-    const tools = await connection.listTools()
-    const resources = await connection.listResources().catch(() => [])
-    const prompts = await connection.listPrompts().catch(() => [])
+    await withTimeout(connection.connect(), CONNECT_TIMEOUT_MS, "mcp connect")
+    const tools = await withTimeout(connection.listTools(), CONNECT_TIMEOUT_MS, "mcp listTools")
+    const resources = await withTimeout(
+      connection.listResources(),
+      CONNECT_TIMEOUT_MS,
+      "mcp listResources"
+    ).catch(() => [])
+    const prompts = await withTimeout(
+      connection.listPrompts(),
+      CONNECT_TIMEOUT_MS,
+      "mcp listPrompts"
+    ).catch(() => [])
     const entry: RegistryEntry = {
       key,
       projectId: input.projectId,
