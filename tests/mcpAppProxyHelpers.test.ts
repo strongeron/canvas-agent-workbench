@@ -398,4 +398,63 @@ describe("mcp app proxy helpers", () => {
       })
     ).toBe(false)
   })
+
+  it("rejects fused-flag argv smuggling before an allowed token (node --eval=, python -c, npx --package=)", () => {
+    const token = "@modelcontextprotocol/server-filesystem"
+    // A trailing allowed token must NOT launder a smuggled code/preload/package
+    // flag into an allowlisted invocation. Each of these would otherwise spawn
+    // the runner with the dangerous flag.
+    expect(
+      isBuiltInAllowedTransport({ kind: "stdio", command: "node", args: ["--eval=console.log(1)", token] })
+    ).toBe(false)
+    expect(
+      isBuiltInAllowedTransport({ kind: "stdio", command: "node", args: ["--require=/tmp/evil.js", token] })
+    ).toBe(false)
+    // Attached short flag form: python -c<code>.
+    expect(
+      isBuiltInAllowedTransport({ kind: "stdio", command: "python", args: ["-cprint(1)", token] })
+    ).toBe(false)
+    // --package is not in npx's safe pre-token flag set.
+    expect(
+      isBuiltInAllowedTransport({ kind: "stdio", command: "npx", args: ["--package=evil", "-y", token] })
+    ).toBe(false)
+    // The legitimate `npx -y <token> [server-args]` shape still passes.
+    expect(
+      isBuiltInAllowedTransport({ kind: "stdio", command: "npx", args: ["-y", token, "/tmp"] })
+    ).toBe(true)
+  })
+
+  it("denies shell/glibc/tool env families, newline values, and inherited-var overrides", () => {
+    const hostEnv = { PATH: "/usr/bin", SHELL: "/bin/zsh" } as NodeJS.ProcessEnv
+    const filtered = buildSafeStdioEnv(
+      {
+        BASH_ENV: "/tmp/evil.sh",
+        ENV: "/tmp/evil.sh",
+        IFS: "x",
+        GIT_SSH: "/tmp/evil",
+        BASH_FUNC_FOO: "() { :; }",
+        GCONV_PATH: "/tmp",
+        MCP_TOKEN: "ok",
+        WITH_NEWLINE: "a\nFOO=b",
+        PATH: "/tmp/attacker-bin",
+        SHELL: "/tmp/evil-shell",
+      },
+      hostEnv
+    )
+    expect(filtered.MCP_TOKEN).toBe("ok")
+    for (const denied of [
+      "BASH_ENV",
+      "ENV",
+      "IFS",
+      "GIT_SSH",
+      "BASH_FUNC_FOO",
+      "GCONV_PATH",
+      "WITH_NEWLINE",
+    ]) {
+      expect(filtered).not.toHaveProperty(denied)
+    }
+    // User creds may NOT override inherited host vars (no PATH/SHELL hijack).
+    expect(filtered.PATH).toBe("/usr/bin")
+    expect(filtered.SHELL).toBe("/bin/zsh")
+  })
 })

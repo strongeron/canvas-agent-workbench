@@ -31,14 +31,37 @@ function basenameOf(commandPath: string) {
   return idx >= 0 ? trimmed.slice(idx + 1) : trimmed
 }
 
-function firstPositionalArg(args: string[]): string | undefined {
-  // Skip well-known npx/runner flags and any flag-prefixed token.
+// Per-runner whitelist of flags permitted BEFORE the MCP server token.
+// Everything else that is flag-shaped before the token is rejected, because
+// fused payloads like `node --eval=<code>`, `python -c<code>`, or
+// `npx --package=<evil>` would otherwise be skipped over and let a trailing
+// allowed token satisfy the allowlist while the runner executes the smuggled
+// code/package.
+const RUNNER_PRETOKEN_FLAGS: Record<string, Set<string>> = {
+  npx: new Set(["-y", "--yes"]),
+  node: new Set(),
+  bun: new Set(),
+  deno: new Set(),
+  python: new Set(),
+  python3: new Set(),
+}
+
+// Resolve the first positional (the MCP server token) ONLY when every flag
+// preceding it is in the runner's safe set. Returns undefined (→ reject) if any
+// unrecognized flag precedes the token. `--flag=value` and attached short flags
+// (`-c<code>`) are compared by their flag head so a fused payload cannot slip
+// past as "just another flag to skip".
+function resolveRunnerToken(runner: string, args: string[]): string | undefined {
+  const safe = RUNNER_PRETOKEN_FLAGS[runner] ?? new Set<string>()
   for (const raw of args) {
     if (raw === undefined || raw === null) continue
     const token = String(raw).trim()
     if (!token) continue
-    if (token === "-y" || token === "--yes") continue
-    if (token.startsWith("-")) continue
+    if (token.startsWith("-")) {
+      const flagHead = token.split("=", 1)[0]
+      if (!safe.has(flagHead)) return undefined
+      continue
+    }
     return token
   }
   return undefined
@@ -57,17 +80,18 @@ export function isBuiltInAllowedTransport(transport: CanvasMcpStdioTransport) {
     return true
   }
 
-  // Case 2: a safe runner launching an allowed token. The first NON-FLAG
-  // positional argument (after stripping `-y`/`--yes`/flag-prefixed args)
-  // MUST exactly equal an allowed token. This blocks
-  // `sh -c "rm -rf ~" @modelcontextprotocol/server-filesystem`-style
-  // smuggling because (a) `sh` is not a runner, and (b) even if it were,
-  // the first positional arg would be `rm -rf ~`, not the token.
+  // Case 2: a safe runner launching an allowed token. Every flag preceding the
+  // token must be in the runner's safe set, and the first positional MUST
+  // exactly equal an allowed token. This blocks both
+  // `sh -c "rm -rf ~" @modelcontextprotocol/server-filesystem` (sh is not a
+  // runner) and `node --eval=<code> @modelcontextprotocol/server-filesystem`
+  // (the unrecognized `--eval` flag before the token is rejected).
   if (!BUILTIN_ALLOWED_RUNNERS.has(command) && !BUILTIN_ALLOWED_RUNNERS.has(commandBase)) {
     return false
   }
+  const runner = BUILTIN_ALLOWED_RUNNERS.has(command) ? command : commandBase
   const args = Array.isArray(transport.args) ? transport.args.map((arg) => String(arg ?? "")) : []
-  const first = firstPositionalArg(args)
+  const first = resolveRunnerToken(runner, args)
   return Boolean(first && BUILTIN_ALLOWED_TOKENS.includes(first))
 }
 

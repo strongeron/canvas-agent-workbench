@@ -11,28 +11,40 @@
  *     process.env (do NOT forward the full host environment — it leaks
  *     unrelated secrets).
  */
-const DENYLIST = new Set([
+// Exact names that are code-injection / shell-startup vectors regardless of the
+// chosen server. BASH_ENV/ENV are sourced by non-interactive shells; IFS and
+// the option vars rewrite shell parsing; HOSTALIASES/LOCPATH/GCONV_PATH are
+// glibc loader vectors.
+const DENY_EXACT = new Set([
   "NODE_OPTIONS",
-  "LD_PRELOAD",
-  "LD_LIBRARY_PATH",
-  "LD_AUDIT",
-  "DYLD_INSERT_LIBRARIES",
-  "DYLD_LIBRARY_PATH",
-  "DYLD_FRAMEWORK_PATH",
-  "DYLD_FALLBACK_LIBRARY_PATH",
-  "DYLD_FALLBACK_FRAMEWORK_PATH",
-  "PYTHONPATH",
-  "PYTHONSTARTUP",
-  "PYTHONHOME",
-  "PERL5LIB",
-  "PERL5OPT",
-  "RUBYOPT",
-  "RUBYLIB",
+  "BASH_ENV",
+  "ENV",
+  "IFS",
+  "PROMPT_COMMAND",
+  "CDPATH",
+  "SHELLOPTS",
+  "BASHOPTS",
+  "GLOBIGNORE",
+  "HOSTALIASES",
+  "LOCPATH",
+  "GCONV_PATH",
 ])
 
+// Whole families that load code or hijack a runtime/tool: dynamic-linker vars,
+// language runtime path/opt vars, the Node_/Git_ tool families, and exported
+// bash functions (Shellshock).
+const DENY_PREFIXES = ["LD_", "DYLD_", "PYTHON", "PERL", "RUBY", "NODE_", "GIT_", "BASH_FUNC_"]
+
+// Names that are seeded from the host and must NOT be overridable by
+// user-supplied creds (e.g. a cred named PATH would hijack the runner binary).
 const INHERIT_ALLOWLIST = ["PATH", "HOME", "USER", "LANG", "LC_ALL", "TZ", "SHELL"]
 
 const NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/
+
+function isDeniedEnvName(name: string): boolean {
+  if (DENY_EXACT.has(name)) return true
+  return DENY_PREFIXES.some((prefix) => name.startsWith(prefix))
+}
 
 export function buildSafeStdioEnv(
   userEnv: Record<string, string> | undefined,
@@ -40,19 +52,24 @@ export function buildSafeStdioEnv(
 ): Record<string, string> {
   const out: Record<string, string> = {}
 
+  if (userEnv && typeof userEnv === "object" && !Array.isArray(userEnv)) {
+    for (const [name, rawValue] of Object.entries(userEnv)) {
+      if (typeof rawValue !== "string") continue
+      if (!NAME_PATTERN.test(name)) continue
+      if (isDeniedEnvName(name)) continue
+      // Inherited names win — user creds may not override PATH/SHELL/HOME/etc.
+      if (INHERIT_ALLOWLIST.includes(name)) continue
+      // A newline in a value can inject extra entries / shell state in some
+      // consumers; reject rather than forward control characters.
+      if (/[\r\n\u0000]/.test(rawValue)) continue
+      out[name] = rawValue
+    }
+  }
+
+  // Seed inherited host vars LAST so they always win over any user entry.
   for (const name of INHERIT_ALLOWLIST) {
     const value = hostEnv[name]
     if (typeof value === "string") out[name] = value
-  }
-
-  if (userEnv && typeof userEnv === "object" && !Array.isArray(userEnv)) {
-    for (const [rawName, rawValue] of Object.entries(userEnv)) {
-      if (typeof rawValue !== "string") continue
-      const name = rawName
-      if (DENYLIST.has(name)) continue
-      if (!NAME_PATTERN.test(name)) continue
-      out[name] = rawValue
-    }
   }
 
   return out
