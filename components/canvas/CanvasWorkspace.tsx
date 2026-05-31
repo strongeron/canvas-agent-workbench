@@ -10,6 +10,7 @@ import type {
   CanvasEmbedItem as CanvasEmbedItemType,
   CanvasHtmlItem as CanvasHtmlItemType,
   CanvasMermaidItem as CanvasMermaidItemType,
+  CanvasMcpAppItem as CanvasMcpAppItemType,
   CanvasExcalidrawItem as CanvasExcalidrawItemType,
   CanvasMarkdownItem as CanvasMarkdownItemType,
   CanvasMediaItem as CanvasMediaItemType,
@@ -38,6 +39,7 @@ import type {
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
 import { CanvasMarkdownItem as CanvasMarkdownItemComponent } from "./CanvasMarkdownItem"
+import { CanvasMcpAppItem as CanvasMcpAppItemComponent } from "./CanvasMcpAppItem"
 import { CanvasMermaidItem as CanvasMermaidItemComponent } from "./CanvasMermaidItem"
 import { CanvasMediaItem as CanvasMediaItemComponent } from "./CanvasMediaItem"
 import { CanvasItem } from "./CanvasItem"
@@ -94,6 +96,7 @@ interface RendererComponentProps {
 
 interface CanvasWorkspaceProps {
   items: CanvasItemType[]
+  projectId?: string
   groups: CanvasGroup[]
   transform: CanvasTransform
   interactMode: boolean
@@ -134,6 +137,7 @@ interface CanvasWorkspaceProps {
 
 export function CanvasWorkspace({
   items,
+  projectId = "demo",
   groups,
   transform,
   interactMode,
@@ -959,6 +963,20 @@ export function CanvasWorkspace({
                 {...commonProps}
                 item={item as CanvasMermaidItemType}
                 onUpdate={(updates: Partial<Omit<CanvasMermaidItemType, "id">>) =>
+                  onUpdateItem(item.id, updates)
+                }
+              />
+            )
+          }
+
+          if (item.type === "mcp-app") {
+            return (
+              <CanvasMcpAppItemComponent
+                key={item.id}
+                {...commonProps}
+                projectId={projectId}
+                item={item as CanvasMcpAppItemType}
+                onUpdate={(updates: Partial<Omit<CanvasMcpAppItemType, "id">>) =>
                   onUpdateItem(item.id, updates)
                 }
               />

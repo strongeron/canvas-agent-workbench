@@ -205,9 +205,48 @@ describe("canvas MCP server", () => {
                 clipEndSec: 10,
                 objectFit: "cover",
               },
+              {
+                id: "mcp-app-1",
+                type: "mcp-app",
+                appName: "Filesystem MCP",
+                transport: {
+                  kind: "stdio",
+                  command: "npx",
+                  args: ["-y", "@modelcontextprotocol/server-filesystem"],
+                },
+                status: "connected",
+                toolsCache: [
+                  {
+                    name: "read_file",
+                    description: "Read a file",
+                    inputSchema: {
+                      type: "object",
+                      properties: {
+                        path: { type: "string" },
+                      },
+                    },
+                  },
+                ],
+                recentCalls: [
+                  {
+                    id: "mcp-call-1",
+                    nodeId: "mcp-app-1",
+                    toolName: "read_file",
+                    status: "success",
+                    startedAt: "2026-05-24T10:00:00.000Z",
+                    finishedAt: "2026-05-24T10:00:00.100Z",
+                    args: { path: "/tmp/demo.txt" },
+                    result: { content: "hello" },
+                  },
+                ],
+                position: { x: 1080, y: 360 },
+                size: { width: 420, height: 260 },
+                rotation: 0,
+                zIndex: 7,
+              },
             ],
             groups: [],
-            nextZIndex: 7,
+            nextZIndex: 8,
             selectedIds: [],
           },
           themeSnapshot: {
@@ -262,6 +301,10 @@ describe("canvas MCP server", () => {
     let syncTargetRequestBody: Record<string, any> | null = null
     let detectComponentsDirRequestBody: Record<string, any> | null = null
     let projectSyncRequestBody: Record<string, any> | null = null
+    let mcpAppConnectRequestBody: Record<string, any> | null = null
+    let mcpAppInvokeToolRequestBody: Record<string, any> | null = null
+    let mcpAppDisconnectRequestBody: Record<string, any> | null = null
+    let mcpAppLogRequestBody: Record<string, any> | null = null
     // Mutable so a test step can simulate a stale/invalid persisted mapping
     // (the read endpoint realpath-revalidates and returns `valid`).
     let syncTargetValid = true
@@ -500,6 +543,127 @@ describe("canvas MCP server", () => {
                 { path: "promo-card.html", status: "written" },
                 { path: "promo-card.css", status: "written" },
                 { path: "manifest.json", status: "written" },
+              ],
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/mcp-app/connect") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          mcpAppConnectRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              // Mirror the real /api/canvas/mcp-app/connect success envelope:
+              // `connectionStatus` (renamed from `status` to disambiguate from
+              // the HTTP status code on error responses) plus the echoed appName.
+              appName: "Docs MCP",
+              connectionStatus: "connected",
+              tools: [
+                {
+                  name: "search_docs",
+                  description: "Search remote docs",
+                  inputSchema: { type: "object", properties: { q: { type: "string" } } },
+                },
+              ],
+              resources: [],
+              prompts: [],
+              lastError: null,
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/mcp-app/invoke-tool") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          mcpAppInvokeToolRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              callerDepth: 0,
+              result: { content: [{ type: "text", text: "done" }] },
+              recentCalls: [
+                {
+                  id: "mcp-call-2",
+                  nodeId: "mcp-app-1",
+                  toolName: "read_file",
+                  status: "success",
+                  startedAt: "2026-05-24T10:05:00.000Z",
+                  finishedAt: "2026-05-24T10:05:00.100Z",
+                  args: { path: "/tmp/demo.txt", token: "[redacted]" },
+                  result: { content: "done" },
+                },
+              ],
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/mcp-app/disconnect") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          mcpAppDisconnectRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              recentCalls: [
+                {
+                  id: "mcp-call-3",
+                  nodeId: "mcp-app-1",
+                  toolName: "read_file",
+                  status: "success",
+                  startedAt: "2026-05-24T10:06:00.000Z",
+                  finishedAt: "2026-05-24T10:06:00.100Z",
+                },
+              ],
+            })
+          )
+        })
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/mcp-app/log") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        req.on("end", () => {
+          mcpAppLogRequestBody = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+          res.statusCode = 200
+          res.setHeader("content-type", "application/json")
+          res.end(
+            JSON.stringify({
+              ok: true,
+              recentCalls: [
+                {
+                  id: "mcp-call-4",
+                  nodeId: "mcp-app-1",
+                  toolName: "read_file",
+                  status: "success",
+                  startedAt: "2026-05-24T10:07:00.000Z",
+                  finishedAt: "2026-05-24T10:07:00.100Z",
+                },
               ],
             })
           )
@@ -1716,6 +1880,199 @@ describe("canvas MCP server", () => {
       expect(
         nativeShellResult.result?.structuredContent?.component?.primitive?.componentSlug
       ).toBe("promo-card")
+
+      // MCP-app tools: register/list/invoke/log/disconnect all flow through
+      // the same localhost-guarded proxy the UI uses.
+      mcpAppConnectRequestBody = null
+      const registerMcpAppPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-register-mcp-app",
+        method: "tools/call",
+        params: {
+          name: "register_mcp_app",
+          arguments: {
+            appName: "Docs MCP",
+            transport: {
+              kind: "http",
+              url: "http://127.0.0.1:4010/mcp",
+            },
+            select: true,
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      // Ordering changed (P1 fix): the agent now CONNECTS first and only
+      // creates the canvas item if the connect succeeds, with status +
+      // toolsCache + resourcesCache + promptsCache populated in a single
+      // create_item operation. Previously two ops were queued (create
+      // disconnected, then update to connected), which left orphan nodes
+      // behind whenever the connect failed or required user confirm.
+      const queuedMcpCreate = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedMcpCreate.request).toMatchObject({
+        toolName: "register_mcp_app",
+        operation: {
+          type: "create_item",
+          select: true,
+          item: {
+            type: "mcp-app",
+            appName: "Docs MCP",
+            transport: {
+              kind: "http",
+              url: "http://127.0.0.1:4010/mcp",
+            },
+            status: "connected",
+            toolsCache: [{ name: "search_docs" }],
+          },
+        },
+      })
+      const createdMcpAppId = queuedMcpCreate.request.operation.item.id
+      await queuedMcpCreate.respond({
+        ok: true,
+        updatedAt: "2026-05-24T10:00:00.200Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [createdMcpAppId] },
+      })
+
+      const registerMcpAppResult = await registerMcpAppPromise
+      expect(mcpAppConnectRequestBody).toMatchObject({
+        projectId: "demo",
+        nodeId: createdMcpAppId,
+        appName: "Docs MCP",
+        transport: {
+          kind: "http",
+          url: "http://127.0.0.1:4010/mcp",
+        },
+      })
+      // Security (spec R7): the agent path must NEVER self-confirm a transport.
+      // `confirmed: true` may only originate from a human UI action; the agent
+      // can connect allowlisted/preset transports but a non-allowlisted one
+      // must be rejected with requires-user-confirm, not silently bypassed.
+      expect(mcpAppConnectRequestBody).not.toHaveProperty("confirmed")
+      expect(registerMcpAppResult.result?.structuredContent?.item?.type).toBe("mcp-app")
+      expect(registerMcpAppResult.result?.structuredContent?.connect?.connectionStatus).toBe(
+        "connected"
+      )
+
+      const listMcpAppToolsResult = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-list-mcp-app-tools",
+        method: "tools/call",
+        params: {
+          name: "list_mcp_app_tools",
+          arguments: {
+            nodeId: "mcp-app-1",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+      expect(listMcpAppToolsResult.result?.structuredContent?.status).toBe("connected")
+      expect(listMcpAppToolsResult.result?.structuredContent?.tools?.[0]?.name).toBe("read_file")
+
+      mcpAppInvokeToolRequestBody = null
+      const invokeMcpAppToolPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-invoke-mcp-app-tool",
+        method: "tools/call",
+        params: {
+          name: "invoke_mcp_app_tool",
+          arguments: {
+            nodeId: "mcp-app-1",
+            toolName: "read_file",
+            args: {
+              path: "/tmp/demo.txt",
+              token: "secret-value",
+            },
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedMcpInvoke = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedMcpInvoke.request).toMatchObject({
+        toolName: "invoke_mcp_app_tool",
+        operation: {
+          type: "update_item",
+          id: "mcp-app-1",
+        },
+      })
+      await queuedMcpInvoke.respond({
+        ok: true,
+        updatedAt: "2026-05-24T10:05:00.300Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: ["mcp-app-1"] },
+      })
+
+      const invokeMcpAppToolResult = await invokeMcpAppToolPromise
+      expect(mcpAppInvokeToolRequestBody).toMatchObject({
+        projectId: "demo",
+        nodeId: "mcp-app-1",
+        toolName: "read_file",
+        args: {
+          path: "/tmp/demo.txt",
+          token: "secret-value",
+        },
+      })
+      // Recursion depth is enforced server-side per registry entry, no
+      // client-supplied callerDepth header is sent. (P0 security fix.)
+      expect(mcpAppInvokeToolRequestBody).not.toHaveProperty("callerDepth")
+      expect(invokeMcpAppToolResult.result?.structuredContent?.result?.content?.[0]?.text).toBe("done")
+      expect(invokeMcpAppToolResult.result?.structuredContent?.recentCalls?.[0]?.args?.token).toBe(
+        "[redacted]"
+      )
+
+      const getMcpAppLogResult = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-get-mcp-app-log",
+        method: "tools/call",
+        params: {
+          name: "get_mcp_app_log",
+          arguments: {
+            nodeId: "mcp-app-1",
+            limit: 1,
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+      expect(mcpAppLogRequestBody).toMatchObject({
+        projectId: "demo",
+        nodeId: "mcp-app-1",
+        limit: 1,
+      })
+      expect(getMcpAppLogResult.result?.structuredContent?.recentCalls?.[0]?.toolName).toBe(
+        "read_file"
+      )
+
+      mcpAppDisconnectRequestBody = null
+      const disconnectMcpAppPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-disconnect-mcp-app",
+        method: "tools/call",
+        params: {
+          name: "disconnect_mcp_app",
+          arguments: {
+            nodeId: "mcp-app-1",
+          },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedMcpDisconnect = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedMcpDisconnect.request).toMatchObject({
+        toolName: "disconnect_mcp_app",
+        operation: {
+          type: "update_item",
+          id: "mcp-app-1",
+          updates: {
+            status: "disconnected",
+          },
+        },
+      })
+      await queuedMcpDisconnect.respond({
+        ok: true,
+        updatedAt: "2026-05-24T10:06:00.300Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: ["mcp-app-1"] },
+      })
+
+      const disconnectMcpAppResult = await disconnectMcpAppPromise
+      expect(mcpAppDisconnectRequestBody).toMatchObject({
+        projectId: "demo",
+        nodeId: "mcp-app-1",
+      })
+      expect(disconnectMcpAppResult.result?.structuredContent?.disconnect?.ok).toBe(true)
 
       // --- U7: sync_to_project allowlist + reuse of the U5 handler ---------
       // Temporarily rewrite the live state so a file-backed html component is

@@ -17,7 +17,7 @@ import { inferMediaKindFromFile } from "./mediaStorageService"
 
 /** Component entry type for sidebar */
 type ComponentEntry = GalleryEntry
-type SidebarPanelId = "projects" | "canvases" | "components" | "media" | "embeds" | "diagrams" | "imports"
+type SidebarPanelId = "projects" | "canvases" | "components" | "media" | "embeds" | "apps" | "diagrams" | "imports"
 type ProjectSidebarEntry = {
   id: string
   label: string
@@ -372,6 +372,7 @@ interface CanvasSidebarProps {
     entryFile?: string
     title?: string
   }) => void | Promise<void>
+  onAddMcpApp?: () => void | Promise<void>
   onScanHtmlBundleLibrary?: (rootPath: string) => Promise<CanvasHtmlBundleLibraryScanResult>
   /** Add a media node (image/video/gif URL) */
   onAddMedia: (input: {
@@ -438,6 +439,7 @@ export function CanvasSidebar({
   onAddInlineHtml,
   onAddNativeComponent,
   onAddHtmlBundleFromDirectory,
+  onAddMcpApp,
   onScanHtmlBundleLibrary,
   onAddMedia,
   onAddMermaid,
@@ -536,6 +538,7 @@ export function CanvasSidebar({
     components: false,
     media: false,
     embeds: false,
+    apps: false,
     diagrams: false,
     imports: false,
   })
@@ -2185,6 +2188,44 @@ p {
           </div>
         )}
       </div>
+
+      {onAddMcpApp && (
+        <div className="border-b border-default p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => togglePanel("apps")}
+              className="flex items-center gap-1 text-sm font-semibold text-foreground"
+            >
+              {collapsedPanels.apps ? (
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+              <span>MCP Apps</span>
+            </button>
+          </div>
+          {!collapsedPanels.apps && (
+            <div className="rounded-md border border-default bg-surface-50 p-2">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                External MCP
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Add an HTTP/SSE or stdio-backed MCP server as a live canvas node.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  void onAddMcpApp()
+                }}
+                className="mt-3 w-full rounded-md border border-default bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-100"
+              >
+                Add MCP App
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {(onAddMermaid || onAddExcalidraw || onAddMarkdown || onImportDiagramFile) && (
         <div className="border-b border-default p-3">

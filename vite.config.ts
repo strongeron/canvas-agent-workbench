@@ -19,6 +19,12 @@ import { applyCanvasComponentPromoteRequest } from './vite/api/canvasComponentPr
 import { applyCanvasProjectSyncRequest } from './vite/api/canvasProjectSync'
 import { applyCanvasProjectDetectComponentsDirRequest } from './vite/api/canvasProjectDetectComponentsDir'
 import { computeWrittenSyncTarget } from './vite/api/syncTargetState'
+import { applyCanvasMcpAppConnectRequest } from './vite/api/mcpProxy/canvasMcpAppConnect'
+import { applyCanvasMcpAppCredentialsRequest } from './vite/api/mcpProxy/canvasMcpAppCredentials'
+import { applyCanvasMcpAppDisconnectRequest } from './vite/api/mcpProxy/canvasMcpAppDisconnect'
+import { applyCanvasMcpAppInvokeToolRequest } from './vite/api/mcpProxy/canvasMcpAppInvokeTool'
+import { applyCanvasMcpAppLogRequest } from './vite/api/mcpProxy/canvasMcpAppLog'
+import { disconnectAllMcpApps } from './vite/api/mcpProxy/registry'
 import { listProjectDesignTokens, writeProjectDesignToken } from './utils/canvasTokenCss'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
@@ -105,6 +111,16 @@ for (const [key, value] of Object.entries(loadedEnv)) {
   }
 }
 const ENV_LOCAL_PATH = path.resolve(__dirname, '.env.local')
+
+process.once('exit', () => {
+  void disconnectAllMcpApps()
+})
+process.once('SIGINT', () => {
+  void disconnectAllMcpApps().finally(() => process.exit(130))
+})
+process.once('SIGTERM', () => {
+  void disconnectAllMcpApps().finally(() => process.exit(143))
+})
 
 const PROJECTS_ROOT = path.resolve(__dirname, 'projects')
 const LOCAL_SCAN_ALLOWED_ROOTS = [
@@ -4740,6 +4756,124 @@ function paperImportPlugin() {
             return sendJson(res, 400, {
               ok: false,
               error: error?.message || 'Failed to read/write the sync target.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/mcp-app/connect') {
+          const localhostError = rejectIfNotLocalhost(req)
+          if (localhostError) {
+            return sendJson(res, 403, { ok: false, code: 'forbidden-origin', error: localhostError })
+          }
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasMcpAppConnectRequest(body, { workspaceRoot: __dirname })
+            if (!result.ok) {
+              return sendJson(res, result.status, result)
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 500, {
+              ok: false,
+              code: 'internal-error',
+              error: error?.message || 'Failed to connect MCP app.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/mcp-app/disconnect') {
+          const localhostError = rejectIfNotLocalhost(req)
+          if (localhostError) {
+            return sendJson(res, 403, { ok: false, code: 'forbidden-origin', error: localhostError })
+          }
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasMcpAppDisconnectRequest(body)
+            if (!result.ok) {
+              return sendJson(res, result.status, result)
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 500, {
+              ok: false,
+              code: 'internal-error',
+              error: error?.message || 'Failed to disconnect MCP app.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/mcp-app/invoke-tool') {
+          const localhostError = rejectIfNotLocalhost(req)
+          if (localhostError) {
+            return sendJson(res, 403, { ok: false, code: 'forbidden-origin', error: localhostError })
+          }
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasMcpAppInvokeToolRequest(body)
+            if (!result.ok) {
+              return sendJson(res, result.status, result)
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 500, {
+              ok: false,
+              code: 'internal-error',
+              error: error?.message || 'Failed to invoke MCP app tool.',
+            })
+          }
+        }
+
+        if (
+          (req.method === 'POST' && pathname === '/api/canvas/mcp-app/log') ||
+          (req.method === 'GET' && pathname.startsWith('/api/canvas/mcp-app/log/'))
+        ) {
+          const localhostError = rejectIfNotLocalhost(req)
+          if (localhostError) {
+            return sendJson(res, 403, { ok: false, code: 'forbidden-origin', error: localhostError })
+          }
+          try {
+            const requestUrl = new URL(req.url || pathname, 'http://localhost')
+            const body =
+              req.method === 'POST'
+                ? await readJson(req)
+                : {
+                    projectId: requestUrl.searchParams.get('projectId')?.trim() || '',
+                    nodeId: decodeURIComponent(pathname.split('/').pop() || ''),
+                    limit: requestUrl.searchParams.get('limit')
+                      ? Number(requestUrl.searchParams.get('limit'))
+                      : undefined,
+                  }
+            const result = await applyCanvasMcpAppLogRequest(body)
+            if (!result.ok) {
+              return sendJson(res, result.status, result)
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 500, {
+              ok: false,
+              code: 'internal-error',
+              error: error?.message || 'Failed to read MCP app log.',
+            })
+          }
+        }
+
+        if (req.method === 'POST' && pathname === '/api/canvas/mcp-app/credentials') {
+          const localhostError = rejectIfNotLocalhost(req)
+          if (localhostError) {
+            return sendJson(res, 403, { ok: false, code: 'forbidden-origin', error: localhostError })
+          }
+          try {
+            const body = await readJson(req)
+            const result = await applyCanvasMcpAppCredentialsRequest(body, { workspaceRoot: __dirname })
+            if (!result.ok) {
+              return sendJson(res, result.status, result)
+            }
+            return sendJson(res, 200, result)
+          } catch (error) {
+            return sendJson(res, 500, {
+              ok: false,
+              code: 'internal-error',
+              error: error?.message || 'Failed to store MCP app credentials.',
             })
           }
         }

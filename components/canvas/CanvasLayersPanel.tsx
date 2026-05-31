@@ -68,6 +68,7 @@ export function CanvasLayersPanel({
     if (item.type === "html") return getHtmlLabel(item)
     if (item.type === "media") return getMediaLabel(item)
     if (item.type === "mermaid") return item.title || "Mermaid diagram"
+    if (item.type === "mcp-app") return item.appName || "MCP app"
     if (item.type === "excalidraw") return item.title || "Excalidraw sketch"
     if (item.type === "markdown") return item.title || "Markdown note"
     if (item.type === "section") return item.name || "Section"

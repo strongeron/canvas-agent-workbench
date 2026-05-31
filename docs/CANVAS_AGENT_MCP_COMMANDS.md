@@ -107,6 +107,11 @@ Use these when you want the agent to manage the file library itself:
 - `get_primitive`
 - `create_artboard`
 - `create_native_component_shell`
+- `register_mcp_app`
+- `list_mcp_app_tools`
+- `invoke_mcp_app_tool`
+- `get_mcp_app_log`
+- `disconnect_mcp_app`
 - `sync_to_project`
 - `create_primitive_item`
 - `create_item`
@@ -118,6 +123,14 @@ Use these when you want the agent to manage the file library itself:
 - `delete_group`
 - `select_items`
 - `set_canvas_viewport`
+
+### MCP App Nodes
+
+- `register_mcp_app` creates a live `mcp-app` canvas node and connects it through the localhost-guarded proxy. HTTP/SSE nodes can connect directly; stdio nodes require the command to be built-in or user-allowlisted first.
+- `list_mcp_app_tools` reads the cached tool palette for a connected node.
+- `invoke_mcp_app_tool` calls one embedded MCP tool and returns the synchronous result. The proxy enforces recursion depth and redacts secret-like args in the log.
+- `get_mcp_app_log` returns recent redacted tool calls for one node.
+- `disconnect_mcp_app` closes the transport and marks the node disconnected.
 - `focus_canvas_items`
 - `capture_canvas_items_screenshot`
 - `clear_canvas`

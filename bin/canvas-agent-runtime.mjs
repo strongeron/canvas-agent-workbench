@@ -652,6 +652,45 @@ export async function syncProjectToTarget(context, input) {
   })
 }
 
+export async function connectMcpApp(context, input) {
+  // `confirmed` is intentionally NOT forwarded from the agent path. Only a
+  // human UI action may confirm a non-allowlisted transport (spec R7). The
+  // proxy treats a missing `confirmed` as unconfirmed and rejects
+  // non-allowlisted commands/origins with code: 'requires-user-confirm'.
+  return postAgentNativeJsonSoft(context, '/api/canvas/mcp-app/connect', {
+    projectId: input?.projectId || context.projectId,
+    nodeId: input?.nodeId,
+    appName: input?.appName,
+    transport: input?.transport,
+  })
+}
+
+export async function disconnectMcpApp(context, input) {
+  return postAgentNativeJsonSoft(context, '/api/canvas/mcp-app/disconnect', {
+    projectId: input?.projectId || context.projectId,
+    nodeId: input?.nodeId,
+  })
+}
+
+export async function invokeMcpAppTool(context, input) {
+  // Note: caller-supplied depth is intentionally omitted. Recursion is
+  // bounded server-side per registry entry. See vite/api/mcpProxy/registry.ts.
+  return postAgentNativeJsonSoft(context, '/api/canvas/mcp-app/invoke-tool', {
+    projectId: input?.projectId || context.projectId,
+    nodeId: input?.nodeId,
+    toolName: input?.toolName,
+    args: input?.args,
+  })
+}
+
+export async function getMcpAppLog(context, input) {
+  return postAgentNativeJsonSoft(context, '/api/canvas/mcp-app/log', {
+    projectId: input?.projectId || context.projectId,
+    nodeId: input?.nodeId,
+    limit: input?.limit,
+  })
+}
+
 export async function readColorAuditState(context, workspaceKey = context.colorAuditWorkspaceKey) {
   return readAgentNativeWorkspaceState(context, 'color-audit', workspaceKey)
 }

@@ -4,10 +4,14 @@ import {
   buildCanvasContextSummary,
   captureCanvasItemsScreenshot,
   captureWorkspaceScreenshot,
+  connectMcpApp,
   createComponentFromSource,
   promoteSubtreeToComponent,
+  disconnectMcpApp,
   readProjectSyncTarget,
   detectProjectComponentsDir,
+  getMcpAppLog,
+  invokeMcpAppTool,
   syncProjectToTarget,
   createProjectCanvasFile,
   deleteProjectCanvasFile,
@@ -54,6 +58,7 @@ import {
   createDeleteGroupOperation,
   createDeleteItemsOperation,
   createHtmlCanvasItem,
+  createMcpAppCanvasItem,
   createNativeComponentShellItem,
   buildNativeComponentShellCreateInput,
   resolveSyncToProjectTarget,
@@ -1351,6 +1356,101 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'register_mcp_app',
+    description: 'Create a live MCP-app canvas node and connect it through the localhost-guarded proxy.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        appName: { type: 'string' },
+        transport: {
+          oneOf: [
+            {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', enum: ['http'] },
+                url: { type: 'string' },
+                headersRef: { type: 'string' },
+              },
+              required: ['kind', 'url'],
+              additionalProperties: false,
+            },
+            {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', enum: ['stdio'] },
+                command: { type: 'string' },
+                args: { type: 'array', items: { type: 'string' } },
+                cwd: { type: 'string' },
+                envRef: { type: 'string' },
+              },
+              required: ['kind', 'command'],
+              additionalProperties: false,
+            },
+          ],
+        },
+        // No `confirmed` field by design: the agent may only connect
+        // already-allowlisted transports (spec R7). See connectMcpApp in
+        // bin/canvas-agent-runtime.mjs for the enforcement rationale.
+        position: positionSchema(),
+        size: sizeSchema(),
+        select: { type: 'boolean' },
+      },
+      required: ['transport'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_mcp_app_tools',
+    description: 'Read the current tool palette for a connected MCP-app node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string' },
+      },
+      required: ['nodeId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'invoke_mcp_app_tool',
+    description: 'Invoke a tool on a connected MCP-app node through the proxy. Recursion is bounded server-side per connection.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string' },
+        toolName: { type: 'string' },
+        args: { type: 'object' },
+      },
+      required: ['nodeId', 'toolName'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_mcp_app_log',
+    description: 'Read recent redacted tool calls for a connected MCP-app node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string' },
+        limit: { type: 'number' },
+      },
+      required: ['nodeId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'disconnect_mcp_app',
+    description: 'Disconnect a connected MCP-app node and clean up its transport.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string' },
+      },
+      required: ['nodeId'],
+      additionalProperties: false,
+    },
+  },
 ]
 
 const RESOURCE_DEFINITIONS = [
@@ -2207,6 +2307,16 @@ async function callTool(name, args) {
       return runCreateArtboard(args)
     case 'create_native_component_shell':
       return runCreateNativeComponentShell(args)
+    case 'register_mcp_app':
+      return runRegisterMcpApp(args)
+    case 'list_mcp_app_tools':
+      return runListMcpAppTools(args)
+    case 'invoke_mcp_app_tool':
+      return runInvokeMcpAppTool(args)
+    case 'get_mcp_app_log':
+      return runGetMcpAppLog(args)
+    case 'disconnect_mcp_app':
+      return runDisconnectMcpApp(args)
     case 'sync_to_project':
       return runSyncToProject(args)
     case 'insert_native_slot_part':
@@ -2661,6 +2771,163 @@ async function runCreatePrimitiveItem(args) {
   } catch (error) {
     return asToolError(error instanceof Error ? error.message : 'Failed to create primitive item.')
   }
+}
+
+async function runRegisterMcpApp(args) {
+  try {
+    const state = await readCanvasAgentState(context)
+    // The item is built up-front to lock in a stable id + position, but it
+    // is NOT committed to canvas state until the connection actually
+    // succeeds. The previous ordering created the canvas item first and
+    // left an orphan node behind whenever the user-confirm or the upstream
+    // handshake failed.
+    const item = createMcpAppCanvasItem(state, args)
+
+    const connectResult = await connectMcpApp(context, {
+      projectId: context.projectId,
+      nodeId: item.id,
+      appName: item.appName,
+      transport: item.transport,
+    })
+    if (!connectResult?.ok) {
+      // Surface the structured error to the agent so it can detect the
+      // requires-user-confirm path and tell the user to confirm the transport
+      // in the UI — without first leaving a stray canvas node behind.
+      return asToolError(
+        connectResult?.error || 'Failed to connect MCP app.',
+        connectResult?.code
+          ? {
+              code: connectResult.code,
+              status: connectResult.status,
+              nodeId: item.id,
+              transportSignature: item.transport,
+            }
+          : undefined
+      )
+    }
+
+    // Only after a successful connect do we commit the canvas item AND
+    // its connected status / tool caches in a single state update.
+    const createResult = await applyOperation(
+      'register_mcp_app',
+      createCreateItemOperation(
+        {
+          ...item,
+          status: 'connected',
+          toolsCache: Array.isArray(connectResult.tools) ? connectResult.tools : [],
+          resourcesCache: Array.isArray(connectResult.resources) ? connectResult.resources : [],
+          promptsCache: Array.isArray(connectResult.prompts) ? connectResult.prompts : [],
+        },
+        args.select !== false
+      ),
+      { item }
+    )
+    if (createResult.isError) {
+      // Roll back the live connection so we do not leave a connected
+      // transport behind for an item that never made it into the canvas.
+      try {
+        await disconnectMcpApp(context, { projectId: context.projectId, nodeId: item.id })
+      } catch {
+        // best-effort rollback
+      }
+      return createResult
+    }
+
+    return asToolResult({
+      item,
+      connect: connectResult,
+      create: createResult,
+    })
+  } catch (error) {
+    return asToolError(error instanceof Error ? error.message : 'Failed to register MCP app.')
+  }
+}
+
+async function runListMcpAppTools(args) {
+  const nodeId = normalizeString(args.nodeId)
+  if (!nodeId) return asToolError('nodeId is required.')
+  const state = await readCanvasAgentState(context)
+  const item = state?.items?.find((entry) => entry?.id === nodeId && entry?.type === 'mcp-app')
+  if (!item) return asToolError(`MCP app node not found: ${nodeId}`)
+  return asToolResult({
+    nodeId,
+    tools: Array.isArray(item.toolsCache) ? item.toolsCache : [],
+    resources: Array.isArray(item.resourcesCache) ? item.resourcesCache : [],
+    prompts: Array.isArray(item.promptsCache) ? item.promptsCache : [],
+    status: item.status || 'disconnected',
+  })
+}
+
+async function runInvokeMcpAppTool(args) {
+  const nodeId = normalizeString(args.nodeId)
+  const toolName = normalizeString(args.toolName)
+  if (!nodeId) return asToolError('nodeId is required.')
+  if (!toolName) return asToolError('toolName is required.')
+  const invokeResult = await invokeMcpAppTool(context, {
+    projectId: context.projectId,
+    nodeId,
+    toolName,
+    args: args.args && typeof args.args === 'object' ? args.args : {},
+  })
+  if (!invokeResult?.ok) return asToolError(invokeResult?.error || 'Failed to invoke MCP app tool.')
+
+  const statusUpdate = await enqueueCanvasAgentOperation(
+    context,
+    'invoke_mcp_app_tool',
+    createUpdateItemOperation(nodeId, {
+      recentCalls: Array.isArray(invokeResult.recentCalls) ? invokeResult.recentCalls : undefined,
+    }),
+    { source: 'canvas-agent-mcp' }
+  )
+  if (!statusUpdate.ok) {
+    return asToolError(statusUpdate.error || 'Failed to sync MCP app call log into canvas state.')
+  }
+
+  return asToolResult({
+    result: invokeResult.result,
+    recentCalls: invokeResult.recentCalls,
+    statusUpdate,
+  })
+}
+
+async function runGetMcpAppLog(args) {
+  const nodeId = normalizeString(args.nodeId)
+  if (!nodeId) return asToolError('nodeId is required.')
+  const logResult = await getMcpAppLog(context, {
+    projectId: context.projectId,
+    nodeId,
+    limit: Number.isFinite(args.limit) ? Number(args.limit) : undefined,
+  })
+  if (!logResult?.ok) return asToolError(logResult?.error || 'Failed to read MCP app log.')
+  return asToolResult(logResult)
+}
+
+async function runDisconnectMcpApp(args) {
+  const nodeId = normalizeString(args.nodeId)
+  if (!nodeId) return asToolError('nodeId is required.')
+  const disconnectResult = await disconnectMcpApp(context, {
+    projectId: context.projectId,
+    nodeId,
+  })
+  if (!disconnectResult?.ok) {
+    return asToolError(disconnectResult?.error || 'Failed to disconnect MCP app.')
+  }
+  const statusUpdate = await enqueueCanvasAgentOperation(
+    context,
+    'disconnect_mcp_app',
+    createUpdateItemOperation(nodeId, {
+      status: 'disconnected',
+      recentCalls: Array.isArray(disconnectResult.recentCalls) ? disconnectResult.recentCalls : undefined,
+    }),
+    { source: 'canvas-agent-mcp' }
+  )
+  if (!statusUpdate.ok) {
+    return asToolError(statusUpdate.error || 'Failed to sync disconnected status into canvas state.')
+  }
+  return asToolResult({
+    disconnect: disconnectResult,
+    statusUpdate,
+  })
 }
 
 async function runCreateItem(args) {
@@ -3299,16 +3566,21 @@ function asToolResult(payload) {
   }
 }
 
-function asToolError(message) {
-  return {
+function asToolError(message, structuredContent) {
+  const text = String(message || 'Canvas MCP tool failed.')
+  const result = {
     isError: true,
     content: [
       {
         type: 'text',
-        text: String(message || 'Canvas MCP tool failed.'),
+        text,
       },
     ],
   }
+  if (structuredContent && typeof structuredContent === 'object') {
+    result.structuredContent = structuredContent
+  }
+  return result
 }
 
 function asResourceResult(uri, payload) {
