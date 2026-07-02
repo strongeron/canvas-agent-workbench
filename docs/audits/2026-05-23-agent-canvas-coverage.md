@@ -2,7 +2,7 @@
 title: Agent canvas operations — coverage audit
 date: 2026-05-23
 branch: feat/agent-canvas-audit
-status: draft
+status: resolved (drift reconciled 2026-07-02 — see Resolution section at end)
 ---
 
 ## Methodology
@@ -733,3 +733,30 @@ roughly a dozen tools.
 - **Move artboards / reorder artboards at the top level.** Top-level
   artboard zIndex is reachable through `update_item` `{ zIndex }` but I did
   not find a dedicated tool. Mentioned but not promoted to a fix entry.
+
+## Resolution (2026-07-02)
+
+Re-verified mechanically (extract `name: '...'` registrations from
+`bin/canvas-mcp-server`, extract `tools[].id` from
+`utils/agentNativeManifest.ts`, set-diff both directions):
+
+- **The agent-surface drift table above is fully reconciled.** All 82 MCP
+  server tools are now advertised in the manifest, including every tool this
+  audit flagged as "missing from manifest tools" (`list_design_tokens`,
+  `update_design_token`, `read_html_node`, `update_html_node`,
+  `create_component_from_html`, `create_component_from_tsx`,
+  `promote_to_component`, `get_canvas_context`, `get_canvas_state`,
+  `get_canvas_selection`, `list_primitives`, `get_primitive`,
+  `create_artboard`, `create_primitive_item`, `export_board`,
+  `get_workspace_manifest`, `get_surface_manifest`) and the
+  `replace-html-bundle` prompt. The reconciliation landed on the
+  `feat/agent-canvas-audit` branch (merged via `cd79164`).
+- **One manifest-leads-server entry remains, honestly labeled:**
+  `export_surface` (Color Audit) is `status: "partial"` and has no stdio MCP
+  registration yet. Two resources remain `status: "planned"`
+  (`color-audit-catalog`, `system-canvas-catalog`).
+- **Regression guard added:** `tests/agentNativeManifest.test.ts` now has a
+  parity test ("stays in parity with the stdio MCP server tool surface") that
+  fails if a server tool is missing from the manifest or a manifest tool
+  marked `ready` is missing from the server, so this class of drift can no
+  longer accumulate silently.
