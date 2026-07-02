@@ -125,7 +125,14 @@ import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdown
 import { hydrateNativeComponentShellFromProps } from "../../utils/canvasNativeShellHydration"
 import { suggestNativeTemplateForComponentName } from "../../utils/canvasNativeComponentSuggestion"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
-import type { CanvasMcpAppTransport } from "../../utils/mcpApp"
+import { mergeMcpRecentCallsById, type CanvasMcpAppTransport, type McpCallRecord } from "../../utils/mcpApp"
+import {
+  assertValidFigmaUrl,
+  buildFigmaToolArgs,
+  buildFigmaContextHtml,
+  extractFigmaMcpArtifacts,
+  type FigmaMcpInvokeResult,
+} from "../../utils/figmaMcpImport"
 
 /**
  * Client-side shape of the `/api/canvas/component/create` response (U2/U3).
@@ -3132,6 +3139,116 @@ export function CanvasTab({
     [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
+  const handleImportFigmaNode = useCallback(
+    async (item: Extract<CanvasItem, { type: "mcp-app" }>, figmaUrl: string) => {
+      assertValidFigmaUrl(figmaUrl)
+      if (!activeProjectId) throw new Error("Select a project before importing from Figma.")
+      if (item.status !== "connected") throw new Error("Connect the Figma MCP app before importing.")
+
+      const toolNames = new Set((item.toolsCache || []).map((tool) => tool.name))
+      let mergedRecentCalls: McpCallRecord[] = item.recentCalls || []
+      const invoke = async (toolName: string): Promise<FigmaMcpInvokeResult | undefined> => {
+        if (!toolNames.has(toolName)) return undefined
+        const tool = item.toolsCache?.find((entry) => entry.name === toolName)
+        const response = await fetch("/api/canvas/mcp-app/invoke-tool", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: activeProjectId,
+            nodeId: item.id,
+            toolName,
+            args: buildFigmaToolArgs(tool, figmaUrl),
+          }),
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok || !payload?.ok) {
+          throw new Error(payload?.error || `Failed to invoke ${toolName}.`)
+        }
+        if (Array.isArray(payload.recentCalls)) {
+          mergedRecentCalls = mergeMcpRecentCallsById(mergedRecentCalls, payload.recentCalls)
+          updateItem(item.id, { recentCalls: mergedRecentCalls })
+        }
+        return { result: payload.result }
+      }
+
+      const designContext = await invoke("get_design_context")
+      if (!designContext) {
+        throw new Error("Connected Figma MCP app does not expose get_design_context.")
+      }
+      const [metadata, screenshot, variableDefs] = await Promise.all([
+        invoke("get_metadata"),
+        invoke("get_screenshot"),
+        invoke("get_variable_defs"),
+      ])
+      const codeConnectMap = await invoke("get_code_connect_map")
+      const artifacts = extractFigmaMcpArtifacts({
+        designContext,
+        metadata,
+        screenshot,
+        variableDefs,
+        codeConnectMap,
+      })
+
+      const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
+      const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+      const importedAt = new Date().toISOString()
+
+      if (artifacts.screenshotSrc) {
+        addItem({
+          type: "media",
+          src: artifacts.screenshotSrc,
+          mediaKind: "image",
+          title: "Figma reference",
+          sourceUrl: figmaUrl,
+          sourceProvider: "figma-mcp",
+          sourceCapturedAt: importedAt,
+          objectFit: "contain",
+          controls: false,
+          autoplay: false,
+          position: {
+            x: Math.max(0, centerX - 650),
+            y: Math.max(0, centerY - 180),
+          },
+          size: { width: 480, height: 360 },
+          rotation: 0,
+        })
+      }
+
+      if (artifacts.sourceReact) {
+        await handleAddInlineHtml({
+          title: "Figma React import",
+          sourceReact: artifacts.sourceReact,
+          sourcePath: figmaUrl,
+          position: { x: centerX + 210, y: centerY },
+          size: { width: 720, height: 480 },
+        })
+      } else if (artifacts.contextText) {
+        await handleAddInlineHtml({
+          title: "Figma design context",
+          sourceHtml: buildFigmaContextHtml("Figma design context", artifacts.contextText),
+          sourcePath: figmaUrl,
+          position: { x: centerX + 210, y: centerY },
+          size: { width: 720, height: 480 },
+        })
+      } else if (!artifacts.screenshotSrc) {
+        throw new Error("Figma MCP returned no screenshot, design code, or context text.")
+      }
+
+      setPropsPanelVisible(true)
+    },
+    [
+      activeProjectId,
+      addItem,
+      handleAddInlineHtml,
+      transform.offset.x,
+      transform.offset.y,
+      transform.scale,
+      updateItem,
+      workspaceSize.height,
+      workspaceSize.width,
+    ]
+  )
+
   const handleAddMarkdown = useCallback(
     (input?: {
       source?: string
@@ -4805,6 +4922,7 @@ export function CanvasTab({
               onChange={(updates) => updateItem(selectedMcpAppItem.id, updates)}
               onDelete={handleDeleteSelected}
               onClose={handleClosePropsPanel}
+              onImportFigmaNode={(figmaUrl) => handleImportFigmaNode(selectedMcpAppItem, figmaUrl)}
             />
           )}
 

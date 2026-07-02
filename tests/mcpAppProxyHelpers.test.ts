@@ -24,6 +24,7 @@ import {
   describeTransportSignature,
   isBuiltInAllowedTransport,
 } from "../vite/api/mcpProxy/stdioAllowlist"
+import { MCP_APP_PRESETS, mergeMcpRecentCallsById } from "../utils/mcpApp"
 
 describe("mcp app proxy helpers", () => {
   it("redacts secret-like tool args recursively", () => {
@@ -250,6 +251,54 @@ describe("mcp app proxy helpers", () => {
     ).toBe(false)
   })
 
+  it("ships Figma desktop and remote MCP presets with the right transport defaults", () => {
+    const desktop = MCP_APP_PRESETS.find((entry) => entry.id === "figma-desktop")
+    expect(desktop).toMatchObject({
+      label: "Figma Desktop MCP",
+      transport: {
+        kind: "http",
+        url: "http://127.0.0.1:3845/mcp",
+      },
+    })
+    expect(isBuiltInAllowedHttpTransport(desktop!.transport as { kind: "http"; url: string })).toBe(true)
+
+    const remote = MCP_APP_PRESETS.find((entry) => entry.id === "figma-remote")
+    expect(remote).toMatchObject({
+      label: "Figma Remote MCP",
+      transport: {
+        kind: "http",
+        url: "https://mcp.figma.com/mcp",
+        headersRef: "figma-headers",
+      },
+    })
+    expect(isBuiltInAllowedHttpTransport(remote!.transport as { kind: "http"; url: string })).toBe(false)
+  })
+
+  it("merges MCP call snapshots without dropping newer records", () => {
+    const merged = mergeMcpRecentCallsById(
+      [
+        {
+          id: "newer",
+          nodeId: "n",
+          toolName: "get_screenshot",
+          status: "success",
+          startedAt: "2026-06-01T12:01:00Z",
+        },
+      ],
+      [
+        {
+          id: "older",
+          nodeId: "n",
+          toolName: "get_design_context",
+          status: "success",
+          startedAt: "2026-06-01T12:00:00Z",
+        },
+      ]
+    )
+
+    expect(merged.map((record) => record.id)).toEqual(["newer", "older"])
+  })
+
   it("normalizes the persisted HTTP allowlist key to the URL origin (not the full URL)", () => {
     expect(
       describeHttpTransportSignature({ kind: "http", url: "https://api.example.com:443/foo?bar=1" })
@@ -317,6 +366,37 @@ describe("mcp app proxy helpers", () => {
       // No project.json was written outside the projects dir.
       const { promises: fs } = await import("node:fs")
       await expect(fs.access(path.join(root, "etc", "project.json"))).rejects.toThrow()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("stores object-valued HTTP headers for MCP app credentials", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "mcp-creds-object-"))
+    try {
+      const projectId = "demo"
+      const projectDir = path.join(root, "projects", projectId)
+      const { promises: fs } = await import("node:fs")
+      await fs.mkdir(projectDir, { recursive: true })
+
+      const result = await applyCanvasMcpAppCredentialsRequest(
+        {
+          projectId,
+          ref: "figma-headers",
+          secret: {
+            Authorization: "Bearer figma-token",
+            "X-Figma-Region": "us-east-1",
+          },
+        },
+        { workspaceRoot: root }
+      )
+      expect(result).toMatchObject({ ok: true, ref: "figma-headers" })
+
+      const projectJson = JSON.parse(await fs.readFile(path.join(projectDir, "project.json"), "utf8"))
+      expect(projectJson.mcpAppCreds["figma-headers"]).toEqual({
+        Authorization: "Bearer figma-token",
+        "X-Figma-Region": "us-east-1",
+      })
     } finally {
       await rm(root, { recursive: true, force: true })
     }
