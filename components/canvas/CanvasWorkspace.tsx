@@ -101,6 +101,7 @@ interface CanvasWorkspaceProps {
   transform: CanvasTransform
   interactMode: boolean
   editMode?: boolean
+  onRequestEditMode?: () => void
   selectedIds: string[]
   onSelectItem: (id: string, addToSelection?: boolean) => void
   onSelectItems: (ids: string[]) => void
@@ -142,6 +143,7 @@ export function CanvasWorkspace({
   transform,
   interactMode,
   editMode = false,
+  onRequestEditMode,
   selectedIds,
   onSelectItem,
   onSelectItems,
@@ -939,6 +941,7 @@ export function CanvasWorkspace({
                 libraryDragActive={libraryDragActive}
                 onLibraryDropInsert={onLibraryDropInsert}
                 onLibraryDropWrap={onLibraryDropWrap}
+                onRequestEditMode={onRequestEditMode}
               />
             )
           }

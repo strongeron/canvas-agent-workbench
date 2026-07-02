@@ -110,8 +110,10 @@ import {
 } from "../../utils/canvasMutationLog"
 import {
   applySourceSnapshotToItems,
+  buildInlineLogKey,
   inferSourceKindFromFilePath,
   invertCanvasIdMap,
+  parseInlineLogKey,
   resolveSourceFileMtime,
   selectionMatchesLoggedFile,
   summarizeSourceMutations,
@@ -1077,8 +1079,13 @@ export function CanvasTab({
   }, [historyToast])
 
   const handleReactNodeWriteSuccess = useCallback((result: CanvasReactNodeWriteSuccess) => {
-    if (!result.filePath || !result.prevSourceSnapshot || result.appliedMutations <= 0) return
-    const filePath = result.filePath
+    if (!result.prevSourceSnapshot || result.appliedMutations <= 0) return
+    // Inline items have no file; log them under a synthetic per-item key so
+    // Cmd-Z works on inline sources too (replay skips the endpoint).
+    const filePath =
+      result.filePath ||
+      (result.itemId ? buildInlineLogKey(result.sourceKind, result.itemId) : undefined)
+    if (!filePath) return
     const prevSourceSnapshot = result.prevSourceSnapshot
     setMutationLogState((current) =>
       pushEntry(current, {
@@ -1137,7 +1144,8 @@ export function CanvasTab({
             sourceHtml,
             ...(typeof mtimeMs === "number" ? { sourceHtmlFileMtime: mtimeMs } : {}),
           } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
-          onWriteSuccess: handleReactNodeWriteSuccess,
+          onWriteSuccess: (writeResult) =>
+            handleReactNodeWriteSuccess({ ...writeResult, itemId }),
         })
       } finally {
         libraryDropInFlightRef.current = false
@@ -1200,7 +1208,11 @@ export function CanvasTab({
       let nextSource: string | undefined
       let nextMtime: number | undefined
 
-      if (kind === "markdown") {
+      if (parseInlineLogKey(entry.filePath)) {
+        // Inline entries have no backing file — the snapshot itself is the
+        // source of truth; apply it to item state without an endpoint write.
+        nextSource = sourceSnapshot
+      } else if (kind === "markdown") {
         const response = await fetch("/api/canvas/markdown/write", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -4280,6 +4292,8 @@ export function CanvasTab({
           >
               <CanvasSidebar
                 entries={entries}
+                onPrimitiveDragStart={setActiveLibraryDrag}
+                onPrimitiveDragEnd={() => setActiveLibraryDrag(null)}
                 onAddEmbed={handleAddEmbed}
                 onAddHtmlBundle={handleAddHtmlBundle}
                 onAddInlineHtml={handleAddInlineHtml}
@@ -4402,6 +4416,7 @@ export function CanvasTab({
             transform={transform}
             interactMode={interactMode}
             editMode={editMode}
+            onRequestEditMode={() => setCanvasTool("edit")}
             Renderer={Renderer}
             getComponentById={getComponentById}
             selectedIds={selectedIds}

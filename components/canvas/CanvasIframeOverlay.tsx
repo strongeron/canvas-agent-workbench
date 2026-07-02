@@ -85,6 +85,11 @@ export function CanvasIframeOverlay({
   function beginDrag(kind: CanvasOverlayDragKind) {
     return (event: React.PointerEvent<HTMLDivElement>) => {
       event.stopPropagation()
+      // Canceling pointerdown suppresses the compatibility mousedown the
+      // browser would fire next — otherwise that mousedown bubbles to the
+      // item wrapper's onMouseDown and starts an item move/resize underneath
+      // the element drag (whole node moves while a handle is dragged).
+      event.preventDefault()
       // setPointerCapture lets us keep getting pointermove even when the
       // cursor leaves the handle (or the iframe boundary).
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -95,6 +100,12 @@ export function CanvasIframeOverlay({
         pointerId: event.pointerId,
       }
     }
+  }
+
+  // Some engines fire compatibility mouse events even for a canceled
+  // pointerdown; keep them from reaching the item wrapper either way.
+  function stopMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+    event.stopPropagation()
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
@@ -152,6 +163,7 @@ export function CanvasIframeOverlay({
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onMouseDown={stopMouseDown}
         style={{
           position: "absolute",
           left: Math.max(0, rect.width / 2 - MOVE_HANDLE_SIZE / 2),
@@ -175,6 +187,7 @@ export function CanvasIframeOverlay({
           onPointerMove={handlePointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
+          onMouseDown={stopMouseDown}
           style={{
             position: "absolute",
             left: rect.width * spec.ax - HANDLE_SIZE / 2,
