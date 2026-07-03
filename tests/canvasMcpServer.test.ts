@@ -351,6 +351,28 @@ describe("canvas MCP server", () => {
         return
       }
 
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/registry/list") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            projectId: "design-system-foundation",
+            primitives: [
+              {
+                id: "badge",
+                displayName: "Badge",
+                category: "primitives",
+                kind: "html",
+                snippet: '<span class="badge">New</span>',
+              },
+            ],
+            warnings: [],
+          })
+        )
+        return
+      }
+
       if (req.method === "POST" && requestUrl.pathname === "/api/canvas/tokens/write") {
         const chunks: Buffer[] = []
         req.on("data", (chunk) => {
@@ -1282,6 +1304,81 @@ describe("canvas MCP server", () => {
         ],
       })
       expect(insertMediaSlotPart.result?.structuredContent?.ok).toBe(true)
+
+      // insert_native_slot_part starter mode: the inspector's slot-aware
+      // starter — a container slot gets a labeled content div.
+      const insertSlotStarter = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-slot-starter",
+        method: "tools/call",
+        params: {
+          name: "insert_native_slot_part",
+          arguments: {
+            sourceHtml: slotSourceHtml,
+            sourceId: "inline-slot-source",
+            canvasId: slotCanvasId,
+            starter: true,
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+      expect(htmlWriteRequestBody).toMatchObject({
+        canvasId: slotCanvasId,
+        mutations: [
+          {
+            type: "insertChild",
+            position: 0,
+            childSource: "<div><p>Body content</p></div>",
+          },
+        ],
+      })
+      expect(insertSlotStarter.result?.structuredContent?.ok).toBe(true)
+
+      // insert_native_slot_part componentId mode: appends the registry
+      // primitive's snippet, resolved through /api/canvas/registry/list.
+      const insertSlotComponent = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-slot-component",
+        method: "tools/call",
+        params: {
+          name: "insert_native_slot_part",
+          arguments: {
+            sourceHtml: slotSourceHtml,
+            sourceId: "inline-slot-source",
+            canvasId: slotCanvasId,
+            componentId: "badge",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+      expect(htmlWriteRequestBody).toMatchObject({
+        canvasId: slotCanvasId,
+        mutations: [
+          {
+            type: "insertChild",
+            position: 0,
+            childSource: '<span class="badge">New</span>',
+          },
+        ],
+      })
+      expect(insertSlotComponent.result?.structuredContent?.ok).toBe(true)
+
+      // Exactly one insertion mode is allowed per call.
+      const conflictingSlotModes = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-slot-conflict",
+        method: "tools/call",
+        params: {
+          name: "insert_native_slot_part",
+          arguments: {
+            sourceHtml: slotSourceHtml,
+            sourceId: "inline-slot-source",
+            canvasId: slotCanvasId,
+            part: "button",
+            starter: true,
+          },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(conflictingSlotModes.result?.isError).toBe(true)
+      expect(conflictingSlotModes.result?.content?.[0]?.text).toMatch(/exactly one/)
 
       const markdownUpdatePromise = sendRpc({
         jsonrpc: "2.0",

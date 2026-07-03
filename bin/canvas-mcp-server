@@ -19,6 +19,7 @@ import {
   importProjectCanvasHtmlBundle,
   listDesignTokens,
   loadCanvasSourceFile,
+  listCanvasRegistryPrimitives,
   scanProjectCanvasHtmlBundles,
   readCanvasHtmlNode,
   readAgentNativeWorkspaceDebug,
@@ -90,6 +91,8 @@ import {
   CANVAS_NATIVE_PART_KINDS,
   buildSlotNativePartInsertion,
   listCanvasHtmlSlots,
+  buildSlotStarterInsertion,
+  buildSlotComponentInsertion,
 } from '../utils/canvasNativePartsRuntime.mjs'
 
 const SERVER_INFO = {
@@ -1073,7 +1076,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'insert_native_slot_part',
     description:
-      'Append a native HTML part such as div, section, button, image, svg, or video into a slotted HTML shell node.',
+      'Insert content into a slotted HTML shell node. Provide exactly one of: `part` (append a native HTML part such as div, section, button, image, svg, video), `componentId` (append a registered library primitive\'s snippet, like the inspector\'s Insert component — no import is emitted, so the file must already import the component), or `starter: true` (the inspector\'s slot-aware starter: text slots get label text, media slots get a placeholder SVG, containers get a labeled content div).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1084,8 +1087,11 @@ const TOOL_DEFINITIONS = [
         mtimeMs: { type: 'number' },
         sourceUrl: { type: 'string' },
         part: { type: 'string', enum: CANVAS_NATIVE_PART_KINDS },
+        componentId: { type: 'string' },
+        starter: { type: 'boolean' },
+        projectId: { type: 'string' },
       },
-      required: ['canvasId', 'part'],
+      required: ['canvasId'],
       additionalProperties: false,
     },
   },
@@ -2879,9 +2885,23 @@ async function runSyncToProject(args) {
 async function runInsertNativeSlotPart(args) {
   const canvasId = normalizeString(args.canvasId)
   const part = normalizeString(args.part)
+  const componentId = normalizeString(args.componentId)
+  const starter = args.starter === true
   if (!canvasId) return asToolError('canvasId is required.')
-  if (!CANVAS_NATIVE_PART_KINDS.includes(part)) {
+  const modes = [Boolean(part), Boolean(componentId), starter].filter(Boolean).length
+  if (modes !== 1) {
+    return asToolError('Provide exactly one of part, componentId, or starter.')
+  }
+  if (part && !CANVAS_NATIVE_PART_KINDS.includes(part)) {
     return asToolError(`part must be one of: ${CANVAS_NATIVE_PART_KINDS.join(', ')}`)
+  }
+  let registryPrimitive = null
+  if (componentId) {
+    const primitives = await listCanvasRegistryPrimitives(context, normalizeString(args.projectId))
+    registryPrimitive = primitives.find((entry) => entry?.id === componentId) || null
+    if (!registryPrimitive) {
+      return asToolError(`Registry primitive not found: ${componentId}`)
+    }
   }
 
   const filePath = normalizeString(args.filePath) || undefined
@@ -2908,6 +2928,14 @@ async function runInsertNativeSlotPart(args) {
     return asToolError(`Slot not found for canvasId: ${canvasId}`)
   }
 
+  const mutation = registryPrimitive
+    ? buildSlotComponentInsertion(slot, registryPrimitive)
+    : starter
+      ? buildSlotStarterInsertion(slot)
+      : buildSlotNativePartInsertion(slot, part, {
+          sourceUrl: normalizeString(args.sourceUrl) || undefined,
+        })
+
   return asToolResult(
     await updateCanvasHtmlNode(context, {
       filePath,
@@ -2915,11 +2943,7 @@ async function runInsertNativeSlotPart(args) {
       canvasId,
       sourceId,
       mtimeMs,
-      mutations: [
-        buildSlotNativePartInsertion(slot, part, {
-          sourceUrl: normalizeString(args.sourceUrl) || undefined,
-        }),
-      ],
+      mutations: [mutation],
     })
   )
 }

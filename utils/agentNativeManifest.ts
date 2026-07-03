@@ -177,7 +177,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "insert_native_slot_part",
         title: "Insert native slot part",
-        description: "Append a native HTML part such as div, section, button, image, svg, or video into a slotted HTML shell node.",
+        description: "Insert content into a slotted HTML shell node: a native HTML part (div, section, button, image, svg, video), a registered library primitive via componentId, or the inspector's slot-aware starter via starter: true.",
         status: "ready",
       },
       {
