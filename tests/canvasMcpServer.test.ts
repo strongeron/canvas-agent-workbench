@@ -192,6 +192,20 @@ describe("canvas MCP server", () => {
                 zIndex: 0,
               },
               {
+                id: "embed-1",
+                type: "embed",
+                url: "https://example.com",
+                embedPreviewMode: "auto",
+                embedFrameStatus: "unknown",
+                embedSnapshotStatus: "idle",
+                embedLiveStatus: "idle",
+                embedCaptureStatus: "idle",
+                position: { x: 1480, y: 80 },
+                size: { width: 640, height: 360 },
+                rotation: 0,
+                zIndex: 0,
+              },
+              {
                 id: "markdown-1",
                 type: "markdown",
                 source: "# Hello\n\nParagraph",
@@ -2883,6 +2897,76 @@ describe("canvas MCP server", () => {
       })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
       expect(badConvertResponse.result?.isError).toBe(true)
       expect(badConvertResponse.result?.content?.[0]?.text).toMatch(/Mermaid item not found/)
+
+      // capture_embed_snapshot queues the browser-side capture pipeline;
+      // check_embed_frame_policy is the inspector's Re-check (an update_item
+      // that resets the frame-status fields so the canvas re-probes).
+      const captureEmbedPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-capture-embed",
+        method: "tools/call",
+        params: {
+          name: "capture_embed_snapshot",
+          arguments: { itemId: "embed-1", targets: ["desktop", "mobile"], provider: "playwright" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedCaptureEmbed = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedCaptureEmbed.request).toMatchObject({
+        toolName: "capture_embed_snapshot",
+        operation: {
+          type: "capture_embed_snapshots",
+          itemId: "embed-1",
+          targets: ["desktop", "mobile"],
+          provider: "playwright",
+        },
+      })
+      await queuedCaptureEmbed.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.960Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await captureEmbedPromise).result?.structuredContent?.targets).toEqual([
+        "desktop",
+        "mobile",
+      ])
+
+      const checkFramePolicyPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-check-frame-policy",
+        method: "tools/call",
+        params: {
+          name: "check_embed_frame_policy",
+          arguments: { itemId: "embed-1" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedFramePolicy = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedFramePolicy.request).toMatchObject({
+        toolName: "check_embed_frame_policy",
+        operation: {
+          type: "update_item",
+          id: "embed-1",
+          updates: { embedFrameStatus: "unknown" },
+        },
+      })
+      await queuedFramePolicy.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.970Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await checkFramePolicyPromise).result?.structuredContent?.itemId).toBe("embed-1")
+
+      // Both embed tools reject non-embed items without queueing.
+      const badEmbedResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-capture-embed-bad",
+        method: "tools/call",
+        params: {
+          name: "capture_embed_snapshot",
+          arguments: { itemId: "markdown-1" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badEmbedResponse.result?.isError).toBe(true)
+      expect(badEmbedResponse.result?.content?.[0]?.text).toMatch(/Embed item not found/)
 
       // undo_source_mutation / redo_source_mutation: cmd-Z / cmd-shift-Z
       // parity. The MCP tool enqueues the op; the UI bridge routes it to

@@ -499,6 +499,12 @@ export type CanvasRemoteOperation =
       themeId: string
     }
   | {
+      type: "capture_embed_snapshots"
+      itemId: string
+      targets?: Array<"desktop" | "mobile">
+      provider?: "auto" | "playwright" | "fetch"
+    }
+  | {
       type: "undo_source_mutation"
       scope?: "active-file" | "log-entry"
       logEntryId?: string

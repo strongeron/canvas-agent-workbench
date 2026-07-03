@@ -185,6 +185,7 @@ export function applyCanvasRemoteOperationToState(state, operation) {
     case 'create_canvas_theme':
     case 'update_canvas_theme_var':
     case 'delete_canvas_theme':
+    case 'capture_embed_snapshots':
     case 'undo_source_mutation':
     case 'redo_source_mutation':
       // UI-side effects only — no canvas state mutation. The dev server still
@@ -371,6 +372,22 @@ export function createDeleteCanvasThemeOperation(themeId) {
   return {
     type: 'delete_canvas_theme',
     themeId: normalizeString(themeId),
+  }
+}
+
+const EMBED_CAPTURE_TARGETS = new Set(['desktop', 'mobile'])
+const EMBED_CAPTURE_PROVIDERS = new Set(['auto', 'playwright', 'fetch'])
+
+export function createCaptureEmbedSnapshotsOperation(itemId, args = {}) {
+  const targets = Array.isArray(args.targets)
+    ? args.targets.map((entry) => normalizeString(entry)).filter((entry) => EMBED_CAPTURE_TARGETS.has(entry))
+    : []
+  const provider = normalizeString(args.provider)
+  return {
+    type: 'capture_embed_snapshots',
+    itemId: normalizeString(itemId),
+    targets: targets.length > 0 ? targets : ['desktop'],
+    provider: EMBED_CAPTURE_PROVIDERS.has(provider) ? provider : 'auto',
   }
 }
 

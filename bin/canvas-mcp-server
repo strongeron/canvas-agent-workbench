@@ -73,6 +73,7 @@ import {
   createCreateCanvasThemeOperation,
   createUpdateCanvasThemeVarOperation,
   createDeleteCanvasThemeOperation,
+  createCaptureEmbedSnapshotsOperation,
   createUndoSourceMutationOperation,
   createRedoSourceMutationOperation,
   buildDuplicateItemsResult,
@@ -1492,6 +1493,38 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'capture_embed_snapshot',
+    description:
+      'Capture website snapshots for an embed item, mirroring the embed inspector\'s Capture action. Queues the capture for the live canvas (the browser runs the capture pipeline): ready captures land as media items below the embed, and the embed\'s capture status fields update. targets defaults to ["desktop"]; provider defaults to "auto".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        targets: {
+          type: 'array',
+          items: { type: 'string', enum: ['desktop', 'mobile'] },
+          minItems: 1,
+        },
+        provider: { type: 'string', enum: ['auto', 'playwright', 'fetch'] },
+      },
+      required: ['itemId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'check_embed_frame_policy',
+    description:
+      'Re-check whether an embed URL allows iframing, mirroring the embed inspector\'s Re-check action: resets the embed\'s frame-status fields to "unknown" so the live canvas re-probes the URL. Read the item afterwards (get_canvas_state) for the verdict.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+      },
+      required: ['itemId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'undo_source_mutation',
     description:
       'Undo the most recent source mutation for the active file (cmd-Z parity). The UI re-applies the previous snapshot via the same AST writer that handled the original mutation. Targets the active-file history head; `scope: "log-entry"` + `logEntryId` is reserved for future per-entry targeting and is currently rejected.',
@@ -2526,6 +2559,10 @@ async function callTool(name, args) {
       return runUpdateCanvasThemeVar(args)
     case 'delete_canvas_theme':
       return runDeleteCanvasTheme(args)
+    case 'capture_embed_snapshot':
+      return runCaptureEmbedSnapshot(args)
+    case 'check_embed_frame_policy':
+      return runCheckEmbedFramePolicy(args)
     case 'convert_mermaid_to_excalidraw':
       return runConvertMermaidToExcalidraw(args)
     case 'set_canvas_tool':
@@ -3751,6 +3788,48 @@ async function runDeleteCanvasTheme(args) {
   const operation = createDeleteCanvasThemeOperation(args.themeId)
   if (!operation.themeId) return asToolError('themeId is required.')
   return applyOperation('delete_canvas_theme', operation, { themeId: operation.themeId })
+}
+
+async function findEmbedItem(itemId) {
+  const state = await readCanvasAgentState(context)
+  const item = Array.isArray(state?.items)
+    ? state.items.find((entry) => entry?.id === itemId)
+    : null
+  return item && item.type === 'embed' ? item : null
+}
+
+async function runCaptureEmbedSnapshot(args) {
+  const operation = createCaptureEmbedSnapshotsOperation(args.itemId, args)
+  if (!operation.itemId) return asToolError('itemId is required.')
+  const item = await findEmbedItem(operation.itemId)
+  if (!item) return asToolError(`Embed item not found: ${operation.itemId}`)
+  if (!normalizeString(item.url)) {
+    return asToolError(`Embed item has no URL to capture: ${operation.itemId}`)
+  }
+  return applyOperation('capture_embed_snapshot', operation, {
+    itemId: operation.itemId,
+    targets: operation.targets,
+    provider: operation.provider,
+  })
+}
+
+async function runCheckEmbedFramePolicy(args) {
+  const itemId = normalizeString(args.itemId)
+  if (!itemId) return asToolError('itemId is required.')
+  const item = await findEmbedItem(itemId)
+  if (!item) return asToolError(`Embed item not found: ${itemId}`)
+  // Same reset the inspector's Re-check button performs — the live canvas
+  // re-probes the URL when embedFrameStatus returns to "unknown".
+  return applyOperation(
+    'check_embed_frame_policy',
+    createUpdateItemOperation(itemId, {
+      embedFrameStatus: 'unknown',
+      embedFrameReason: undefined,
+      embedFrameCheckedAt: undefined,
+      embedFrameCheckedUrl: undefined,
+    }),
+    { itemId }
+  )
 }
 
 async function runConvertMermaidToExcalidraw(args) {

@@ -518,6 +518,18 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "capture_embed_snapshot",
+        title: "Capture embed snapshot",
+        description: "Capture website snapshots for an embed item like the inspector's Capture action. Ready captures land as media items below the embed; targets defaults to desktop, provider to auto.",
+        status: "ready",
+      },
+      {
+        id: "check_embed_frame_policy",
+        title: "Check embed frame policy",
+        description: "Re-check whether an embed URL allows iframing, like the inspector's Re-check: resets the frame-status fields so the live canvas re-probes the URL.",
+        status: "ready",
+      },
+      {
         id: "undo_source_mutation",
         title: "Undo source mutation",
         description: "Undo the most recent source mutation for the active file (cmd-Z parity). Re-applies the previous snapshot via the existing AST writer.",

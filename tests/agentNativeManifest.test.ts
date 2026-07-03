@@ -94,6 +94,8 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "create_canvas_theme")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "update_canvas_theme_var")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "delete_canvas_theme")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "capture_embed_snapshot")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "check_embed_frame_policy")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "set_canvas_active_theme")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "set_canvas_tool")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "undo_source_mutation")).toBe(true)
