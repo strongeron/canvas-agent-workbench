@@ -464,6 +464,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "set_canvas_tool",
+        title: "Set canvas tool mode",
+        description: "Set the active Canvas tool mode: select (item move/resize), edit (element-level editing inside html nodes), or interact (live iframe interaction). Same handler as the toolbar toggle.",
+        status: "ready",
+      },
+      {
         id: "undo_source_mutation",
         title: "Undo source mutation",
         description: "Undo the most recent source mutation for the active file (cmd-Z parity). Re-applies the previous snapshot via the existing AST writer.",

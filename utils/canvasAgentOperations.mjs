@@ -319,6 +319,16 @@ export function createSetActiveThemeOperation(themeId) {
   }
 }
 
+const CANVAS_TOOLS = new Set(['select', 'edit', 'interact'])
+
+export function createSetCanvasToolOperation(tool) {
+  const normalized = normalizeString(tool)
+  return {
+    type: 'set_canvas_tool',
+    tool: CANVAS_TOOLS.has(normalized) ? normalized : '',
+  }
+}
+
 export function createUndoSourceMutationOperation(args = {}) {
   const scope = args.scope === 'log-entry' ? 'log-entry' : 'active-file'
   return {

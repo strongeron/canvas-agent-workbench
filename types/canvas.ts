@@ -471,6 +471,10 @@ export type CanvasRemoteOperation =
       themeId: string
     }
   | {
+      type: "set_canvas_tool"
+      tool: "select" | "edit" | "interact"
+    }
+  | {
       type: "undo_source_mutation"
       scope?: "active-file" | "log-entry"
       logEntryId?: string

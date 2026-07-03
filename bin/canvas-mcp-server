@@ -67,6 +67,7 @@ import {
   createSetViewportOperation,
   createSelectItemsOperation,
   createSetActiveThemeOperation,
+  createSetCanvasToolOperation,
   createUndoSourceMutationOperation,
   createRedoSourceMutationOperation,
   buildDuplicateItemsResult,
@@ -1331,6 +1332,19 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'set_canvas_tool',
+    description:
+      'Set the active Canvas tool mode: "select" (item-level move/resize), "edit" (element-level editing inside html nodes), or "interact" (live iframe interaction). Same handler as the toolbar toggle; each mode owns its pointer layer, so screenshots and drags behave per the chosen mode.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tool: { type: 'string', enum: ['select', 'edit', 'interact'] },
+      },
+      required: ['tool'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'undo_source_mutation',
     description:
       'Undo the most recent source mutation for the active file (cmd-Z parity). The UI re-applies the previous snapshot via the same AST writer that handled the original mutation. Targets the active-file history head; `scope: "log-entry"` + `logEntryId` is reserved for future per-entry targeting and is currently rejected.',
@@ -2351,6 +2365,8 @@ async function callTool(name, args) {
       return runDuplicateItems(args)
     case 'set_canvas_active_theme':
       return runSetCanvasActiveTheme(args)
+    case 'set_canvas_tool':
+      return runSetCanvasTool(args)
     case 'undo_source_mutation':
       return runUndoSourceMutation(args)
     case 'redo_source_mutation':
@@ -3469,6 +3485,14 @@ async function runSetCanvasActiveTheme(args) {
     createSetActiveThemeOperation(themeId),
     { themeId }
   )
+}
+
+async function runSetCanvasTool(args) {
+  const operation = createSetCanvasToolOperation(args.tool)
+  if (!operation.tool) {
+    return asToolError('tool must be one of "select", "edit", "interact".')
+  }
+  return applyOperation('set_canvas_tool', operation, { tool: operation.tool })
 }
 
 // `log-entry` targeting is not yet wired: the mutation log lives only in the

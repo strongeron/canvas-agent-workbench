@@ -2403,6 +2403,48 @@ describe("canvas MCP server", () => {
       const setActiveThemeResult = await setActiveThemePromise
       expect(setActiveThemeResult.result?.structuredContent?.themeId).toBe("default")
 
+      // set_canvas_tool: same handler as the toolbar Select/Edit/Interact
+      // toggle, so an agent can pick the pointer-layer mode before a
+      // screenshot or drag.
+      const setCanvasToolPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-set-canvas-tool",
+        method: "tools/call",
+        params: {
+          name: "set_canvas_tool",
+          arguments: { tool: "edit" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedSetCanvasTool = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedSetCanvasTool.request).toMatchObject({
+        toolName: "set_canvas_tool",
+        operation: {
+          type: "set_canvas_tool",
+          tool: "edit",
+        },
+      })
+      await queuedSetCanvasTool.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.500Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const setCanvasToolResult = await setCanvasToolPromise
+      expect(setCanvasToolResult.result?.structuredContent?.tool).toBe("edit")
+
+      // set_canvas_tool rejects unknown modes without queueing an operation.
+      const badToolResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-set-canvas-tool-bad",
+        method: "tools/call",
+        params: {
+          name: "set_canvas_tool",
+          arguments: { tool: "paint" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badToolResponse.result?.isError).toBe(true)
+      expect(badToolResponse.result?.content?.[0]?.text).toMatch(/select.*edit.*interact/)
+
       // undo_source_mutation / redo_source_mutation: cmd-Z / cmd-shift-Z
       // parity. The MCP tool enqueues the op; the UI bridge routes it to
       // handleUndoMutation/handleRedoMutation which re-apply the stored

@@ -1546,6 +1546,17 @@ export function CanvasTab({
         return
       }
 
+      if (operation.type === "set_canvas_tool") {
+        if (
+          operation.tool === "select" ||
+          operation.tool === "edit" ||
+          operation.tool === "interact"
+        ) {
+          setCanvasTool(operation.tool)
+        }
+        return
+      }
+
       if (operation.type === "undo_source_mutation") {
         void handleUndoMutation()
         return

@@ -137,6 +137,7 @@ Use these when you want the agent to manage the file library itself:
 - `export_board`
 - `duplicate_items`
 - `set_canvas_active_theme`
+- `set_canvas_tool`
 - `undo_source_mutation`
 - `redo_source_mutation`
 
@@ -188,6 +189,7 @@ Web-native editing tools:
 - `insert_native_slot_part` appends a native HTML part into a slotted shell node by `canvasId`. It is the direct MCP counterpart to the inspector's `Insert part` control and supports `div`, `section`, `header`, `footer`, `heading`, `paragraph`, `button`, `link`, `image`, `svg`, and `video`. `image`, `video`, and `link` can also take an optional `sourceUrl`.
 - `duplicate_items` mirrors the UI cmd-D duplicate. It resolves the selected ids in the current canvas state, clones each item with a fresh `canvas-item-<ts>-<i>-<rand>` id, applies an `offset` (default `{ dx: 20, dy: 20 }`), bumps `zIndex`, drops `groupId`, then ships the new batch through the `create_items` queued operation. Returns `{ newIds }` so the agent can chain follow-up edits without re-querying the state. `select: true` (default) also selects the duplicates.
 - `set_canvas_active_theme` is the paired write for `get_canvas_themes`. Pass `{ themeId }`; the same UI handler that powers the Theme panel's click-to-activate fires, so resolved token values on the board update immediately. Theme registry membership is not validated server-side — call `get_canvas_themes` first if you need to confirm the id.
+- `set_canvas_tool` sets the active tool mode — `{ tool: "select" | "edit" | "interact" }`. Select owns item-level move/resize, Edit owns element-level editing inside html nodes (overlay handles, drop zones), Interact makes iframe content live. Same handler as the toolbar toggle; set the mode before `capture_canvas_items_screenshot` when the capture depends on interactive vs editable rendering.
 - `undo_source_mutation` and `redo_source_mutation` are agent-side cmd-Z / cmd-shift-Z parity. The UI's in-memory mutation log (U5) holds the per-file snapshots; the MCP tool enqueues a `undo_source_mutation` / `redo_source_mutation` operation that the canvas bridge routes to the same `handleUndoMutation` / `handleRedoMutation` handlers the keyboard path uses, which re-apply the stored snapshot through the existing AST writer (or the markdown writer for `.md` files). `scope` defaults to `"active-file"`; pass `scope: "log-entry"` with `logEntryId` to target a specific entry once the UI surface exposes log ids.
 
 Direct-manipulation parity audit (v3, complete):
