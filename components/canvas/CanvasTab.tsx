@@ -1432,12 +1432,14 @@ export function CanvasTab({
               ? { sourceHtmlFileMtime: mtimeMs }
               : {}),
           } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+        onWriteSuccess: (writeResult) =>
+          handleReactNodeWriteSuccess({ ...writeResult, itemId: event.itemId }),
       })
       if (result.status === "error") {
         setHistoryToast({ id: Date.now(), tone: "error", message: result.error })
       }
     },
-    [items, updateItem]
+    [items, updateItem, handleReactNodeWriteSuccess]
   )
 
   const handleReactNodeGroupResize = useCallback(
@@ -1482,6 +1484,8 @@ export function CanvasTab({
               sourceHtml,
               ...(typeof mtimeMs === "number" ? { sourceHtmlFileMtime: mtimeMs } : {}),
             } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+          onWriteSuccess: (writeResult) =>
+            handleReactNodeWriteSuccess({ ...writeResult, itemId: event.itemId }),
           }
         )
       } finally {
@@ -1503,7 +1507,7 @@ export function CanvasTab({
         })
       }
     },
-    [items, updateItem]
+    [items, updateItem, handleReactNodeWriteSuccess]
   )
 
   const applyCanvasAgentOperation = useCallback(

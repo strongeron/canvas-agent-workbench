@@ -30,6 +30,17 @@ import {
   type CanvasSetAttributeStyleMutation,
 } from "./canvasResizeStyleMutation"
 
+export interface CanvasResizeWriteSuccess {
+  sourceKind: "tsx" | "html"
+  filePath?: string
+  mtimeMs?: number
+  mutations: Array<{ type: "setClassName"; value: string } | CanvasSetAttributeStyleMutation>
+  appliedMutations: number
+  canvasIdMap?: Record<string, string | null>
+  prevSourceSnapshot?: string
+  nextSourceSnapshot: string
+}
+
 export interface CanvasResizeDispatchDeps {
   sourceKind: "tsx" | "html"
   sourceId: string
@@ -41,6 +52,8 @@ export interface CanvasResizeDispatchDeps {
   onSourceReactChange?: (source: string, mtime?: number) => void
   /** Called on a successful HTML write with the rewritten source + new mtime. */
   onSourceHtmlChange?: (source: string, mtime?: number) => void
+  /** Fires on success so the caller can push a mutation-log entry. */
+  onWriteSuccess?: (result: CanvasResizeWriteSuccess) => void
   /** Test seam — defaults to global fetch in production. */
   fetchImpl?: typeof fetch
 }
@@ -141,6 +154,9 @@ export async function dispatchCanvasResize(
       ok?: boolean
       sourceReact?: string
       sourceHtml?: string
+      appliedMutations?: number
+      canvasIdMap?: Record<string, string | null>
+      prevSourceSnapshot?: string
       mtimeMs?: number | null
       error?: string
       code?: string
@@ -165,6 +181,19 @@ export async function dispatchCanvasResize(
     } else {
       deps.onSourceReactChange?.(nextSource, nextMtime)
     }
+    deps.onWriteSuccess?.({
+      sourceKind: deps.sourceKind,
+      filePath: deps.filePath,
+      mtimeMs: nextMtime,
+      mutations: [mutation],
+      appliedMutations:
+        typeof writePayload.appliedMutations === "number" ? writePayload.appliedMutations : 1,
+      canvasIdMap: writePayload.canvasIdMap,
+      prevSourceSnapshot:
+        writePayload.prevSourceSnapshot ??
+        (fileBacked ? undefined : deps.sourceKind === "html" ? deps.sourceHtml : deps.sourceReact),
+      nextSourceSnapshot: nextSource,
+    })
 
     return { status: "applied", mutation }
   } catch (error) {

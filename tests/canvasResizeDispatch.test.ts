@@ -305,4 +305,116 @@ describe("dispatchCanvasResize", () => {
     expect(writeBody.sourceReact).toBeUndefined()
     expect(writeBody.mtimeMs).toBe(100)
   })
+
+  it("fires onWriteSuccess with the endpoint's snapshots so the caller can log undo", async () => {
+    const newSource = "export default function P() { return <div className='w-32 h-16'>x</div> }"
+    const fetchImpl = mockFetchSequence(
+      mockJson({
+        ok: true,
+        node: {
+          canvasId: "abc:0",
+          tag: "div",
+          attributes: [
+            { name: "className", kind: "literal-string", value: "w-24 h-10", rawValue: '"w-24 h-10"' },
+          ],
+          textChildren: "x",
+        },
+      }),
+      mockJson({
+        ok: true,
+        sourceReact: newSource,
+        prevSourceSnapshot: "old source",
+        appliedMutations: 1,
+        canvasIdMap: { "abc:0": "abc:0" },
+        mtimeMs: 1234,
+      })
+    )
+    const onWriteSuccess = vi.fn()
+    await dispatchCanvasResize(makeEvent(), {
+      sourceKind: "tsx",
+      sourceId: "item-1",
+      sourceReact: "old source",
+      fetchImpl,
+      onWriteSuccess,
+    })
+    expect(onWriteSuccess).toHaveBeenCalledTimes(1)
+    const payload = onWriteSuccess.mock.calls[0][0]
+    expect(payload.sourceKind).toBe("tsx")
+    expect(payload.prevSourceSnapshot).toBe("old source")
+    expect(payload.nextSourceSnapshot).toBe(newSource)
+    expect(payload.appliedMutations).toBe(1)
+    expect(payload.canvasIdMap).toEqual({ "abc:0": "abc:0" })
+    expect(payload.mutations).toEqual([{ type: "setClassName", value: "w-32 h-16" }])
+    expect(payload.mtimeMs).toBe(1234)
+  })
+
+  it("onWriteSuccess falls back to the local inline source when the endpoint omits prevSourceSnapshot", async () => {
+    const newHtml = "<button class='w-32 h-16'>x</button>"
+    const fetchImpl = mockFetchSequence(
+      mockJson({
+        ok: true,
+        node: {
+          canvasId: "abc:0",
+          tag: "button",
+          attributes: [
+            { name: "class", kind: "literal-string", value: "w-24 h-10", rawValue: '"w-24 h-10"' },
+          ],
+          textChildren: "x",
+        },
+      }),
+      mockJson({ ok: true, sourceHtml: newHtml, mtimeMs: 4321 })
+    )
+    const onWriteSuccess = vi.fn()
+    await dispatchCanvasResize(makeEvent(), {
+      sourceKind: "html",
+      sourceId: "item-1",
+      sourceHtml: "<button class='w-24 h-10'>x</button>",
+      fetchImpl,
+      onWriteSuccess,
+    })
+    expect(onWriteSuccess).toHaveBeenCalledTimes(1)
+    const payload = onWriteSuccess.mock.calls[0][0]
+    expect(payload.prevSourceSnapshot).toBe("<button class='w-24 h-10'>x</button>")
+    expect(payload.nextSourceSnapshot).toBe(newHtml)
+  })
+
+  it("does not fire onWriteSuccess on write error", async () => {
+    const fetchImpl = mockFetchSequence(
+      mockJson({
+        ok: true,
+        node: {
+          canvasId: "abc:0",
+          tag: "button",
+          attributes: [
+            { name: "className", kind: "literal-string", value: "w-24 h-10", rawValue: '"w-24 h-10"' },
+          ],
+          textChildren: "x",
+        },
+      }),
+      mockJson({ ok: false, error: "write failed" }, false)
+    )
+    const onWriteSuccess = vi.fn()
+    const result = await dispatchCanvasResize(makeEvent(), {
+      sourceKind: "tsx",
+      sourceId: "item-1",
+      sourceReact: "x",
+      fetchImpl,
+      onWriteSuccess,
+    })
+    expect(result.status).toBe("error")
+    expect(onWriteSuccess).not.toHaveBeenCalled()
+  })
+
+  it("does not fire onWriteSuccess on no-op (move handle)", async () => {
+    const onWriteSuccess = vi.fn()
+    const result = await dispatchCanvasResize(makeEvent({ kind: "move" }), {
+      sourceKind: "tsx",
+      sourceId: "item-1",
+      sourceReact: "x",
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+      onWriteSuccess,
+    })
+    expect(result.status).toBe("no-op")
+    expect(onWriteSuccess).not.toHaveBeenCalled()
+  })
 })
