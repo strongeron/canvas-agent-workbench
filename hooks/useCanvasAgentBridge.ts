@@ -151,12 +151,21 @@ export function useCanvasAgentBridge({
   const snapshotRef = useRef(snapshot)
   const hasActiveCanvasFileRef = useRef(hasActiveCanvasFile)
   const didHydrateProjectRef = useRef<string | null>(null)
+  // The SSE effect reads this through a ref so the stream survives canvas
+  // state changes. applyRemoteOperation depends on `items` upstream, so
+  // listing it in the effect deps reconnected the EventSource on EVERY
+  // canvas mutation — and operations broadcast during a reconnect gap were
+  // silently dropped (no replay).
+  const applyRemoteOperationRef = useRef(applyRemoteOperation)
   useEffect(() => {
     snapshotRef.current = snapshot
   }, [snapshot])
   useEffect(() => {
     hasActiveCanvasFileRef.current = hasActiveCanvasFile
   }, [hasActiveCanvasFile])
+  useEffect(() => {
+    applyRemoteOperationRef.current = applyRemoteOperation
+  }, [applyRemoteOperation])
   const canvasWorkspaceKey = projectId ? `gallery-${projectId}:canvas` : null
   const [agents, setAgents] = useState<CanvasAgentDefinition[]>([])
   const [sessions, setSessions] = useState<CanvasAgentSession[]>([])
@@ -506,7 +515,7 @@ export function useCanvasAgentBridge({
       if (!payload.operation || payload.sourceClientId === clientIdRef.current) {
         return
       }
-      applyRemoteOperation(payload.operation)
+      applyRemoteOperationRef.current(payload.operation)
       if (payload.sessionId) {
         void loadSessionDebug(payload.sessionId).catch(() => {
           // Session debug is supplemental; ignore fetch failures here.
@@ -536,7 +545,7 @@ export function useCanvasAgentBridge({
       source.removeEventListener("canvas-operation", handleCanvasOperation)
       source.close()
     }
-  }, [applyRemoteOperation, loadSessionDebug, projectId, upsertSession])
+  }, [loadSessionDebug, projectId, upsertSession])
 
   useEffect(() => {
     if (!projectId || !bridgeReady) return
