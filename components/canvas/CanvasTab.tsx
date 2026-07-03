@@ -1886,6 +1886,16 @@ export function CanvasTab({
   )
   const activeCanvasFilePath = activeCanvasFile?.path ?? null
   const activeCanvasFileTitle = activeCanvasFile?.document.meta.title ?? null
+  // The autosave effect reads this through a ref: starting a save flips
+  // canvasFilePersistenceBusy, which re-runs the effect and would mark the
+  // in-flight save `cancelled` — discarding its result meant the saved
+  // signature was never recorded and the autosave looped forever (one save
+  // per second). A completed save is only discarded when the TARGET FILE
+  // changed, which this ref detects.
+  const activeCanvasFilePathRef = useRef<string | null>(activeCanvasFilePath)
+  useEffect(() => {
+    activeCanvasFilePathRef.current = activeCanvasFilePath
+  }, [activeCanvasFilePath])
   const canvasFilePersistenceBusy =
     canvasFilesSaving ||
     canvasFileActionBusy ||
@@ -1962,7 +1972,12 @@ export function CanvasTab({
               assets
             )
           )
-          if (cancelled) return
+          // Do NOT drop the result on `cancelled`: starting this very save
+          // flips canvasFilePersistenceBusy, re-running the effect and
+          // cancelling this closure — the save still completed and its
+          // signature must be recorded or dirty never clears (endless save
+          // loop). Only discard when the active file itself changed.
+          if (activeCanvasFilePathRef.current !== activeCanvasFile.path) return
           setActiveCanvasFile(saved)
           setLastSavedCanvasFileSignature(JSON.stringify(payload))
         } catch (error) {
