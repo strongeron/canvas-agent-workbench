@@ -73,6 +73,7 @@ import {
   buildDuplicateItemsResult,
   buildMoveItemsIntoArtboardResult,
   buildReorderLayerResult,
+  buildWrapItemsInSectionResult,
   createUpdateItemsOperation,
   createUpdateGroupOperation,
   createUpdateItemOperation,
@@ -1341,6 +1342,33 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'wrap_items_in_section',
+    description:
+      'Wrap canvas items in a new section in one call. Mirrors the UI "wrap in section": items must either share one artboard/section parent (section slots in at their minimum order) or all be freeform with centers inside exactly one artboard (section appends after its children). Creates a grid section (fill width / hug height), re-parents the items into it in selection order, and selects the section. Returns { sectionId, wrappedIds }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 2,
+        },
+        section: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            background: { type: 'string' },
+            themeId: { type: 'string' },
+            layout: { type: 'object' },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['ids'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'reorder_layer',
     description:
       'Reorder a canvas item in the stacking/layout order: "front" / "back" adjust freeform zIndex (front mirrors the UI bring-to-front; back drops below the current minimum), "up" / "down" swap layout order with the adjacent sibling inside an artboard or section (mirrors the UI move-layer control; rejected for freeform items).',
@@ -2401,6 +2429,8 @@ async function callTool(name, args) {
       return runDuplicateItems(args)
     case 'move_items_into_artboard':
       return runMoveItemsIntoArtboard(args)
+    case 'wrap_items_in_section':
+      return runWrapItemsInSection(args)
     case 'reorder_layer':
       return runReorderLayer(args)
     case 'set_canvas_active_theme':
@@ -3526,6 +3556,29 @@ async function runMoveItemsIntoArtboard(args) {
     'move_items_into_artboard',
     createUpdateItemsOperation(result.updates, select),
     { movedIds: result.movedIds, artboardId: result.artboardId }
+  )
+}
+
+async function runWrapItemsInSection(args) {
+  const state = await readCanvasAgentState(context)
+  const result = buildWrapItemsInSectionResult(state, args)
+  if (!result.ok) return asToolError(`[${result.code}] ${result.error}`)
+  // Section first, re-parent second — the queue applies in order, so the
+  // wrapped items never point at a parent that does not exist yet.
+  const created = await applyOperation(
+    'wrap_items_in_section',
+    createCreateItemOperation(result.sectionItem, true)
+  )
+  if (created.isError) return created
+  return applyOperation(
+    'wrap_items_in_section',
+    createUpdateItemsOperation(result.updates, false),
+    {
+      sectionId: result.sectionItem.id,
+      wrappedIds: result.wrappedIds,
+      mode: result.mode,
+      parentId: result.parentId,
+    }
   )
 }
 

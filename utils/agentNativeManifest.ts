@@ -464,6 +464,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "wrap_items_in_section",
+        title: "Wrap items in section",
+        description: "Wrap canvas items in a new grid section in one call. Mirrors the UI wrap-in-section: creates the section under the shared parent (or the containing artboard for freeform items), re-parents the items into it, and selects it. Returns { sectionId, wrappedIds }.",
+        status: "ready",
+      },
+      {
         id: "reorder_layer",
         title: "Reorder layer",
         description: "Reorder a canvas item: front/back adjust freeform zIndex (front mirrors the UI bring-to-front), up/down swap layout order with the adjacent sibling inside an artboard or section.",

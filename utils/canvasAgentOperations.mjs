@@ -499,6 +499,170 @@ export function buildMoveItemsIntoArtboardResult(state, args = {}) {
 }
 
 /**
+ * Mirror the UI "wrap selection in section" path
+ * (handleWrapSelectionInSection in CanvasTab.tsx), including its two
+ * eligibility modes:
+ * - "existing-parent": every item shares one artboard/section parent; the
+ *   section slots in at the selection's minimum order.
+ * - "freeform-inside-artboard": every item is freeform and their centers sit
+ *   inside exactly one artboard; the section appends after that artboard's
+ *   children.
+ * The section is a grid (≤3 columns, fill width / hug height) and the wrapped
+ * items re-order by their selection order with position/rotation reset.
+ * Returns the section item plus re-parent updates so the MCP runner can queue
+ * create_item BEFORE update_items — a dangling parentId must never exist.
+ *
+ * Pure helper — no fs/node:* access — so it can run inside the MCP server
+ * AND in tests next to the canvas state code.
+ */
+export function buildWrapItemsInSectionResult(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const ids = normalizeIdList(args.ids)
+  if (ids.length < 2) {
+    return { ok: false, code: 'bad-input', error: 'ids must contain at least 2 items to wrap.' }
+  }
+  const selectedItems = current.items.filter((item) => ids.includes(item.id))
+  if (selectedItems.length !== ids.length) {
+    return {
+      ok: false,
+      code: 'not-found',
+      error: 'One or more ids do not match canvas items.',
+    }
+  }
+  if (selectedItems.some((item) => item.type === 'artboard' || item.type === 'section')) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error: 'Artboards and sections cannot be wrapped — select leaf items only.',
+    }
+  }
+
+  let parent = null
+  let mode = null
+  const parentIds = new Set(selectedItems.map((item) => item.parentId).filter(Boolean))
+  if (parentIds.size === 1 && selectedItems.every((item) => item.parentId)) {
+    const [parentId] = Array.from(parentIds)
+    const candidate = current.items.find(
+      (item) => item.id === parentId && (item.type === 'artboard' || item.type === 'section')
+    )
+    if (candidate) {
+      parent = candidate
+      mode = 'existing-parent'
+    }
+  }
+  if (!parent && selectedItems.every((item) => !item.parentId)) {
+    const containing = current.items.filter(
+      (item) =>
+        item.type === 'artboard' &&
+        selectedItems.every((selected) => {
+          const centerX = Number(selected.position?.x || 0) + Number(selected.size?.width || 0) / 2
+          const centerY = Number(selected.position?.y || 0) + Number(selected.size?.height || 0) / 2
+          return (
+            centerX >= Number(item.position?.x || 0) &&
+            centerX <= Number(item.position?.x || 0) + Number(item.size?.width || 0) &&
+            centerY >= Number(item.position?.y || 0) &&
+            centerY <= Number(item.position?.y || 0) + Number(item.size?.height || 0)
+          )
+        })
+    )
+    if (containing.length === 1) {
+      parent = containing[0]
+      mode = 'freeform-inside-artboard'
+    }
+  }
+  if (!parent) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error:
+        'Items must either share one artboard/section parent, or all be freeform with centers inside exactly one artboard.',
+    }
+  }
+
+  const orderedSelection = [...selectedItems].sort((a, b) =>
+    mode === 'existing-parent'
+      ? (a.order ?? 0) - (b.order ?? 0)
+      : a.position.y === b.position.y
+        ? a.position.x - b.position.x
+        : a.position.y - b.position.y
+  )
+
+  const siblings = current.items.filter(
+    (item) => item.parentId === parent.id && item.type !== 'artboard'
+  )
+  const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+  const insertOrder =
+    mode === 'existing-parent'
+      ? Math.min(...orderedSelection.map((item) => item.order ?? 0))
+      : maxOrder + 1
+
+  const sectionId = `canvas-section-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const maxHeight = Math.max(...orderedSelection.map((item) => Number(item.size?.height || 0)))
+  const totalHeight = orderedSelection.reduce(
+    (sum, item) => sum + Number(item.size?.height || 0),
+    0
+  )
+  const parentPadding = parent.layout?.padding ?? 0
+  const fillWidth = Math.max(120, Number(parent.size?.width || 0) - parentPadding * 2)
+  const hugHeight = Math.max(maxHeight, totalHeight + (orderedSelection.length - 1) * 16)
+
+  const overrides =
+    args.section && typeof args.section === 'object' ? args.section : {}
+  const sectionItem = {
+    id: sectionId,
+    type: 'section',
+    name: normalizeString(overrides.name) || 'Section',
+    parentId: parent.id,
+    order: insertOrder,
+    position: { x: 0, y: 0 },
+    size: {
+      width: fillWidth,
+      height: hugHeight,
+    },
+    layoutSizing: {
+      width: 'fill',
+      height: 'hug',
+      hugWidth: Math.max(...orderedSelection.map((item) => Number(item.size?.width || 0))),
+      hugHeight,
+    },
+    rotation: 0,
+    zIndex: current.nextZIndex,
+    layout:
+      overrides.layout && typeof overrides.layout === 'object'
+        ? overrides.layout
+        : {
+            display: 'grid',
+            columns: Math.min(orderedSelection.length, 3),
+            align: 'stretch',
+            justify: 'start',
+            gap: 16,
+            padding: 16,
+          },
+    ...(normalizeString(overrides.background) ? { background: normalizeString(overrides.background) } : {}),
+    ...(normalizeString(overrides.themeId) ? { themeId: normalizeString(overrides.themeId) } : {}),
+  }
+
+  const updates = orderedSelection.map((item, index) => ({
+    id: item.id,
+    updates: {
+      parentId: sectionId,
+      order: index,
+      position: { x: 0, y: 0 },
+      rotation: 0,
+    },
+  }))
+
+  return {
+    ok: true,
+    sectionItem,
+    updates,
+    wrappedIds: orderedSelection.map((item) => item.id),
+    mode,
+    parentId: parent.id,
+  }
+}
+
+/**
  * Mirror the UI layer-order affordances as one tool:
  * - "front" mirrors bringToFront (useCanvasState.ts): zIndex jumps to
  *   nextZIndex so the item renders above everything.

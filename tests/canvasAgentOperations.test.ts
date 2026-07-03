@@ -293,6 +293,116 @@ describe("canvas agent operations core", () => {
     ).toMatchObject({ ok: false, code: "not-found" })
   })
 
+  it("wrap_items_in_section wraps shared-parent children at their minimum order", async () => {
+    const ops = await loadCanvasAgentOperations()
+    const state = {
+      items: [
+        {
+          id: "board-1",
+          type: "artboard",
+          position: { x: 0, y: 0 },
+          size: { width: 1440, height: 900 },
+          zIndex: 1,
+          layout: { display: "flex", direction: "column", align: "stretch", justify: "start", gap: 24, padding: 32 },
+        },
+        { id: "a", type: "html", parentId: "board-1", order: 2, size: { width: 300, height: 100 }, position: { x: 0, y: 0 }, zIndex: 2 },
+        { id: "b", type: "html", parentId: "board-1", order: 5, size: { width: 300, height: 140 }, position: { x: 0, y: 0 }, zIndex: 3 },
+      ],
+      groups: [],
+      nextZIndex: 4,
+      selectedIds: [],
+    }
+
+    const result = ops.buildWrapItemsInSectionResult(state, { ids: ["b", "a"] })
+    expect(result.ok).toBe(true)
+    expect(result.mode).toBe("existing-parent")
+    expect(result.parentId).toBe("board-1")
+    // Section slots in at the selection's minimum order; items re-order by
+    // their existing order, not the ids argument order.
+    expect(result.sectionItem).toMatchObject({
+      type: "section",
+      parentId: "board-1",
+      order: 2,
+      zIndex: 4,
+      layout: { display: "grid", columns: 2 },
+      layoutSizing: { width: "fill", height: "hug" },
+    })
+    expect(result.sectionItem.size.width).toBe(1440 - 32 * 2)
+    expect(result.wrappedIds).toEqual(["a", "b"])
+    expect(result.updates).toEqual([
+      { id: "a", updates: { parentId: result.sectionItem.id, order: 0, position: { x: 0, y: 0 }, rotation: 0 } },
+      { id: "b", updates: { parentId: result.sectionItem.id, order: 1, position: { x: 0, y: 0 }, rotation: 0 } },
+    ])
+  })
+
+  it("wrap_items_in_section wraps freeform items inside their containing artboard", async () => {
+    const ops = await loadCanvasAgentOperations()
+    const state = {
+      items: [
+        {
+          id: "board-1",
+          type: "artboard",
+          position: { x: 0, y: 0 },
+          size: { width: 1000, height: 800 },
+          zIndex: 1,
+          layout: { display: "flex", direction: "column", align: "stretch", justify: "start", gap: 24, padding: 20 },
+        },
+        { id: "child-1", type: "html", parentId: "board-1", order: 0, size: { width: 200, height: 80 }, position: { x: 0, y: 0 }, zIndex: 2 },
+        // Freeform, centers inside board-1. lower-y first in wrap order.
+        { id: "free-low", type: "html", size: { width: 200, height: 80 }, position: { x: 100, y: 400 }, zIndex: 3 },
+        { id: "free-high", type: "markdown", size: { width: 200, height: 80 }, position: { x: 100, y: 100 }, zIndex: 4 },
+      ],
+      groups: [],
+      nextZIndex: 5,
+      selectedIds: [],
+    }
+
+    const result = ops.buildWrapItemsInSectionResult(state, {
+      ids: ["free-low", "free-high"],
+      section: { name: "Hero" },
+    })
+    expect(result.ok).toBe(true)
+    expect(result.mode).toBe("freeform-inside-artboard")
+    // Appends after the artboard's existing children.
+    expect(result.sectionItem).toMatchObject({ name: "Hero", parentId: "board-1", order: 1 })
+    // Freeform wrap order is by y, then x.
+    expect(result.wrappedIds).toEqual(["free-high", "free-low"])
+  })
+
+  it("wrap_items_in_section rejects singles, containers, and mixed parents", async () => {
+    const ops = await loadCanvasAgentOperations()
+    const state = {
+      items: [
+        { id: "board-1", type: "artboard", position: { x: 0, y: 0 }, size: { width: 500, height: 500 }, zIndex: 1 },
+        { id: "board-2", type: "artboard", position: { x: 600, y: 0 }, size: { width: 500, height: 500 }, zIndex: 2 },
+        { id: "a", type: "html", parentId: "board-1", order: 0, size: { width: 100, height: 50 }, position: { x: 0, y: 0 }, zIndex: 3 },
+        { id: "b", type: "html", parentId: "board-2", order: 0, size: { width: 100, height: 50 }, position: { x: 0, y: 0 }, zIndex: 4 },
+        // Freeform but outside every artboard.
+        { id: "stray", type: "html", size: { width: 100, height: 50 }, position: { x: 2000, y: 2000 }, zIndex: 5 },
+      ],
+      groups: [],
+      nextZIndex: 6,
+      selectedIds: [],
+    }
+
+    expect(ops.buildWrapItemsInSectionResult(state, { ids: ["a"] })).toMatchObject({
+      ok: false,
+      code: "bad-input",
+    })
+    expect(
+      ops.buildWrapItemsInSectionResult(state, { ids: ["a", "board-1"] })
+    ).toMatchObject({ ok: false, code: "bad-input" })
+    // Different parents — no shared container.
+    expect(ops.buildWrapItemsInSectionResult(state, { ids: ["a", "b"] })).toMatchObject({
+      ok: false,
+      code: "bad-input",
+    })
+    expect(ops.buildWrapItemsInSectionResult(state, { ids: ["a", "ghost"] })).toMatchObject({
+      ok: false,
+      code: "not-found",
+    })
+  })
+
   it("reorder_layer front/back adjust zIndex, up/down swap sibling order", async () => {
     const ops = await loadCanvasAgentOperations()
     const state = {

@@ -168,6 +168,30 @@ describe("canvas MCP server", () => {
                 },
               },
               {
+                id: "wrap-a",
+                type: "html",
+                sourceMode: "inline",
+                sourceHtml: "<p>a</p>",
+                parentId: "artboard-1",
+                order: 0,
+                position: { x: 0, y: 0 },
+                size: { width: 280, height: 120 },
+                rotation: 0,
+                zIndex: 0,
+              },
+              {
+                id: "wrap-b",
+                type: "html",
+                sourceMode: "inline",
+                sourceHtml: "<p>b</p>",
+                parentId: "artboard-1",
+                order: 1,
+                position: { x: 0, y: 0 },
+                size: { width: 280, height: 160 },
+                rotation: 0,
+                zIndex: 0,
+              },
+              {
                 id: "markdown-1",
                 type: "markdown",
                 source: "# Hello\n\nParagraph",
@@ -2469,7 +2493,8 @@ describe("canvas MCP server", () => {
               id: "item-1",
               updates: {
                 parentId: "artboard-1",
-                order: 0,
+                // Appends after wrap-a (0) / wrap-b (1), the seeded children.
+                order: 2,
                 position: { x: 0, y: 0 },
                 rotation: 0,
               },
@@ -2478,7 +2503,7 @@ describe("canvas MCP server", () => {
               id: "item-2",
               updates: {
                 parentId: "artboard-1",
-                order: 1,
+                order: 3,
                 position: { x: 0, y: 0 },
                 rotation: 0,
               },
@@ -2552,6 +2577,85 @@ describe("canvas MCP server", () => {
       })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
       expect(freeformUpResponse.result?.isError).toBe(true)
       expect(freeformUpResponse.result?.content?.[0]?.text).toMatch(/artboard or section/)
+
+      // wrap_items_in_section: two queued ops — the section is created FIRST,
+      // then the items re-parent into it, so a dangling parentId never exists.
+      const wrapInSectionPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-wrap-in-section",
+        method: "tools/call",
+        params: {
+          name: "wrap_items_in_section",
+          arguments: { ids: ["wrap-a", "wrap-b"], section: { name: "Hero" } },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedWrapCreate = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedWrapCreate.request).toMatchObject({
+        toolName: "wrap_items_in_section",
+        operation: {
+          type: "create_item",
+          select: true,
+          item: {
+            type: "section",
+            name: "Hero",
+            parentId: "artboard-1",
+            order: 0,
+            layout: { display: "grid", columns: 2 },
+          },
+        },
+      })
+      const wrapSectionId = queuedWrapCreate.request.operation.item.id as string
+      expect(wrapSectionId).toMatch(/^canvas-section-/)
+      await queuedWrapCreate.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.850Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+
+      const queuedWrapReparent = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedWrapReparent.request).toMatchObject({
+        toolName: "wrap_items_in_section",
+        operation: {
+          type: "update_items",
+          select: false,
+          updates: [
+            {
+              id: "wrap-a",
+              updates: { parentId: wrapSectionId, order: 0, position: { x: 0, y: 0 }, rotation: 0 },
+            },
+            {
+              id: "wrap-b",
+              updates: { parentId: wrapSectionId, order: 1, position: { x: 0, y: 0 }, rotation: 0 },
+            },
+          ],
+        },
+      })
+      await queuedWrapReparent.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.900Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const wrapInSectionResult = await wrapInSectionPromise
+      expect(wrapInSectionResult.result?.structuredContent?.sectionId).toBe(wrapSectionId)
+      expect(wrapInSectionResult.result?.structuredContent?.wrappedIds).toEqual([
+        "wrap-a",
+        "wrap-b",
+      ])
+      expect(wrapInSectionResult.result?.structuredContent?.mode).toBe("existing-parent")
+
+      // wrap_items_in_section rejects selections without a shared container.
+      const badWrapResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-wrap-in-section-bad",
+        method: "tools/call",
+        params: {
+          name: "wrap_items_in_section",
+          arguments: { ids: ["item-1", "wrap-a"] },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badWrapResponse.result?.isError).toBe(true)
+      expect(badWrapResponse.result?.content?.[0]?.text).toMatch(/share one artboard/)
 
       // undo_source_mutation / redo_source_mutation: cmd-Z / cmd-shift-Z
       // parity. The MCP tool enqueues the op; the UI bridge routes it to
