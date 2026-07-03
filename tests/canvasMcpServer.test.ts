@@ -1441,6 +1441,12 @@ describe("canvas MCP server", () => {
               clipStartSec: 4.5,
               clipEndSec: 12,
               objectFit: "contain",
+              // All four playback booleans ride the same single update —
+              // audit open question resolved: no per-field update_item calls.
+              controls: false,
+              autoplay: true,
+              muted: false,
+              loop: true,
             },
           },
         },
@@ -1457,6 +1463,10 @@ describe("canvas MCP server", () => {
             clipStartSec: 4.5,
             clipEndSec: 12,
             objectFit: "contain",
+            controls: false,
+            autoplay: true,
+            muted: false,
+            loop: true,
           },
         },
       })
@@ -1467,6 +1477,8 @@ describe("canvas MCP server", () => {
       })
       const mediaCropUpdate = await mediaCropPromise
       expect(mediaCropUpdate.result?.structuredContent?.updates?.objectFit).toBe("contain")
+      expect(mediaCropUpdate.result?.structuredContent?.updates?.autoplay).toBe(true)
+      expect(mediaCropUpdate.result?.structuredContent?.updates?.controls).toBe(false)
       expect(mediaCropUpdate.result?.structuredContent?.updates?.crop).toEqual({
         x: 0.1,
         y: 0,
