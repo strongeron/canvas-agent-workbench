@@ -480,6 +480,11 @@ export type CanvasRemoteOperation =
       tool: "select" | "edit" | "interact"
     }
   | {
+      type: "convert_mermaid_to_excalidraw"
+      itemId: string
+      keepOriginal?: boolean
+    }
+  | {
       type: "undo_source_mutation"
       scope?: "active-file" | "log-entry"
       logEntryId?: string

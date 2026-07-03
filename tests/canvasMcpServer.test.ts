@@ -2657,6 +2657,50 @@ describe("canvas MCP server", () => {
       expect(badWrapResponse.result?.isError).toBe(true)
       expect(badWrapResponse.result?.content?.[0]?.text).toMatch(/share one artboard/)
 
+      // convert_mermaid_to_excalidraw: UI-side conversion (mermaid renders
+      // through the DOM), so the tool validates the item server-side and
+      // queues the operation for the live canvas.
+      const convertMermaidPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-convert-mermaid",
+        method: "tools/call",
+        params: {
+          name: "convert_mermaid_to_excalidraw",
+          arguments: { itemId: "mermaid-1", keepOriginal: true },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedConvertMermaid = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedConvertMermaid.request).toMatchObject({
+        toolName: "convert_mermaid_to_excalidraw",
+        operation: {
+          type: "convert_mermaid_to_excalidraw",
+          itemId: "mermaid-1",
+          keepOriginal: true,
+        },
+      })
+      await queuedConvertMermaid.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.950Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const convertMermaidResult = await convertMermaidPromise
+      expect(convertMermaidResult.result?.structuredContent?.itemId).toBe("mermaid-1")
+      expect(convertMermaidResult.result?.structuredContent?.keepOriginal).toBe(true)
+
+      // convert_mermaid_to_excalidraw rejects non-mermaid items without queueing.
+      const badConvertResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-convert-mermaid-bad",
+        method: "tools/call",
+        params: {
+          name: "convert_mermaid_to_excalidraw",
+          arguments: { itemId: "markdown-1" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badConvertResponse.result?.isError).toBe(true)
+      expect(badConvertResponse.result?.content?.[0]?.text).toMatch(/Mermaid item not found/)
+
       // undo_source_mutation / redo_source_mutation: cmd-Z / cmd-shift-Z
       // parity. The MCP tool enqueues the op; the UI bridge routes it to
       // handleUndoMutation/handleRedoMutation which re-apply the stored

@@ -181,12 +181,15 @@ export function applyCanvasRemoteOperationToState(state, operation) {
     case 'focus_items':
     case 'set_active_theme':
     case 'set_canvas_tool':
+    case 'convert_mermaid_to_excalidraw':
     case 'undo_source_mutation':
     case 'redo_source_mutation':
       // UI-side effects only — no canvas state mutation. The dev server still
       // records the operation in the event log and broadcasts it so the
       // browser bridge can call the matching UI handler (setActiveThemeId,
-      // setCanvasTool, handleUndoMutation, handleRedoMutation).
+      // setCanvasTool, handleConvertMermaidToExcalidraw, handleUndoMutation,
+      // handleRedoMutation). Mermaid→Excalidraw conversion must run in the
+      // browser: @excalidraw/mermaid-to-excalidraw renders through the DOM.
       return current
     default:
       return current
@@ -336,6 +339,14 @@ export function createSetActiveThemeOperation(themeId) {
 }
 
 const CANVAS_TOOLS = new Set(['select', 'edit', 'interact'])
+
+export function createConvertMermaidToExcalidrawOperation(itemId, keepOriginal = false) {
+  return {
+    type: 'convert_mermaid_to_excalidraw',
+    itemId: normalizeString(itemId),
+    keepOriginal: keepOriginal === true,
+  }
+}
 
 export function createSetCanvasToolOperation(tool) {
   const normalized = normalizeString(tool)

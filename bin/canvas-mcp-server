@@ -68,6 +68,7 @@ import {
   createSelectItemsOperation,
   createSetActiveThemeOperation,
   createSetCanvasToolOperation,
+  createConvertMermaidToExcalidrawOperation,
   createUndoSourceMutationOperation,
   createRedoSourceMutationOperation,
   buildDuplicateItemsResult,
@@ -1396,6 +1397,20 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'convert_mermaid_to_excalidraw',
+    description:
+      'Convert a mermaid canvas item to an Excalidraw sketch item, mirroring the UI "convert to Excalidraw" action. The conversion runs in the browser (mermaid renders through the DOM), so this queues the operation for the live canvas: a new excalidraw item appears offset from the source with sourceMermaid retained for remapping; the original is removed unless keepOriginal is true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        keepOriginal: { type: 'boolean' },
+      },
+      required: ['itemId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'set_canvas_tool',
     description:
       'Set the active Canvas tool mode: "select" (item-level move/resize), "edit" (element-level editing inside html nodes), or "interact" (live iframe interaction). Same handler as the toolbar toggle; each mode owns its pointer layer, so screenshots and drags behave per the chosen mode.',
@@ -2435,6 +2450,8 @@ async function callTool(name, args) {
       return runReorderLayer(args)
     case 'set_canvas_active_theme':
       return runSetCanvasActiveTheme(args)
+    case 'convert_mermaid_to_excalidraw':
+      return runConvertMermaidToExcalidraw(args)
     case 'set_canvas_tool':
       return runSetCanvasTool(args)
     case 'undo_source_mutation':
@@ -3606,6 +3623,22 @@ async function runSetCanvasActiveTheme(args) {
     createSetActiveThemeOperation(themeId),
     { themeId }
   )
+}
+
+async function runConvertMermaidToExcalidraw(args) {
+  const operation = createConvertMermaidToExcalidrawOperation(args.itemId, args.keepOriginal)
+  if (!operation.itemId) return asToolError('itemId is required.')
+  const state = await readCanvasAgentState(context)
+  const item = Array.isArray(state?.items)
+    ? state.items.find((entry) => entry?.id === operation.itemId)
+    : null
+  if (!item || item.type !== 'mermaid') {
+    return asToolError(`Mermaid item not found: ${operation.itemId}`)
+  }
+  return applyOperation('convert_mermaid_to_excalidraw', operation, {
+    itemId: operation.itemId,
+    keepOriginal: operation.keepOriginal,
+  })
 }
 
 async function runSetCanvasTool(args) {

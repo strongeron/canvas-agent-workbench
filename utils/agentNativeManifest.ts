@@ -482,6 +482,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "convert_mermaid_to_excalidraw",
+        title: "Convert mermaid to Excalidraw",
+        description: "Convert a mermaid canvas item to an Excalidraw sketch, mirroring the UI action. Runs in the live browser canvas; the new item keeps sourceMermaid for remapping and the original is removed unless keepOriginal is true.",
+        status: "ready",
+      },
+      {
         id: "set_canvas_tool",
         title: "Set canvas tool mode",
         description: "Set the active Canvas tool mode: select (item move/resize), edit (element-level editing inside html nodes), or interact (live iframe interaction). Same handler as the toolbar toggle.",

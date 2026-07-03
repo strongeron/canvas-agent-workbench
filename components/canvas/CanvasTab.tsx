@@ -1510,6 +1510,45 @@ export function CanvasTab({
     [items, updateItem, handleReactNodeWriteSuccess]
   )
 
+  const handleConvertMermaidToExcalidraw = useCallback(
+    async (mermaidItemId: string, options?: { keepOriginal?: boolean }) => {
+      const sourceItem = items.find((item) => item.id === mermaidItemId)
+      if (!sourceItem || sourceItem.type !== "mermaid") return
+
+      try {
+        const scene = await convertMermaidSourceToExcalidrawScene(sourceItem.source)
+        addItem({
+          type: "excalidraw",
+          title: sourceItem.title ? `${sourceItem.title} (Excalidraw)` : "Excalidraw sketch",
+          scene,
+          sourceMermaid: sourceItem.source,
+          position: {
+            x: sourceItem.position.x + 48,
+            y: sourceItem.position.y + 48,
+          },
+          size: {
+            width: Math.max(480, sourceItem.size.width),
+            height: Math.max(320, sourceItem.size.height),
+          },
+          rotation: sourceItem.rotation,
+          parentId: sourceItem.parentId,
+          order: sourceItem.order,
+        })
+        if (!options?.keepOriginal) {
+          removeItem(sourceItem.id)
+        }
+        setPropsPanelVisible(true)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to convert Mermaid to Excalidraw."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [addItem, items, removeItem]
+  )
+
   const applyCanvasAgentOperation = useCallback(
     (operation: CanvasRemoteOperation) => {
       if (!operation || typeof operation !== "object") return
@@ -1557,6 +1596,15 @@ export function CanvasTab({
         return
       }
 
+      if (operation.type === "convert_mermaid_to_excalidraw") {
+        if (typeof operation.itemId === "string" && operation.itemId) {
+          void handleConvertMermaidToExcalidraw(operation.itemId, {
+            keepOriginal: operation.keepOriginal === true,
+          })
+        }
+        return
+      }
+
       if (operation.type === "undo_source_mutation") {
         void handleUndoMutation()
         return
@@ -1572,6 +1620,7 @@ export function CanvasTab({
     [
       applyRemoteOperation,
       fitToView,
+      handleConvertMermaidToExcalidraw,
       handleRedoMutation,
       handleUndoMutation,
       items,
@@ -3279,45 +3328,6 @@ export function CanvasTab({
       }
     },
     [handleAddExcalidraw, handleAddMarkdown, handleAddMermaid]
-  )
-
-  const handleConvertMermaidToExcalidraw = useCallback(
-    async (mermaidItemId: string, options?: { keepOriginal?: boolean }) => {
-      const sourceItem = items.find((item) => item.id === mermaidItemId)
-      if (!sourceItem || sourceItem.type !== "mermaid") return
-
-      try {
-        const scene = await convertMermaidSourceToExcalidrawScene(sourceItem.source)
-        addItem({
-          type: "excalidraw",
-          title: sourceItem.title ? `${sourceItem.title} (Excalidraw)` : "Excalidraw sketch",
-          scene,
-          sourceMermaid: sourceItem.source,
-          position: {
-            x: sourceItem.position.x + 48,
-            y: sourceItem.position.y + 48,
-          },
-          size: {
-            width: Math.max(480, sourceItem.size.width),
-            height: Math.max(320, sourceItem.size.height),
-          },
-          rotation: sourceItem.rotation,
-          parentId: sourceItem.parentId,
-          order: sourceItem.order,
-        })
-        if (!options?.keepOriginal) {
-          removeItem(sourceItem.id)
-        }
-        setPropsPanelVisible(true)
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to convert Mermaid to Excalidraw."
-        if (typeof window !== "undefined") {
-          window.alert(message)
-        }
-      }
-    },
-    [addItem, items, removeItem]
   )
 
   const handleDropMediaFiles = useCallback(
