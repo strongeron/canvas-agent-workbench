@@ -211,7 +211,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         id: "update_markdown_block",
         title: "Update markdown block",
         description:
-          "Patch, reorder, insert, or delete markdown blocks on a live markdown item and sync the item source. Supports the patch | reorder | insert | delete actions of the markdown writer.",
+          "Edit markdown blocks on a live markdown item and sync the item source. Actions: update (replace block), insert (splice new block at index; index === block count appends), remove (delete block), reorder (move block).",
         status: "ready",
       },
       {

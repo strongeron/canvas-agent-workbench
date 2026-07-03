@@ -373,12 +373,12 @@ const TOOL_DEFINITIONS = [
   {
     name: 'update_markdown_block',
     description:
-      'Update or reorder a markdown block on a live markdown canvas item and keep the item source in sync with the markdown writer.',
+      'Edit a markdown block on a live markdown canvas item and keep the item source in sync with the markdown writer. Actions: "update" replaces a block (blockIndex + newText), "insert" splices a new block in at blockIndex (blockIndex === block count appends), "remove" deletes a block (blockIndex), "reorder" moves a block (fromIndex + toIndex).',
     inputSchema: {
       type: 'object',
       properties: {
         itemId: { type: 'string' },
-        action: { type: 'string', enum: ['update', 'reorder'] },
+        action: { type: 'string', enum: ['update', 'insert', 'remove', 'reorder'] },
         blockIndex: { type: 'number' },
         newText: { type: 'string' },
         fromIndex: { type: 'number' },
@@ -3060,8 +3060,8 @@ async function runUpdateMarkdownBlock(args) {
   const itemId = normalizeString(args.itemId)
   const action = normalizeString(args.action)
   if (!itemId) return asToolError('itemId is required.')
-  if (!action || !['update', 'reorder'].includes(action)) {
-    return asToolError('action must be update or reorder.')
+  if (!action || !['update', 'insert', 'remove', 'reorder'].includes(action)) {
+    return asToolError('action must be one of update, insert, remove, reorder.')
   }
 
   const state = await readCanvasAgentState(context)
@@ -3069,20 +3069,25 @@ async function runUpdateMarkdownBlock(args) {
   if (!item || item.type !== 'markdown') return asToolError(`Markdown item not found: ${itemId}`)
 
   const request =
-    action === 'update'
+    action === 'reorder'
       ? {
-          action,
-          blockIndex: Number.isInteger(args.blockIndex) ? Number(args.blockIndex) : -1,
-          newText: typeof args.newText === 'string' ? args.newText : '',
-        }
-      : {
           action,
           fromIndex: Number.isInteger(args.fromIndex) ? Number(args.fromIndex) : -1,
           toIndex: Number.isInteger(args.toIndex) ? Number(args.toIndex) : -1,
         }
+      : {
+          action,
+          blockIndex: Number.isInteger(args.blockIndex) ? Number(args.blockIndex) : -1,
+          ...(action === 'remove'
+            ? {}
+            : { newText: typeof args.newText === 'string' ? args.newText : '' }),
+        }
 
-  if (action === 'update' && request.blockIndex < 0) {
-    return asToolError('blockIndex is required for update.')
+  if (action !== 'reorder' && request.blockIndex < 0) {
+    return asToolError(`blockIndex is required for ${action}.`)
+  }
+  if (action === 'insert' && !request.newText) {
+    return asToolError('newText is required for insert.')
   }
   if (action === 'reorder' && (request.fromIndex < 0 || request.toIndex < 0)) {
     return asToolError('fromIndex and toIndex are required for reorder.')

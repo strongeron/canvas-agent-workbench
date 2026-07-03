@@ -75,6 +75,51 @@ describe("applyCanvasMarkdownWriteRequest", () => {
     expect(typeof result.mtimeMs).toBe("number")
   })
 
+  it("inserts a new file-backed markdown block and removes one", async () => {
+    const root = await createTempDir("canvas-markdown-write-endpoint-")
+    const relativePath = "docs/demo.md"
+    const absolute = path.join(root, relativePath)
+    await fs.mkdir(path.dirname(absolute), { recursive: true })
+    await fs.writeFile(absolute, SOURCE, "utf8")
+    const initialStat = await fs.stat(absolute)
+
+    const inserted = await applyCanvasMarkdownWriteRequest(
+      {
+        action: "insert",
+        filePath: relativePath,
+        mtimeMs: initialStat.mtimeMs,
+        blockIndex: 1,
+        newText: "Inserted paragraph.",
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(inserted.ok).toBe(true)
+    if (!inserted.ok) return
+    expect(inserted.blocks.map((block) => block.type)).toEqual([
+      "heading",
+      "paragraph",
+      "paragraph",
+      "list",
+    ])
+    expect(inserted.source).toContain("Inserted paragraph.")
+    expect(await fs.readFile(absolute, "utf8")).toBe(inserted.source)
+
+    const removed = await applyCanvasMarkdownWriteRequest(
+      {
+        action: "remove",
+        filePath: relativePath,
+        mtimeMs: inserted.mtimeMs,
+        blockIndex: 1,
+      },
+      { workspaceRoot: root }
+    )
+
+    expect(removed.ok).toBe(true)
+    if (!removed.ok) return
+    expect(removed.blocks.map((block) => block.type)).toEqual(["heading", "paragraph", "list"])
+  })
+
   it("reorders file-backed markdown blocks", async () => {
     const root = await createTempDir("canvas-markdown-write-endpoint-")
     const relativePath = "docs/demo.md"

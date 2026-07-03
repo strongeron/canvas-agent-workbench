@@ -5,6 +5,7 @@ import {
   listMarkdownBlocks,
   removeMarkdownBlock,
   reorderMarkdownBlocks,
+  insertMarkdownBlock,
   updateMarkdownBlock,
   type MarkdownBlockInfo,
 } from "../../utils/canvasMarkdownWriter"
@@ -29,7 +30,7 @@ interface CanvasMarkdownWriteOptions {
 export type CanvasMarkdownWriteResponse =
   | {
       ok: true
-      action: "list" | "update" | "remove" | "reorder" | "rewrite"
+      action: "list" | "update" | "insert" | "remove" | "reorder" | "rewrite"
       source: string
       blocks: MarkdownBlockInfo[]
       mtimeMs: number | null
@@ -68,7 +69,7 @@ export async function applyCanvasMarkdownWriteRequest(
       ok: false,
       status: 400,
       code: "bad-input",
-      error: "action must be one of list, update, remove, or reorder.",
+      error: "action must be one of list, update, insert, remove, or reorder.",
     }
   }
 
@@ -180,7 +181,7 @@ async function applyFileBackedMarkdownRewrite(
 
 async function applyFileBackedMarkdownWrite(
   input: {
-    action: "list" | "update" | "remove" | "reorder"
+    action: "list" | "update" | "insert" | "remove" | "reorder"
     filePath: string
     mtimeMs: unknown
     blockIndex: unknown
@@ -250,7 +251,7 @@ async function applyFileBackedMarkdownWrite(
 }
 
 function applyMarkdownAction(
-  action: "list" | "update" | "remove" | "reorder",
+  action: "list" | "update" | "insert" | "remove" | "reorder",
   source: string,
   input: {
     blockIndex: unknown
@@ -269,9 +270,11 @@ function applyMarkdownAction(
   const result =
     action === "update"
       ? updateMarkdownBlock(source, normalizeInteger(input.blockIndex), input.newText as string)
-      : action === "remove"
-        ? removeMarkdownBlock(source, normalizeInteger(input.blockIndex))
-        : reorderMarkdownBlocks(source, normalizeInteger(input.fromIndex), normalizeInteger(input.toIndex))
+      : action === "insert"
+        ? insertMarkdownBlock(source, normalizeInteger(input.blockIndex), input.newText as string)
+        : action === "remove"
+          ? removeMarkdownBlock(source, normalizeInteger(input.blockIndex))
+          : reorderMarkdownBlocks(source, normalizeInteger(input.fromIndex), normalizeInteger(input.toIndex))
 
   if (!result.ok) {
     const status = result.code === "out-of-range" ? 400 : 400
@@ -294,8 +297,12 @@ function applyMarkdownAction(
   }
 }
 
-function normalizeAction(action: unknown): "list" | "update" | "remove" | "reorder" | null {
-  return action === "list" || action === "update" || action === "remove" || action === "reorder"
+function normalizeAction(action: unknown): "list" | "update" | "insert" | "remove" | "reorder" | null {
+  return action === "list" ||
+    action === "update" ||
+    action === "insert" ||
+    action === "remove" ||
+    action === "reorder"
     ? action
     : null
 }

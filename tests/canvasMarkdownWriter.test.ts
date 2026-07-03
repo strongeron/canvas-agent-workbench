@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  insertMarkdownBlock,
   listMarkdownBlocks,
   removeMarkdownBlock,
   reorderMarkdownBlocks,
@@ -93,6 +94,56 @@ describe("updateMarkdownBlock", () => {
 
   it("rejects negative blockIndex", () => {
     const result = updateMarkdownBlock(fixture, -1, "anything")
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("bad-input")
+  })
+})
+
+describe("insertMarkdownBlock", () => {
+  it("splices a new block in at the index and shifts the rest down", () => {
+    const result = insertMarkdownBlock(fixture, 1, "New paragraph.")
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const blocks = listMarkdownBlocks(result.source)
+    expect(blocks.map((b) => b.type)).toEqual([
+      "heading",
+      "paragraph",
+      "paragraph",
+      "list",
+      "blockquote",
+      "code",
+    ])
+    expect(blocks[1]?.source).toBe("New paragraph.")
+  })
+
+  it("appends when blockIndex equals the block count", () => {
+    const count = listMarkdownBlocks(fixture).length
+    const result = insertMarkdownBlock(fixture, count, "## Outro")
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const blocks = listMarkdownBlocks(result.source)
+    expect(blocks[blocks.length - 1]?.type).toBe("heading")
+  })
+
+  it("splices multi-block newText in as a sequence", () => {
+    const result = insertMarkdownBlock(fixture, 0, "## Intro\n\nLead-in text.")
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const blocks = listMarkdownBlocks(result.source)
+    expect(blocks.slice(0, 2).map((b) => b.type)).toEqual(["heading", "paragraph"])
+  })
+
+  it("rejects blockIndex beyond the block count", () => {
+    const count = listMarkdownBlocks(fixture).length
+    const result = insertMarkdownBlock(fixture, count + 1, "Too far.")
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("out-of-range")
+  })
+
+  it("rejects empty newText", () => {
+    const result = insertMarkdownBlock(fixture, 0, "   ")
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.code).toBe("bad-input")

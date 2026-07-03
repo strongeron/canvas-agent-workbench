@@ -7,6 +7,8 @@
 //   - listMarkdownBlocks(source) → block metadata for the panel/overlay
 //   - updateMarkdownBlock(source, index, newText) → replace a block with a
 //     re-parse of `newText` (keeps inline formatting like **bold**/_em_ intact)
+//   - insertMarkdownBlock(source, index, newText) → splice a new block in at
+//     index (index === block count appends)
 //   - removeMarkdownBlock(source, index) → splice the block out
 //   - reorderMarkdownBlocks(source, fromIndex, toIndex) → drag-to-reorder
 //
@@ -73,6 +75,34 @@ export function updateMarkdownBlock(
   } else {
     tree.children.splice(blockIndex, 1, ...incoming.children)
   }
+
+  return { ok: true, source: stringifyMarkdown(tree) }
+}
+
+export function insertMarkdownBlock(
+  markdownSource: string,
+  blockIndex: number,
+  newText: string
+): MarkdownWriteResult {
+  if (!Number.isInteger(blockIndex) || blockIndex < 0) {
+    return { ok: false, code: "bad-input", error: "blockIndex must be a non-negative integer" }
+  }
+  if (typeof newText !== "string" || !newText.trim()) {
+    return { ok: false, code: "bad-input", error: "newText must be a non-empty string" }
+  }
+
+  const tree = parseMarkdown(markdownSource)
+  // blockIndex === children.length is a valid append; only beyond that is
+  // out of range.
+  if (blockIndex > tree.children.length) {
+    return { ok: false, code: "out-of-range", error: "blockIndex exceeds the number of top-level blocks" }
+  }
+
+  const incoming = parseMarkdown(newText)
+  if (incoming.children.length === 0) {
+    return { ok: false, code: "bad-input", error: "newText did not parse to any markdown blocks" }
+  }
+  tree.children.splice(blockIndex, 0, ...incoming.children)
 
   return { ok: true, source: stringifyMarkdown(tree) }
 }
