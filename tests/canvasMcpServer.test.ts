@@ -2511,6 +2511,48 @@ describe("canvas MCP server", () => {
       expect(badArtboardResponse.result?.isError).toBe(true)
       expect(badArtboardResponse.result?.content?.[0]?.text).toMatch(/No artboard found/)
 
+      // reorder_layer: front mirrors the UI bring-to-front (zIndex jumps to
+      // nextZIndex); up/down are layout-only and rejected for freeform items.
+      const reorderLayerPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-reorder-layer",
+        method: "tools/call",
+        params: {
+          name: "reorder_layer",
+          arguments: { id: "item-1", direction: "front" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedReorderLayer = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedReorderLayer.request).toMatchObject({
+        toolName: "reorder_layer",
+        operation: {
+          type: "update_items",
+          select: false,
+          updates: [{ id: "item-1", updates: { zIndex: 8 } }],
+        },
+      })
+      await queuedReorderLayer.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.800Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const reorderLayerResult = await reorderLayerPromise
+      expect(reorderLayerResult.result?.structuredContent?.id).toBe("item-1")
+      expect(reorderLayerResult.result?.structuredContent?.direction).toBe("front")
+
+      const freeformUpResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-reorder-layer-bad",
+        method: "tools/call",
+        params: {
+          name: "reorder_layer",
+          arguments: { id: "item-2", direction: "up" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(freeformUpResponse.result?.isError).toBe(true)
+      expect(freeformUpResponse.result?.content?.[0]?.text).toMatch(/artboard or section/)
+
       // undo_source_mutation / redo_source_mutation: cmd-Z / cmd-shift-Z
       // parity. The MCP tool enqueues the op; the UI bridge routes it to
       // handleUndoMutation/handleRedoMutation which re-apply the stored

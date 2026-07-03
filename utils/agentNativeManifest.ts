@@ -464,6 +464,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "reorder_layer",
+        title: "Reorder layer",
+        description: "Reorder a canvas item: front/back adjust freeform zIndex (front mirrors the UI bring-to-front), up/down swap layout order with the adjacent sibling inside an artboard or section.",
+        status: "ready",
+      },
+      {
         id: "set_canvas_active_theme",
         title: "Set canvas active theme",
         description: "Set the active Canvas theme by id. Paired write for get_canvas_themes — same UI handler as picking a theme in CanvasThemePanel.",

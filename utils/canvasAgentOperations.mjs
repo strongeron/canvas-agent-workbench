@@ -498,6 +498,94 @@ export function buildMoveItemsIntoArtboardResult(state, args = {}) {
   }
 }
 
+/**
+ * Mirror the UI layer-order affordances as one tool:
+ * - "front" mirrors bringToFront (useCanvasState.ts): zIndex jumps to
+ *   nextZIndex so the item renders above everything.
+ * - "back" is the missing UI counterpart: zIndex drops below the current
+ *   minimum (may go negative — CSS stacking accepts it).
+ * - "up" / "down" mirror handleMoveLayer (CanvasTab.tsx): swap `order` with
+ *   the adjacent sibling inside the same artboard/section. Freeform items are
+ *   rejected explicitly — the UI affordance only exists for layout children,
+ *   and silently bumping zIndex instead would misreport what happened.
+ *
+ * Pure helper — no fs/node:* access — so it can run inside the MCP server
+ * AND in tests next to the canvas state code.
+ */
+export function buildReorderLayerResult(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const id = normalizeString(args.id)
+  if (!id) {
+    return { ok: false, code: 'bad-input', error: 'id is required.' }
+  }
+  const direction = normalizeString(args.direction)
+  if (!['front', 'back', 'up', 'down'].includes(direction)) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error: 'direction must be one of "front", "back", "up", "down".',
+    }
+  }
+  const target = current.items.find((item) => item.id === id)
+  if (!target) {
+    return { ok: false, code: 'not-found', error: `No canvas item found for id "${id}".` }
+  }
+
+  if (direction === 'front') {
+    return {
+      ok: true,
+      updates: [{ id, updates: { zIndex: current.nextZIndex } }],
+      direction,
+    }
+  }
+
+  if (direction === 'back') {
+    const minZIndex = current.items.reduce(
+      (min, item) => Math.min(min, Number(item.zIndex || 0)),
+      Number(target.zIndex || 0)
+    )
+    return {
+      ok: true,
+      updates: [{ id, updates: { zIndex: minZIndex - 1 } }],
+      direction,
+    }
+  }
+
+  if (!target.parentId) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error:
+        'up/down reorder only applies to items inside an artboard or section (layout order). Use "front" or "back" for freeform items.',
+    }
+  }
+
+  const siblings = current.items
+    .filter((item) => item.parentId === target.parentId && item.type !== 'artboard')
+    .map((item, index) => ({ id: item.id, order: item.order ?? index }))
+    .sort((a, b) => a.order - b.order)
+  const currentIndex = siblings.findIndex((item) => item.id === id)
+  const swapIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  if (swapIndex < 0 || swapIndex >= siblings.length) {
+    return {
+      ok: false,
+      code: 'no-op',
+      error: `Item is already at the ${direction === 'up' ? 'top' : 'bottom'} of its layout order.`,
+    }
+  }
+
+  const currentEntry = siblings[currentIndex]
+  const swapEntry = siblings[swapIndex]
+  return {
+    ok: true,
+    updates: [
+      { id: currentEntry.id, updates: { order: swapEntry.order } },
+      { id: swapEntry.id, updates: { order: currentEntry.order } },
+    ],
+    direction,
+  }
+}
+
 export function createArtboardItem(state, args = {}) {
   const current = normalizeCanvasStateSnapshot(state)
   return {

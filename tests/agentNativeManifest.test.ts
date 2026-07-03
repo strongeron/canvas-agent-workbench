@@ -87,6 +87,7 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_debug")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "duplicate_items")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "move_items_into_artboard")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "reorder_layer")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "set_canvas_active_theme")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "set_canvas_tool")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "undo_source_mutation")).toBe(true)

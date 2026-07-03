@@ -292,4 +292,71 @@ describe("canvas agent operations core", () => {
       })
     ).toMatchObject({ ok: false, code: "not-found" })
   })
+
+  it("reorder_layer front/back adjust zIndex, up/down swap sibling order", async () => {
+    const ops = await loadCanvasAgentOperations()
+    const state = {
+      items: [
+        { id: "free-1", type: "html", position: { x: 0, y: 0 }, zIndex: 2 },
+        { id: "free-2", type: "markdown", position: { x: 40, y: 0 }, zIndex: 5 },
+        { id: "board-1", type: "artboard", position: { x: 0, y: 400 }, zIndex: 1 },
+        { id: "child-a", type: "html", parentId: "board-1", order: 0, zIndex: 3 },
+        { id: "child-b", type: "html", parentId: "board-1", order: 1, zIndex: 4 },
+      ],
+      groups: [],
+      nextZIndex: 6,
+      selectedIds: [],
+    }
+
+    expect(ops.buildReorderLayerResult(state, { id: "free-1", direction: "front" })).toEqual({
+      ok: true,
+      updates: [{ id: "free-1", updates: { zIndex: 6 } }],
+      direction: "front",
+    })
+    expect(ops.buildReorderLayerResult(state, { id: "free-2", direction: "back" })).toEqual({
+      ok: true,
+      updates: [{ id: "free-2", updates: { zIndex: 0 } }],
+      direction: "back",
+    })
+    // up/down swap layout order between siblings, exactly like handleMoveLayer.
+    expect(ops.buildReorderLayerResult(state, { id: "child-b", direction: "up" })).toEqual({
+      ok: true,
+      updates: [
+        { id: "child-b", updates: { order: 0 } },
+        { id: "child-a", updates: { order: 1 } },
+      ],
+      direction: "up",
+    })
+  })
+
+  it("reorder_layer rejects freeform up/down, boundary moves, and unknown ids", async () => {
+    const ops = await loadCanvasAgentOperations()
+    const state = {
+      items: [
+        { id: "free-1", type: "html", position: { x: 0, y: 0 }, zIndex: 1 },
+        { id: "board-1", type: "artboard", position: { x: 0, y: 400 }, zIndex: 2 },
+        { id: "child-a", type: "html", parentId: "board-1", order: 0, zIndex: 3 },
+      ],
+      groups: [],
+      nextZIndex: 4,
+      selectedIds: [],
+    }
+
+    expect(ops.buildReorderLayerResult(state, { id: "free-1", direction: "up" })).toMatchObject({
+      ok: false,
+      code: "bad-input",
+    })
+    expect(ops.buildReorderLayerResult(state, { id: "child-a", direction: "up" })).toMatchObject({
+      ok: false,
+      code: "no-op",
+    })
+    expect(ops.buildReorderLayerResult(state, { id: "ghost", direction: "front" })).toMatchObject({
+      ok: false,
+      code: "not-found",
+    })
+    expect(ops.buildReorderLayerResult(state, { id: "free-1", direction: "sideways" })).toMatchObject({
+      ok: false,
+      code: "bad-input",
+    })
+  })
 })

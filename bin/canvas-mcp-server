@@ -72,6 +72,7 @@ import {
   createRedoSourceMutationOperation,
   buildDuplicateItemsResult,
   buildMoveItemsIntoArtboardResult,
+  buildReorderLayerResult,
   createUpdateItemsOperation,
   createUpdateGroupOperation,
   createUpdateItemOperation,
@@ -1340,6 +1341,20 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'reorder_layer',
+    description:
+      'Reorder a canvas item in the stacking/layout order: "front" / "back" adjust freeform zIndex (front mirrors the UI bring-to-front; back drops below the current minimum), "up" / "down" swap layout order with the adjacent sibling inside an artboard or section (mirrors the UI move-layer control; rejected for freeform items).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        direction: { type: 'string', enum: ['front', 'back', 'up', 'down'] },
+      },
+      required: ['id', 'direction'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'set_canvas_active_theme',
     description:
       'Set the active Canvas theme by id. Paired write for get_canvas_themes — same UI handler as picking a theme in CanvasThemePanel, so resolved token values update immediately on the live board.',
@@ -2386,6 +2401,8 @@ async function callTool(name, args) {
       return runDuplicateItems(args)
     case 'move_items_into_artboard':
       return runMoveItemsIntoArtboard(args)
+    case 'reorder_layer':
+      return runReorderLayer(args)
     case 'set_canvas_active_theme':
       return runSetCanvasActiveTheme(args)
     case 'set_canvas_tool':
@@ -3509,6 +3526,17 @@ async function runMoveItemsIntoArtboard(args) {
     'move_items_into_artboard',
     createUpdateItemsOperation(result.updates, select),
     { movedIds: result.movedIds, artboardId: result.artboardId }
+  )
+}
+
+async function runReorderLayer(args) {
+  const state = await readCanvasAgentState(context)
+  const result = buildReorderLayerResult(state, args)
+  if (!result.ok) return asToolError(`[${result.code}] ${result.error}`)
+  return applyOperation(
+    'reorder_layer',
+    createUpdateItemsOperation(result.updates, false),
+    { id: normalizeString(args.id), direction: result.direction }
   )
 }
 
