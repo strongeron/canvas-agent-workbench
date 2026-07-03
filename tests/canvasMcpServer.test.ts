@@ -2445,6 +2445,72 @@ describe("canvas MCP server", () => {
       expect(badToolResponse.result?.isError).toBe(true)
       expect(badToolResponse.result?.content?.[0]?.text).toMatch(/select.*edit.*interact/)
 
+      // move_items_into_artboard: mirrors the UI "move selection into
+      // artboard" — one call re-parents, appends after current children in
+      // order, and resets position/rotation for flow layout.
+      const moveIntoArtboardPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-move-into-artboard",
+        method: "tools/call",
+        params: {
+          name: "move_items_into_artboard",
+          arguments: { ids: ["item-1", "item-2"], artboardId: "artboard-1" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedMoveIntoArtboard = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedMoveIntoArtboard.request).toMatchObject({
+        toolName: "move_items_into_artboard",
+        operation: {
+          type: "update_items",
+          select: false,
+          updates: [
+            {
+              id: "item-1",
+              updates: {
+                parentId: "artboard-1",
+                order: 0,
+                position: { x: 0, y: 0 },
+                rotation: 0,
+              },
+            },
+            {
+              id: "item-2",
+              updates: {
+                parentId: "artboard-1",
+                order: 1,
+                position: { x: 0, y: 0 },
+                rotation: 0,
+              },
+            },
+          ],
+        },
+      })
+      await queuedMoveIntoArtboard.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.750Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const moveIntoArtboardResult = await moveIntoArtboardPromise
+      expect(moveIntoArtboardResult.result?.structuredContent?.movedIds).toEqual([
+        "item-1",
+        "item-2",
+      ])
+      expect(moveIntoArtboardResult.result?.structuredContent?.artboardId).toBe("artboard-1")
+
+      // move_items_into_artboard rejects unknown artboards without queueing.
+      const badArtboardResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-move-into-artboard-bad",
+        method: "tools/call",
+        params: {
+          name: "move_items_into_artboard",
+          arguments: { ids: ["item-1"], artboardId: "missing-board" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badArtboardResponse.result?.isError).toBe(true)
+      expect(badArtboardResponse.result?.content?.[0]?.text).toMatch(/No artboard found/)
+
       // undo_source_mutation / redo_source_mutation: cmd-Z / cmd-shift-Z
       // parity. The MCP tool enqueues the op; the UI bridge routes it to
       // handleUndoMutation/handleRedoMutation which re-apply the stored

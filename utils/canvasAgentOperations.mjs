@@ -104,6 +104,21 @@ export function applyCanvasRemoteOperationToState(state, operation) {
           item.id === operation.id ? { ...item, ...operation.updates } : item
         ),
       }
+    case 'update_items': {
+      const entries = Array.isArray(operation.updates)
+        ? operation.updates.filter((entry) => entry && typeof entry === 'object' && entry.id)
+        : []
+      if (entries.length === 0) return current
+      const updatesById = new Map(entries.map((entry) => [entry.id, entry.updates]))
+      return {
+        ...current,
+        items: current.items.map((item) => {
+          const updates = updatesById.get(item.id)
+          return updates ? { ...item, ...updates } : item
+        }),
+        selectedIds: operation.select ? entries.map((entry) => entry.id) : current.selectedIds,
+      }
+    }
     case 'delete_items': {
       const idsToRemove = collectCanvasCascadeDeleteIds(current, operation.ids)
       return {
@@ -165,12 +180,13 @@ export function applyCanvasRemoteOperationToState(state, operation) {
     case 'set_viewport':
     case 'focus_items':
     case 'set_active_theme':
+    case 'set_canvas_tool':
     case 'undo_source_mutation':
     case 'redo_source_mutation':
       // UI-side effects only — no canvas state mutation. The dev server still
       // records the operation in the event log and broadcasts it so the
       // browser bridge can call the matching UI handler (setActiveThemeId,
-      // handleUndoMutation, handleRedoMutation).
+      // setCanvasTool, handleUndoMutation, handleRedoMutation).
       return current
     default:
       return current
@@ -402,6 +418,83 @@ export function buildDuplicateItemsResult(state, args = {}) {
     ok: true,
     items: newItems,
     newIds: newItems.map((item) => item.id),
+  }
+}
+
+export function createUpdateItemsOperation(updates, select = false) {
+  return {
+    type: 'update_items',
+    updates,
+    select,
+  }
+}
+
+/**
+ * Mirror the UI "move selection into artboard" path
+ * (handleMoveSelectionToArtboard in CanvasTab.tsx): re-parent each item onto
+ * the artboard, append after the current children in `order`, and reset
+ * position/rotation because layout children render flow-positioned, not
+ * absolutely. Returns update entries for the `update_items` operation plus
+ * the moved ids so an MCP tool can report `{ movedIds }` to the agent.
+ *
+ * Pure helper — no fs/node:* access — so it can run inside the MCP server
+ * AND in tests next to the canvas state code.
+ */
+export function buildMoveItemsIntoArtboardResult(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const ids = normalizeIdList(args.ids)
+  if (ids.length === 0) {
+    return { ok: false, code: 'bad-input', error: 'ids is required.' }
+  }
+  const artboardId = normalizeString(args.artboardId)
+  if (!artboardId) {
+    return { ok: false, code: 'bad-input', error: 'artboardId is required.' }
+  }
+  const artboard = current.items.find((item) => item.id === artboardId)
+  if (!artboard || artboard.type !== 'artboard') {
+    return {
+      ok: false,
+      code: 'not-found',
+      error: `No artboard found for id "${artboardId}".`,
+    }
+  }
+
+  const movable = current.items.filter(
+    (item) =>
+      ids.includes(item.id) &&
+      item.id !== artboard.id &&
+      item.type !== 'artboard' &&
+      item.parentId !== artboard.id
+  )
+  if (movable.length === 0) {
+    return {
+      ok: false,
+      code: 'not-found',
+      error:
+        'No movable canvas items for the provided ids (artboards and items already inside the target are excluded).',
+    }
+  }
+
+  const siblings = current.items.filter(
+    (item) => item.parentId === artboard.id && item.type !== 'artboard'
+  )
+  const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+
+  const updates = movable.map((item, index) => ({
+    id: item.id,
+    updates: {
+      parentId: artboard.id,
+      order: maxOrder + index + 1,
+      position: { x: 0, y: 0 },
+      rotation: 0,
+    },
+  }))
+
+  return {
+    ok: true,
+    updates,
+    movedIds: movable.map((item) => item.id),
+    artboardId: artboard.id,
   }
 }
 

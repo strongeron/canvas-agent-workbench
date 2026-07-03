@@ -458,6 +458,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "move_items_into_artboard",
+        title: "Move items into artboard",
+        description: "Re-parent canvas items onto an artboard in one call: appends after current children in layout order and resets position/rotation. Mirrors the UI move-selection-into-artboard action and returns { movedIds }.",
+        status: "ready",
+      },
+      {
         id: "set_canvas_active_theme",
         title: "Set canvas active theme",
         description: "Set the active Canvas theme by id. Paired write for get_canvas_themes — same UI handler as picking a theme in CanvasThemePanel.",

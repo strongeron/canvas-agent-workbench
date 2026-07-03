@@ -71,6 +71,8 @@ import {
   createUndoSourceMutationOperation,
   createRedoSourceMutationOperation,
   buildDuplicateItemsResult,
+  buildMoveItemsIntoArtboardResult,
+  createUpdateItemsOperation,
   createUpdateGroupOperation,
   createUpdateItemOperation,
   exportCanvasBoard,
@@ -1319,6 +1321,25 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'move_items_into_artboard',
+    description:
+      'Move canvas items into an artboard in one call: re-parents each item onto the artboard, appends after the current children in layout order, and resets position/rotation (layout children render flow-positioned). Mirrors the UI "move selection into artboard" action. Artboards and items already inside the target are skipped. Returns { movedIds }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+        },
+        artboardId: { type: 'string' },
+        select: { type: 'boolean' },
+      },
+      required: ['ids', 'artboardId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'set_canvas_active_theme',
     description:
       'Set the active Canvas theme by id. Paired write for get_canvas_themes — same UI handler as picking a theme in CanvasThemePanel, so resolved token values update immediately on the live board.',
@@ -2363,6 +2384,8 @@ async function callTool(name, args) {
       return runExportBoard(args)
     case 'duplicate_items':
       return runDuplicateItems(args)
+    case 'move_items_into_artboard':
+      return runMoveItemsIntoArtboard(args)
     case 'set_canvas_active_theme':
       return runSetCanvasActiveTheme(args)
     case 'set_canvas_tool':
@@ -3474,6 +3497,18 @@ async function runDuplicateItems(args) {
     'duplicate_items',
     createCreateItemsOperation(result.items, select),
     { newIds: result.newIds }
+  )
+}
+
+async function runMoveItemsIntoArtboard(args) {
+  const state = await readCanvasAgentState(context)
+  const result = buildMoveItemsIntoArtboardResult(state, args)
+  if (!result.ok) return asToolError(`[${result.code}] ${result.error}`)
+  const select = args.select === true
+  return applyOperation(
+    'move_items_into_artboard',
+    createUpdateItemsOperation(result.updates, select),
+    { movedIds: result.movedIds, artboardId: result.artboardId }
   )
 }
 

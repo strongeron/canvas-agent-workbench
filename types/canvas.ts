@@ -431,6 +431,11 @@ export type CanvasRemoteOperation =
       updates: CanvasItemUpdate
     }
   | {
+      type: "update_items"
+      updates: Array<{ id: string; updates: CanvasItemUpdate }>
+      select?: boolean
+    }
+  | {
       type: "delete_items"
       ids: string[]
     }
