@@ -464,6 +464,12 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "update_section_sizing",
+        title: "Update section sizing",
+        description: "Set a section's sizing behavior like the inspector: fill matches the parent's inner size (remembering the previous size so hug restores it); an explicit width/height sets that size in hug mode.",
+        status: "ready",
+      },
+      {
         id: "wrap_items_in_section",
         title: "Wrap items in section",
         description: "Wrap canvas items in a new grid section in one call. Mirrors the UI wrap-in-section: creates the section under the shared parent (or the containing artboard for freeform items), re-parents the items into it, and selects it. Returns { sectionId, wrappedIds }.",

@@ -761,6 +761,117 @@ export function buildReorderLayerResult(state, args = {}) {
   }
 }
 
+
+/**
+ * Mirror the section-size controls in CanvasArtboardPropsPanel:
+ * - widthMode/heightMode "fill" matches the parent's inner size (parent size
+ *   minus 2x layout padding, floored at 120) and records the previous size in
+ *   layoutSizing.hugWidth/hugHeight so "hug" can restore it — exactly what
+ *   the panel's Fill/Hug toggles do.
+ * - Explicit width/height numbers mirror the panel's number inputs: the
+ *   section becomes "hug" at that size. (The UI has no separate "fixed" mode;
+ *   an explicit size IS hug with a stored value.)
+ * The panel also derives a content-based hug size from children for display;
+ * that refinement is UI-only — this helper restores the stored hug size and
+ * falls back to the current size, the same fallback the panel uses.
+ *
+ * Pure helper — no fs/node:* access — so it can run inside the MCP server
+ * AND in tests next to the canvas state code.
+ */
+export function buildUpdateSectionSizingResult(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const itemId = normalizeString(args.itemId)
+  if (!itemId) {
+    return { ok: false, code: 'bad-input', error: 'itemId is required.' }
+  }
+  const section = current.items.find((item) => item.id === itemId)
+  if (!section || section.type !== 'section') {
+    return { ok: false, code: 'not-found', error: `No section found for id "${itemId}".` }
+  }
+
+  const widthMode = normalizeString(args.widthMode)
+  const heightMode = normalizeString(args.heightMode)
+  const explicitWidth = Number.isFinite(args.width) ? Number(args.width) : null
+  const explicitHeight = Number.isFinite(args.height) ? Number(args.height) : null
+  if (widthMode && !['fill', 'hug'].includes(widthMode)) {
+    return { ok: false, code: 'bad-input', error: 'widthMode must be "fill" or "hug".' }
+  }
+  if (heightMode && !['fill', 'hug'].includes(heightMode)) {
+    return { ok: false, code: 'bad-input', error: 'heightMode must be "fill" or "hug".' }
+  }
+  if (widthMode === 'fill' && explicitWidth !== null) {
+    return { ok: false, code: 'bad-input', error: 'width cannot be combined with widthMode "fill".' }
+  }
+  if (heightMode === 'fill' && explicitHeight !== null) {
+    return { ok: false, code: 'bad-input', error: 'height cannot be combined with heightMode "fill".' }
+  }
+  if (!widthMode && !heightMode && explicitWidth === null && explicitHeight === null) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error: 'Provide at least one of widthMode, heightMode, width, height.',
+    }
+  }
+
+  const parent = section.parentId
+    ? current.items.find(
+        (item) =>
+          item.id === section.parentId && (item.type === 'artboard' || item.type === 'section')
+      )
+    : null
+  if ((widthMode === 'fill' || heightMode === 'fill') && !parent) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error: 'Fill sizing requires the section to have an artboard or section parent.',
+    }
+  }
+  const parentPadding = parent?.layout?.padding ?? 0
+  const fillWidth = parent
+    ? Math.max(120, Number(parent.size?.width || 0) - parentPadding * 2)
+    : null
+  const fillHeight = parent
+    ? Math.max(120, Number(parent.size?.height || 0) - parentPadding * 2)
+    : null
+
+  const size = { ...section.size }
+  const layoutSizing = { ...(section.layoutSizing || {}) }
+
+  if (explicitWidth !== null) {
+    size.width = Math.max(1, explicitWidth)
+    layoutSizing.width = 'hug'
+    layoutSizing.hugWidth = size.width
+  } else if (widthMode === 'fill') {
+    layoutSizing.hugWidth = layoutSizing.hugWidth ?? size.width
+    size.width = fillWidth
+    layoutSizing.width = 'fill'
+  } else if (widthMode === 'hug') {
+    size.width = layoutSizing.hugWidth ?? Math.max(120, size.width)
+    layoutSizing.width = 'hug'
+    layoutSizing.hugWidth = size.width
+  }
+
+  if (explicitHeight !== null) {
+    size.height = Math.max(1, explicitHeight)
+    layoutSizing.height = 'hug'
+    layoutSizing.hugHeight = size.height
+  } else if (heightMode === 'fill') {
+    layoutSizing.hugHeight = layoutSizing.hugHeight ?? size.height
+    size.height = fillHeight
+    layoutSizing.height = 'fill'
+  } else if (heightMode === 'hug') {
+    size.height = layoutSizing.hugHeight ?? Math.max(80, size.height)
+    layoutSizing.height = 'hug'
+    layoutSizing.hugHeight = size.height
+  }
+
+  return {
+    ok: true,
+    itemId,
+    updates: { size, layoutSizing },
+  }
+}
+
 export function createArtboardItem(state, args = {}) {
   const current = normalizeCanvasStateSnapshot(state)
   return {

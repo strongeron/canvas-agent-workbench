@@ -90,6 +90,7 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "reorder_layer")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "wrap_items_in_section")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "convert_mermaid_to_excalidraw")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "update_section_sizing")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "set_canvas_active_theme")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "set_canvas_tool")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "undo_source_mutation")).toBe(true)

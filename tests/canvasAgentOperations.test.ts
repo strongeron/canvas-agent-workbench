@@ -403,6 +403,102 @@ describe("canvas agent operations core", () => {
     })
   })
 
+  it("update_section_sizing toggles fill/hug and applies explicit sizes like the inspector", async () => {
+    const ops = await loadCanvasAgentOperations()
+    const state = {
+      items: [
+        {
+          id: "board-1",
+          type: "artboard",
+          position: { x: 0, y: 0 },
+          size: { width: 1000, height: 800 },
+          zIndex: 1,
+          layout: { display: "flex", direction: "column", align: "stretch", justify: "start", gap: 24, padding: 20 },
+        },
+        {
+          id: "section-1",
+          type: "section",
+          parentId: "board-1",
+          order: 0,
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          zIndex: 2,
+          layout: { display: "grid", columns: 2, align: "stretch", justify: "start", gap: 16, padding: 16 },
+        },
+      ],
+      groups: [],
+      nextZIndex: 3,
+      selectedIds: [],
+    }
+
+    // Fill: parent inner width = 1000 - 20*2; previous size remembered as hug.
+    const filled = ops.buildUpdateSectionSizingResult(state, {
+      itemId: "section-1",
+      widthMode: "fill",
+      heightMode: "fill",
+    })
+    expect(filled.ok).toBe(true)
+    expect(filled.updates.size).toEqual({ width: 960, height: 760 })
+    expect(filled.updates.layoutSizing).toMatchObject({
+      width: "fill",
+      height: "fill",
+      hugWidth: 400,
+      hugHeight: 300,
+    })
+
+    // Hug restores the stored size.
+    const filledState = ops.applyCanvasRemoteOperationToState(
+      state,
+      ops.createUpdateItemOperation("section-1", filled.updates)
+    )
+    const hugged = ops.buildUpdateSectionSizingResult(filledState, {
+      itemId: "section-1",
+      widthMode: "hug",
+    })
+    expect(hugged.ok).toBe(true)
+    expect(hugged.updates.size.width).toBe(400)
+    expect(hugged.updates.layoutSizing.width).toBe("hug")
+
+    // Explicit number = hug at that size, mirroring the panel's inputs.
+    const explicit = ops.buildUpdateSectionSizingResult(state, {
+      itemId: "section-1",
+      width: 512,
+    })
+    expect(explicit.ok).toBe(true)
+    expect(explicit.updates.size.width).toBe(512)
+    expect(explicit.updates.layoutSizing).toMatchObject({ width: "hug", hugWidth: 512 })
+  })
+
+  it("update_section_sizing rejects non-sections, parentless fill, and conflicting args", async () => {
+    const ops = await loadCanvasAgentOperations()
+    const state = {
+      items: [
+        { id: "free-section", type: "section", position: { x: 0, y: 0 }, size: { width: 400, height: 300 }, zIndex: 1, layout: { display: "grid", columns: 1, align: "stretch", justify: "start", gap: 16, padding: 16 } },
+        { id: "html-1", type: "html", position: { x: 0, y: 0 }, size: { width: 100, height: 50 }, zIndex: 2 },
+      ],
+      groups: [],
+      nextZIndex: 3,
+      selectedIds: [],
+    }
+
+    expect(
+      ops.buildUpdateSectionSizingResult(state, { itemId: "html-1", widthMode: "hug" })
+    ).toMatchObject({ ok: false, code: "not-found" })
+    expect(
+      ops.buildUpdateSectionSizingResult(state, { itemId: "free-section", widthMode: "fill" })
+    ).toMatchObject({ ok: false, code: "bad-input" })
+    expect(
+      ops.buildUpdateSectionSizingResult(state, {
+        itemId: "free-section",
+        widthMode: "fill",
+        width: 500,
+      })
+    ).toMatchObject({ ok: false, code: "bad-input" })
+    expect(
+      ops.buildUpdateSectionSizingResult(state, { itemId: "free-section" })
+    ).toMatchObject({ ok: false, code: "bad-input" })
+  })
+
   it("reorder_layer front/back adjust zIndex, up/down swap sibling order", async () => {
     const ops = await loadCanvasAgentOperations()
     const state = {

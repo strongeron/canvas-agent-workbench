@@ -75,6 +75,7 @@ import {
   buildMoveItemsIntoArtboardResult,
   buildReorderLayerResult,
   buildWrapItemsInSectionResult,
+  buildUpdateSectionSizingResult,
   createUpdateItemsOperation,
   createUpdateGroupOperation,
   createUpdateItemOperation,
@@ -1343,6 +1344,23 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'update_section_sizing',
+    description:
+      'Set a section\'s sizing behavior, mirroring the inspector\'s Section size controls: widthMode/heightMode "fill" matches the parent\'s inner size (and remembers the previous size so "hug" restores it); an explicit width/height number sets that size in hug mode, like the panel\'s inputs. Avoids hand-editing size/layoutSizing fields.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        widthMode: { type: 'string', enum: ['fill', 'hug'] },
+        heightMode: { type: 'string', enum: ['fill', 'hug'] },
+        width: { type: 'number' },
+        height: { type: 'number' },
+      },
+      required: ['itemId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'wrap_items_in_section',
     description:
       'Wrap canvas items in a new section in one call. Mirrors the UI "wrap in section": items must either share one artboard/section parent (section slots in at their minimum order) or all be freeform with centers inside exactly one artboard (section appends after its children). Creates a grid section (fill width / hug height), re-parents the items into it in selection order, and selects the section. Returns { sectionId, wrappedIds }.',
@@ -2444,6 +2462,8 @@ async function callTool(name, args) {
       return runDuplicateItems(args)
     case 'move_items_into_artboard':
       return runMoveItemsIntoArtboard(args)
+    case 'update_section_sizing':
+      return runUpdateSectionSizing(args)
     case 'wrap_items_in_section':
       return runWrapItemsInSection(args)
     case 'reorder_layer':
@@ -3578,6 +3598,17 @@ async function runMoveItemsIntoArtboard(args) {
     'move_items_into_artboard',
     createUpdateItemsOperation(result.updates, select),
     { movedIds: result.movedIds, artboardId: result.artboardId }
+  )
+}
+
+async function runUpdateSectionSizing(args) {
+  const state = await readCanvasAgentState(context)
+  const result = buildUpdateSectionSizingResult(state, args)
+  if (!result.ok) return asToolError(`[${result.code}] ${result.error}`)
+  return applyOperation(
+    'update_section_sizing',
+    createUpdateItemOperation(result.itemId, result.updates),
+    { itemId: result.itemId, updates: result.updates }
   )
 }
 
