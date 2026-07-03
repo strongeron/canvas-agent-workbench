@@ -500,6 +500,24 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "create_canvas_theme",
+        title: "Create canvas theme",
+        description: "Create a new in-canvas theme like the Theme panel's Add theme: id slugged from the label, current resolved token values snapshotted as vars, and the theme becomes active.",
+        status: "ready",
+      },
+      {
+        id: "update_canvas_theme_var",
+        title: "Update canvas theme variable",
+        description: "Set one CSS variable on an in-canvas theme like the Theme panel's token inputs. An empty value clears the override.",
+        status: "ready",
+      },
+      {
+        id: "delete_canvas_theme",
+        title: "Delete canvas theme",
+        description: "Delete an in-canvas theme by id. The registry keeps at least one theme; the active theme falls back to the first remaining one.",
+        status: "ready",
+      },
+      {
         id: "undo_source_mutation",
         title: "Undo source mutation",
         description: "Undo the most recent source mutation for the active file (cmd-Z parity). Re-applies the previous snapshot via the existing AST writer.",

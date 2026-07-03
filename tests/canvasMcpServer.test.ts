@@ -2439,6 +2439,80 @@ describe("canvas MCP server", () => {
       const setActiveThemeResult = await setActiveThemePromise
       expect(setActiveThemeResult.result?.structuredContent?.themeId).toBe("default")
 
+      // Theme CRUD: create snapshots current tokens + activates; update sets
+      // one CSS var (empty value clears); delete keeps at least one theme.
+      // All three are UI-side operations routed to the useThemeRegistry
+      // handlers, like set_canvas_active_theme.
+      const createThemePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-create-theme",
+        method: "tools/call",
+        params: {
+          name: "create_canvas_theme",
+          arguments: { label: "Midnight" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedCreateTheme = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedCreateTheme.request).toMatchObject({
+        toolName: "create_canvas_theme",
+        operation: { type: "create_canvas_theme", label: "Midnight" },
+      })
+      await queuedCreateTheme.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.100Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await createThemePromise).result?.structuredContent?.label).toBe("Midnight")
+
+      const updateThemeVarPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-update-theme-var",
+        method: "tools/call",
+        params: {
+          name: "update_canvas_theme_var",
+          arguments: { themeId: "midnight", cssVar: "--color-brand-600", value: "#0f172a" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedUpdateThemeVar = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedUpdateThemeVar.request).toMatchObject({
+        toolName: "update_canvas_theme_var",
+        operation: {
+          type: "update_canvas_theme_var",
+          themeId: "midnight",
+          cssVar: "--color-brand-600",
+          value: "#0f172a",
+        },
+      })
+      await queuedUpdateThemeVar.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.200Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await updateThemeVarPromise).result?.structuredContent?.cssVar).toBe(
+        "--color-brand-600"
+      )
+
+      const deleteThemePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-delete-theme",
+        method: "tools/call",
+        params: {
+          name: "delete_canvas_theme",
+          arguments: { themeId: "midnight" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedDeleteTheme = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedDeleteTheme.request).toMatchObject({
+        toolName: "delete_canvas_theme",
+        operation: { type: "delete_canvas_theme", themeId: "midnight" },
+      })
+      await queuedDeleteTheme.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.300Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await deleteThemePromise).result?.structuredContent?.themeId).toBe("midnight")
+
       // set_canvas_tool: same handler as the toolbar Select/Edit/Interact
       // toggle, so an agent can pick the pointer-layer mode before a
       // screenshot or drag.

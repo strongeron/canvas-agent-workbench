@@ -840,6 +840,7 @@ export function CanvasTab({
     getTokenValuesForTheme,
     addTheme,
     updateThemeVar,
+    removeTheme,
   } =
     useThemeRegistry({
       storageKeyPrefix: themeStorageKeyPrefix ?? storageKey,
@@ -1605,6 +1606,36 @@ export function CanvasTab({
         return
       }
 
+      if (operation.type === "create_canvas_theme") {
+        if (typeof operation.label === "string" && operation.label.trim()) {
+          addTheme(operation.label)
+        }
+        return
+      }
+
+      if (operation.type === "update_canvas_theme_var") {
+        if (
+          typeof operation.themeId === "string" &&
+          operation.themeId &&
+          typeof operation.cssVar === "string" &&
+          operation.cssVar
+        ) {
+          updateThemeVar(
+            operation.themeId,
+            operation.cssVar,
+            typeof operation.value === "string" ? operation.value : ""
+          )
+        }
+        return
+      }
+
+      if (operation.type === "delete_canvas_theme") {
+        if (typeof operation.themeId === "string" && operation.themeId) {
+          removeTheme(operation.themeId)
+        }
+        return
+      }
+
       if (operation.type === "undo_source_mutation") {
         void handleUndoMutation()
         return
@@ -1618,15 +1649,18 @@ export function CanvasTab({
       applyRemoteOperation(operation)
     },
     [
+      addTheme,
       applyRemoteOperation,
       fitToView,
       handleConvertMermaidToExcalidraw,
       handleRedoMutation,
       handleUndoMutation,
       items,
+      removeTheme,
       selectItems,
       setActiveThemeId,
       setViewport,
+      updateThemeVar,
     ]
   )
   const agentBridge = useCanvasAgentBridge({

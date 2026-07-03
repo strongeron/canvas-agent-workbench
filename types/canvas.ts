@@ -485,6 +485,20 @@ export type CanvasRemoteOperation =
       keepOriginal?: boolean
     }
   | {
+      type: "create_canvas_theme"
+      label: string
+    }
+  | {
+      type: "update_canvas_theme_var"
+      themeId: string
+      cssVar: string
+      value: string
+    }
+  | {
+      type: "delete_canvas_theme"
+      themeId: string
+    }
+  | {
       type: "undo_source_mutation"
       scope?: "active-file" | "log-entry"
       logEntryId?: string

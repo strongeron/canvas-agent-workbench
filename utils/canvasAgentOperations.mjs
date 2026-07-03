@@ -182,6 +182,9 @@ export function applyCanvasRemoteOperationToState(state, operation) {
     case 'set_active_theme':
     case 'set_canvas_tool':
     case 'convert_mermaid_to_excalidraw':
+    case 'create_canvas_theme':
+    case 'update_canvas_theme_var':
+    case 'delete_canvas_theme':
     case 'undo_source_mutation':
     case 'redo_source_mutation':
       // UI-side effects only — no canvas state mutation. The dev server still
@@ -345,6 +348,29 @@ export function createConvertMermaidToExcalidrawOperation(itemId, keepOriginal =
     type: 'convert_mermaid_to_excalidraw',
     itemId: normalizeString(itemId),
     keepOriginal: keepOriginal === true,
+  }
+}
+
+export function createCreateCanvasThemeOperation(label) {
+  return {
+    type: 'create_canvas_theme',
+    label: normalizeString(label),
+  }
+}
+
+export function createUpdateCanvasThemeVarOperation(themeId, cssVar, value) {
+  return {
+    type: 'update_canvas_theme_var',
+    themeId: normalizeString(themeId),
+    cssVar: normalizeString(cssVar),
+    value: typeof value === 'string' ? value : '',
+  }
+}
+
+export function createDeleteCanvasThemeOperation(themeId) {
+  return {
+    type: 'delete_canvas_theme',
+    themeId: normalizeString(themeId),
   }
 }
 

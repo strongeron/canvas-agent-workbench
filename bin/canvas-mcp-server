@@ -69,6 +69,9 @@ import {
   createSetActiveThemeOperation,
   createSetCanvasToolOperation,
   createConvertMermaidToExcalidrawOperation,
+  createCreateCanvasThemeOperation,
+  createUpdateCanvasThemeVarOperation,
+  createDeleteCanvasThemeOperation,
   createUndoSourceMutationOperation,
   createRedoSourceMutationOperation,
   buildDuplicateItemsResult,
@@ -1442,6 +1445,47 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'create_canvas_theme',
+    description:
+      'Create a new in-canvas theme, mirroring the Theme panel\'s "Add theme": the theme id is slugged from the label, it snapshots the current resolved token values as its vars, and it becomes the active theme. Paired with get_canvas_themes / set_canvas_active_theme.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        label: { type: 'string' },
+      },
+      required: ['label'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_canvas_theme_var',
+    description:
+      'Set one CSS variable on an in-canvas theme, mirroring the Theme panel\'s token inputs. An empty value clears the override so the token falls back to its base value. Theme registry membership is not validated server-side — call get_canvas_themes first if unsure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        themeId: { type: 'string' },
+        cssVar: { type: 'string' },
+        value: { type: 'string' },
+      },
+      required: ['themeId', 'cssVar', 'value'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_canvas_theme',
+    description:
+      'Delete an in-canvas theme by id. The registry always keeps at least one theme (deleting the last one is ignored), and the active theme falls back to the first remaining theme if the deleted one was active.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        themeId: { type: 'string' },
+      },
+      required: ['themeId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'undo_source_mutation',
     description:
       'Undo the most recent source mutation for the active file (cmd-Z parity). The UI re-applies the previous snapshot via the same AST writer that handled the original mutation. Targets the active-file history head; `scope: "log-entry"` + `logEntryId` is reserved for future per-entry targeting and is currently rejected.',
@@ -2470,6 +2514,12 @@ async function callTool(name, args) {
       return runReorderLayer(args)
     case 'set_canvas_active_theme':
       return runSetCanvasActiveTheme(args)
+    case 'create_canvas_theme':
+      return runCreateCanvasTheme(args)
+    case 'update_canvas_theme_var':
+      return runUpdateCanvasThemeVar(args)
+    case 'delete_canvas_theme':
+      return runDeleteCanvasTheme(args)
     case 'convert_mermaid_to_excalidraw':
       return runConvertMermaidToExcalidraw(args)
     case 'set_canvas_tool':
@@ -3654,6 +3704,29 @@ async function runSetCanvasActiveTheme(args) {
     createSetActiveThemeOperation(themeId),
     { themeId }
   )
+}
+
+async function runCreateCanvasTheme(args) {
+  const operation = createCreateCanvasThemeOperation(args.label)
+  if (!operation.label) return asToolError('label is required.')
+  return applyOperation('create_canvas_theme', operation, { label: operation.label })
+}
+
+async function runUpdateCanvasThemeVar(args) {
+  const operation = createUpdateCanvasThemeVarOperation(args.themeId, args.cssVar, args.value)
+  if (!operation.themeId) return asToolError('themeId is required.')
+  if (!operation.cssVar) return asToolError('cssVar is required.')
+  return applyOperation('update_canvas_theme_var', operation, {
+    themeId: operation.themeId,
+    cssVar: operation.cssVar,
+    value: operation.value,
+  })
+}
+
+async function runDeleteCanvasTheme(args) {
+  const operation = createDeleteCanvasThemeOperation(args.themeId)
+  if (!operation.themeId) return asToolError('themeId is required.')
+  return applyOperation('delete_canvas_theme', operation, { themeId: operation.themeId })
 }
 
 async function runConvertMermaidToExcalidraw(args) {
