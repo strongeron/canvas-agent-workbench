@@ -214,7 +214,11 @@ export function CanvasAgentPanel({
           className="h-full w-full"
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
+        // The CLI tab stacks stats, agents, surfaces, session, terminal, and
+        // sessions — taller than any viewport. Without its own scroll region
+        // the page body scrolls instead, clipping the panel and hiding the
+        // session list / launch commands entirely (FOX2-39 MT-04 report).
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <div className="border-b border-default px-4 py-3">
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg border border-default bg-surface-50 px-3 py-2">
