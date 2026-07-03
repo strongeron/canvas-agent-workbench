@@ -311,6 +311,49 @@ describe("CanvasHtmlPropsPanel — per-slot library component picker", () => {
     )
   })
 
+  it("reports slot insertions through onWriteSuccess so Cmd-Z can undo them (FOX2-42)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, primitives: [] }) }))
+    )
+    const onChange = vi.fn()
+    const onWriteSuccess = vi.fn()
+    harness = await mount(
+      <CanvasHtmlPropsPanel
+        sourceMode="inline"
+        sourceHtml={MEDIA_SLOT_HTML}
+        projectId="demo"
+        onChange={onChange}
+        onWriteSuccess={onWriteSuccess}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />
+    )
+
+    const select = harness.container.querySelector(
+      "select[aria-label='HTML part for media']"
+    ) as HTMLSelectElement
+    await act(async () => {
+      setSelectValue(select, "image")
+    })
+    const insertBtn = [...harness.container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Insert part"
+    ) as HTMLButtonElement
+    await act(async () => {
+      insertBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    })
+
+    expect(onWriteSuccess).toHaveBeenCalledTimes(1)
+    const payload = onWriteSuccess.mock.calls[0][0]
+    expect(payload.sourceKind).toBe("html")
+    expect(payload.appliedMutations).toBe(1)
+    // The pre-write draft is the undo target; the post snapshot matches what
+    // onChange pushed upward.
+    expect(payload.prevSourceSnapshot).toBe(MEDIA_SLOT_HTML)
+    expect(payload.nextSourceSnapshot).toBe(onChange.mock.calls.at(-1)?.[0].sourceHtml)
+    expect(payload.mutations[0].type).toBe("insertChild")
+  })
+
   it("uses a custom source url for media slot insertion", async () => {
     vi.stubGlobal(
       "fetch",

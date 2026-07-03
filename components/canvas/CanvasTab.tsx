@@ -4824,6 +4824,9 @@ export function CanvasTab({
               canFillParent={Boolean(selectedItemLayoutParent)}
               canFillHeight={Boolean(selectedItemLayoutParent)}
               onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
+              onWriteSuccess={(writeResult) =>
+                handleReactNodeWriteSuccess({ ...writeResult, itemId: selectedHtmlItem.id })
+              }
               onResize={(width) =>
                 updateItem(selectedHtmlItem.id, {
                   size: { width, height: selectedHtmlItem.size.height },
