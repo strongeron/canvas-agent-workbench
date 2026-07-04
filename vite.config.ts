@@ -5433,6 +5433,45 @@ function paperImportPlugin() {
           })
         }
 
+        const canvasAgentSessionOpenTerminalMatch = pathname.match(
+          /^\/api\/canvas-agent\/sessions\/([^/]+)\/open-terminal$/
+        )
+        if (req.method === 'POST' && canvasAgentSessionOpenTerminalMatch) {
+          const sessionId = decodeURIComponent(canvasAgentSessionOpenTerminalMatch[1])
+          const session = findCanvasAgentSession(sessionId)
+          if (!session) {
+            return sendJson(res, 404, { error: 'Canvas agent session not found.' })
+          }
+          if (process.platform !== 'darwin') {
+            return sendJson(res, 400, {
+              error: 'Open in Terminal is only available on macOS. Copy the launch command instead.',
+            })
+          }
+          const launchCommand =
+            typeof session.launchCommand === 'string' ? session.launchCommand.trim() : ''
+          if (!launchCommand) {
+            return sendJson(res, 400, { error: 'Session has no launch command.' })
+          }
+          try {
+            // The command comes from the server-side session record only — the
+            // request carries just the session id, so this endpoint cannot run
+            // arbitrary input. A .command file avoids AppleScript quoting of
+            // the (heavily nested-quoted) launch command: `open` hands it to
+            // Terminal, which executes it in a new window.
+            const sessionDir = await ensureCanvasAgentSessionDir(sessionId)
+            const scriptPath = path.join(sessionDir, 'open-terminal.command')
+            await fs.writeFile(scriptPath, `#!/bin/zsh\n${launchCommand}\n`, { mode: 0o755 })
+            await new Promise((resolve, reject) => {
+              execFile('open', [scriptPath], (error) => (error ? reject(error) : resolve(undefined)))
+            })
+            return sendJson(res, 200, { ok: true, sessionId })
+          } catch (error) {
+            return sendJson(res, 500, {
+              error: error?.message || 'Failed to open Terminal for this session.',
+            })
+          }
+        }
+
         const canvasAgentSessionDebugMatch = pathname.match(/^\/api\/canvas-agent\/sessions\/([^/]+)\/debug$/)
         if (req.method === 'GET' && canvasAgentSessionDebugMatch) {
           const sessionId = decodeURIComponent(canvasAgentSessionDebugMatch[1])

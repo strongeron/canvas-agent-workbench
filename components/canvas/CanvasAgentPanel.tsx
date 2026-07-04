@@ -154,6 +154,22 @@ export function CanvasAgentPanel({
     }
   }
 
+  const handleOpenInTerminal = async (sessionId: string) => {
+    setActionError(null)
+    try {
+      const response = await fetch(
+        `/api/canvas-agent/sessions/${encodeURIComponent(sessionId)}/open-terminal`,
+        { method: "POST" }
+      )
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || "Failed to open Terminal.")
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to open Terminal.")
+    }
+  }
+
   const handleCopyTranscript = async () => {
     if (!activeDebug) return
     await handleCopy(buildTranscriptText(activeDebug.transcript))
@@ -592,17 +608,31 @@ export function CanvasAgentPanel({
                           {session.cwd}
                         </div>
                       </button>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void handleCopy(session.launchCommand)
-                        }}
-                        className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-50"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                        Copy
-                      </button>
+                      <div className="flex shrink-0 flex-col gap-1">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void handleCopy(session.launchCommand)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-50"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void handleOpenInTerminal(session.id)
+                          }}
+                          title="Open this session in macOS Terminal"
+                          className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-50"
+                        >
+                          <TerminalSquare className="h-3.5 w-3.5" />
+                          Terminal
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))
