@@ -1,5 +1,17 @@
 import type { CanvasItem } from "../types/canvas"
 
+/**
+ * Fired by the shared item context menu; handled once in CanvasTab (which
+ * owns selection + project context). Avoids threading a callback through
+ * every Canvas*Item component — same pattern as dispatchCanvasResize.
+ */
+export const CANVAS_COPY_FOR_AGENT_EVENT = "canvas:copy-for-agent"
+
+export function dispatchCanvasCopyForAgent() {
+  if (typeof window === "undefined") return
+  window.dispatchEvent(new CustomEvent(CANVAS_COPY_FOR_AGENT_EVENT))
+}
+
 export interface CanvasAgentSelectionContextInput {
   projectId?: string | null
   canvasPath?: string | null

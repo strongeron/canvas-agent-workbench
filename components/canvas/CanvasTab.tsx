@@ -60,7 +60,10 @@ import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./Can
 import type { CanvasOverlayDragKind } from "./CanvasIframeOverlay"
 import type { CanvasReactNodeRect } from "../../utils/canvasReactNodeBridge"
 import { dispatchCanvasResize } from "../../utils/canvasResizeDispatch"
-import { buildCanvasAgentSelectionContext } from "../../utils/canvasAgentSelectionContext"
+import {
+  buildCanvasAgentSelectionContext,
+  CANVAS_COPY_FOR_AGENT_EVENT,
+} from "../../utils/canvasAgentSelectionContext"
 import { dispatchCanvasGroupResize } from "../../utils/canvasGroupResizeDispatch"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMcpAppPropsPanel } from "./CanvasMcpAppPropsPanel"
@@ -1834,6 +1837,11 @@ export function CanvasTab({
       // Clipboard unavailable (permissions/insecure context) — nothing to do.
     }
   }, [activeCanvasFile, activeProjectId, emitUserAction, items, selectedIds])
+  useEffect(() => {
+    const handle = () => void handleCopyForAgent()
+    window.addEventListener(CANVAS_COPY_FOR_AGENT_EVENT, handle)
+    return () => window.removeEventListener(CANVAS_COPY_FOR_AGENT_EVENT, handle)
+  }, [handleCopyForAgent])
 
   const buildCurrentCanvasFilePayload = useCallback(() => {
     return {
