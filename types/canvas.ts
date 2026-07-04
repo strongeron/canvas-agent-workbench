@@ -515,6 +515,8 @@ export type CanvasRemoteOperation =
       logEntryId?: string
     }
 
+export type CanvasAgentLaunchProfile = "lean" | "full"
+
 export interface CanvasAgentDefinition {
   id: string
   label: string
@@ -522,7 +524,7 @@ export interface CanvasAgentDefinition {
   launchCommand: string
   transport: "cli" | "pty"
   mcpSupport: "native" | "planned"
-  configScope: "global" | "project" | "user"
+  configScope: "global" | "project" | "user" | "session"
   status: AgentCapabilityStatus
   configMode: "inline-overrides" | "strict-config-file"
   startupMode: "inline-bootstrap" | "append-system-prompt"
@@ -536,6 +538,7 @@ export interface CanvasAgentSession {
   agentLabel: string
   title: string
   cwd: string
+  launchProfile?: CanvasAgentLaunchProfile
   agentCommand: string
   launchCommand: string
   toolCommand: string

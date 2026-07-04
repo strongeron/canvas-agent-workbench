@@ -593,11 +593,19 @@ function trimCanvasAgentStateHistory(entries) {
 
 function sanitizeCanvasAgentTranscriptText(value) {
   if (typeof value !== 'string') return ''
-  return value
-    .replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
-    .replace(/\r/g, '')
-    .trim()
-    .slice(0, 1_000)
+  return (
+    value
+      // OSC/DCS/APC/PM/SOS sequences with their payload (e.g. the TUI's
+      // "\x1b]10;?" / "\x1b]11;?" color queries), terminated by BEL or ST —
+      // stripping only the ESC prefix used to leave "10;?" noise in the
+      // transcript entries.
+      .replace(/\u001B[\]PX^_][\s\S]*?(?:\u0007|\u001B\\|$)/g, '')
+      .replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+      .replace(/\r/g, '')
+      .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '')
+      .trim()
+      .slice(0, 1_000)
+  )
 }
 
 function resolveCanvasAgentShell() {
@@ -3906,6 +3914,7 @@ function paperImportPlugin() {
         })
 
         if (launch.mcpConfigPath && launch.mcpConfigContent) {
+          await fs.mkdir(path.dirname(launch.mcpConfigPath), { recursive: true })
           await fs.writeFile(launch.mcpConfigPath, launch.mcpConfigContent)
         }
 
@@ -5382,6 +5391,7 @@ function paperImportPlugin() {
               title: body.title,
               surfaceId: body.surfaceId,
               reuseSession: body.reuseSession !== false,
+              launchProfile: body.launchProfile,
             })
 
             return sendJson(res, 200, { ok: true, bootstrap })
@@ -5407,6 +5417,7 @@ function paperImportPlugin() {
               agentId,
               cwd: body.cwd,
               title: body.title,
+              launchProfile: body.launchProfile,
             })
 
             broadcastCanvasAgentEvent(projectId, 'session-created', { session })

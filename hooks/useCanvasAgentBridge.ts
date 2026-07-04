@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { GalleryEntry } from "../core/types"
 import type {
   CanvasAgentDefinition,
+  CanvasAgentLaunchProfile,
   CanvasAgentPrimitive,
   CanvasAgentSessionDebug,
   CanvasAgentSession,
@@ -45,7 +46,10 @@ export interface UseCanvasAgentBridgeResult {
   outputBySession: Record<string, string>
   debugBySession: Record<string, CanvasAgentSessionDebug>
   refreshSessions: () => Promise<void>
-  createSession: (agentId: string) => Promise<CanvasAgentSession | null>
+  createSession: (
+    agentId: string,
+    options?: { launchProfile?: CanvasAgentLaunchProfile }
+  ) => Promise<CanvasAgentSession | null>
   loadSessionOutput: (sessionId: string) => Promise<string>
   loadSessionDebug: (sessionId: string) => Promise<CanvasAgentSessionDebug | null>
   startSession: (sessionId: string, size?: { cols: number; rows: number }) => Promise<CanvasAgentSession | null>
@@ -225,7 +229,7 @@ export function useCanvasAgentBridge({
   }, [])
 
   const createSession = useCallback(
-    async (agentId: string) => {
+    async (agentId: string, options?: { launchProfile?: CanvasAgentLaunchProfile }) => {
       if (!projectId) return null
       const response = await fetch("/api/canvas-agent/sessions", {
         method: "POST",
@@ -235,6 +239,7 @@ export function useCanvasAgentBridge({
         body: JSON.stringify({
           projectId,
           agentId,
+          launchProfile: options?.launchProfile ?? "lean",
         }),
       })
 

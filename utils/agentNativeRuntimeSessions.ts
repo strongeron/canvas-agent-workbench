@@ -1,11 +1,16 @@
 import path from "path"
 import type { IPty } from "node-pty"
 
-import type { CanvasAgentSession, CanvasAgentTranscriptEntry } from "../types/canvas"
+import type {
+  CanvasAgentLaunchProfile,
+  CanvasAgentSession,
+  CanvasAgentTranscriptEntry,
+} from "../types/canvas"
 import type {
   AgentNativeRuntimeAdapter,
   AgentNativeRuntimeSessionDraftInput,
 } from "./agentNativeRuntimeAdapters"
+import { normalizeCanvasAgentLaunchProfile } from "./agentNativeRuntimeAdapters"
 
 type TranscriptKind = CanvasAgentTranscriptEntry["kind"]
 
@@ -98,6 +103,7 @@ export function createAgentNativeRuntimeSessionManager(
     agentId: string
     cwd?: string
     title?: string
+    launchProfile?: CanvasAgentLaunchProfile
   }) => {
     const runtimeAdapter = options.getRuntimeAdapter(input.agentId)
     if (!runtimeAdapter) {
@@ -116,6 +122,7 @@ export function createAgentNativeRuntimeSessionManager(
         projectId: input.projectId,
         cwd: safeCwd,
         title: input.title,
+        launchProfile: normalizeCanvasAgentLaunchProfile(input.launchProfile),
         now,
         toolCommand: options.config.toolCommand,
         mcpServerName: options.config.mcpServerName,
@@ -137,14 +144,18 @@ export function createAgentNativeRuntimeSessionManager(
     projectId: string
     agentId: string
     cwd?: string
+    launchProfile?: CanvasAgentLaunchProfile
   }) => {
     const safeCwd =
       typeof input.cwd === "string" && input.cwd.trim() ? path.resolve(input.cwd.trim()) : null
+    const requestedProfile = normalizeCanvasAgentLaunchProfile(input.launchProfile)
     const sessions = options.getSessions(input.projectId)
     return (
       sessions.find((session) => {
         if (session.agentId !== input.agentId) return false
         if (safeCwd && session.cwd !== safeCwd) return false
+        if (normalizeCanvasAgentLaunchProfile(session.launchProfile) !== requestedProfile)
+          return false
         return true
       }) || null
     )
@@ -157,6 +168,7 @@ export function createAgentNativeRuntimeSessionManager(
     title?: string
     surfaceId?: string | null
     reuseSession?: boolean
+    launchProfile?: CanvasAgentLaunchProfile
   }) => {
     let session =
       input.reuseSession === false
@@ -165,6 +177,7 @@ export function createAgentNativeRuntimeSessionManager(
             projectId: input.projectId,
             agentId: input.agentId,
             cwd: input.cwd,
+            launchProfile: input.launchProfile,
           })
     const reused = Boolean(session)
 

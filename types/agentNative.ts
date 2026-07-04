@@ -40,7 +40,7 @@ export interface AgentNativeRuntimeDefinition {
   launchCommand: string
   transport: "cli" | "pty"
   mcpSupport: "native" | "planned"
-  configScope: "global" | "project" | "user"
+  configScope: "global" | "project" | "user" | "session"
   status: AgentCapabilityStatus
 }
 
