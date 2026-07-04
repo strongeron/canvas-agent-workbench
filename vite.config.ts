@@ -5009,7 +5009,7 @@ function paperImportPlugin() {
         }
 
         const agentNativeWorkspaceMatch = pathname.match(
-          /^\/api\/agent-native\/workspaces\/([^/]+)\/(manifest|state|selection|primitives|sections|export-preview|screenshot|operations|events|debug)$/
+          /^\/api\/agent-native\/workspaces\/([^/]+)\/(manifest|state|selection|primitives|sections|export-preview|screenshot|operations|events|user-events|debug)$/
         )
         if (agentNativeWorkspaceMatch) {
           const workspaceId = decodeURIComponent(agentNativeWorkspaceMatch[1])
@@ -5152,6 +5152,60 @@ function paperImportPlugin() {
               events: payload.events,
               cursor: payload.cursor,
             })
+          }
+
+          // Semantic user-action events (FOX2-45): the browser reports
+          // user-initiated mutations as operation-shaped payloads so agents
+          // can observe what the human did, not just coarse state-synced
+          // blobs.
+          if (req.method === 'POST' && resourceName === 'user-events') {
+            try {
+              const body = await readJson(req)
+              const nextWorkspaceKey =
+                typeof body.workspaceKey === 'string' && body.workspaceKey.trim()
+                  ? body.workspaceKey.trim()
+                  : workspaceKey
+              if (!nextWorkspaceKey) {
+                return sendJson(res, 400, { error: 'workspaceKey is required.' })
+              }
+              const incoming = Array.isArray(body.events) ? body.events.slice(0, 50) : []
+              const accepted = []
+              for (const entry of incoming) {
+                if (!entry || typeof entry !== 'object') continue
+                const action =
+                  typeof entry.action === 'string' && entry.action.trim()
+                    ? entry.action.trim()
+                    : ''
+                if (!action) continue
+                const record = appendWorkspaceEvent(
+                  getAgentNativeWorkspaceEventLog(workspaceId, nextWorkspaceKey),
+                  {
+                    kind: 'user-action',
+                    actor: 'user',
+                    source:
+                      typeof body.source === 'string' && body.source.trim()
+                        ? body.source.trim()
+                        : 'canvas-ui',
+                    sourceClientId: typeof body.clientId === 'string' ? body.clientId : null,
+                    operation:
+                      entry.payload && typeof entry.payload === 'object' ? entry.payload : null,
+                    stateSummary: null,
+                    metadata: { action },
+                  }
+                )
+                accepted.push({ id: record.id, cursor: record.cursor })
+              }
+              return sendJson(res, 200, {
+                ok: true,
+                workspaceId,
+                workspaceKey: nextWorkspaceKey,
+                accepted,
+              })
+            } catch (error) {
+              return sendJson(res, 400, {
+                error: error?.message || 'Failed to record user events.',
+              })
+            }
           }
 
           if (req.method === 'GET' && resourceName === 'debug') {

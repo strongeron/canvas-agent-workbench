@@ -56,6 +56,7 @@ export interface UseCanvasAgentBridgeResult {
   stopSession: (sessionId: string) => Promise<CanvasAgentSession | null>
   writeSessionInput: (sessionId: string, input: string) => Promise<void>
   resizeSession: (sessionId: string, size: { cols: number; rows: number }) => Promise<void>
+  emitUserAction: (action: string, payload?: Record<string, unknown>) => void
 }
 
 function buildQuery(params: Record<string, string | undefined>) {
@@ -202,6 +203,36 @@ export function useCanvasAgentBridge({
       return [session, ...previous]
     })
   }, [])
+
+  // Semantic user-action events (FOX2-45). Batched fire-and-forget: UI
+  // handlers report what the user did as operation-shaped payloads; a short
+  // flush window folds bursts (multi-select, rapid toggles) into one POST.
+  const userActionQueueRef = useRef<Array<{ action: string; payload?: Record<string, unknown> }>>([])
+  const userActionFlushRef = useRef<number | null>(null)
+  const emitUserAction = useCallback(
+    (action: string, payload?: Record<string, unknown>) => {
+      if (!canvasWorkspaceKey) return
+      userActionQueueRef.current.push({ action, payload })
+      if (userActionFlushRef.current != null) return
+      userActionFlushRef.current = window.setTimeout(() => {
+        userActionFlushRef.current = null
+        const events = userActionQueueRef.current.splice(0, 50)
+        if (events.length === 0) return
+        void fetch("/api/agent-native/workspaces/canvas/user-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspaceKey: canvasWorkspaceKey,
+            clientId: clientIdRef.current,
+            events,
+          }),
+        }).catch(() => {
+          // Observability only — never disturb the interaction that fired it.
+        })
+      }, 300)
+    },
+    [canvasWorkspaceKey]
+  )
 
   const refreshSessions = useCallback(async () => {
     if (!projectId) {
@@ -646,5 +677,6 @@ export function useCanvasAgentBridge({
     stopSession,
     writeSessionInput,
     resizeSession,
+    emitUserAction,
   }
 }

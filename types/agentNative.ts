@@ -121,6 +121,7 @@ export type AgentWorkspaceEventKind =
   | "operation-queued"
   | "operation-applied"
   | "state-synced"
+  | "user-action"
 
 export interface AgentWorkspaceEvent<TOperation = unknown> {
   id: string

@@ -1805,6 +1805,17 @@ export function CanvasTab({
     applyRemoteOperation: applyCanvasAgentOperation,
     hasActiveCanvasFile: Boolean(activeCanvasFile),
   })
+  // Reports user-initiated mutations to the workspace event log (FOX2-45).
+  // Only UI handlers call this — agent operations arrive via
+  // applyCanvasAgentOperation and are logged server-side with actor "agent".
+  const emitUserAction = agentBridge.emitUserAction
+  const handleUserCanvasToolChange = useCallback(
+    (tool: CanvasTool) => {
+      emitUserAction("set-canvas-tool", { tool })
+      setCanvasTool(tool)
+    },
+    [emitUserAction]
+  )
 
   const buildCurrentCanvasFilePayload = useCallback(() => {
     return {
@@ -2588,9 +2599,10 @@ export function CanvasTab({
 
   const handleDeleteSelected = useCallback(() => {
     if (selectedIds.length > 0) {
+      emitUserAction("delete-items", { ids: [...selectedIds] })
       removeSelected()
     }
-  }, [selectedIds, removeSelected])
+  }, [emitUserAction, selectedIds, removeSelected])
 
   const handleEscape = useCallback(() => {
     if (showHelp) {
@@ -4250,6 +4262,13 @@ export function CanvasTab({
       const dropX = (event.delta.x + 200) / transform.scale - transform.offset.x / transform.scale
       const dropY = (event.delta.y + 100) / transform.scale - transform.offset.y / transform.scale
 
+      emitUserAction("create-item", {
+        itemType: "component",
+        componentId: data.componentId,
+        variantIndex: data.variantIndex,
+        position: { x: Math.max(0, dropX), y: Math.max(0, dropY) },
+        target: "canvas",
+      })
       addItem({
         type: "component",
         componentId: data.componentId,
@@ -4274,6 +4293,14 @@ export function CanvasTab({
         -1
       )
 
+      emitUserAction("create-item", {
+        itemType: "component",
+        componentId: data.componentId,
+        variantIndex: data.variantIndex,
+        parentId: artboardId,
+        order: maxOrder + 1,
+        target: "artboard",
+      })
       addItem({
         type: "component",
         componentId: data.componentId,
@@ -4339,7 +4366,7 @@ export function CanvasTab({
           onToggleThemePanel={toggleThemePanel}
           onToggleCopilotPanel={toggleCopilotPanel}
           canvasTool={canvasTool}
-          onCanvasToolChange={setCanvasTool}
+          onCanvasToolChange={handleUserCanvasToolChange}
           onAddArtboard={handleAddArtboard}
           onAddNativeComponent={() => openNativeComponentDialog()}
           onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
@@ -4509,7 +4536,7 @@ export function CanvasTab({
             transform={transform}
             interactMode={interactMode}
             editMode={editMode}
-            onRequestEditMode={() => setCanvasTool("edit")}
+            onRequestEditMode={() => handleUserCanvasToolChange("edit")}
             Renderer={Renderer}
             getComponentById={getComponentById}
             selectedIds={selectedIds}
@@ -5075,10 +5102,19 @@ export function CanvasTab({
               projectId={activeProjectId}
               themes={themes}
               activeThemeId={activeThemeId}
-              onThemeChange={setActiveThemeId}
+              onThemeChange={(themeId) => {
+                emitUserAction("set-active-theme", { themeId })
+                setActiveThemeId(themeId)
+              }}
               onOpenColorCanvas={handleOpenColorCanvas}
-              onAddTheme={addTheme}
-              onUpdateThemeVar={updateThemeVar}
+              onAddTheme={(label) => {
+                emitUserAction("create-theme", { label })
+                addTheme(label)
+              }}
+              onUpdateThemeVar={(themeId, cssVar, value) => {
+                emitUserAction("update-theme-var", { themeId, cssVar, value })
+                updateThemeVar(themeId, cssVar, value)
+              }}
               tokenValues={tokenValues}
               tokens={resolvedThemeTokens}
               onClose={() => setThemePanelVisible(false)}
