@@ -19,6 +19,7 @@ interface ThemeRegistryState {
   getTokenValuesForTheme: (themeId?: string) => Record<string, string>
   addTheme: (label: string) => void
   updateThemeVar: (themeId: string, cssVar: string, value: string) => void
+  removeTheme: (themeId: string) => void
 }
 
 function buildStorageKey(prefix: string | undefined, suffix: string, fallback: string) {
@@ -160,6 +161,17 @@ export function useThemeRegistry({
     )
   }
 
+  const removeTheme = (themeId: string) => {
+    setThemes((prev) => {
+      // Keep at least one theme — the registry always needs an active theme,
+      // and the activeThemeId effect above reassigns it if the removed theme
+      // was active.
+      if (prev.length <= 1) return prev
+      const next = prev.filter((theme) => theme.id !== themeId)
+      return next.length > 0 ? next : prev
+    })
+  }
+
   return {
     themes,
     activeThemeId,
@@ -169,5 +181,6 @@ export function useThemeRegistry({
     getTokenValuesForTheme,
     addTheme,
     updateThemeVar,
+    removeTheme,
   }
 }

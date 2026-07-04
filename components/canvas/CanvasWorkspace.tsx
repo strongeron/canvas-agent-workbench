@@ -101,6 +101,7 @@ interface CanvasWorkspaceProps {
   transform: CanvasTransform
   interactMode: boolean
   editMode?: boolean
+  onRequestEditMode?: () => void
   selectedIds: string[]
   onSelectItem: (id: string, addToSelection?: boolean) => void
   onSelectItems: (ids: string[]) => void
@@ -142,6 +143,7 @@ export function CanvasWorkspace({
   transform,
   interactMode,
   editMode = false,
+  onRequestEditMode,
   selectedIds,
   onSelectItem,
   onSelectItems,
@@ -315,7 +317,26 @@ export function CanvasWorkspace({
               item={child}
               isSelected={isSelected}
               interactMode={interactMode}
+              scale={transform.scale}
               onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
+              onResize={(next, axis) => {
+                // Mirror the inspector's explicit-size semantics: only the
+                // dragged axis flips to "hug" at the dragged size; the other
+                // axis keeps its current mode (fill stays fill).
+                const layoutSizing = { ...child.layoutSizing }
+                const size = { ...child.size }
+                if (axis !== "s") {
+                  size.width = next.width
+                  layoutSizing.width = "hug"
+                  layoutSizing.hugWidth = next.width
+                }
+                if (axis !== "e") {
+                  size.height = next.height
+                  layoutSizing.height = "hug"
+                  layoutSizing.hugHeight = next.height
+                }
+                onUpdateItem(child.id, { size, layoutSizing })
+              }}
             >
               {nestedChildren.map((nestedChild, nestedIndex) =>
                 renderLayoutChild(nestedChild, nestedIndex, nestedChildren.length)
@@ -939,6 +960,7 @@ export function CanvasWorkspace({
                 libraryDragActive={libraryDragActive}
                 onLibraryDropInsert={onLibraryDropInsert}
                 onLibraryDropWrap={onLibraryDropWrap}
+                onRequestEditMode={onRequestEditMode}
               />
             )
           }
@@ -1136,17 +1158,100 @@ function ArtboardChildReorderControls({
   )
 }
 
+type LayoutChildResizeAxis = "e" | "s" | "se"
+
+// On-canvas resize for layout children (FOX2-41). Layout children render in
+// CSS flow, so they never get the freeform CanvasItemFrame handles — before
+// this, resize was inspector-only with nothing on canvas signalling that.
+// Dragging maps to the inspector's explicit-size semantics: the dragged axis
+// becomes "hug" at the dragged size.
+function LayoutChildResizeHandles({
+  size,
+  scale,
+  onResize,
+}: {
+  size: { width: number; height: number }
+  scale: number
+  onResize: (next: { width: number; height: number }, axis: LayoutChildResizeAxis) => void
+}) {
+  const handlePointerDown = (axis: LayoutChildResizeAxis) => (event: React.PointerEvent) => {
+    event.stopPropagation()
+    event.preventDefault()
+    const start = { x: event.clientX, y: event.clientY, width: size.width, height: size.height }
+    const effectiveScale = scale > 0 ? scale : 1
+    const handleMove = (moveEvent: PointerEvent) => {
+      const dx = (moveEvent.clientX - start.x) / effectiveScale
+      const dy = (moveEvent.clientY - start.y) / effectiveScale
+      onResize(
+        {
+          width: axis === "s" ? start.width : Math.max(120, Math.round(start.width + dx)),
+          height: axis === "e" ? start.height : Math.max(80, Math.round(start.height + dy)),
+        },
+        axis
+      )
+    }
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove)
+      window.removeEventListener("pointerup", handleUp)
+    }
+    window.addEventListener("pointermove", handleMove)
+    window.addEventListener("pointerup", handleUp)
+  }
+
+  const handleClass =
+    "absolute z-20 rounded-full border border-brand-500 bg-white shadow-sm hover:bg-brand-50"
+  // The handles live inside the zoomed canvas, so they shrink with the zoom
+  // level; counter-scale keeps them grabbable at any zoom (same reason the
+  // freeform frame chrome compensates).
+  const inverse = scale > 0 ? 1 / scale : 1
+
+  return (
+    <>
+      <div
+        role="slider"
+        aria-label="Resize width"
+        className={`${handleClass} top-1/2 h-6 w-2.5 cursor-ew-resize`}
+        style={{ right: -5, transform: `translateY(-50%) scale(${inverse})` }}
+        onPointerDown={handlePointerDown("e")}
+      />
+      <div
+        role="slider"
+        aria-label="Resize height"
+        className={`${handleClass} left-1/2 h-2.5 w-6 cursor-ns-resize`}
+        style={{ bottom: -5, transform: `translateX(-50%) scale(${inverse})` }}
+        onPointerDown={handlePointerDown("s")}
+      />
+      <div
+        role="slider"
+        aria-label="Resize width and height"
+        className={`${handleClass} h-3.5 w-3.5 cursor-nwse-resize`}
+        style={{
+          right: -6,
+          bottom: -6,
+          transform: `scale(${inverse})`,
+          transformOrigin: "bottom right",
+        }}
+        onPointerDown={handlePointerDown("se")}
+      />
+    </>
+  )
+}
+
 function LayoutSectionBox({
   item,
   isSelected,
   interactMode,
+  scale,
   onSelect,
+  onResize,
   children,
 }: {
   item: CanvasSectionItemType
   isSelected: boolean
   interactMode: boolean
+  scale: number
   onSelect: (addToSelection?: boolean) => void
+  onResize: (next: { width: number; height: number }, axis: LayoutChildResizeAxis) => void
   children: React.ReactNode
 }) {
   const layout = item.layout
@@ -1154,13 +1259,21 @@ function LayoutSectionBox({
     layout.display === "flex"
       ? `flex ${layout.direction === "row" ? "flex-row" : "flex-col"} ${getAlignClass(layout.align)} ${getJustifyClass(layout.justify)}`
       : `grid ${getGridColsClass(layout.columns)} ${getAlignClass(layout.align)} ${getJustifyClass(layout.justify)}`
+  const showControls = isSelected && !interactMode
 
   return (
     <div
-      className={`relative h-full w-full overflow-hidden rounded-xl bg-white ${
-        isSelected ? "ring-2 ring-brand-500" : "border border-default"
+      className={`relative h-full w-full rounded-xl bg-white ${
+        isSelected
+          ? "overflow-visible outline outline-offset-2 outline-brand-500"
+          : "overflow-hidden border border-default"
       }`}
-      style={{ background: item.background || "white" }}
+      style={{
+        background: item.background || "white",
+        // Outline width lives in canvas space; compensate for zoom so the
+        // selection stays visible when zoomed out.
+        ...(isSelected ? { outlineWidth: Math.max(2, 2 / (scale > 0 ? scale : 1)) } : {}),
+      }}
       data-canvas-item-id={item.id}
       data-canvas-item-type={item.type}
       onClick={(event) => {
@@ -1169,12 +1282,29 @@ function LayoutSectionBox({
         onSelect(event.shiftKey)
       }}
     >
+      {showControls ? (
+        <div
+          className="pointer-events-none absolute -top-6 left-0 z-20 flex items-center gap-1.5 whitespace-nowrap rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-medium text-white shadow-sm"
+          style={{
+            transform: `scale(${scale > 0 ? 1 / scale : 1})`,
+            transformOrigin: "bottom left",
+          }}
+        >
+          <span>{item.name || "Section"}</span>
+          <span className="opacity-80">
+            {Math.round(item.size.width)} × {Math.round(item.size.height)}
+          </span>
+        </div>
+      ) : null}
       <div
-        className={`h-full w-full ${layoutClassName}`}
+        className={`h-full w-full ${isSelected ? "overflow-hidden rounded-xl" : ""} ${layoutClassName}`}
         style={{ gap: layout.gap ?? 12, padding: layout.padding ?? 16 }}
       >
         {children}
       </div>
+      {showControls ? (
+        <LayoutChildResizeHandles size={item.size} scale={scale} onResize={onResize} />
+      ) : null}
     </div>
   )
 }

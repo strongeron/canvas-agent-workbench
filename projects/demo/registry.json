@@ -209,6 +209,116 @@
           "tag": "figure"
         }
       ]
+    },
+    {
+      "id": "primitive/card-5",
+      "displayName": "Card5",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Card5.html",
+      "componentSlug": "card-5",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "article"
+        },
+        {
+          "name": "media",
+          "kind": "container",
+          "accepts": "image,svg,video",
+          "tag": "figure"
+        },
+        {
+          "name": "content",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "body",
+          "kind": "text",
+          "tag": "p"
+        },
+        {
+          "name": "actions",
+          "kind": "container",
+          "tag": "div"
+        }
+      ]
+    },
+    {
+      "id": "primitive/split",
+      "displayName": "Split",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Split.html",
+      "componentSlug": "split",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "content",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "aside",
+          "kind": "container",
+          "tag": "aside"
+        }
+      ]
+    },
+    {
+      "id": "primitive/figure",
+      "displayName": "Figure",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Figure.html",
+      "componentSlug": "figure"
+    },
+    {
+      "id": "primitive/media-object",
+      "displayName": "MediaObject",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/MediaObject.html",
+      "componentSlug": "media-object",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "article"
+        },
+        {
+          "name": "media",
+          "kind": "container",
+          "accepts": "image,svg,video",
+          "tag": "figure"
+        },
+        {
+          "name": "content",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "body",
+          "kind": "text",
+          "tag": "p"
+        }
+      ]
     }
   ],
   "page": []

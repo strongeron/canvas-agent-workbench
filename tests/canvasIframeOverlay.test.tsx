@@ -203,4 +203,42 @@ describe("CanvasIframeOverlay", () => {
     expect(onPreview).not.toHaveBeenCalled()
     expect(onCommit).toHaveBeenCalledOnce()
   })
+
+  // The item wrapper starts node drags from onMouseDown. A handle drag must
+  // cancel pointerdown (suppresses the compat mousedown) AND stop any
+  // mousedown that fires anyway, or the node moves underneath the element
+  // resize.
+  it("cancels pointerdown and stops mousedown from bubbling to the item wrapper", () => {
+    const wrapperMouseDown = vi.fn()
+    render(
+      <div onMouseDown={wrapperMouseDown}>
+        <CanvasIframeOverlay rect={{ left: 0, top: 0, width: 100, height: 50 }} />
+      </div>
+    )
+    for (const kind of ["se", "move"]) {
+      const handle = findHandle(kind)
+      handle.setPointerCapture = vi.fn()
+      handle.hasPointerCapture = vi.fn(() => true)
+      handle.releasePointerCapture = vi.fn()
+
+      const pointerDown = new MouseEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 10,
+        clientY: 10,
+      }) as MouseEvent & { pointerId: number }
+      Object.defineProperty(pointerDown, "pointerId", { value: 1 })
+      act(() => {
+        handle.dispatchEvent(pointerDown)
+      })
+      expect(pointerDown.defaultPrevented).toBe(true)
+
+      act(() => {
+        handle.dispatchEvent(
+          new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })
+        )
+      })
+    }
+    expect(wrapperMouseDown).not.toHaveBeenCalled()
+  })
 })

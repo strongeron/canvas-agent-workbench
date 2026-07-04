@@ -134,4 +134,97 @@ describe("dispatchCanvasGroupResize", () => {
     expect(firstWrite.mtimeMs).toBe(50)
     expect(secondWrite.mtimeMs).toBe(100)
   })
+
+  it("fires onWriteSuccess ONCE per gesture with the pre-gesture snapshot (inline)", async () => {
+    const fetchImpl = mockFetchSequence(
+      mockJson({ ok: true, node: { canvasId: "a:0", tag: "div", attributes: [], textChildren: "" } }),
+      mockJson({ ok: true, sourceReact: "after-a", prevSourceSnapshot: "before", mtimeMs: 11 }),
+      mockJson({ ok: true, node: { canvasId: "b:0", tag: "div", attributes: [], textChildren: "" } }),
+      mockJson({ ok: true, sourceReact: "after-b", prevSourceSnapshot: "after-a", mtimeMs: 12 })
+    )
+    const onWriteSuccess = vi.fn()
+    await dispatchCanvasGroupResize(
+      { kind: "se", deltaIframe: { dx: 28, dy: 24 }, targets: TARGETS },
+      { sourceKind: "tsx", sourceId: "i", sourceReact: "before", fetchImpl, onWriteSuccess }
+    )
+    expect(onWriteSuccess).toHaveBeenCalledTimes(1)
+    const payload = onWriteSuccess.mock.calls[0][0]
+    // Undo target is the source BEFORE the first write, not between writes.
+    expect(payload.prevSourceSnapshot).toBe("before")
+    expect(payload.nextSourceSnapshot).toBe("after-b")
+    expect(payload.appliedMutations).toBe(2)
+    expect(payload.mutations).toHaveLength(2)
+    expect(payload.sourceKind).toBe("tsx")
+    expect(payload.filePath).toBeUndefined()
+  })
+
+  it("onWriteSuccess uses the endpoint's prevSourceSnapshot for file-backed gestures", async () => {
+    const fetchImpl = mockFetchSequence(
+      mockJson({ ok: true, node: { canvasId: "a:0", tag: "div", attributes: [], textChildren: "" } }),
+      mockJson({
+        ok: true,
+        sourceReact: "after-a",
+        prevSourceSnapshot: "disk-before",
+        mtimeMs: 100,
+      }),
+      mockJson({ ok: true, node: { canvasId: "b:0", tag: "div", attributes: [], textChildren: "" } }),
+      mockJson({
+        ok: true,
+        sourceReact: "after-b",
+        prevSourceSnapshot: "after-a",
+        mtimeMs: 200,
+      })
+    )
+    const onWriteSuccess = vi.fn()
+    await dispatchCanvasGroupResize(
+      { kind: "se", deltaIframe: { dx: 28, dy: 24 }, targets: TARGETS },
+      {
+        sourceKind: "tsx",
+        sourceId: "App.tsx",
+        filePath: "App.tsx",
+        mtimeMs: 50,
+        fetchImpl,
+        onWriteSuccess,
+      }
+    )
+    expect(onWriteSuccess).toHaveBeenCalledTimes(1)
+    const payload = onWriteSuccess.mock.calls[0][0]
+    expect(payload.prevSourceSnapshot).toBe("disk-before")
+    expect(payload.nextSourceSnapshot).toBe("after-b")
+    expect(payload.filePath).toBe("App.tsx")
+    expect(payload.mtimeMs).toBe(200)
+  })
+
+  it("does not fire onWriteSuccess when nothing applied", async () => {
+    const fetchImpl = mockFetchSequence(
+      mockJson({ ok: false, error: "read failed" }, false),
+      mockJson({ ok: false, error: "read failed" }, false)
+    )
+    const onWriteSuccess = vi.fn()
+    await dispatchCanvasGroupResize(
+      { kind: "se", deltaIframe: { dx: 28, dy: 24 }, targets: TARGETS },
+      { sourceKind: "tsx", sourceId: "i", sourceReact: "before", fetchImpl, onWriteSuccess }
+    )
+    expect(onWriteSuccess).not.toHaveBeenCalled()
+  })
+
+  it("fires onWriteSuccess for a partial group with only the applied mutations", async () => {
+    const fetchImpl = mockFetchSequence(
+      mockJson({ ok: false, error: "read failed" }, false),
+      mockJson({ ok: true, node: { canvasId: "b:0", tag: "div", attributes: [], textChildren: "" } }),
+      mockJson({ ok: true, sourceReact: "after-b", prevSourceSnapshot: "before", mtimeMs: 12 })
+    )
+    const onWriteSuccess = vi.fn()
+    const result = await dispatchCanvasGroupResize(
+      { kind: "se", deltaIframe: { dx: 28, dy: 24 }, targets: TARGETS },
+      { sourceKind: "tsx", sourceId: "i", sourceReact: "before", fetchImpl, onWriteSuccess }
+    )
+    expect(result.applied).toBe(1)
+    expect(result.errors).toHaveLength(1)
+    expect(onWriteSuccess).toHaveBeenCalledTimes(1)
+    const payload = onWriteSuccess.mock.calls[0][0]
+    expect(payload.appliedMutations).toBe(1)
+    expect(payload.mutations).toHaveLength(1)
+    expect(payload.prevSourceSnapshot).toBe("before")
+  })
 })

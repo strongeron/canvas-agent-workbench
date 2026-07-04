@@ -41,6 +41,104 @@ export function normalizeCanvasStateSnapshot(input) {
   }
 }
 
+/**
+ * Server-side counterpart of the browser's theme handlers (useThemeRegistry
+ * addTheme/updateThemeVar/removeTheme + set_active_theme). Theme operations
+ * are "UI-side" in applyCanvasRemoteOperationToState, but the workspace
+ * record's themeSnapshot is the agents' read model — without applying them
+ * here, a theme op reports ok while get_canvas_themes stays empty whenever no
+ * browser tab is connected (FOX2-54). The id slug must match the browser's
+ * so both sides converge on the same theme when a tab IS connected.
+ *
+ * Returns the same snapshot reference when the operation is not theme-related.
+ */
+export function applyCanvasThemeOperationToSnapshot(snapshot, operation) {
+  if (!operation || typeof operation !== 'object' || typeof operation.type !== 'string') {
+    return snapshot
+  }
+
+  const current = {
+    themes: Array.isArray(snapshot?.themes) ? snapshot.themes : [],
+    activeThemeId:
+      typeof snapshot?.activeThemeId === 'string' && snapshot.activeThemeId.trim()
+        ? snapshot.activeThemeId.trim()
+        : null,
+    tokenValues:
+      snapshot?.tokenValues && typeof snapshot.tokenValues === 'object'
+        ? snapshot.tokenValues
+        : {},
+  }
+
+  switch (operation.type) {
+    case 'create_canvas_theme': {
+      const label = normalizeString(operation.label)
+      if (!label) return snapshot
+      const baseId = label
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)+/g, '')
+      let nextId = baseId || `theme-${current.themes.length + 1}`
+      let counter = 2
+      while (current.themes.some((theme) => theme.id === nextId)) {
+        nextId = `${baseId || 'theme'}-${counter}`
+        counter += 1
+      }
+      const newTheme = {
+        id: nextId,
+        label,
+        description: 'Custom theme',
+        vars: { ...current.tokenValues },
+        groupId: nextId,
+      }
+      return {
+        ...current,
+        themes: [...current.themes, newTheme],
+        activeThemeId: nextId,
+      }
+    }
+    case 'update_canvas_theme_var': {
+      const themeId = normalizeString(operation.themeId)
+      const cssVar = normalizeString(operation.cssVar)
+      if (!themeId || !cssVar) return snapshot
+      if (!current.themes.some((theme) => theme.id === themeId)) return snapshot
+      const value = typeof operation.value === 'string' ? operation.value.trim() : ''
+      return {
+        ...current,
+        themes: current.themes.map((theme) => {
+          if (theme.id !== themeId) return theme
+          const nextVars = { ...(theme.vars ?? {}) }
+          if (!value) {
+            delete nextVars[cssVar]
+          } else {
+            nextVars[cssVar] = value
+          }
+          return { ...theme, vars: nextVars }
+        }),
+      }
+    }
+    case 'delete_canvas_theme': {
+      const themeId = normalizeString(operation.themeId)
+      if (!themeId || !current.themes.some((theme) => theme.id === themeId)) return snapshot
+      const remaining = current.themes.filter((theme) => theme.id !== themeId)
+      return {
+        ...current,
+        themes: remaining,
+        activeThemeId:
+          current.activeThemeId === themeId
+            ? remaining[0]?.id ?? null
+            : current.activeThemeId,
+      }
+    }
+    case 'set_active_theme': {
+      const themeId = normalizeString(operation.themeId)
+      if (!themeId || !current.themes.some((theme) => theme.id === themeId)) return snapshot
+      return { ...current, activeThemeId: themeId }
+    }
+    default:
+      return snapshot
+  }
+}
+
 export function collectCanvasCascadeDeleteIds(state, ids) {
   const current = normalizeCanvasStateSnapshot(state)
   const idsToRemove = new Set(Array.isArray(ids) ? ids : [])
@@ -104,6 +202,21 @@ export function applyCanvasRemoteOperationToState(state, operation) {
           item.id === operation.id ? { ...item, ...operation.updates } : item
         ),
       }
+    case 'update_items': {
+      const entries = Array.isArray(operation.updates)
+        ? operation.updates.filter((entry) => entry && typeof entry === 'object' && entry.id)
+        : []
+      if (entries.length === 0) return current
+      const updatesById = new Map(entries.map((entry) => [entry.id, entry.updates]))
+      return {
+        ...current,
+        items: current.items.map((item) => {
+          const updates = updatesById.get(item.id)
+          return updates ? { ...item, ...updates } : item
+        }),
+        selectedIds: operation.select ? entries.map((entry) => entry.id) : current.selectedIds,
+      }
+    }
     case 'delete_items': {
       const idsToRemove = collectCanvasCascadeDeleteIds(current, operation.ids)
       return {
@@ -165,12 +278,20 @@ export function applyCanvasRemoteOperationToState(state, operation) {
     case 'set_viewport':
     case 'focus_items':
     case 'set_active_theme':
+    case 'set_canvas_tool':
+    case 'convert_mermaid_to_excalidraw':
+    case 'create_canvas_theme':
+    case 'update_canvas_theme_var':
+    case 'delete_canvas_theme':
+    case 'capture_embed_snapshots':
     case 'undo_source_mutation':
     case 'redo_source_mutation':
       // UI-side effects only — no canvas state mutation. The dev server still
       // records the operation in the event log and broadcasts it so the
       // browser bridge can call the matching UI handler (setActiveThemeId,
-      // handleUndoMutation, handleRedoMutation).
+      // setCanvasTool, handleConvertMermaidToExcalidraw, handleUndoMutation,
+      // handleRedoMutation). Mermaid→Excalidraw conversion must run in the
+      // browser: @excalidraw/mermaid-to-excalidraw renders through the DOM.
       return current
     default:
       return current
@@ -319,6 +440,63 @@ export function createSetActiveThemeOperation(themeId) {
   }
 }
 
+const CANVAS_TOOLS = new Set(['select', 'edit', 'interact'])
+
+export function createConvertMermaidToExcalidrawOperation(itemId, keepOriginal = false) {
+  return {
+    type: 'convert_mermaid_to_excalidraw',
+    itemId: normalizeString(itemId),
+    keepOriginal: keepOriginal === true,
+  }
+}
+
+export function createCreateCanvasThemeOperation(label) {
+  return {
+    type: 'create_canvas_theme',
+    label: normalizeString(label),
+  }
+}
+
+export function createUpdateCanvasThemeVarOperation(themeId, cssVar, value) {
+  return {
+    type: 'update_canvas_theme_var',
+    themeId: normalizeString(themeId),
+    cssVar: normalizeString(cssVar),
+    value: typeof value === 'string' ? value : '',
+  }
+}
+
+export function createDeleteCanvasThemeOperation(themeId) {
+  return {
+    type: 'delete_canvas_theme',
+    themeId: normalizeString(themeId),
+  }
+}
+
+const EMBED_CAPTURE_TARGETS = new Set(['desktop', 'mobile'])
+const EMBED_CAPTURE_PROVIDERS = new Set(['auto', 'playwright', 'fetch'])
+
+export function createCaptureEmbedSnapshotsOperation(itemId, args = {}) {
+  const targets = Array.isArray(args.targets)
+    ? args.targets.map((entry) => normalizeString(entry)).filter((entry) => EMBED_CAPTURE_TARGETS.has(entry))
+    : []
+  const provider = normalizeString(args.provider)
+  return {
+    type: 'capture_embed_snapshots',
+    itemId: normalizeString(itemId),
+    targets: targets.length > 0 ? targets : ['desktop'],
+    provider: EMBED_CAPTURE_PROVIDERS.has(provider) ? provider : 'auto',
+  }
+}
+
+export function createSetCanvasToolOperation(tool) {
+  const normalized = normalizeString(tool)
+  return {
+    type: 'set_canvas_tool',
+    tool: CANVAS_TOOLS.has(normalized) ? normalized : '',
+  }
+}
+
 export function createUndoSourceMutationOperation(args = {}) {
   const scope = args.scope === 'log-entry' ? 'log-entry' : 'active-file'
   return {
@@ -392,6 +570,446 @@ export function buildDuplicateItemsResult(state, args = {}) {
     ok: true,
     items: newItems,
     newIds: newItems.map((item) => item.id),
+  }
+}
+
+export function createUpdateItemsOperation(updates, select = false) {
+  return {
+    type: 'update_items',
+    updates,
+    select,
+  }
+}
+
+/**
+ * Mirror the UI "move selection into artboard" path
+ * (handleMoveSelectionToArtboard in CanvasTab.tsx): re-parent each item onto
+ * the artboard, append after the current children in `order`, and reset
+ * position/rotation because layout children render flow-positioned, not
+ * absolutely. Returns update entries for the `update_items` operation plus
+ * the moved ids so an MCP tool can report `{ movedIds }` to the agent.
+ *
+ * Pure helper — no fs/node:* access — so it can run inside the MCP server
+ * AND in tests next to the canvas state code.
+ */
+export function buildMoveItemsIntoArtboardResult(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const ids = normalizeIdList(args.ids)
+  if (ids.length === 0) {
+    return { ok: false, code: 'bad-input', error: 'ids is required.' }
+  }
+  const artboardId = normalizeString(args.artboardId)
+  if (!artboardId) {
+    return { ok: false, code: 'bad-input', error: 'artboardId is required.' }
+  }
+  const artboard = current.items.find((item) => item.id === artboardId)
+  if (!artboard || artboard.type !== 'artboard') {
+    return {
+      ok: false,
+      code: 'not-found',
+      error: `No artboard found for id "${artboardId}".`,
+    }
+  }
+
+  const movable = current.items.filter(
+    (item) =>
+      ids.includes(item.id) &&
+      item.id !== artboard.id &&
+      item.type !== 'artboard' &&
+      item.parentId !== artboard.id
+  )
+  if (movable.length === 0) {
+    return {
+      ok: false,
+      code: 'not-found',
+      error:
+        'No movable canvas items for the provided ids (artboards and items already inside the target are excluded).',
+    }
+  }
+
+  const siblings = current.items.filter(
+    (item) => item.parentId === artboard.id && item.type !== 'artboard'
+  )
+  const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+
+  const updates = movable.map((item, index) => ({
+    id: item.id,
+    updates: {
+      parentId: artboard.id,
+      order: maxOrder + index + 1,
+      position: { x: 0, y: 0 },
+      rotation: 0,
+    },
+  }))
+
+  return {
+    ok: true,
+    updates,
+    movedIds: movable.map((item) => item.id),
+    artboardId: artboard.id,
+  }
+}
+
+/**
+ * Mirror the UI "wrap selection in section" path
+ * (handleWrapSelectionInSection in CanvasTab.tsx), including its two
+ * eligibility modes:
+ * - "existing-parent": every item shares one artboard/section parent; the
+ *   section slots in at the selection's minimum order.
+ * - "freeform-inside-artboard": every item is freeform and their centers sit
+ *   inside exactly one artboard; the section appends after that artboard's
+ *   children.
+ * The section is a grid (≤3 columns, fill width / hug height) and the wrapped
+ * items re-order by their selection order with position/rotation reset.
+ * Returns the section item plus re-parent updates so the MCP runner can queue
+ * create_item BEFORE update_items — a dangling parentId must never exist.
+ *
+ * Pure helper — no fs/node:* access — so it can run inside the MCP server
+ * AND in tests next to the canvas state code.
+ */
+export function buildWrapItemsInSectionResult(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const ids = normalizeIdList(args.ids)
+  if (ids.length < 2) {
+    return { ok: false, code: 'bad-input', error: 'ids must contain at least 2 items to wrap.' }
+  }
+  const selectedItems = current.items.filter((item) => ids.includes(item.id))
+  if (selectedItems.length !== ids.length) {
+    return {
+      ok: false,
+      code: 'not-found',
+      error: 'One or more ids do not match canvas items.',
+    }
+  }
+  if (selectedItems.some((item) => item.type === 'artboard' || item.type === 'section')) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error: 'Artboards and sections cannot be wrapped — select leaf items only.',
+    }
+  }
+
+  let parent = null
+  let mode = null
+  const parentIds = new Set(selectedItems.map((item) => item.parentId).filter(Boolean))
+  if (parentIds.size === 1 && selectedItems.every((item) => item.parentId)) {
+    const [parentId] = Array.from(parentIds)
+    const candidate = current.items.find(
+      (item) => item.id === parentId && (item.type === 'artboard' || item.type === 'section')
+    )
+    if (candidate) {
+      parent = candidate
+      mode = 'existing-parent'
+    }
+  }
+  if (!parent && selectedItems.every((item) => !item.parentId)) {
+    const containing = current.items.filter(
+      (item) =>
+        item.type === 'artboard' &&
+        selectedItems.every((selected) => {
+          const centerX = Number(selected.position?.x || 0) + Number(selected.size?.width || 0) / 2
+          const centerY = Number(selected.position?.y || 0) + Number(selected.size?.height || 0) / 2
+          return (
+            centerX >= Number(item.position?.x || 0) &&
+            centerX <= Number(item.position?.x || 0) + Number(item.size?.width || 0) &&
+            centerY >= Number(item.position?.y || 0) &&
+            centerY <= Number(item.position?.y || 0) + Number(item.size?.height || 0)
+          )
+        })
+    )
+    if (containing.length === 1) {
+      parent = containing[0]
+      mode = 'freeform-inside-artboard'
+    }
+  }
+  if (!parent) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error:
+        'Items must either share one artboard/section parent, or all be freeform with centers inside exactly one artboard.',
+    }
+  }
+
+  const orderedSelection = [...selectedItems].sort((a, b) =>
+    mode === 'existing-parent'
+      ? (a.order ?? 0) - (b.order ?? 0)
+      : a.position.y === b.position.y
+        ? a.position.x - b.position.x
+        : a.position.y - b.position.y
+  )
+
+  const siblings = current.items.filter(
+    (item) => item.parentId === parent.id && item.type !== 'artboard'
+  )
+  const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+  const insertOrder =
+    mode === 'existing-parent'
+      ? Math.min(...orderedSelection.map((item) => item.order ?? 0))
+      : maxOrder + 1
+
+  const sectionId = `canvas-section-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const maxHeight = Math.max(...orderedSelection.map((item) => Number(item.size?.height || 0)))
+  const totalHeight = orderedSelection.reduce(
+    (sum, item) => sum + Number(item.size?.height || 0),
+    0
+  )
+  const parentPadding = parent.layout?.padding ?? 0
+  const fillWidth = Math.max(120, Number(parent.size?.width || 0) - parentPadding * 2)
+  const hugHeight = Math.max(maxHeight, totalHeight + (orderedSelection.length - 1) * 16)
+
+  const overrides =
+    args.section && typeof args.section === 'object' ? args.section : {}
+  const sectionItem = {
+    id: sectionId,
+    type: 'section',
+    name: normalizeString(overrides.name) || 'Section',
+    parentId: parent.id,
+    order: insertOrder,
+    position: { x: 0, y: 0 },
+    size: {
+      width: fillWidth,
+      height: hugHeight,
+    },
+    layoutSizing: {
+      width: 'fill',
+      height: 'hug',
+      hugWidth: Math.max(...orderedSelection.map((item) => Number(item.size?.width || 0))),
+      hugHeight,
+    },
+    rotation: 0,
+    zIndex: current.nextZIndex,
+    layout:
+      overrides.layout && typeof overrides.layout === 'object'
+        ? overrides.layout
+        : {
+            display: 'grid',
+            columns: Math.min(orderedSelection.length, 3),
+            align: 'stretch',
+            justify: 'start',
+            gap: 16,
+            padding: 16,
+          },
+    ...(normalizeString(overrides.background) ? { background: normalizeString(overrides.background) } : {}),
+    ...(normalizeString(overrides.themeId) ? { themeId: normalizeString(overrides.themeId) } : {}),
+  }
+
+  const updates = orderedSelection.map((item, index) => ({
+    id: item.id,
+    updates: {
+      parentId: sectionId,
+      order: index,
+      position: { x: 0, y: 0 },
+      rotation: 0,
+    },
+  }))
+
+  return {
+    ok: true,
+    sectionItem,
+    updates,
+    wrappedIds: orderedSelection.map((item) => item.id),
+    mode,
+    parentId: parent.id,
+  }
+}
+
+/**
+ * Mirror the UI layer-order affordances as one tool:
+ * - "front" mirrors bringToFront (useCanvasState.ts): zIndex jumps to
+ *   nextZIndex so the item renders above everything.
+ * - "back" is the missing UI counterpart: zIndex drops below the current
+ *   minimum (may go negative — CSS stacking accepts it).
+ * - "up" / "down" mirror handleMoveLayer (CanvasTab.tsx): swap `order` with
+ *   the adjacent sibling inside the same artboard/section. Freeform items are
+ *   rejected explicitly — the UI affordance only exists for layout children,
+ *   and silently bumping zIndex instead would misreport what happened.
+ *
+ * Pure helper — no fs/node:* access — so it can run inside the MCP server
+ * AND in tests next to the canvas state code.
+ */
+export function buildReorderLayerResult(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const id = normalizeString(args.id)
+  if (!id) {
+    return { ok: false, code: 'bad-input', error: 'id is required.' }
+  }
+  const direction = normalizeString(args.direction)
+  if (!['front', 'back', 'up', 'down'].includes(direction)) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error: 'direction must be one of "front", "back", "up", "down".',
+    }
+  }
+  const target = current.items.find((item) => item.id === id)
+  if (!target) {
+    return { ok: false, code: 'not-found', error: `No canvas item found for id "${id}".` }
+  }
+
+  if (direction === 'front') {
+    return {
+      ok: true,
+      updates: [{ id, updates: { zIndex: current.nextZIndex } }],
+      direction,
+    }
+  }
+
+  if (direction === 'back') {
+    const minZIndex = current.items.reduce(
+      (min, item) => Math.min(min, Number(item.zIndex || 0)),
+      Number(target.zIndex || 0)
+    )
+    return {
+      ok: true,
+      updates: [{ id, updates: { zIndex: minZIndex - 1 } }],
+      direction,
+    }
+  }
+
+  if (!target.parentId) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error:
+        'up/down reorder only applies to items inside an artboard or section (layout order). Use "front" or "back" for freeform items.',
+    }
+  }
+
+  const siblings = current.items
+    .filter((item) => item.parentId === target.parentId && item.type !== 'artboard')
+    .map((item, index) => ({ id: item.id, order: item.order ?? index }))
+    .sort((a, b) => a.order - b.order)
+  const currentIndex = siblings.findIndex((item) => item.id === id)
+  const swapIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  if (swapIndex < 0 || swapIndex >= siblings.length) {
+    return {
+      ok: false,
+      code: 'no-op',
+      error: `Item is already at the ${direction === 'up' ? 'top' : 'bottom'} of its layout order.`,
+    }
+  }
+
+  const currentEntry = siblings[currentIndex]
+  const swapEntry = siblings[swapIndex]
+  return {
+    ok: true,
+    updates: [
+      { id: currentEntry.id, updates: { order: swapEntry.order } },
+      { id: swapEntry.id, updates: { order: currentEntry.order } },
+    ],
+    direction,
+  }
+}
+
+
+/**
+ * Mirror the section-size controls in CanvasArtboardPropsPanel:
+ * - widthMode/heightMode "fill" matches the parent's inner size (parent size
+ *   minus 2x layout padding, floored at 120) and records the previous size in
+ *   layoutSizing.hugWidth/hugHeight so "hug" can restore it — exactly what
+ *   the panel's Fill/Hug toggles do.
+ * - Explicit width/height numbers mirror the panel's number inputs: the
+ *   section becomes "hug" at that size. (The UI has no separate "fixed" mode;
+ *   an explicit size IS hug with a stored value.)
+ * The panel also derives a content-based hug size from children for display;
+ * that refinement is UI-only — this helper restores the stored hug size and
+ * falls back to the current size, the same fallback the panel uses.
+ *
+ * Pure helper — no fs/node:* access — so it can run inside the MCP server
+ * AND in tests next to the canvas state code.
+ */
+export function buildUpdateSectionSizingResult(state, args = {}) {
+  const current = normalizeCanvasStateSnapshot(state)
+  const itemId = normalizeString(args.itemId)
+  if (!itemId) {
+    return { ok: false, code: 'bad-input', error: 'itemId is required.' }
+  }
+  const section = current.items.find((item) => item.id === itemId)
+  if (!section || section.type !== 'section') {
+    return { ok: false, code: 'not-found', error: `No section found for id "${itemId}".` }
+  }
+
+  const widthMode = normalizeString(args.widthMode)
+  const heightMode = normalizeString(args.heightMode)
+  const explicitWidth = Number.isFinite(args.width) ? Number(args.width) : null
+  const explicitHeight = Number.isFinite(args.height) ? Number(args.height) : null
+  if (widthMode && !['fill', 'hug'].includes(widthMode)) {
+    return { ok: false, code: 'bad-input', error: 'widthMode must be "fill" or "hug".' }
+  }
+  if (heightMode && !['fill', 'hug'].includes(heightMode)) {
+    return { ok: false, code: 'bad-input', error: 'heightMode must be "fill" or "hug".' }
+  }
+  if (widthMode === 'fill' && explicitWidth !== null) {
+    return { ok: false, code: 'bad-input', error: 'width cannot be combined with widthMode "fill".' }
+  }
+  if (heightMode === 'fill' && explicitHeight !== null) {
+    return { ok: false, code: 'bad-input', error: 'height cannot be combined with heightMode "fill".' }
+  }
+  if (!widthMode && !heightMode && explicitWidth === null && explicitHeight === null) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error: 'Provide at least one of widthMode, heightMode, width, height.',
+    }
+  }
+
+  const parent = section.parentId
+    ? current.items.find(
+        (item) =>
+          item.id === section.parentId && (item.type === 'artboard' || item.type === 'section')
+      )
+    : null
+  if ((widthMode === 'fill' || heightMode === 'fill') && !parent) {
+    return {
+      ok: false,
+      code: 'bad-input',
+      error: 'Fill sizing requires the section to have an artboard or section parent.',
+    }
+  }
+  const parentPadding = parent?.layout?.padding ?? 0
+  const fillWidth = parent
+    ? Math.max(120, Number(parent.size?.width || 0) - parentPadding * 2)
+    : null
+  const fillHeight = parent
+    ? Math.max(120, Number(parent.size?.height || 0) - parentPadding * 2)
+    : null
+
+  const size = { ...section.size }
+  const layoutSizing = { ...(section.layoutSizing || {}) }
+
+  if (explicitWidth !== null) {
+    size.width = Math.max(1, explicitWidth)
+    layoutSizing.width = 'hug'
+    layoutSizing.hugWidth = size.width
+  } else if (widthMode === 'fill') {
+    layoutSizing.hugWidth = layoutSizing.hugWidth ?? size.width
+    size.width = fillWidth
+    layoutSizing.width = 'fill'
+  } else if (widthMode === 'hug') {
+    size.width = layoutSizing.hugWidth ?? Math.max(120, size.width)
+    layoutSizing.width = 'hug'
+    layoutSizing.hugWidth = size.width
+  }
+
+  if (explicitHeight !== null) {
+    size.height = Math.max(1, explicitHeight)
+    layoutSizing.height = 'hug'
+    layoutSizing.hugHeight = size.height
+  } else if (heightMode === 'fill') {
+    layoutSizing.hugHeight = layoutSizing.hugHeight ?? size.height
+    size.height = fillHeight
+    layoutSizing.height = 'fill'
+  } else if (heightMode === 'hug') {
+    size.height = layoutSizing.hugHeight ?? Math.max(80, size.height)
+    layoutSizing.height = 'hug'
+    layoutSizing.hugHeight = size.height
+  }
+
+  return {
+    ok: true,
+    itemId,
+    updates: { size, layoutSizing },
   }
 }
 

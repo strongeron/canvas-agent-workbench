@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest"
 import type { CanvasHtmlItem, CanvasMarkdownItem } from "../types/canvas"
 import {
   applySourceSnapshotToItems,
+  buildInlineLogKey,
   inferSourceKindFromFilePath,
   invertCanvasIdMap,
+  parseInlineLogKey,
   resolveSourceFileMtime,
   selectionMatchesLoggedFile,
   summarizeSourceMutations,
@@ -134,5 +136,80 @@ describe("canvasMutationHistory", () => {
     expect(selectionMatchesLoggedFile({ itemId: "html" }, items, "components/Demo.tsx", "tsx")).toBe(false)
     expect(selectionMatchesLoggedFile({ itemId: "html" }, items, "components/Card.html", "html")).toBe(true)
     expect(selectionMatchesLoggedFile({ itemId: "markdown" }, items, "docs/demo.md", "markdown")).toBe(true)
+  })
+
+  it("round-trips inline log keys and rejects malformed ones", () => {
+    expect(parseInlineLogKey(buildInlineLogKey("tsx", "item-9"))).toEqual({
+      kind: "tsx",
+      itemId: "item-9",
+    })
+    expect(parseInlineLogKey(buildInlineLogKey("html", "canvas-item-card"))).toEqual({
+      kind: "html",
+      itemId: "canvas-item-card",
+    })
+    expect(parseInlineLogKey("components/Demo.tsx")).toBeNull()
+    expect(parseInlineLogKey("inline:markdown:item-1")).toBeNull()
+    expect(parseInlineLogKey("inline:tsx:")).toBeNull()
+  })
+
+  it("infers the source kind from an inline log key", () => {
+    expect(inferSourceKindFromFilePath(buildInlineLogKey("tsx", "a"))).toBe("tsx")
+    expect(inferSourceKindFromFilePath(buildInlineLogKey("html", "a"))).toBe("html")
+  })
+
+  it("resolves no mtime for inline entries", () => {
+    const items = [makeHtmlItem({ id: "inline-item" })]
+    expect(resolveSourceFileMtime(items, buildInlineLogKey("tsx", "inline-item"), "tsx")).toBeUndefined()
+  })
+
+  it("applies inline snapshots to the owning item by id", () => {
+    const items = [
+      makeHtmlItem({ id: "inline-item", sourceReactFilePath: undefined }),
+      makeHtmlItem({ id: "other-item", sourceReactFilePath: undefined }),
+    ]
+
+    const tsxResult = applySourceSnapshotToItems(
+      items,
+      buildInlineLogKey("tsx", "inline-item"),
+      "tsx",
+      "export default function Demo() { return <button>Two</button> }"
+    )
+    expect(tsxResult.changed).toBe(true)
+    const tsxUpdated = tsxResult.items.find((item) => item.id === "inline-item") as CanvasHtmlItem
+    expect(tsxUpdated.sourceMode).toBe("react")
+    expect(tsxUpdated.sourceReact).toContain("Two")
+    const untouched = tsxResult.items.find((item) => item.id === "other-item") as CanvasHtmlItem
+    expect(untouched.sourceReact).toContain("One")
+
+    const htmlResult = applySourceSnapshotToItems(
+      items,
+      buildInlineLogKey("html", "inline-item"),
+      "html",
+      "<button>Two</button>"
+    )
+    expect(htmlResult.changed).toBe(true)
+    const htmlUpdated = htmlResult.items.find((item) => item.id === "inline-item") as CanvasHtmlItem
+    expect(htmlUpdated.sourceMode).toBe("inline")
+    expect(htmlUpdated.sourceHtml).toBe("<button>Two</button>")
+  })
+
+  it("matches selections against inline entries by item id", () => {
+    const items = [makeHtmlItem({ id: "inline-item" }), makeMarkdownItem({ id: "md-item" })]
+    expect(
+      selectionMatchesLoggedFile(
+        { itemId: "inline-item" },
+        items,
+        buildInlineLogKey("tsx", "inline-item"),
+        "tsx"
+      )
+    ).toBe(true)
+    expect(
+      selectionMatchesLoggedFile(
+        { itemId: "md-item" },
+        items,
+        buildInlineLogKey("tsx", "inline-item"),
+        "tsx"
+      )
+    ).toBe(false)
   })
 })

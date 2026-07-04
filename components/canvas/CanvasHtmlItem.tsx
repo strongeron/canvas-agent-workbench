@@ -35,6 +35,7 @@ interface CanvasHtmlItemProps {
   libraryDragActive?: boolean
   onLibraryDropInsert?: (input: { itemId: string; parentCanvasId: string; index: number }) => void
   onLibraryDropWrap?: (input: { itemId: string; canvasId: string }) => void
+  onRequestEditMode?: () => void
 }
 
 const MIN_WIDTH = 280
@@ -69,6 +70,7 @@ export function CanvasHtmlItem({
   onReactCompileGenerationChange,
   onReactNodeResize,
   onReactNodeGroupResize,
+  onRequestEditMode,
   libraryDragActive = false,
   onLibraryDropInsert,
   onLibraryDropWrap,
@@ -94,6 +96,10 @@ export function CanvasHtmlItem({
       if (!event.shiftKey) {
         onSelect(false)
       }
+      // Edit mode: the surface belongs to element-level editing. A click
+      // selects the item but never starts a node drag — otherwise element
+      // gestures and node moves compete on the same pixels.
+      if (editMode) return
       setIsDragging(true)
       setDragStart({ x: event.clientX, y: event.clientY })
       setInitialState({
@@ -104,7 +110,7 @@ export function CanvasHtmlItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onSelect]
+    [editMode, interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onSelect]
   )
 
   const handleResizeStart = useCallback(
@@ -250,6 +256,12 @@ export function CanvasHtmlItem({
         if (event.shiftKey) {
           onSelect(true)
         }
+      }}
+      onDoubleClick={(event) => {
+        if (interactMode || editMode || !onRequestEditMode) return
+        event.stopPropagation()
+        onSelect(false)
+        onRequestEditMode()
       }}
       onContextMenu={handleContextMenu}
     >

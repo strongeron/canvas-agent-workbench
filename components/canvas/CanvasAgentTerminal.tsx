@@ -6,6 +6,13 @@ import "@xterm/xterm/css/xterm.css"
 interface CanvasAgentTerminalProps {
   sessionId?: string
   output: string
+  /**
+   * Raw chunk stream from the bridge. When provided, chunks append straight
+   * to xterm and `output` is only used to seed a freshly opened/switched
+   * session — the accumulated string is trimmed to 200KB upstream, which
+   * breaks prefix-diffing once exceeded (FOX2-51: reset+rewrite per chunk).
+   */
+  outputEvents?: EventTarget
   running: boolean
   onInput: (input: string) => void
   onResize: (size: { cols: number; rows: number }) => void
@@ -14,12 +21,14 @@ interface CanvasAgentTerminalProps {
 export function CanvasAgentTerminal({
   sessionId,
   output,
+  outputEvents,
   running,
   onInput,
   onResize,
 }: CanvasAgentTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
   const lastOutputRef = useRef("")
   const lastSessionIdRef = useRef<string | undefined>(undefined)
   const onInputRef = useRef(onInput)
@@ -92,12 +101,14 @@ export function CanvasAgentTerminal({
     resizeObserver.observe(containerRef.current)
 
     terminalRef.current = terminal
+    fitAddonRef.current = fitAddon
     return () => {
       resizeObserver.disconnect()
       dataDisposable.dispose()
       terminal.dispose()
       fitAddon.dispose()
       terminalRef.current = null
+      fitAddonRef.current = null
       lastOutputRef.current = ""
     }
   }, [terminalTheme])
@@ -106,7 +117,29 @@ export function CanvasAgentTerminal({
     const terminal = terminalRef.current
     if (!terminal) return
     terminal.options.disableStdin = !running
-  }, [running])
+    if (!running || !sessionId) return
+    // The PTY may have spawned at the session's stored default (96x28) before
+    // the fitted dimensions were known — push the real fitted size as soon as
+    // the session is running so the TUI re-wraps at the visible edge (FOX2-53).
+    const fitAddon = fitAddonRef.current
+    if (!fitAddon) return
+    fitAddon.fit()
+    const dimensions = fitAddon.proposeDimensions()
+    if (!dimensions) return
+    onResizeRef.current({ cols: dimensions.cols, rows: dimensions.rows })
+  }, [running, sessionId])
+
+  useEffect(() => {
+    if (!outputEvents) return
+    const handleChunk = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: string; chunk?: string }>).detail
+      if (!detail?.sessionId || detail.sessionId !== sessionIdRef.current) return
+      if (typeof detail.chunk !== "string" || !detail.chunk) return
+      terminalRef.current?.write(detail.chunk)
+    }
+    outputEvents.addEventListener("session-output", handleChunk)
+    return () => outputEvents.removeEventListener("session-output", handleChunk)
+  }, [outputEvents])
 
   useEffect(() => {
     const terminal = terminalRef.current
@@ -116,7 +149,23 @@ export function CanvasAgentTerminal({
       terminal.reset()
       lastOutputRef.current = ""
       lastSessionIdRef.current = sessionId
+
+      if (outputEvents) {
+        // Seed once from the accumulated buffer; when it has been trimmed the
+        // head can start mid-escape-sequence, so cut to the first newline to
+        // keep xterm from painting a broken tail as literal text.
+        const seed =
+          output.length >= 200_000 && output.includes("\n")
+            ? output.slice(output.indexOf("\n") + 1)
+            : output
+        if (seed) terminal.write(seed)
+        lastOutputRef.current = output
+        return
+      }
     }
+
+    // Chunk mode: everything after the seed arrives via outputEvents.
+    if (outputEvents) return
 
     if (!output) return
 
@@ -132,7 +181,7 @@ export function CanvasAgentTerminal({
     terminal.reset()
     terminal.write(output)
     lastOutputRef.current = output
-  }, [output, sessionId])
+  }, [output, outputEvents, sessionId])
 
   return (
     <div className="relative h-full min-h-[260px] rounded-lg border border-default bg-slate-950">

@@ -3,16 +3,17 @@
   "schemaVersion": 1,
   "surface": "canvas",
   "meta": {
-    "id": "canvas_source_backed_react_demo",
-    "title": "source-backed-react",
-    "slug": "source-backed-react",
+    "id": "canvas_storybook_wrappers",
+    "title": "Storybook wrappers",
+    "slug": "storybook-wrappers",
     "projectId": "demo",
-    "createdAt": "2026-05-14T00:00:00.000Z",
-    "updatedAt": "2026-07-04T21:43:22.016Z",
+    "createdAt": "2026-06-02T00:00:00.000Z",
+    "updatedAt": "2026-06-02T00:00:00.000Z",
     "tags": [
-      "fixture",
-      "source-backed",
-      "react"
+      "storybook",
+      "wrappers",
+      "react",
+      "tiers"
     ],
     "favorite": false,
     "archived": false
@@ -391,7 +392,7 @@
           "height": 700
         },
         "rotation": 0,
-        "zIndex": 25
+        "zIndex": 21
       },
       {
         "id": "canvas-item-sbtier-flow",
@@ -448,15 +449,15 @@
       }
     ],
     "groups": [],
-    "nextZIndex": 26,
+    "nextZIndex": 25,
     "selectedIds": []
   },
   "view": {
     "transform": {
-      "scale": 0.11499999999999999,
+      "scale": 0.193,
       "offset": {
-        "x": 166.01083682636477,
-        "y": 285.41720528175085
+        "x": 105,
+        "y": 33
       }
     }
   }

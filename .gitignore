@@ -27,3 +27,4 @@ tests/visual-baselines/.tmp/
 /iframe-debug-*.png
 /review-*.png
 /ux-critique-*.png
+.storybook-wrapper-previews/

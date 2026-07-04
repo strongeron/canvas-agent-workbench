@@ -19,6 +19,7 @@ import {
   importProjectCanvasHtmlBundle,
   listDesignTokens,
   loadCanvasSourceFile,
+  listCanvasRegistryPrimitives,
   scanProjectCanvasHtmlBundles,
   readCanvasHtmlNode,
   readAgentNativeWorkspaceDebug,
@@ -67,9 +68,20 @@ import {
   createSetViewportOperation,
   createSelectItemsOperation,
   createSetActiveThemeOperation,
+  createSetCanvasToolOperation,
+  createConvertMermaidToExcalidrawOperation,
+  createCreateCanvasThemeOperation,
+  createUpdateCanvasThemeVarOperation,
+  createDeleteCanvasThemeOperation,
+  createCaptureEmbedSnapshotsOperation,
   createUndoSourceMutationOperation,
   createRedoSourceMutationOperation,
   buildDuplicateItemsResult,
+  buildMoveItemsIntoArtboardResult,
+  buildReorderLayerResult,
+  buildWrapItemsInSectionResult,
+  buildUpdateSectionSizingResult,
+  createUpdateItemsOperation,
   createUpdateGroupOperation,
   createUpdateItemOperation,
   exportCanvasBoard,
@@ -80,6 +92,8 @@ import {
   CANVAS_NATIVE_PART_KINDS,
   buildSlotNativePartInsertion,
   listCanvasHtmlSlots,
+  buildSlotStarterInsertion,
+  buildSlotComponentInsertion,
 } from '../utils/canvasNativePartsRuntime.mjs'
 
 const SERVER_INFO = {
@@ -368,12 +382,12 @@ const TOOL_DEFINITIONS = [
   {
     name: 'update_markdown_block',
     description:
-      'Update or reorder a markdown block on a live markdown canvas item and keep the item source in sync with the markdown writer.',
+      'Edit a markdown block on a live markdown canvas item and keep the item source in sync with the markdown writer. Actions: "update" replaces a block (blockIndex + newText), "insert" splices a new block in at blockIndex (blockIndex === block count appends), "remove" deletes a block (blockIndex), "reorder" moves a block (fromIndex + toIndex).',
     inputSchema: {
       type: 'object',
       properties: {
         itemId: { type: 'string' },
-        action: { type: 'string', enum: ['update', 'reorder'] },
+        action: { type: 'string', enum: ['update', 'insert', 'remove', 'reorder'] },
         blockIndex: { type: 'number' },
         newText: { type: 'string' },
         fromIndex: { type: 'number' },
@@ -1063,7 +1077,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'insert_native_slot_part',
     description:
-      'Append a native HTML part such as div, section, button, image, svg, or video into a slotted HTML shell node.',
+      'Insert content into a slotted HTML shell node. Provide exactly one of: `part` (append a native HTML part such as div, section, button, image, svg, video), `componentId` (append a registered library primitive\'s snippet, like the inspector\'s Insert component — no import is emitted, so the file must already import the component), or `starter: true` (the inspector\'s slot-aware starter: text slots get label text, media slots get a placeholder SVG, containers get a labeled content div).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1074,8 +1088,11 @@ const TOOL_DEFINITIONS = [
         mtimeMs: { type: 'number' },
         sourceUrl: { type: 'string' },
         part: { type: 'string', enum: CANVAS_NATIVE_PART_KINDS },
+        componentId: { type: 'string' },
+        starter: { type: 'boolean' },
+        projectId: { type: 'string' },
       },
-      required: ['canvasId', 'part'],
+      required: ['canvasId'],
       additionalProperties: false,
     },
   },
@@ -1318,6 +1335,83 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'move_items_into_artboard',
+    description:
+      'Move canvas items into an artboard in one call: re-parents each item onto the artboard, appends after the current children in layout order, and resets position/rotation (layout children render flow-positioned). Mirrors the UI "move selection into artboard" action. Artboards and items already inside the target are skipped. Returns { movedIds }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+        },
+        artboardId: { type: 'string' },
+        select: { type: 'boolean' },
+      },
+      required: ['ids', 'artboardId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_section_sizing',
+    description:
+      'Set a section\'s sizing behavior, mirroring the inspector\'s Section size controls: widthMode/heightMode "fill" matches the parent\'s inner size (and remembers the previous size so "hug" restores it); an explicit width/height number sets that size in hug mode, like the panel\'s inputs. Avoids hand-editing size/layoutSizing fields.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        widthMode: { type: 'string', enum: ['fill', 'hug'] },
+        heightMode: { type: 'string', enum: ['fill', 'hug'] },
+        width: { type: 'number' },
+        height: { type: 'number' },
+      },
+      required: ['itemId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'wrap_items_in_section',
+    description:
+      'Wrap canvas items in a new section in one call. Mirrors the UI "wrap in section": items must either share one artboard/section parent (section slots in at their minimum order) or all be freeform with centers inside exactly one artboard (section appends after its children). Creates a grid section (fill width / hug height), re-parents the items into it in selection order, and selects the section. Returns { sectionId, wrappedIds }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 2,
+        },
+        section: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            background: { type: 'string' },
+            themeId: { type: 'string' },
+            layout: { type: 'object' },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['ids'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'reorder_layer',
+    description:
+      'Reorder a canvas item in the stacking/layout order: "front" / "back" adjust freeform zIndex (front mirrors the UI bring-to-front; back drops below the current minimum), "up" / "down" swap layout order with the adjacent sibling inside an artboard or section (mirrors the UI move-layer control; rejected for freeform items).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        direction: { type: 'string', enum: ['front', 'back', 'up', 'down'] },
+      },
+      required: ['id', 'direction'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'set_canvas_active_theme',
     description:
       'Set the active Canvas theme by id. Paired write for get_canvas_themes — same UI handler as picking a theme in CanvasThemePanel, so resolved token values update immediately on the live board.',
@@ -1327,6 +1421,106 @@ const TOOL_DEFINITIONS = [
         themeId: { type: 'string' },
       },
       required: ['themeId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'convert_mermaid_to_excalidraw',
+    description:
+      'Convert a mermaid canvas item to an Excalidraw sketch item, mirroring the UI "convert to Excalidraw" action. The conversion runs in the browser (mermaid renders through the DOM), so this queues the operation for the live canvas: a new excalidraw item appears offset from the source with sourceMermaid retained for remapping; the original is removed unless keepOriginal is true.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        keepOriginal: { type: 'boolean' },
+      },
+      required: ['itemId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_canvas_tool',
+    description:
+      'Set the active Canvas tool mode: "select" (item-level move/resize), "edit" (element-level editing inside html nodes), or "interact" (live iframe interaction). Same handler as the toolbar toggle; each mode owns its pointer layer, so screenshots and drags behave per the chosen mode.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tool: { type: 'string', enum: ['select', 'edit', 'interact'] },
+      },
+      required: ['tool'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'create_canvas_theme',
+    description:
+      'Create a new in-canvas theme, mirroring the Theme panel\'s "Add theme": the theme id is slugged from the label, it snapshots the current resolved token values as its vars, and it becomes the active theme. Paired with get_canvas_themes / set_canvas_active_theme.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        label: { type: 'string' },
+      },
+      required: ['label'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'update_canvas_theme_var',
+    description:
+      'Set one CSS variable on an in-canvas theme, mirroring the Theme panel\'s token inputs. An empty value clears the override so the token falls back to its base value. Theme registry membership is not validated server-side — call get_canvas_themes first if unsure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        themeId: { type: 'string' },
+        cssVar: { type: 'string' },
+        value: { type: 'string' },
+      },
+      required: ['themeId', 'cssVar', 'value'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'delete_canvas_theme',
+    description:
+      'Delete an in-canvas theme by id. The registry always keeps at least one theme (deleting the last one is ignored), and the active theme falls back to the first remaining theme if the deleted one was active.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        themeId: { type: 'string' },
+      },
+      required: ['themeId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'capture_embed_snapshot',
+    description:
+      'Capture website snapshots for an embed item, mirroring the embed inspector\'s Capture action. Queues the capture for the live canvas (the browser runs the capture pipeline): ready captures land as media items below the embed, and the embed\'s capture status fields update. targets defaults to ["desktop"]; provider defaults to "auto".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+        targets: {
+          type: 'array',
+          items: { type: 'string', enum: ['desktop', 'mobile'] },
+          minItems: 1,
+        },
+        provider: { type: 'string', enum: ['auto', 'playwright', 'fetch'] },
+      },
+      required: ['itemId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'check_embed_frame_policy',
+    description:
+      'Re-check whether an embed URL allows iframing, mirroring the embed inspector\'s Re-check action: resets the embed\'s frame-status fields to "unknown" so the live canvas re-probes the URL. Read the item afterwards (get_canvas_state) for the verdict.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string' },
+      },
+      required: ['itemId'],
       additionalProperties: false,
     },
   },
@@ -1647,6 +1841,10 @@ const PROMPT_DEFINITIONS = [
 
 let protocolVersion = FALLBACK_PROTOCOL_VERSION
 
+// 'ndjson' (spec-correct MCP stdio) | 'lsp' (legacy Content-Length framing).
+// Decided by sniffing the first client bytes; responses mirror the client.
+let framingMode = null
+
 const context = getCanvasAgentContextFromEnv()
 const parser = createMessageParser(handleMessage)
 process.stdin.on('data', (chunk) => parser.push(chunk))
@@ -1676,16 +1874,31 @@ function sizeSchema() {
   }
 }
 
+// MCP stdio transport is newline-delimited JSON (one JSON-RPC message per
+// line). The original implementation spoke LSP-style Content-Length framing,
+// which no real MCP client uses — codex/claude handshakes hung until their
+// 30s startup timeout. The parser now sniffs the first bytes per connection
+// and mirrors the client's framing on responses; ndjson is the default.
 function createMessageParser(onMessage) {
   let buffer = Buffer.alloc(0)
   let expectedLength = null
+
+  const parseBody = (body) => {
+    const text = body.trim()
+    if (!text) return
+    try {
+      void onMessage(JSON.parse(text))
+    } catch (error) {
+      process.stderr.write(`[canvas-mcp] Failed to parse JSON message: ${error instanceof Error ? error.message : String(error)}\n`)
+    }
+  }
 
   return {
     push(chunk) {
       buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)])
 
       while (true) {
-        if (expectedLength == null) {
+        if (framingMode === 'lsp' && expectedLength == null) {
           const headerEnd = buffer.indexOf('\r\n\r\n')
           if (headerEnd < 0) return
 
@@ -1701,17 +1914,43 @@ function createMessageParser(onMessage) {
           expectedLength = contentLength
         }
 
-        if (buffer.length < expectedLength) return
-
-        const body = buffer.slice(0, expectedLength).toString('utf8')
-        buffer = buffer.slice(expectedLength)
-        expectedLength = null
-
-        try {
-          void onMessage(JSON.parse(body))
-        } catch (error) {
-          process.stderr.write(`[canvas-mcp] Failed to parse JSON message: ${error instanceof Error ? error.message : String(error)}\n`)
+        if (framingMode === 'lsp') {
+          if (buffer.length < expectedLength) return
+          const body = buffer.slice(0, expectedLength).toString('utf8')
+          buffer = buffer.slice(expectedLength)
+          expectedLength = null
+          parseBody(body)
+          continue
         }
+
+        // Framing not decided yet: skip leading whitespace, then sniff.
+        let offset = 0
+        while (
+          offset < buffer.length &&
+          (buffer[offset] === 0x0a || buffer[offset] === 0x0d || buffer[offset] === 0x20 || buffer[offset] === 0x09)
+        ) {
+          offset += 1
+        }
+        if (offset > 0) buffer = buffer.slice(offset)
+        if (buffer.length === 0) return
+
+        if (framingMode == null) {
+          if (buffer[0] === 0x7b /* "{" */) {
+            framingMode = 'ndjson'
+          } else {
+            // Anything else (e.g. "Content-Length:") is legacy LSP framing.
+            const headerStart = buffer.indexOf('\r\n\r\n')
+            if (headerStart < 0 && buffer.length < 256) return
+            framingMode = 'lsp'
+            continue
+          }
+        }
+
+        const lineEnd = buffer.indexOf('\n')
+        if (lineEnd < 0) return
+        const body = buffer.slice(0, lineEnd).toString('utf8')
+        buffer = buffer.slice(lineEnd + 1)
+        parseBody(body)
       }
     },
   }
@@ -2349,8 +2588,30 @@ async function callTool(name, args) {
       return runExportBoard(args)
     case 'duplicate_items':
       return runDuplicateItems(args)
+    case 'move_items_into_artboard':
+      return runMoveItemsIntoArtboard(args)
+    case 'update_section_sizing':
+      return runUpdateSectionSizing(args)
+    case 'wrap_items_in_section':
+      return runWrapItemsInSection(args)
+    case 'reorder_layer':
+      return runReorderLayer(args)
     case 'set_canvas_active_theme':
       return runSetCanvasActiveTheme(args)
+    case 'create_canvas_theme':
+      return runCreateCanvasTheme(args)
+    case 'update_canvas_theme_var':
+      return runUpdateCanvasThemeVar(args)
+    case 'delete_canvas_theme':
+      return runDeleteCanvasTheme(args)
+    case 'capture_embed_snapshot':
+      return runCaptureEmbedSnapshot(args)
+    case 'check_embed_frame_policy':
+      return runCheckEmbedFramePolicy(args)
+    case 'convert_mermaid_to_excalidraw':
+      return runConvertMermaidToExcalidraw(args)
+    case 'set_canvas_tool':
+      return runSetCanvasTool(args)
     case 'undo_source_mutation':
       return runUndoSourceMutation(args)
     case 'redo_source_mutation':
@@ -2706,9 +2967,23 @@ async function runSyncToProject(args) {
 async function runInsertNativeSlotPart(args) {
   const canvasId = normalizeString(args.canvasId)
   const part = normalizeString(args.part)
+  const componentId = normalizeString(args.componentId)
+  const starter = args.starter === true
   if (!canvasId) return asToolError('canvasId is required.')
-  if (!CANVAS_NATIVE_PART_KINDS.includes(part)) {
+  const modes = [Boolean(part), Boolean(componentId), starter].filter(Boolean).length
+  if (modes !== 1) {
+    return asToolError('Provide exactly one of part, componentId, or starter.')
+  }
+  if (part && !CANVAS_NATIVE_PART_KINDS.includes(part)) {
     return asToolError(`part must be one of: ${CANVAS_NATIVE_PART_KINDS.join(', ')}`)
+  }
+  let registryPrimitive = null
+  if (componentId) {
+    const primitives = await listCanvasRegistryPrimitives(context, normalizeString(args.projectId))
+    registryPrimitive = primitives.find((entry) => entry?.id === componentId) || null
+    if (!registryPrimitive) {
+      return asToolError(`Registry primitive not found: ${componentId}`)
+    }
   }
 
   const filePath = normalizeString(args.filePath) || undefined
@@ -2735,6 +3010,14 @@ async function runInsertNativeSlotPart(args) {
     return asToolError(`Slot not found for canvasId: ${canvasId}`)
   }
 
+  const mutation = registryPrimitive
+    ? buildSlotComponentInsertion(slot, registryPrimitive)
+    : starter
+      ? buildSlotStarterInsertion(slot)
+      : buildSlotNativePartInsertion(slot, part, {
+          sourceUrl: normalizeString(args.sourceUrl) || undefined,
+        })
+
   return asToolResult(
     await updateCanvasHtmlNode(context, {
       filePath,
@@ -2742,11 +3025,7 @@ async function runInsertNativeSlotPart(args) {
       canvasId,
       sourceId,
       mtimeMs,
-      mutations: [
-        buildSlotNativePartInsertion(slot, part, {
-          sourceUrl: normalizeString(args.sourceUrl) || undefined,
-        }),
-      ],
+      mutations: [mutation],
     })
   )
 }
@@ -2974,8 +3253,8 @@ async function runUpdateMarkdownBlock(args) {
   const itemId = normalizeString(args.itemId)
   const action = normalizeString(args.action)
   if (!itemId) return asToolError('itemId is required.')
-  if (!action || !['update', 'reorder'].includes(action)) {
-    return asToolError('action must be update or reorder.')
+  if (!action || !['update', 'insert', 'remove', 'reorder'].includes(action)) {
+    return asToolError('action must be one of update, insert, remove, reorder.')
   }
 
   const state = await readCanvasAgentState(context)
@@ -2983,20 +3262,25 @@ async function runUpdateMarkdownBlock(args) {
   if (!item || item.type !== 'markdown') return asToolError(`Markdown item not found: ${itemId}`)
 
   const request =
-    action === 'update'
+    action === 'reorder'
       ? {
-          action,
-          blockIndex: Number.isInteger(args.blockIndex) ? Number(args.blockIndex) : -1,
-          newText: typeof args.newText === 'string' ? args.newText : '',
-        }
-      : {
           action,
           fromIndex: Number.isInteger(args.fromIndex) ? Number(args.fromIndex) : -1,
           toIndex: Number.isInteger(args.toIndex) ? Number(args.toIndex) : -1,
         }
+      : {
+          action,
+          blockIndex: Number.isInteger(args.blockIndex) ? Number(args.blockIndex) : -1,
+          ...(action === 'remove'
+            ? {}
+            : { newText: typeof args.newText === 'string' ? args.newText : '' }),
+        }
 
-  if (action === 'update' && request.blockIndex < 0) {
-    return asToolError('blockIndex is required for update.')
+  if (action !== 'reorder' && request.blockIndex < 0) {
+    return asToolError(`blockIndex is required for ${action}.`)
+  }
+  if (action === 'insert' && !request.newText) {
+    return asToolError('newText is required for insert.')
   }
   if (action === 'reorder' && (request.fromIndex < 0 || request.toIndex < 0)) {
     return asToolError('fromIndex and toIndex are required for reorder.')
@@ -3461,6 +3745,63 @@ async function runDuplicateItems(args) {
   )
 }
 
+async function runMoveItemsIntoArtboard(args) {
+  const state = await readCanvasAgentState(context)
+  const result = buildMoveItemsIntoArtboardResult(state, args)
+  if (!result.ok) return asToolError(`[${result.code}] ${result.error}`)
+  const select = args.select === true
+  return applyOperation(
+    'move_items_into_artboard',
+    createUpdateItemsOperation(result.updates, select),
+    { movedIds: result.movedIds, artboardId: result.artboardId }
+  )
+}
+
+async function runUpdateSectionSizing(args) {
+  const state = await readCanvasAgentState(context)
+  const result = buildUpdateSectionSizingResult(state, args)
+  if (!result.ok) return asToolError(`[${result.code}] ${result.error}`)
+  return applyOperation(
+    'update_section_sizing',
+    createUpdateItemOperation(result.itemId, result.updates),
+    { itemId: result.itemId, updates: result.updates }
+  )
+}
+
+async function runWrapItemsInSection(args) {
+  const state = await readCanvasAgentState(context)
+  const result = buildWrapItemsInSectionResult(state, args)
+  if (!result.ok) return asToolError(`[${result.code}] ${result.error}`)
+  // Section first, re-parent second — the queue applies in order, so the
+  // wrapped items never point at a parent that does not exist yet.
+  const created = await applyOperation(
+    'wrap_items_in_section',
+    createCreateItemOperation(result.sectionItem, true)
+  )
+  if (created.isError) return created
+  return applyOperation(
+    'wrap_items_in_section',
+    createUpdateItemsOperation(result.updates, false),
+    {
+      sectionId: result.sectionItem.id,
+      wrappedIds: result.wrappedIds,
+      mode: result.mode,
+      parentId: result.parentId,
+    }
+  )
+}
+
+async function runReorderLayer(args) {
+  const state = await readCanvasAgentState(context)
+  const result = buildReorderLayerResult(state, args)
+  if (!result.ok) return asToolError(`[${result.code}] ${result.error}`)
+  return applyOperation(
+    'reorder_layer',
+    createUpdateItemsOperation(result.updates, false),
+    { id: normalizeString(args.id), direction: result.direction }
+  )
+}
+
 async function runSetCanvasActiveTheme(args) {
   const themeId = normalizeString(args.themeId)
   if (!themeId) return asToolError('themeId is required.')
@@ -3469,6 +3810,95 @@ async function runSetCanvasActiveTheme(args) {
     createSetActiveThemeOperation(themeId),
     { themeId }
   )
+}
+
+async function runCreateCanvasTheme(args) {
+  const operation = createCreateCanvasThemeOperation(args.label)
+  if (!operation.label) return asToolError('label is required.')
+  return applyOperation('create_canvas_theme', operation, { label: operation.label })
+}
+
+async function runUpdateCanvasThemeVar(args) {
+  const operation = createUpdateCanvasThemeVarOperation(args.themeId, args.cssVar, args.value)
+  if (!operation.themeId) return asToolError('themeId is required.')
+  if (!operation.cssVar) return asToolError('cssVar is required.')
+  return applyOperation('update_canvas_theme_var', operation, {
+    themeId: operation.themeId,
+    cssVar: operation.cssVar,
+    value: operation.value,
+  })
+}
+
+async function runDeleteCanvasTheme(args) {
+  const operation = createDeleteCanvasThemeOperation(args.themeId)
+  if (!operation.themeId) return asToolError('themeId is required.')
+  return applyOperation('delete_canvas_theme', operation, { themeId: operation.themeId })
+}
+
+async function findEmbedItem(itemId) {
+  const state = await readCanvasAgentState(context)
+  const item = Array.isArray(state?.items)
+    ? state.items.find((entry) => entry?.id === itemId)
+    : null
+  return item && item.type === 'embed' ? item : null
+}
+
+async function runCaptureEmbedSnapshot(args) {
+  const operation = createCaptureEmbedSnapshotsOperation(args.itemId, args)
+  if (!operation.itemId) return asToolError('itemId is required.')
+  const item = await findEmbedItem(operation.itemId)
+  if (!item) return asToolError(`Embed item not found: ${operation.itemId}`)
+  if (!normalizeString(item.url)) {
+    return asToolError(`Embed item has no URL to capture: ${operation.itemId}`)
+  }
+  return applyOperation('capture_embed_snapshot', operation, {
+    itemId: operation.itemId,
+    targets: operation.targets,
+    provider: operation.provider,
+  })
+}
+
+async function runCheckEmbedFramePolicy(args) {
+  const itemId = normalizeString(args.itemId)
+  if (!itemId) return asToolError('itemId is required.')
+  const item = await findEmbedItem(itemId)
+  if (!item) return asToolError(`Embed item not found: ${itemId}`)
+  // Same reset the inspector's Re-check button performs — the live canvas
+  // re-probes the URL when embedFrameStatus returns to "unknown".
+  return applyOperation(
+    'check_embed_frame_policy',
+    createUpdateItemOperation(itemId, {
+      embedFrameStatus: 'unknown',
+      embedFrameReason: undefined,
+      embedFrameCheckedAt: undefined,
+      embedFrameCheckedUrl: undefined,
+    }),
+    { itemId }
+  )
+}
+
+async function runConvertMermaidToExcalidraw(args) {
+  const operation = createConvertMermaidToExcalidrawOperation(args.itemId, args.keepOriginal)
+  if (!operation.itemId) return asToolError('itemId is required.')
+  const state = await readCanvasAgentState(context)
+  const item = Array.isArray(state?.items)
+    ? state.items.find((entry) => entry?.id === operation.itemId)
+    : null
+  if (!item || item.type !== 'mermaid') {
+    return asToolError(`Mermaid item not found: ${operation.itemId}`)
+  }
+  return applyOperation('convert_mermaid_to_excalidraw', operation, {
+    itemId: operation.itemId,
+    keepOriginal: operation.keepOriginal,
+  })
+}
+
+async function runSetCanvasTool(args) {
+  const operation = createSetCanvasToolOperation(args.tool)
+  if (!operation.tool) {
+    return asToolError('tool must be one of "select", "edit", "interact".')
+  }
+  return applyOperation('set_canvas_tool', operation, { tool: operation.tool })
 }
 
 // `log-entry` targeting is not yet wired: the mutation log lives only in the
@@ -3630,5 +4060,9 @@ function sendError(id, code, message, data = undefined) {
 
 function sendMessage(payload) {
   const body = JSON.stringify(payload)
-  process.stdout.write(`Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n${body}`)
+  if (framingMode === 'lsp') {
+    process.stdout.write(`Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n${body}`)
+    return
+  }
+  process.stdout.write(`${body}\n`)
 }

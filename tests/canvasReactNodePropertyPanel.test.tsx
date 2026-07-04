@@ -323,6 +323,7 @@ describe("CanvasReactNodePropertyPanel", () => {
     expect(onSourceHtmlChange).toHaveBeenCalledWith("<button>Undo</button>", 1234)
     expect(onWriteSuccess).toHaveBeenCalledWith({
       sourceKind: "html",
+      itemId: "item-1",
       filePath: "components/Button.html",
       mtimeMs: 1234,
       mutations: [{ type: "setTextChild", value: "Undo" }],

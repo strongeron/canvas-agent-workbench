@@ -10,6 +10,11 @@ import {
   buildPrimitiveSnippet,
   type CanvasRegistryPrimitive,
 } from "../../utils/canvasRegistry"
+import {
+  buildLibraryDragPayload,
+  writeLibraryDragPayload,
+  type CanvasLibraryDragPayload,
+} from "../../utils/canvasLibraryDrag"
 import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
 import type { PaperImportQueueItem } from "./CanvasTab"
 import { fetchLocalApps, type LocalAppEntry } from "./localAppsService"
@@ -349,6 +354,9 @@ function ComponentGroup({ component, isExpanded, onToggle }: ComponentGroupProps
 interface CanvasSidebarProps {
   /** Gallery entries to display in the sidebar */
   entries: GalleryEntry[]
+  /** Dragging a project-native primitive arms the iframe insert/wrap drop zones */
+  onPrimitiveDragStart?: (payload: CanvasLibraryDragPayload) => void
+  onPrimitiveDragEnd?: () => void
   /** Add an iframe/embed item to the canvas */
   onAddEmbed: (url: string) => void
   /** Import a local HTML/CSS/JS bundle into the active canvas file and place it on the board */
@@ -434,6 +442,8 @@ interface CanvasSidebarProps {
 
 export function CanvasSidebar({
   entries,
+  onPrimitiveDragStart,
+  onPrimitiveDragEnd,
   onAddEmbed,
   onAddHtmlBundle,
   onAddInlineHtml,
@@ -1556,8 +1566,18 @@ export function CanvasSidebar({
                       <button
                         key={primitive.id}
                         type="button"
+                        draggable
                         onClick={() => void instantiateProjectPrimitive(primitive)}
-                        className="w-full rounded-md border border-default bg-surface-50 px-2.5 py-2 text-left text-[12px] hover:border-brand-300 hover:bg-brand-50"
+                        onDragStart={(event) => {
+                          const payload = buildLibraryDragPayload({
+                            projectId: activeProjectId || "demo",
+                            primitive,
+                          })
+                          writeLibraryDragPayload(event.dataTransfer, payload)
+                          onPrimitiveDragStart?.(payload)
+                        }}
+                        onDragEnd={() => onPrimitiveDragEnd?.()}
+                        className="w-full cursor-grab rounded-md border border-default bg-surface-50 px-2.5 py-2 text-left text-[12px] hover:border-brand-300 hover:bg-brand-50 active:cursor-grabbing"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-semibold text-foreground">{primitive.displayName}</span>

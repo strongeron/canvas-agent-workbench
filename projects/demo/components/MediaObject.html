@@ -1,0 +1,59 @@
+<!doctype html>
+<html data-component="media-object">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        font: 16px/1.5 system-ui, sans-serif;
+        color: #0f172a;
+        background: #f8fafc;
+      }
+      article {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        gap: 24px;
+        padding: 24px;
+        border-radius: 22px;
+        background: white;
+        border: 1px solid #dbe2ea;
+      }
+      figure {
+        display: grid;
+        place-items: center;
+        min-height: 220px;
+        margin: 0;
+        border-radius: 18px;
+        border: 1px dashed #94a3b8;
+        background: linear-gradient(180deg, #eff6ff, #e2e8f0);
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 32px;
+        line-height: 1.05;
+      }
+      p {
+        margin: 0;
+        color: #475569;
+      }
+    </style>
+  </head>
+  <body>
+    <article data-slot="root" data-slot-kind="container">
+      <figure data-slot="media" data-slot-kind="container" data-slot-accepts="image,svg,video">
+        <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <rect x="10" y="10" width="44" height="44" rx="14" stroke="currentColor" stroke-width="3" />
+          <path d="M20 40L28 32L36 36L44 24L48 40" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </figure>
+      <div data-slot="content" data-slot-kind="container">
+        <h1 data-slot="title" data-slot-kind="text">Media Object</h1>
+        <p data-slot="body" data-slot-kind="text">Use this starter when you want an image, SVG, or video block paired with text content and actions.</p>
+      </div>
+    </article>
+  </body>
+</html>

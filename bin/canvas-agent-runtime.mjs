@@ -552,6 +552,13 @@ export async function updateCanvasMarkdownDocument(context, input) {
   })
 }
 
+export async function listCanvasRegistryPrimitives(context, projectId) {
+  const payload = await postAgentNativeJson(context, '/api/canvas/registry/list', {
+    projectId: projectId || undefined,
+  })
+  return Array.isArray(payload?.primitives) ? payload.primitives : []
+}
+
 export async function listDesignTokens(context, projectId = context.projectId) {
   return postAgentNativeJson(context, '/api/canvas/tokens/list', { projectId })
 }

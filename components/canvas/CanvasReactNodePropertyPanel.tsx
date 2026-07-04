@@ -35,6 +35,8 @@ export interface CanvasReactNodePropertyPanelProps {
 
 export interface CanvasReactNodeWriteSuccess {
   sourceKind: "tsx" | "html"
+  /** Item that owns the source; lets inline (no filePath) writes reach the mutation log. */
+  itemId?: string
   filePath?: string
   mtimeMs?: number
   mutations: Array<CanvasAstMutation | CanvasHtmlMutation>
@@ -209,6 +211,7 @@ export function CanvasReactNodePropertyPanel({
         }
         onWriteSuccess?.({
           sourceKind,
+          itemId: selection.itemId,
           filePath: sourceFilePath,
           mtimeMs: nextMtime,
           mutations,

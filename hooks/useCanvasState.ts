@@ -496,6 +496,25 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
                   : item
               ),
             }
+          case "update_items": {
+            const entries = Array.isArray(operation.updates)
+              ? operation.updates.filter(
+                  (entry) => entry && typeof entry === "object" && entry.id
+                )
+              : []
+            if (entries.length === 0) return prev
+            const updatesById = new Map(entries.map((entry) => [entry.id, entry.updates]))
+            return {
+              ...prev,
+              items: prev.items.map((item) => {
+                const updates = updatesById.get(item.id)
+                return updates ? ({ ...item, ...updates } as CanvasItem) : item
+              }),
+              selectedIds: operation.select
+                ? entries.map((entry) => entry.id)
+                : prev.selectedIds,
+            }
+          }
           case "delete_items": {
             const idsToRemove = collectCascadeDeleteIds(prev, operation.ids)
             return {

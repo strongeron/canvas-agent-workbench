@@ -1,0 +1,46 @@
+<!doctype html>
+<html data-component="stack">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font: 16px/1.5 system-ui, sans-serif;
+        color: #0f172a;
+        background: transparent;
+      }
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 24px;
+        min-height: 320px;
+        border: 1px solid #dbe2ea;
+        border-radius: 20px;
+        background: white;
+      }
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        line-height: 1.15;
+      }
+      p {
+        margin: 0;
+        color: #475569;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stack" data-slot="root" data-slot-kind="container">
+      <h1 data-slot="title" data-slot-kind="text">Stack</h1>
+      <p data-slot="body" data-slot-kind="text">Stack children vertically with a consistent gap.</p>
+    </div>
+  </body>
+</html>

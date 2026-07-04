@@ -29,6 +29,17 @@ export interface CanvasGroupResizeTarget {
   rect: CanvasReactNodeRect
 }
 
+export interface CanvasGroupResizeWriteSuccess {
+  sourceKind: "tsx" | "html"
+  filePath?: string
+  mtimeMs?: number
+  mutations: Array<{ type: "setClassName"; value: string } | CanvasSetAttributeStyleMutation>
+  appliedMutations: number
+  canvasIdMap?: Record<string, string | null>
+  prevSourceSnapshot?: string
+  nextSourceSnapshot: string
+}
+
 export interface CanvasGroupResizeDispatchDeps {
   sourceKind: "tsx" | "html"
   sourceId: string
@@ -38,6 +49,11 @@ export interface CanvasGroupResizeDispatchDeps {
   mtimeMs?: number | null
   onSourceReactChange?: (source: string, mtime?: number) => void
   onSourceHtmlChange?: (source: string, mtime?: number) => void
+  /**
+   * Fires once per drag gesture (not per target) when at least one write
+   * applied, so Cmd-Z undoes the whole group resize in a single step.
+   */
+  onWriteSuccess?: (result: CanvasGroupResizeWriteSuccess) => void
   fetchImpl?: typeof fetch
 }
 
@@ -70,6 +86,13 @@ export async function dispatchCanvasGroupResize(
   let applied = 0
   let skipped = 0
   const errors: string[] = []
+  // Snapshot of the source before the FIRST successful write — the undo
+  // target for the whole gesture. For inline sources the initial working
+  // source is authoritative; file-backed writes report their own snapshot.
+  let gesturePrevSnapshot: string | undefined = fileBacked ? undefined : workingSource
+  const appliedMutations: Array<
+    { type: "setClassName"; value: string } | CanvasSetAttributeStyleMutation
+  > = []
 
   for (const target of input.targets) {
     try {
@@ -147,6 +170,7 @@ export async function dispatchCanvasGroupResize(
         ok?: boolean
         sourceReact?: string
         sourceHtml?: string
+        prevSourceSnapshot?: string
         mtimeMs?: number | null
         error?: string
         code?: string
@@ -161,9 +185,13 @@ export async function dispatchCanvasGroupResize(
         )
         continue
       }
+      if (applied === 0 && gesturePrevSnapshot === undefined) {
+        gesturePrevSnapshot = writePayload.prevSourceSnapshot
+      }
       workingSource = nextSource
       if (typeof writePayload.mtimeMs === "number") workingMtime = writePayload.mtimeMs
       applied += 1
+      appliedMutations.push(mutation)
     } catch (error) {
       errors.push(error instanceof Error ? error.message : `Failed to resize ${target.canvasId}.`)
     }
@@ -172,6 +200,15 @@ export async function dispatchCanvasGroupResize(
   if (applied > 0) {
     if (isHtml) deps.onSourceHtmlChange?.(workingSource, workingMtime)
     else deps.onSourceReactChange?.(workingSource, workingMtime)
+    deps.onWriteSuccess?.({
+      sourceKind: deps.sourceKind,
+      filePath: deps.filePath,
+      mtimeMs: workingMtime,
+      mutations: appliedMutations,
+      appliedMutations: applied,
+      prevSourceSnapshot: gesturePrevSnapshot,
+      nextSourceSnapshot: workingSource,
+    })
   }
 
   return { applied, skipped, errors }

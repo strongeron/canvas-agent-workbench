@@ -40,7 +40,7 @@ export interface AgentNativeRuntimeDefinition {
   launchCommand: string
   transport: "cli" | "pty"
   mcpSupport: "native" | "planned"
-  configScope: "global" | "project" | "user"
+  configScope: "global" | "project" | "user" | "session"
   status: AgentCapabilityStatus
 }
 
@@ -121,6 +121,7 @@ export type AgentWorkspaceEventKind =
   | "operation-queued"
   | "operation-applied"
   | "state-synced"
+  | "user-action"
 
 export interface AgentWorkspaceEvent<TOperation = unknown> {
   id: string

@@ -1,8 +1,9 @@
 import { Bot, Copy, Play, RefreshCw, Square, TerminalSquare } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { CopilotChat } from "@copilotkit/react-ui"
 
 import type { UseCanvasAgentBridgeResult } from "../../hooks/useCanvasAgentBridge"
+import type { CanvasAgentLaunchProfile } from "../../types/canvas"
 import { AGENT_NATIVE_WORKSPACE_DEFINITIONS } from "../../utils/agentNativeManifest"
 import { CanvasAgentTerminal } from "./CanvasAgentTerminal"
 
@@ -17,6 +18,10 @@ function formatTimestamp(value: string | null) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "Never"
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+}
+
+function formatLaunchProfile(profile: CanvasAgentLaunchProfile | undefined) {
+  return profile === "full" ? "Full env" : "Lean"
 }
 
 function buildTranscriptText(
@@ -37,6 +42,11 @@ export function CanvasAgentPanel({
   const [pendingSessionActionId, setPendingSessionActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  // Last dimensions the fitted xterm reported. The PTY must start at these,
+  // not the stored 96x28 default, or the TUI hard-wraps mid-word at a width
+  // wider than the visible terminal (FOX2-53).
+  const terminalSizeRef = useRef<{ cols: number; rows: number } | null>(null)
+  const activeSessionSectionRef = useRef<HTMLDivElement>(null)
 
   const sessionCountLabel = useMemo(
     () => `${bridge.sessions.length} session${bridge.sessions.length === 1 ? "" : "s"}`,
@@ -74,13 +84,21 @@ export function CanvasAgentPanel({
     })
   }, [activeSession, bridge])
 
-  const handleCreateSession = async (agentId: string) => {
-    setPendingAgentId(agentId)
+  const handleCreateSession = async (agentId: string, launchProfile: CanvasAgentLaunchProfile) => {
+    setPendingAgentId(`${agentId}:${launchProfile}`)
     setActionError(null)
     try {
-      const session = await bridge.createSession(agentId)
+      const session = await bridge.createSession(agentId, { launchProfile })
       if (session) {
         setActiveSessionId(session.id)
+        // A configured-but-idle session is invisible feedback — start it right
+        // away and bring the Active Session block (and its terminal) into view
+        // so the click has a visible result.
+        activeSessionSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+        await bridge.startSession(session.id, {
+          cols: terminalSizeRef.current?.cols ?? session.cols ?? 96,
+          rows: terminalSizeRef.current?.rows ?? session.rows ?? 28,
+        })
       }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Failed to create session.")
@@ -113,8 +131,8 @@ export function CanvasAgentPanel({
     setActionError(null)
     try {
       await bridge.startSession(activeSession.id, {
-        cols: activeSession.cols ?? 96,
-        rows: activeSession.rows ?? 28,
+        cols: terminalSizeRef.current?.cols ?? activeSession.cols ?? 96,
+        rows: terminalSizeRef.current?.rows ?? activeSession.rows ?? 28,
       })
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Failed to start session.")
@@ -146,11 +164,53 @@ export function CanvasAgentPanel({
   }
 
   const handleTerminalResize = async (size: { cols: number; rows: number }) => {
+    terminalSizeRef.current = size
     if (!activeSession || activeSession.status !== "running") return
     try {
       await bridge.resizeSession(activeSession.id, size)
     } catch {
       // Ignore transient resize failures during panel mount/unmount.
+    }
+  }
+
+  const handleOpenInTerminal = async (sessionId: string) => {
+    setActionError(null)
+    try {
+      // The external launch reuses the same session dir and MCP config — stop
+      // the in-panel PTY first so two agent processes never share a session.
+      const session = bridge.sessions.find((item) => item.id === sessionId)
+      if (session?.status === "running") {
+        await bridge.stopSession(sessionId)
+      }
+      const response = await fetch(
+        `/api/canvas-agent/sessions/${encodeURIComponent(sessionId)}/open-terminal`,
+        { method: "POST" }
+      )
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || "Failed to open Terminal.")
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to open Terminal.")
+    }
+  }
+
+  const handleCreateExternalSession = async (
+    agentId: string,
+    launchProfile: CanvasAgentLaunchProfile
+  ) => {
+    setPendingAgentId(`${agentId}:${launchProfile}:external`)
+    setActionError(null)
+    try {
+      const session = await bridge.createSession(agentId, { launchProfile })
+      if (session) {
+        setActiveSessionId(session.id)
+        await handleOpenInTerminal(session.id)
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to open Terminal.")
+    } finally {
+      setPendingAgentId(null)
     }
   }
 
@@ -214,7 +274,11 @@ export function CanvasAgentPanel({
           className="h-full w-full"
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
+        // The CLI tab stacks stats, agents, surfaces, session, terminal, and
+        // sessions — taller than any viewport. Without its own scroll region
+        // the page body scrolls instead, clipping the panel and hiding the
+        // session list / launch commands entirely (FOX2-39 MT-04 report).
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
           <div className="border-b border-default px-4 py-3">
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg border border-default bg-surface-50 px-3 py-2">
@@ -245,8 +309,8 @@ export function CanvasAgentPanel({
 
             <div className="mt-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-900">
               PTY transport is enabled. Start a session to run Claude Code or Codex directly inside
-              the canvas panel. On first launch, the agent may ask you to trust this workspace
-              before continuing.
+              the canvas panel. Lean sessions load only the canvas MCP server (fast startup, full
+              context budget); choose Full env to bring your global skills and MCP tools along.
             </div>
 
             {(actionError || bridge.status.error) && (
@@ -288,7 +352,9 @@ export function CanvasAgentPanel({
                             ? "Project config"
                             : agent.configScope === "global"
                               ? "Global config"
-                              : "User config"}
+                              : agent.configScope === "session"
+                                ? "Session config"
+                                : "User config"}
                         </span>
                         <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
                           {agent.configMode === "strict-config-file"
@@ -302,14 +368,44 @@ export function CanvasAgentPanel({
                         </div>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleCreateSession(agent.id)}
-                      disabled={!projectId || pendingAgentId === agent.id}
-                      className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:bg-surface-200"
-                    >
-                      {pendingAgentId === agent.id ? "Creating..." : "New session"}
-                    </button>
+                    <div className="grid shrink-0 grid-cols-[1fr_auto] items-stretch gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleCreateSession(agent.id, "lean")}
+                        disabled={!projectId || pendingAgentId === `${agent.id}:lean`}
+                        title="Lean session in the panel terminal: only the canvas MCP server is loaded — no global skills, plugins, or MCP servers competing for startup and context budget."
+                        className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:bg-surface-200"
+                      >
+                        {pendingAgentId === `${agent.id}:lean` ? "Creating..." : "New session"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCreateExternalSession(agent.id, "lean")}
+                        disabled={!projectId || pendingAgentId === `${agent.id}:lean:external`}
+                        title="Open a lean session in macOS Terminal instead of the panel."
+                        className="inline-flex items-center justify-center rounded-md border border-default px-2 py-1.5 text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <TerminalSquare className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCreateSession(agent.id, "full")}
+                        disabled={!projectId || pendingAgentId === `${agent.id}:full`}
+                        title="Full environment in the panel terminal: your global skills, plugins, and MCP servers are loaded too, with the canvas server added on top. Slower startup, larger context."
+                        className="rounded-md border border-default px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {pendingAgentId === `${agent.id}:full` ? "Creating..." : "Full env"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCreateExternalSession(agent.id, "full")}
+                        disabled={!projectId || pendingAgentId === `${agent.id}:full:external`}
+                        title="Open a full-environment session in macOS Terminal instead of the panel."
+                        className="inline-flex items-center justify-center rounded-md border border-default px-2 py-1.5 text-foreground hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <TerminalSquare className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -371,7 +467,7 @@ export function CanvasAgentPanel({
             </div>
           </div>
 
-          <div className="border-b border-default px-4 py-3">
+          <div ref={activeSessionSectionRef} className="border-b border-default px-4 py-3">
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold text-foreground">Active Session</div>
               {activeSession && (
@@ -387,8 +483,10 @@ export function CanvasAgentPanel({
                   <div>
                     <div className="text-sm font-medium text-foreground">{activeSession.title}</div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {activeSession.agentLabel} · PID {activeSession.pid ?? "—"} ·{" "}
-                      {activeSession.cols ?? "—"}x{activeSession.rows ?? "—"}
+                      {activeSession.agentLabel} ·{" "}
+                      {formatLaunchProfile(activeSession.launchProfile)} · PID{" "}
+                      {activeSession.pid ?? "—"} · {activeSession.cols ?? "—"}x
+                      {activeSession.rows ?? "—"}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -421,9 +519,18 @@ export function CanvasAgentPanel({
                       <Copy className="h-3.5 w-3.5" />
                       Copy
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenInTerminal(activeSession.id)}
+                      title="Open this session in macOS Terminal"
+                      className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1.5 text-xs font-medium text-foreground hover:bg-surface-50"
+                    >
+                      <TerminalSquare className="h-3.5 w-3.5" />
+                      Terminal
+                    </button>
                   </div>
                 </div>
-                <div className="mt-3 rounded-md bg-foreground px-3 py-2 font-mono text-[11px] leading-5 text-muted">
+                <div className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap break-all rounded-md bg-foreground px-3 py-2 font-mono text-[11px] leading-5 text-muted">
                   {activeSession.launchCommand}
                 </div>
                 <div className="mt-2 text-[11px] text-muted-foreground">
@@ -551,6 +658,7 @@ export function CanvasAgentPanel({
             <CanvasAgentTerminal
               sessionId={activeSession?.id}
               output={activeOutput}
+              outputEvents={bridge.outputEvents}
               running={activeSession?.status === "running"}
               onInput={handleTerminalInput}
               onResize={handleTerminalResize}
@@ -582,23 +690,38 @@ export function CanvasAgentPanel({
                       >
                         <div className="text-sm font-medium text-foreground">{session.title}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {session.agentLabel} · {session.status}
+                          {session.agentLabel} · {formatLaunchProfile(session.launchProfile)} ·{" "}
+                          {session.status}
                         </div>
                         <div className="mt-2 text-[11px] text-muted-foreground">
                           {session.cwd}
                         </div>
                       </button>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void handleCopy(session.launchCommand)
-                        }}
-                        className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-50"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                        Copy
-                      </button>
+                      <div className="flex shrink-0 flex-col gap-1">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void handleCopy(session.launchCommand)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-50"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void handleOpenInTerminal(session.id)
+                          }}
+                          title="Open this session in macOS Terminal"
+                          className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-50"
+                        >
+                          <TerminalSquare className="h-3.5 w-3.5" />
+                          Terminal
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))

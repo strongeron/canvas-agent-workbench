@@ -1,7 +1,12 @@
 import path from "path"
 
 import type { AgentNativeRuntimeDefinition } from "../types/agentNative"
-import type { CanvasAgentDefinition, CanvasAgentSession } from "../types/canvas"
+import type {
+  CanvasAgentDefinition,
+  CanvasAgentLaunchProfile,
+  CanvasAgentSession,
+} from "../types/canvas"
+import { CANVAS_MCP_TOOL_NAMES } from "./canvasMcpToolNames"
 
 export const CANVAS_AGENT_RUNTIME_MCP_GUIDANCE =
   'This session is attached to a live canvas MCP server named "canvas". Prefer MCP resources and tools before Bash when the task touches the app surfaces. Start with workspace://manifest or get_workspace_manifest. For the freeform Canvas surface, use get_canvas_context or get_canvas_state, inspect primitives with list_primitives or get_primitive, create boards with create_artboard, create_native_component_shell, create_primitive_item, and insert_native_slot_part, then use update_item/select_items as needed. For Color Audit review tasks, use get_color_audit_state and get_color_audit_export_preview. For System Canvas review tasks, use get_system_canvas_state. Use export_board only for primitive-only artboards. Use shell and file edits only for repo code changes, tests, or debugging outside the scene graph.'
@@ -17,7 +22,7 @@ export interface AgentNativeRuntimeLaunchMetadata {
 }
 
 export interface AgentNativeRuntimeLaunchContext {
-  session: Pick<CanvasAgentSession, "cwd" | "projectId">
+  session: Pick<CanvasAgentSession, "cwd" | "projectId" | "launchProfile">
   sessionDir: string
   toolCommand: string
   serverUrl: string
@@ -30,6 +35,7 @@ export interface AgentNativeRuntimeSessionDraftInput {
   projectId: string
   cwd: string
   title?: string
+  launchProfile?: CanvasAgentLaunchProfile
   now: string
   toolCommand: string
   mcpServerName: string
@@ -38,6 +44,10 @@ export interface AgentNativeRuntimeSessionDraftInput {
     cols: number
     rows: number
   }
+}
+
+export function normalizeCanvasAgentLaunchProfile(value: unknown): CanvasAgentLaunchProfile {
+  return value === "full" ? "full" : "lean"
 }
 
 export interface AgentNativeRuntimeAdapter extends AgentNativeRuntimeDefinition {
@@ -76,6 +86,43 @@ function buildCodexBootstrapPrompt(guidance: string) {
   return `${guidance} Acknowledge briefly that the canvas MCP tools are available, then wait for the next user task.`
 }
 
+/**
+ * Minimal `config.toml` for an isolated session CODEX_HOME (lean profile):
+ * only the canvas MCP server is wired and the session cwd is pre-trusted, so
+ * the runtime never races the user's global MCP servers, skills, or plugins
+ * for startup/context budget (FOX2-52).
+ */
+function buildCodexLeanHomeConfigToml(context: AgentNativeRuntimeLaunchContext) {
+  return [
+    "# Generated canvas lean launch profile — only the canvas MCP server is wired.",
+    `[mcp_servers.${context.mcpServerName}]`,
+    `command = ${JSON.stringify(process.execPath)}`,
+    `args = [${JSON.stringify(context.mcpServerEntry)}]`,
+    `cwd = ${JSON.stringify(context.session.cwd)}`,
+    "",
+    `[mcp_servers.${context.mcpServerName}.env]`,
+    ...Object.entries(context.mcpEnv).map(
+      ([key, value]) => `${key} = ${JSON.stringify(String(value))}`
+    ),
+    "",
+    `[projects.${JSON.stringify(context.session.cwd)}]`,
+    `trust_level = "trusted"`,
+    "",
+    // Without per-tool approval, codex's non-interactive/never approval
+    // policies DENY MCP tool calls ("user cancelled MCP tool call") instead
+    // of running them. Codex has no server-level approval_mode.
+    ...CANVAS_MCP_TOOL_NAMES.flatMap((toolName) => [
+      `[mcp_servers.${context.mcpServerName}.tools.${toolName}]`,
+      `approval_mode = "approve"`,
+    ]),
+    "",
+  ].join("\n")
+}
+
+function resolveCodexLeanHomeDir(sessionDir: string) {
+  return path.join(sessionDir, "codex-home")
+}
+
 const codexRuntimeAdapter: AgentNativeRuntimeAdapter = {
   id: "codex",
   label: "Codex CLI",
@@ -83,30 +130,55 @@ const codexRuntimeAdapter: AgentNativeRuntimeAdapter = {
   launchCommand: "codex",
   transport: "pty",
   mcpSupport: "native",
-  configScope: "global",
+  configScope: "session",
   status: "ready",
-  configMode: "inline-overrides",
+  configMode: "strict-config-file",
   startupMode: "inline-bootstrap",
   startupGuidance: CANVAS_AGENT_RUNTIME_MCP_GUIDANCE,
   guardNotes:
-    "Uses inline MCP overrides and the runtime's native approval model. Restart the session when MCP wiring changes.",
+    "Lean profile (default) launches with an isolated session CODEX_HOME: only the canvas MCP server is wired, global skills/plugins/MCP servers stay out of the context budget, and auth is seeded from ~/.codex. Full profile keeps your global environment and adds the canvas server via inline overrides.",
   buildLaunchMetadata(context) {
-    const codexOverrides = [
-      `mcp_servers.${context.mcpServerName}.command=${JSON.stringify(process.execPath)}`,
-      `mcp_servers.${context.mcpServerName}.args=${JSON.stringify([context.mcpServerEntry])}`,
-      `mcp_servers.${context.mcpServerName}.env=${formatTomlInlineTable(context.mcpEnv)}`,
-      `mcp_servers.${context.mcpServerName}.cwd=${JSON.stringify(context.session.cwd)}`,
-    ]
-    const overrideArgs = codexOverrides.map((override) => `-c ${shellQuote(override)}`).join(" ")
     const bootstrapPrompt = buildCodexBootstrapPrompt(this.startupGuidance)
-    const agentCommand = `${this.launchCommand} ${overrideArgs} ${shellQuote(bootstrapPrompt)}`.trim()
+    const profile = normalizeCanvasAgentLaunchProfile(context.session.launchProfile)
+
+    if (profile === "full") {
+      const codexOverrides = [
+        `mcp_servers.${context.mcpServerName}.command=${JSON.stringify(process.execPath)}`,
+        `mcp_servers.${context.mcpServerName}.args=${JSON.stringify([context.mcpServerEntry])}`,
+        `mcp_servers.${context.mcpServerName}.env=${formatTomlInlineTable(context.mcpEnv)}`,
+        `mcp_servers.${context.mcpServerName}.cwd=${JSON.stringify(context.session.cwd)}`,
+      ]
+      const overrideArgs = codexOverrides.map((override) => `-c ${shellQuote(override)}`).join(" ")
+      const agentCommand = `${this.launchCommand} ${overrideArgs} ${shellQuote(bootstrapPrompt)}`.trim()
+      return {
+        agentCommand,
+        launchCommand: `cd ${JSON.stringify(context.session.cwd)} && ${agentCommand}`,
+        mcpServerName: context.mcpServerName,
+        mcpServerCommand: `${process.execPath} ${context.mcpServerEntry}`,
+        mcpConfigPath: null,
+        mcpConfigContent: null,
+        startupGuidance: this.startupGuidance,
+      }
+    }
+
+    const codexHomeDir = resolveCodexLeanHomeDir(context.sessionDir)
+    const authSeedPath = path.join(codexHomeDir, "auth.json")
+    // Auth lives inside CODEX_HOME, so each launch re-seeds the lean home from
+    // the user's global auth (fresh tokens even for late external launches).
+    // Codex profiles can only layer on top of the global config — an isolated
+    // home is the only way to *exclude* global MCP servers/skills/plugins.
+    const agentCommand = [
+      `mkdir -p ${shellQuote(codexHomeDir)}`,
+      `{ cp -f "$HOME/.codex/auth.json" ${shellQuote(authSeedPath)} 2>/dev/null || true; }`,
+      `CODEX_HOME=${shellQuote(codexHomeDir)} ${this.launchCommand} ${shellQuote(bootstrapPrompt)}`,
+    ].join(" && ")
     return {
       agentCommand,
       launchCommand: `cd ${JSON.stringify(context.session.cwd)} && ${agentCommand}`,
       mcpServerName: context.mcpServerName,
       mcpServerCommand: `${process.execPath} ${context.mcpServerEntry}`,
-      mcpConfigPath: null,
-      mcpConfigContent: null,
+      mcpConfigPath: path.join(codexHomeDir, "config.toml"),
+      mcpConfigContent: buildCodexLeanHomeConfigToml(context),
       startupGuidance: this.startupGuidance,
     }
   },
@@ -140,10 +212,17 @@ const claudeRuntimeAdapter: AgentNativeRuntimeAdapter = {
   startupMode: "append-system-prompt",
   startupGuidance: CANVAS_AGENT_RUNTIME_MCP_GUIDANCE,
   guardNotes:
-    "Uses a project-scoped strict MCP config file and the runtime's local/project guard settings. Regenerate the config when session context changes.",
+    "Lean profile (default) uses a session-scoped strict MCP config file plus --setting-sources project,local, so user-level skills/plugins/MCP servers stay out of the session. Full profile keeps your global environment and adds the canvas server on top.",
   buildLaunchMetadata(context) {
     const mcpConfigPath = path.join(context.sessionDir, "canvas-mcp.json")
-    const agentCommand = `${this.launchCommand} --append-system-prompt ${shellQuote(this.startupGuidance)} --strict-mcp-config --mcp-config ${shellQuote(mcpConfigPath)}`
+    const profile = normalizeCanvasAgentLaunchProfile(context.session.launchProfile)
+    const profileArgs =
+      profile === "full"
+        ? `--mcp-config ${shellQuote(mcpConfigPath)}`
+        : `--strict-mcp-config --mcp-config ${shellQuote(mcpConfigPath)} --setting-sources project,local`
+    // mcp__canvas (server-level rule) pre-allows every canvas tool so the
+    // session doesn't stop for permission on each scene-graph operation.
+    const agentCommand = `${this.launchCommand} --append-system-prompt ${shellQuote(this.startupGuidance)} --allowedTools mcp__${context.mcpServerName} ${profileArgs}`
     return {
       agentCommand,
       launchCommand: `cd ${JSON.stringify(context.session.cwd)} && ${agentCommand}`,
@@ -209,6 +288,7 @@ export function buildCanvasAgentSessionDraft(
         ? input.title.trim()
         : `${adapter.label} session`,
     cwd: input.cwd,
+    launchProfile: normalizeCanvasAgentLaunchProfile(input.launchProfile),
     agentCommand: adapter.launchCommand,
     launchCommand: `cd ${JSON.stringify(input.cwd)} && ${adapter.launchCommand}`,
     toolCommand: input.toolCommand,

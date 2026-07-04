@@ -27,6 +27,7 @@ import type {
   CanvasTransform,
   CanvasMermaidItem,
   CanvasExcalidrawItem,
+  CanvasEmbedItem,
   CanvasHtmlItem,
   CanvasMarkdownItem,
 } from "../../types/canvas"
@@ -59,6 +60,10 @@ import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./Can
 import type { CanvasOverlayDragKind } from "./CanvasIframeOverlay"
 import type { CanvasReactNodeRect } from "../../utils/canvasReactNodeBridge"
 import { dispatchCanvasResize } from "../../utils/canvasResizeDispatch"
+import {
+  buildCanvasAgentSelectionContext,
+  CANVAS_COPY_FOR_AGENT_EVENT,
+} from "../../utils/canvasAgentSelectionContext"
 import { dispatchCanvasGroupResize } from "../../utils/canvasGroupResizeDispatch"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMcpAppPropsPanel } from "./CanvasMcpAppPropsPanel"
@@ -110,8 +115,10 @@ import {
 } from "../../utils/canvasMutationLog"
 import {
   applySourceSnapshotToItems,
+  buildInlineLogKey,
   inferSourceKindFromFilePath,
   invertCanvasIdMap,
+  parseInlineLogKey,
   resolveSourceFileMtime,
   selectionMatchesLoggedFile,
   summarizeSourceMutations,
@@ -838,6 +845,7 @@ export function CanvasTab({
     getTokenValuesForTheme,
     addTheme,
     updateThemeVar,
+    removeTheme,
   } =
     useThemeRegistry({
       storageKeyPrefix: themeStorageKeyPrefix ?? storageKey,
@@ -1077,8 +1085,13 @@ export function CanvasTab({
   }, [historyToast])
 
   const handleReactNodeWriteSuccess = useCallback((result: CanvasReactNodeWriteSuccess) => {
-    if (!result.filePath || !result.prevSourceSnapshot || result.appliedMutations <= 0) return
-    const filePath = result.filePath
+    if (!result.prevSourceSnapshot || result.appliedMutations <= 0) return
+    // Inline items have no file; log them under a synthetic per-item key so
+    // Cmd-Z works on inline sources too (replay skips the endpoint).
+    const filePath =
+      result.filePath ||
+      (result.itemId ? buildInlineLogKey(result.sourceKind, result.itemId) : undefined)
+    if (!filePath) return
     const prevSourceSnapshot = result.prevSourceSnapshot
     setMutationLogState((current) =>
       pushEntry(current, {
@@ -1137,7 +1150,8 @@ export function CanvasTab({
             sourceHtml,
             ...(typeof mtimeMs === "number" ? { sourceHtmlFileMtime: mtimeMs } : {}),
           } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
-          onWriteSuccess: handleReactNodeWriteSuccess,
+          onWriteSuccess: (writeResult) =>
+            handleReactNodeWriteSuccess({ ...writeResult, itemId }),
         })
       } finally {
         libraryDropInFlightRef.current = false
@@ -1200,7 +1214,11 @@ export function CanvasTab({
       let nextSource: string | undefined
       let nextMtime: number | undefined
 
-      if (kind === "markdown") {
+      if (parseInlineLogKey(entry.filePath)) {
+        // Inline entries have no backing file — the snapshot itself is the
+        // source of truth; apply it to item state without an endpoint write.
+        nextSource = sourceSnapshot
+      } else if (kind === "markdown") {
         const response = await fetch("/api/canvas/markdown/write", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1420,12 +1438,14 @@ export function CanvasTab({
               ? { sourceHtmlFileMtime: mtimeMs }
               : {}),
           } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+        onWriteSuccess: (writeResult) =>
+          handleReactNodeWriteSuccess({ ...writeResult, itemId: event.itemId }),
       })
       if (result.status === "error") {
         setHistoryToast({ id: Date.now(), tone: "error", message: result.error })
       }
     },
-    [items, updateItem]
+    [items, updateItem, handleReactNodeWriteSuccess]
   )
 
   const handleReactNodeGroupResize = useCallback(
@@ -1470,6 +1490,8 @@ export function CanvasTab({
               sourceHtml,
               ...(typeof mtimeMs === "number" ? { sourceHtmlFileMtime: mtimeMs } : {}),
             } satisfies Partial<Omit<CanvasHtmlItem, "id">>),
+          onWriteSuccess: (writeResult) =>
+            handleReactNodeWriteSuccess({ ...writeResult, itemId: event.itemId }),
           }
         )
       } finally {
@@ -1491,7 +1513,159 @@ export function CanvasTab({
         })
       }
     },
-    [items, updateItem]
+    [items, updateItem, handleReactNodeWriteSuccess]
+  )
+
+  const handleConvertMermaidToExcalidraw = useCallback(
+    async (mermaidItemId: string, options?: { keepOriginal?: boolean }) => {
+      const sourceItem = items.find((item) => item.id === mermaidItemId)
+      if (!sourceItem || sourceItem.type !== "mermaid") return
+
+      try {
+        const scene = await convertMermaidSourceToExcalidrawScene(sourceItem.source)
+        addItem({
+          type: "excalidraw",
+          title: sourceItem.title ? `${sourceItem.title} (Excalidraw)` : "Excalidraw sketch",
+          scene,
+          sourceMermaid: sourceItem.source,
+          position: {
+            x: sourceItem.position.x + 48,
+            y: sourceItem.position.y + 48,
+          },
+          size: {
+            width: Math.max(480, sourceItem.size.width),
+            height: Math.max(320, sourceItem.size.height),
+          },
+          rotation: sourceItem.rotation,
+          parentId: sourceItem.parentId,
+          order: sourceItem.order,
+        })
+        if (!options?.keepOriginal) {
+          removeItem(sourceItem.id)
+        }
+        setPropsPanelVisible(true)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to convert Mermaid to Excalidraw."
+        if (typeof window !== "undefined") {
+          window.alert(message)
+        }
+      }
+    },
+    [addItem, items, removeItem]
+  )
+
+  const handleCaptureEmbedSnapshots = useCallback(
+    async (input: { itemId: string; targets: EmbedCaptureTarget[]; provider: EmbedCaptureProvider }) => {
+      const embedItem = items.find(
+        (item): item is CanvasEmbedItem => item.id === input.itemId && item.type === "embed"
+      )
+      if (!embedItem) return
+      const captureUrl = embedItem.url?.trim()
+      if (!captureUrl) return
+      const requestedTargets = Array.from(new Set(input.targets))
+
+      updateItem(embedItem.id, {
+        embedCaptureStatus: "capturing",
+        embedCaptureReason: undefined,
+        embedCaptureProvider: input.provider,
+        embedCaptureTargets: requestedTargets,
+      })
+
+      const result = await captureEmbedSnapshots(captureUrl, {
+        targets: requestedTargets,
+        provider: input.provider,
+      })
+
+      if (result.status !== "ready") {
+        updateItem(embedItem.id, {
+          embedCaptureStatus: "error",
+          embedCaptureReason: result.reason || "Failed to capture website snapshots.",
+          embedCaptureCapturedAt: result.capturedAt || new Date().toISOString(),
+          embedCaptureProvider: input.provider,
+          embedCaptureTargets: requestedTargets,
+        })
+        return
+      }
+
+      const captureByTarget = new Map(
+        result.captures.map((capture) => [capture.target, capture])
+      )
+      const orderedCaptures = requestedTargets
+        .map((target) => captureByTarget.get(target))
+        .filter((capture): capture is NonNullable<typeof capture> => !!capture)
+      const readyCaptures = orderedCaptures.filter(
+        (capture) => capture.status === "ready" && capture.mediaUrl
+      )
+      const failedTargets = requestedTargets.filter(
+        (target) => !(captureByTarget.get(target)?.status === "ready" && captureByTarget.get(target)?.mediaUrl)
+      )
+
+      if (readyCaptures.length === 0) {
+        updateItem(embedItem.id, {
+          embedCaptureStatus: "error",
+          embedCaptureReason: result.reason || "Capture finished but no images were returned.",
+          embedCaptureCapturedAt: result.capturedAt || new Date().toISOString(),
+          embedCaptureProvider: input.provider,
+          embedCaptureTargets: requestedTargets,
+        })
+        return
+      }
+
+      const siblingStartOrder = embedItem.parentId
+        ? Math.max(
+            0,
+            ...items
+              .filter((item) => item.parentId === embedItem.parentId)
+              .map((item) => item.order ?? 0)
+          ) + 1
+        : undefined
+      const baseX = embedItem.position.x
+      const baseY = embedItem.position.y + embedItem.size.height + 28
+      let nextY = baseY
+      for (let index = 0; index < readyCaptures.length; index += 1) {
+        const capture = readyCaptures[index]
+        const size = getCaptureNodeSize(capture.target, capture.viewport)
+        addItem({
+          type: "media",
+          src: capture.mediaUrl!,
+          mediaKind: "image",
+          title: `${embedItem.title || "Website capture"} · ${capture.target}`,
+          sourceUrl: captureUrl,
+          sourceProvider: capture.provider,
+          sourceCapturedAt: capture.capturedAt,
+          controls: false,
+          autoplay: false,
+          objectFit: "cover",
+          position: {
+            x: baseX,
+            y: nextY,
+          },
+          size,
+          rotation: 0,
+          parentId: embedItem.parentId,
+          order:
+            siblingStartOrder !== undefined
+              ? siblingStartOrder + index
+              : undefined,
+        })
+        nextY += size.height + 20
+      }
+
+      selectItem(embedItem.id)
+      const captureReason = failedTargets.length > 0
+        ? `Captured ${readyCaptures.length}/${requestedTargets.length}. Failed: ${failedTargets.join(", ")}.`
+        : `Captured ${readyCaptures.length} snapshot${readyCaptures.length > 1 ? "s" : ""}.`
+      updateItem(embedItem.id, {
+        embedCaptureStatus: failedTargets.length > 0 ? "error" : "ready",
+        embedCaptureReason: captureReason,
+        embedCaptureCapturedAt: result.capturedAt || new Date().toISOString(),
+        embedCaptureProvider: input.provider,
+        embedCaptureTargets: requestedTargets,
+      })
+      setPropsPanelVisible(true)
+    },
+    [addItem, items, selectItem, updateItem]
   )
 
   const applyCanvasAgentOperation = useCallback(
@@ -1530,6 +1704,70 @@ export function CanvasTab({
         return
       }
 
+      if (operation.type === "set_canvas_tool") {
+        if (
+          operation.tool === "select" ||
+          operation.tool === "edit" ||
+          operation.tool === "interact"
+        ) {
+          setCanvasTool(operation.tool)
+        }
+        return
+      }
+
+      if (operation.type === "convert_mermaid_to_excalidraw") {
+        if (typeof operation.itemId === "string" && operation.itemId) {
+          void handleConvertMermaidToExcalidraw(operation.itemId, {
+            keepOriginal: operation.keepOriginal === true,
+          })
+        }
+        return
+      }
+
+      if (operation.type === "create_canvas_theme") {
+        if (typeof operation.label === "string" && operation.label.trim()) {
+          addTheme(operation.label)
+        }
+        return
+      }
+
+      if (operation.type === "update_canvas_theme_var") {
+        if (
+          typeof operation.themeId === "string" &&
+          operation.themeId &&
+          typeof operation.cssVar === "string" &&
+          operation.cssVar
+        ) {
+          updateThemeVar(
+            operation.themeId,
+            operation.cssVar,
+            typeof operation.value === "string" ? operation.value : ""
+          )
+        }
+        return
+      }
+
+      if (operation.type === "delete_canvas_theme") {
+        if (typeof operation.themeId === "string" && operation.themeId) {
+          removeTheme(operation.themeId)
+        }
+        return
+      }
+
+      if (operation.type === "capture_embed_snapshots") {
+        if (typeof operation.itemId === "string" && operation.itemId) {
+          void handleCaptureEmbedSnapshots({
+            itemId: operation.itemId,
+            targets:
+              Array.isArray(operation.targets) && operation.targets.length > 0
+                ? operation.targets
+                : ["desktop"],
+            provider: operation.provider ?? "auto",
+          })
+        }
+        return
+      }
+
       if (operation.type === "undo_source_mutation") {
         void handleUndoMutation()
         return
@@ -1543,14 +1781,19 @@ export function CanvasTab({
       applyRemoteOperation(operation)
     },
     [
+      addTheme,
       applyRemoteOperation,
       fitToView,
+      handleCaptureEmbedSnapshots,
+      handleConvertMermaidToExcalidraw,
       handleRedoMutation,
       handleUndoMutation,
       items,
+      removeTheme,
       selectItems,
       setActiveThemeId,
       setViewport,
+      updateThemeVar,
     ]
   )
   const agentBridge = useCanvasAgentBridge({
@@ -1566,6 +1809,39 @@ export function CanvasTab({
     applyRemoteOperation: applyCanvasAgentOperation,
     hasActiveCanvasFile: Boolean(activeCanvasFile),
   })
+  // Reports user-initiated mutations to the workspace event log (FOX2-45).
+  // Only UI handlers call this — agent operations arrive via
+  // applyCanvasAgentOperation and are logged server-side with actor "agent".
+  const emitUserAction = agentBridge.emitUserAction
+  const handleUserCanvasToolChange = useCallback(
+    (tool: CanvasTool) => {
+      emitUserAction("set-canvas-tool", { tool })
+      setCanvasTool(tool)
+    },
+    [emitUserAction]
+  )
+  // "Copy for agent" (FOX2-56): paste-ready selection context for external
+  // codex/claude sessions or the in-panel terminal.
+  const handleCopyForAgent = useCallback(async () => {
+    const block = buildCanvasAgentSelectionContext({
+      projectId: activeProjectId,
+      canvasPath: activeCanvasFile?.path ?? null,
+      items,
+      selectedIds,
+    })
+    if (!block) return
+    try {
+      await navigator.clipboard.writeText(block)
+      emitUserAction("copy-agent-context", { ids: [...selectedIds] })
+    } catch {
+      // Clipboard unavailable (permissions/insecure context) — nothing to do.
+    }
+  }, [activeCanvasFile, activeProjectId, emitUserAction, items, selectedIds])
+  useEffect(() => {
+    const handle = () => void handleCopyForAgent()
+    window.addEventListener(CANVAS_COPY_FOR_AGENT_EVENT, handle)
+    return () => window.removeEventListener(CANVAS_COPY_FOR_AGENT_EVENT, handle)
+  }, [handleCopyForAgent])
 
   const buildCurrentCanvasFilePayload = useCallback(() => {
     return {
@@ -1647,6 +1923,16 @@ export function CanvasTab({
   )
   const activeCanvasFilePath = activeCanvasFile?.path ?? null
   const activeCanvasFileTitle = activeCanvasFile?.document.meta.title ?? null
+  // The autosave effect reads this through a ref: starting a save flips
+  // canvasFilePersistenceBusy, which re-runs the effect and would mark the
+  // in-flight save `cancelled` — discarding its result meant the saved
+  // signature was never recorded and the autosave looped forever (one save
+  // per second). A completed save is only discarded when the TARGET FILE
+  // changed, which this ref detects.
+  const activeCanvasFilePathRef = useRef<string | null>(activeCanvasFilePath)
+  useEffect(() => {
+    activeCanvasFilePathRef.current = activeCanvasFilePath
+  }, [activeCanvasFilePath])
   const canvasFilePersistenceBusy =
     canvasFilesSaving ||
     canvasFileActionBusy ||
@@ -1723,7 +2009,12 @@ export function CanvasTab({
               assets
             )
           )
-          if (cancelled) return
+          // Do NOT drop the result on `cancelled`: starting this very save
+          // flips canvasFilePersistenceBusy, re-running the effect and
+          // cancelling this closure — the save still completed and its
+          // signature must be recorded or dirty never clears (endless save
+          // loop). Only discard when the active file itself changed.
+          if (activeCanvasFilePathRef.current !== activeCanvasFile.path) return
           setActiveCanvasFile(saved)
           setLastSavedCanvasFileSignature(JSON.stringify(payload))
         } catch (error) {
@@ -2334,9 +2625,10 @@ export function CanvasTab({
 
   const handleDeleteSelected = useCallback(() => {
     if (selectedIds.length > 0) {
+      emitUserAction("delete-items", { ids: [...selectedIds] })
       removeSelected()
     }
-  }, [selectedIds, removeSelected])
+  }, [emitUserAction, selectedIds, removeSelected])
 
   const handleEscape = useCallback(() => {
     if (showHelp) {
@@ -3254,45 +3546,6 @@ export function CanvasTab({
     [handleAddExcalidraw, handleAddMarkdown, handleAddMermaid]
   )
 
-  const handleConvertMermaidToExcalidraw = useCallback(
-    async (mermaidItemId: string, options?: { keepOriginal?: boolean }) => {
-      const sourceItem = items.find((item) => item.id === mermaidItemId)
-      if (!sourceItem || sourceItem.type !== "mermaid") return
-
-      try {
-        const scene = await convertMermaidSourceToExcalidrawScene(sourceItem.source)
-        addItem({
-          type: "excalidraw",
-          title: sourceItem.title ? `${sourceItem.title} (Excalidraw)` : "Excalidraw sketch",
-          scene,
-          sourceMermaid: sourceItem.source,
-          position: {
-            x: sourceItem.position.x + 48,
-            y: sourceItem.position.y + 48,
-          },
-          size: {
-            width: Math.max(480, sourceItem.size.width),
-            height: Math.max(320, sourceItem.size.height),
-          },
-          rotation: sourceItem.rotation,
-          parentId: sourceItem.parentId,
-          order: sourceItem.order,
-        })
-        if (!options?.keepOriginal) {
-          removeItem(sourceItem.id)
-        }
-        setPropsPanelVisible(true)
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to convert Mermaid to Excalidraw."
-        if (typeof window !== "undefined") {
-          window.alert(message)
-        }
-      }
-    },
-    [addItem, items, removeItem]
-  )
-
   const handleDropMediaFiles = useCallback(
     async (input: { files: File[]; position: { x: number; y: number } }) => {
       if (!input.files.length) return
@@ -3354,116 +3607,6 @@ export function CanvasTab({
     window.addEventListener("paste", handlePaste)
     return () => window.removeEventListener("paste", handlePaste)
   }, [handlePasteMediaFiles])
-
-  const handleCaptureEmbedSnapshots = useCallback(
-    async (input: { targets: EmbedCaptureTarget[]; provider: EmbedCaptureProvider }) => {
-      if (!selectedEmbedItem) return
-      const captureUrl = selectedEmbedItem.url?.trim()
-      if (!captureUrl) return
-      const requestedTargets = Array.from(new Set(input.targets))
-
-      updateItem(selectedEmbedItem.id, {
-        embedCaptureStatus: "capturing",
-        embedCaptureReason: undefined,
-        embedCaptureProvider: input.provider,
-        embedCaptureTargets: requestedTargets,
-      })
-
-      const result = await captureEmbedSnapshots(captureUrl, {
-        targets: requestedTargets,
-        provider: input.provider,
-      })
-
-      if (result.status !== "ready") {
-        updateItem(selectedEmbedItem.id, {
-          embedCaptureStatus: "error",
-          embedCaptureReason: result.reason || "Failed to capture website snapshots.",
-          embedCaptureCapturedAt: result.capturedAt || new Date().toISOString(),
-          embedCaptureProvider: input.provider,
-          embedCaptureTargets: requestedTargets,
-        })
-        return
-      }
-
-      const captureByTarget = new Map(
-        result.captures.map((capture) => [capture.target, capture])
-      )
-      const orderedCaptures = requestedTargets
-        .map((target) => captureByTarget.get(target))
-        .filter((capture): capture is NonNullable<typeof capture> => !!capture)
-      const readyCaptures = orderedCaptures.filter(
-        (capture) => capture.status === "ready" && capture.mediaUrl
-      )
-      const failedTargets = requestedTargets.filter(
-        (target) => !(captureByTarget.get(target)?.status === "ready" && captureByTarget.get(target)?.mediaUrl)
-      )
-
-      if (readyCaptures.length === 0) {
-        updateItem(selectedEmbedItem.id, {
-          embedCaptureStatus: "error",
-          embedCaptureReason: result.reason || "Capture finished but no images were returned.",
-          embedCaptureCapturedAt: result.capturedAt || new Date().toISOString(),
-          embedCaptureProvider: input.provider,
-          embedCaptureTargets: requestedTargets,
-        })
-        return
-      }
-
-      const siblingStartOrder = selectedEmbedItem.parentId
-        ? Math.max(
-            0,
-            ...items
-              .filter((item) => item.parentId === selectedEmbedItem.parentId)
-              .map((item) => item.order ?? 0)
-          ) + 1
-        : undefined
-      const baseX = selectedEmbedItem.position.x
-      const baseY = selectedEmbedItem.position.y + selectedEmbedItem.size.height + 28
-      let nextY = baseY
-      for (let index = 0; index < readyCaptures.length; index += 1) {
-        const capture = readyCaptures[index]
-        const size = getCaptureNodeSize(capture.target, capture.viewport)
-        addItem({
-          type: "media",
-          src: capture.mediaUrl!,
-          mediaKind: "image",
-          title: `${selectedEmbedItem.title || "Website capture"} · ${capture.target}`,
-          sourceUrl: captureUrl,
-          sourceProvider: capture.provider,
-          sourceCapturedAt: capture.capturedAt,
-          controls: false,
-          autoplay: false,
-          objectFit: "cover",
-          position: {
-            x: baseX,
-            y: nextY,
-          },
-          size,
-          rotation: 0,
-          parentId: selectedEmbedItem.parentId,
-          order:
-            siblingStartOrder !== undefined
-              ? siblingStartOrder + index
-              : undefined,
-        })
-        nextY += size.height + 20
-      }
-
-      selectItem(selectedEmbedItem.id)
-      const captureReason = failedTargets.length > 0
-        ? `Captured ${readyCaptures.length}/${requestedTargets.length}. Failed: ${failedTargets.join(", ")}.`
-        : `Captured ${readyCaptures.length} snapshot${readyCaptures.length > 1 ? "s" : ""}.`
-      updateItem(selectedEmbedItem.id, {
-        embedCaptureStatus: failedTargets.length > 0 ? "error" : "ready",
-        embedCaptureReason: captureReason,
-        embedCaptureCapturedAt: result.capturedAt || new Date().toISOString(),
-        embedCaptureProvider: input.provider,
-        embedCaptureTargets: requestedTargets,
-      })
-      setPropsPanelVisible(true)
-    },
-    [addItem, items, selectedEmbedItem, selectItem, updateItem]
-  )
 
   const handleAddArtboard = useCallback(() => {
     const artboardWidth = 960
@@ -4145,6 +4288,13 @@ export function CanvasTab({
       const dropX = (event.delta.x + 200) / transform.scale - transform.offset.x / transform.scale
       const dropY = (event.delta.y + 100) / transform.scale - transform.offset.y / transform.scale
 
+      emitUserAction("create-item", {
+        itemType: "component",
+        componentId: data.componentId,
+        variantIndex: data.variantIndex,
+        position: { x: Math.max(0, dropX), y: Math.max(0, dropY) },
+        target: "canvas",
+      })
       addItem({
         type: "component",
         componentId: data.componentId,
@@ -4169,6 +4319,14 @@ export function CanvasTab({
         -1
       )
 
+      emitUserAction("create-item", {
+        itemType: "component",
+        componentId: data.componentId,
+        variantIndex: data.variantIndex,
+        parentId: artboardId,
+        order: maxOrder + 1,
+        target: "artboard",
+      })
       addItem({
         type: "component",
         componentId: data.componentId,
@@ -4234,7 +4392,7 @@ export function CanvasTab({
           onToggleThemePanel={toggleThemePanel}
           onToggleCopilotPanel={toggleCopilotPanel}
           canvasTool={canvasTool}
-          onCanvasToolChange={setCanvasTool}
+          onCanvasToolChange={handleUserCanvasToolChange}
           onAddArtboard={handleAddArtboard}
           onAddNativeComponent={() => openNativeComponentDialog()}
           onImportFromPaper={onImportFromPaper ? handleImportFromPaper : undefined}
@@ -4245,6 +4403,7 @@ export function CanvasTab({
           onMoveSelectionToArtboard={handleMoveSelectionToArtboard}
           onWrapSelectionInSection={handleWrapSelectionInSection}
           onDuplicateSelected={handleDuplicate}
+          onCopyForAgent={() => void handleCopyForAgent()}
           itemCount={items.length}
           selectedCount={selectedIds.length}
           canGroup={canGroup}
@@ -4280,6 +4439,8 @@ export function CanvasTab({
           >
               <CanvasSidebar
                 entries={entries}
+                onPrimitiveDragStart={setActiveLibraryDrag}
+                onPrimitiveDragEnd={() => setActiveLibraryDrag(null)}
                 onAddEmbed={handleAddEmbed}
                 onAddHtmlBundle={handleAddHtmlBundle}
                 onAddInlineHtml={handleAddInlineHtml}
@@ -4402,6 +4563,7 @@ export function CanvasTab({
             transform={transform}
             interactMode={interactMode}
             editMode={editMode}
+            onRequestEditMode={() => handleUserCanvasToolChange("edit")}
             Renderer={Renderer}
             getComponentById={getComponentById}
             selectedIds={selectedIds}
@@ -4546,7 +4708,9 @@ export function CanvasTab({
                   embedLiveSourceUrl: undefined,
                 })
               }
-              onCaptureSnapshots={handleCaptureEmbedSnapshots}
+              onCaptureSnapshots={(input) =>
+                handleCaptureEmbedSnapshots({ ...input, itemId: selectedEmbedItem.id })
+              }
               onStopLiveSession={async () => {
                 if (selectedEmbedItem.embedLiveSessionId) {
                   await stopEmbedLiveSession(selectedEmbedItem.embedLiveSessionId)
@@ -4714,6 +4878,9 @@ export function CanvasTab({
               canFillParent={Boolean(selectedItemLayoutParent)}
               canFillHeight={Boolean(selectedItemLayoutParent)}
               onChange={(updates) => updateItem(selectedHtmlItem.id, updates)}
+              onWriteSuccess={(writeResult) =>
+                handleReactNodeWriteSuccess({ ...writeResult, itemId: selectedHtmlItem.id })
+              }
               onResize={(width) =>
                 updateItem(selectedHtmlItem.id, {
                   size: { width, height: selectedHtmlItem.size.height },
@@ -4962,10 +5129,19 @@ export function CanvasTab({
               projectId={activeProjectId}
               themes={themes}
               activeThemeId={activeThemeId}
-              onThemeChange={setActiveThemeId}
+              onThemeChange={(themeId) => {
+                emitUserAction("set-active-theme", { themeId })
+                setActiveThemeId(themeId)
+              }}
               onOpenColorCanvas={handleOpenColorCanvas}
-              onAddTheme={addTheme}
-              onUpdateThemeVar={updateThemeVar}
+              onAddTheme={(label) => {
+                emitUserAction("create-theme", { label })
+                addTheme(label)
+              }}
+              onUpdateThemeVar={(themeId, cssVar, value) => {
+                emitUserAction("update-theme-var", { themeId, cssVar, value })
+                updateThemeVar(themeId, cssVar, value)
+              }}
               tokenValues={tokenValues}
               tokens={resolvedThemeTokens}
               onClose={() => setThemePanelVisible(false)}

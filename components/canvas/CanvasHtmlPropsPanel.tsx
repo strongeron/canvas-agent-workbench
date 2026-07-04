@@ -15,6 +15,7 @@ import {
   listCanvasHtmlSlots,
   readCanvasHtmlNode,
   writeCanvasHtmlNode,
+  type CanvasHtmlMutation,
   type CanvasHtmlSlotInfo,
 } from "../../utils/canvasHtmlEditor"
 import {
@@ -88,6 +89,18 @@ interface CanvasHtmlPropsPanelProps {
    * (`Sync` vs `Re-sync`). U6 persists/derives this; U3 passes `false`.
    */
   syncedBefore?: boolean
+  /**
+   * Fires after a successful inline slot edit so the caller can push a
+   * mutation-log entry. Inline slot edits mutate the draft locally (no
+   * endpoint round-trip), so without this callback Cmd-Z never sees them.
+   */
+  onWriteSuccess?: (result: {
+    sourceKind: "html"
+    mutations: CanvasHtmlMutation[]
+    appliedMutations: number
+    prevSourceSnapshot: string
+    nextSourceSnapshot: string
+  }) => void
   onChange: (updates: {
     src?: string
     title?: string
@@ -700,6 +713,7 @@ export function CanvasHtmlPropsPanel({
   canFillHeight = canFillParent,
   projectId = "design-system-foundation",
   onChange,
+  onWriteSuccess,
   onResize,
   onSizeChange,
   onLayoutWidthModeChange,
@@ -882,38 +896,16 @@ export function CanvasHtmlPropsPanel({
     }
   }, [onReplaceBundleFromDirectory])
 
-  const handleInsertSlotStarter = useCallback(
-    (slot: CanvasHtmlSlotInfo) => {
-      if (sourceMode !== "inline") return
-      const result = writeCanvasHtmlNode(
-        draftSourceHtml || "",
-        slot.canvasId,
-        [buildSlotStarter(slot)],
-        { sourceId: sourceIdentity }
-      )
-      if (!result.ok) {
-        setReplaceError(result.error)
-        return
-      }
-      setReplaceError(null)
-      setDraftSourceHtml(result.source)
-      onChange({
-        sourceMode: "inline",
-        sourceHtml: result.source,
+  // Shared commit path for inline slot edits. These mutate the draft locally
+  // (writeCanvasHtmlNode, no endpoint round-trip), so they must report success
+  // upward via onWriteSuccess or Cmd-Z never sees them — the gap that let
+  // inserted parts stack un-undoably (FOX2-42).
+  const commitInlineHtmlWrite = useCallback(
+    (canvasId: string, mutations: CanvasHtmlMutation[]) => {
+      const prevSource = draftSourceHtml || ""
+      const result = writeCanvasHtmlNode(prevSource, canvasId, mutations, {
+        sourceId: sourceIdentity,
       })
-    },
-    [draftSourceHtml, onChange, sourceIdentity, sourceMode]
-  )
-
-  const handleInsertSlotComponent = useCallback(
-    (slot: CanvasHtmlSlotInfo, primitive: CanvasRegistryPrimitive) => {
-      if (sourceMode !== "inline") return
-      const result = writeCanvasHtmlNode(
-        draftSourceHtml || "",
-        slot.canvasId,
-        [buildSlotComponentInsertion(slot, primitive)],
-        { sourceId: sourceIdentity }
-      )
       if (!result.ok) {
         setReplaceError(result.error)
         return
@@ -921,8 +913,31 @@ export function CanvasHtmlPropsPanel({
       setReplaceError(null)
       setDraftSourceHtml(result.source)
       onChange({ sourceMode: "inline", sourceHtml: result.source })
+      onWriteSuccess?.({
+        sourceKind: "html",
+        mutations,
+        appliedMutations: mutations.length,
+        prevSourceSnapshot: prevSource,
+        nextSourceSnapshot: result.source,
+      })
     },
-    [draftSourceHtml, onChange, sourceIdentity, sourceMode]
+    [draftSourceHtml, onChange, onWriteSuccess, sourceIdentity]
+  )
+
+  const handleInsertSlotStarter = useCallback(
+    (slot: CanvasHtmlSlotInfo) => {
+      if (sourceMode !== "inline") return
+      commitInlineHtmlWrite(slot.canvasId, [buildSlotStarter(slot)])
+    },
+    [commitInlineHtmlWrite, sourceMode]
+  )
+
+  const handleInsertSlotComponent = useCallback(
+    (slot: CanvasHtmlSlotInfo, primitive: CanvasRegistryPrimitive) => {
+      if (sourceMode !== "inline") return
+      commitInlineHtmlWrite(slot.canvasId, [buildSlotComponentInsertion(slot, primitive)])
+    },
+    [commitInlineHtmlWrite, sourceMode]
   )
 
   const handleInsertSlotPart = useCallback(
@@ -938,39 +953,27 @@ export function CanvasHtmlPropsPanel({
             })
           : null
 
-      const result =
+      if (
         matchedTag &&
         sourceUrl &&
         firstChild &&
         !("error" in firstChild) &&
         firstChild.tag === matchedTag
-          ? writeCanvasHtmlNode(
-              draftSourceHtml || "",
-              firstChildCanvasId,
-              [
-                {
-                  type: "setAttribute",
-                  attrName: part === "link" ? "href" : "src",
-                  value: sourceUrl,
-                },
-              ],
-              { sourceId: sourceIdentity }
-            )
-          : writeCanvasHtmlNode(
-              draftSourceHtml || "",
-              slot.canvasId,
-              [buildSlotNativePartInsertion(slot, part, { sourceUrl })],
-              { sourceId: sourceIdentity }
-            )
-      if (!result.ok) {
-        setReplaceError(result.error)
+      ) {
+        commitInlineHtmlWrite(firstChildCanvasId, [
+          {
+            type: "setAttribute",
+            attrName: part === "link" ? "href" : "src",
+            value: sourceUrl,
+          },
+        ])
         return
       }
-      setReplaceError(null)
-      setDraftSourceHtml(result.source)
-      onChange({ sourceMode: "inline", sourceHtml: result.source })
+      commitInlineHtmlWrite(slot.canvasId, [
+        buildSlotNativePartInsertion(slot, part, { sourceUrl }),
+      ])
     },
-    [draftSourceHtml, onChange, sourceIdentity, sourceMode, slotPartSource]
+    [commitInlineHtmlWrite, draftSourceHtml, sourceIdentity, sourceMode, slotPartSource]
   )
 
   const handleApplySlotMetadata = useCallback(
@@ -978,33 +981,21 @@ export function CanvasHtmlPropsPanel({
       if (sourceMode !== "inline") return
       const draft = slotEdits[slot.canvasId]
       if (!draft || !draft.name.trim()) return
-      const result = writeCanvasHtmlNode(
-        draftSourceHtml || "",
-        slot.canvasId,
-        [
-          { type: "setAttribute", attrName: "data-slot", value: draft.name.trim() },
-          {
-            type: "setAttribute",
-            attrName: "data-slot-kind",
-            value: draft.kind.trim() || null,
-          },
-          {
-            type: "setAttribute",
-            attrName: "data-slot-accepts",
-            value: draft.accepts.trim() || null,
-          },
-        ],
-        { sourceId: sourceIdentity }
-      )
-      if (!result.ok) {
-        setReplaceError(result.error)
-        return
-      }
-      setReplaceError(null)
-      setDraftSourceHtml(result.source)
-      onChange({ sourceMode: "inline", sourceHtml: result.source })
+      commitInlineHtmlWrite(slot.canvasId, [
+        { type: "setAttribute", attrName: "data-slot", value: draft.name.trim() },
+        {
+          type: "setAttribute",
+          attrName: "data-slot-kind",
+          value: draft.kind.trim() || null,
+        },
+        {
+          type: "setAttribute",
+          attrName: "data-slot-accepts",
+          value: draft.accepts.trim() || null,
+        },
+      ])
     },
-    [draftSourceHtml, onChange, slotEdits, sourceIdentity, sourceMode]
+    [commitInlineHtmlWrite, slotEdits, sourceMode]
   )
 
   return (

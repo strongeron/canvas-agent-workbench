@@ -7,15 +7,24 @@ import path from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 import { listCanvasHtmlSlots } from "../utils/canvasHtmlEditor"
+import { CANVAS_MCP_TOOL_NAMES } from "../utils/canvasMcpToolNames"
 
 const WORKSPACE_ROOT = "/Users/strongeron/Evil Martians/Open Source/gallery-poc"
 
+// Spec-correct MCP stdio framing (what codex and claude actually speak):
+// newline-delimited JSON-RPC messages.
 function encodeRpcMessage(payload: unknown) {
+  return `${JSON.stringify(payload)}\n`
+}
+
+// Legacy LSP-style framing the server used to require; still supported for
+// back-compat, response framing mirrors the client.
+function encodeLegacyRpcMessage(payload: unknown) {
   const body = JSON.stringify(payload)
   return `Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`
 }
 
-function createRpcReader(target: NodeJS.ReadableStream) {
+function createRpcReader(target: NodeJS.ReadableStream, framing: "ndjson" | "lsp" = "ndjson") {
   let buffer = Buffer.alloc(0)
   const queue: unknown[] = []
   const waiters: Array<(value: unknown) => void> = []
@@ -32,6 +41,17 @@ function createRpcReader(target: NodeJS.ReadableStream) {
     buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)])
 
     while (true) {
+      if (framing === "ndjson") {
+        const lineEnd = buffer.indexOf("\n")
+        if (lineEnd < 0) break
+        const body = buffer.slice(0, lineEnd).toString("utf8").trim()
+        buffer = buffer.slice(lineEnd + 1)
+        if (!body) continue
+        queue.push(JSON.parse(body))
+        flush()
+        continue
+      }
+
       const headerEnd = buffer.indexOf("\r\n\r\n")
       if (headerEnd < 0) break
 
@@ -166,6 +186,44 @@ describe("canvas MCP server", () => {
                   gap: 16,
                   padding: 24,
                 },
+              },
+              {
+                id: "wrap-a",
+                type: "html",
+                sourceMode: "inline",
+                sourceHtml: "<p>a</p>",
+                parentId: "artboard-1",
+                order: 0,
+                position: { x: 0, y: 0 },
+                size: { width: 280, height: 120 },
+                rotation: 0,
+                zIndex: 0,
+              },
+              {
+                id: "wrap-b",
+                type: "html",
+                sourceMode: "inline",
+                sourceHtml: "<p>b</p>",
+                parentId: "artboard-1",
+                order: 1,
+                position: { x: 0, y: 0 },
+                size: { width: 280, height: 160 },
+                rotation: 0,
+                zIndex: 0,
+              },
+              {
+                id: "embed-1",
+                type: "embed",
+                url: "https://example.com",
+                embedPreviewMode: "auto",
+                embedFrameStatus: "unknown",
+                embedSnapshotStatus: "idle",
+                embedLiveStatus: "idle",
+                embedCaptureStatus: "idle",
+                position: { x: 1480, y: 80 },
+                size: { width: 640, height: 360 },
+                rotation: 0,
+                zIndex: 0,
               },
               {
                 id: "markdown-1",
@@ -322,6 +380,28 @@ describe("canvas MCP server", () => {
             mtimeMs: 123,
             tokens: [{ name: "--color-brand-600", value: "#2563eb", category: "color" }],
             sourceCss: ":root { --color-brand-600: #2563eb; }",
+          })
+        )
+        return
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/canvas/registry/list") {
+        res.statusCode = 200
+        res.setHeader("content-type", "application/json")
+        res.end(
+          JSON.stringify({
+            ok: true,
+            projectId: "design-system-foundation",
+            primitives: [
+              {
+                id: "badge",
+                displayName: "Badge",
+                category: "primitives",
+                kind: "html",
+                snippet: '<span class="badge">New</span>',
+              },
+            ],
+            warnings: [],
           })
         )
         return
@@ -1259,6 +1339,81 @@ describe("canvas MCP server", () => {
       })
       expect(insertMediaSlotPart.result?.structuredContent?.ok).toBe(true)
 
+      // insert_native_slot_part starter mode: the inspector's slot-aware
+      // starter — a container slot gets a labeled content div.
+      const insertSlotStarter = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-slot-starter",
+        method: "tools/call",
+        params: {
+          name: "insert_native_slot_part",
+          arguments: {
+            sourceHtml: slotSourceHtml,
+            sourceId: "inline-slot-source",
+            canvasId: slotCanvasId,
+            starter: true,
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+      expect(htmlWriteRequestBody).toMatchObject({
+        canvasId: slotCanvasId,
+        mutations: [
+          {
+            type: "insertChild",
+            position: 0,
+            childSource: "<div><p>Body content</p></div>",
+          },
+        ],
+      })
+      expect(insertSlotStarter.result?.structuredContent?.ok).toBe(true)
+
+      // insert_native_slot_part componentId mode: appends the registry
+      // primitive's snippet, resolved through /api/canvas/registry/list.
+      const insertSlotComponent = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-slot-component",
+        method: "tools/call",
+        params: {
+          name: "insert_native_slot_part",
+          arguments: {
+            sourceHtml: slotSourceHtml,
+            sourceId: "inline-slot-source",
+            canvasId: slotCanvasId,
+            componentId: "badge",
+          },
+        },
+      })) as { result?: { structuredContent?: Record<string, any> } }
+      expect(htmlWriteRequestBody).toMatchObject({
+        canvasId: slotCanvasId,
+        mutations: [
+          {
+            type: "insertChild",
+            position: 0,
+            childSource: '<span class="badge">New</span>',
+          },
+        ],
+      })
+      expect(insertSlotComponent.result?.structuredContent?.ok).toBe(true)
+
+      // Exactly one insertion mode is allowed per call.
+      const conflictingSlotModes = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "4e-slot-conflict",
+        method: "tools/call",
+        params: {
+          name: "insert_native_slot_part",
+          arguments: {
+            sourceHtml: slotSourceHtml,
+            sourceId: "inline-slot-source",
+            canvasId: slotCanvasId,
+            part: "button",
+            starter: true,
+          },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(conflictingSlotModes.result?.isError).toBe(true)
+      expect(conflictingSlotModes.result?.content?.[0]?.text).toMatch(/exactly one/)
+
       const markdownUpdatePromise = sendRpc({
         jsonrpc: "2.0",
         id: "4e-markdown-update",
@@ -1417,6 +1572,12 @@ describe("canvas MCP server", () => {
               clipStartSec: 4.5,
               clipEndSec: 12,
               objectFit: "contain",
+              // All four playback booleans ride the same single update —
+              // audit open question resolved: no per-field update_item calls.
+              controls: false,
+              autoplay: true,
+              muted: false,
+              loop: true,
             },
           },
         },
@@ -1433,6 +1594,10 @@ describe("canvas MCP server", () => {
             clipStartSec: 4.5,
             clipEndSec: 12,
             objectFit: "contain",
+            controls: false,
+            autoplay: true,
+            muted: false,
+            loop: true,
           },
         },
       })
@@ -1443,6 +1608,8 @@ describe("canvas MCP server", () => {
       })
       const mediaCropUpdate = await mediaCropPromise
       expect(mediaCropUpdate.result?.structuredContent?.updates?.objectFit).toBe("contain")
+      expect(mediaCropUpdate.result?.structuredContent?.updates?.autoplay).toBe(true)
+      expect(mediaCropUpdate.result?.structuredContent?.updates?.controls).toBe(false)
       expect(mediaCropUpdate.result?.structuredContent?.updates?.crop).toEqual({
         x: 0.1,
         y: 0,
@@ -2403,6 +2570,424 @@ describe("canvas MCP server", () => {
       const setActiveThemeResult = await setActiveThemePromise
       expect(setActiveThemeResult.result?.structuredContent?.themeId).toBe("default")
 
+      // Theme CRUD: create snapshots current tokens + activates; update sets
+      // one CSS var (empty value clears); delete keeps at least one theme.
+      // All three are UI-side operations routed to the useThemeRegistry
+      // handlers, like set_canvas_active_theme.
+      const createThemePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-create-theme",
+        method: "tools/call",
+        params: {
+          name: "create_canvas_theme",
+          arguments: { label: "Midnight" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedCreateTheme = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedCreateTheme.request).toMatchObject({
+        toolName: "create_canvas_theme",
+        operation: { type: "create_canvas_theme", label: "Midnight" },
+      })
+      await queuedCreateTheme.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.100Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await createThemePromise).result?.structuredContent?.label).toBe("Midnight")
+
+      const updateThemeVarPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-update-theme-var",
+        method: "tools/call",
+        params: {
+          name: "update_canvas_theme_var",
+          arguments: { themeId: "midnight", cssVar: "--color-brand-600", value: "#0f172a" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedUpdateThemeVar = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedUpdateThemeVar.request).toMatchObject({
+        toolName: "update_canvas_theme_var",
+        operation: {
+          type: "update_canvas_theme_var",
+          themeId: "midnight",
+          cssVar: "--color-brand-600",
+          value: "#0f172a",
+        },
+      })
+      await queuedUpdateThemeVar.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.200Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await updateThemeVarPromise).result?.structuredContent?.cssVar).toBe(
+        "--color-brand-600"
+      )
+
+      const deleteThemePromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-delete-theme",
+        method: "tools/call",
+        params: {
+          name: "delete_canvas_theme",
+          arguments: { themeId: "midnight" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedDeleteTheme = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedDeleteTheme.request).toMatchObject({
+        toolName: "delete_canvas_theme",
+        operation: { type: "delete_canvas_theme", themeId: "midnight" },
+      })
+      await queuedDeleteTheme.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.300Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await deleteThemePromise).result?.structuredContent?.themeId).toBe("midnight")
+
+      // set_canvas_tool: same handler as the toolbar Select/Edit/Interact
+      // toggle, so an agent can pick the pointer-layer mode before a
+      // screenshot or drag.
+      const setCanvasToolPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-set-canvas-tool",
+        method: "tools/call",
+        params: {
+          name: "set_canvas_tool",
+          arguments: { tool: "edit" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedSetCanvasTool = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedSetCanvasTool.request).toMatchObject({
+        toolName: "set_canvas_tool",
+        operation: {
+          type: "set_canvas_tool",
+          tool: "edit",
+        },
+      })
+      await queuedSetCanvasTool.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.500Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const setCanvasToolResult = await setCanvasToolPromise
+      expect(setCanvasToolResult.result?.structuredContent?.tool).toBe("edit")
+
+      // set_canvas_tool rejects unknown modes without queueing an operation.
+      const badToolResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-set-canvas-tool-bad",
+        method: "tools/call",
+        params: {
+          name: "set_canvas_tool",
+          arguments: { tool: "paint" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badToolResponse.result?.isError).toBe(true)
+      expect(badToolResponse.result?.content?.[0]?.text).toMatch(/select.*edit.*interact/)
+
+      // move_items_into_artboard: mirrors the UI "move selection into
+      // artboard" — one call re-parents, appends after current children in
+      // order, and resets position/rotation for flow layout.
+      const moveIntoArtboardPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-move-into-artboard",
+        method: "tools/call",
+        params: {
+          name: "move_items_into_artboard",
+          arguments: { ids: ["item-1", "item-2"], artboardId: "artboard-1" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedMoveIntoArtboard = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedMoveIntoArtboard.request).toMatchObject({
+        toolName: "move_items_into_artboard",
+        operation: {
+          type: "update_items",
+          select: false,
+          updates: [
+            {
+              id: "item-1",
+              updates: {
+                parentId: "artboard-1",
+                // Appends after wrap-a (0) / wrap-b (1), the seeded children.
+                order: 2,
+                position: { x: 0, y: 0 },
+                rotation: 0,
+              },
+            },
+            {
+              id: "item-2",
+              updates: {
+                parentId: "artboard-1",
+                order: 3,
+                position: { x: 0, y: 0 },
+                rotation: 0,
+              },
+            },
+          ],
+        },
+      })
+      await queuedMoveIntoArtboard.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.750Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const moveIntoArtboardResult = await moveIntoArtboardPromise
+      expect(moveIntoArtboardResult.result?.structuredContent?.movedIds).toEqual([
+        "item-1",
+        "item-2",
+      ])
+      expect(moveIntoArtboardResult.result?.structuredContent?.artboardId).toBe("artboard-1")
+
+      // move_items_into_artboard rejects unknown artboards without queueing.
+      const badArtboardResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-move-into-artboard-bad",
+        method: "tools/call",
+        params: {
+          name: "move_items_into_artboard",
+          arguments: { ids: ["item-1"], artboardId: "missing-board" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badArtboardResponse.result?.isError).toBe(true)
+      expect(badArtboardResponse.result?.content?.[0]?.text).toMatch(/No artboard found/)
+
+      // reorder_layer: front mirrors the UI bring-to-front (zIndex jumps to
+      // nextZIndex); up/down are layout-only and rejected for freeform items.
+      const reorderLayerPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-reorder-layer",
+        method: "tools/call",
+        params: {
+          name: "reorder_layer",
+          arguments: { id: "item-1", direction: "front" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedReorderLayer = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedReorderLayer.request).toMatchObject({
+        toolName: "reorder_layer",
+        operation: {
+          type: "update_items",
+          select: false,
+          updates: [{ id: "item-1", updates: { zIndex: 8 } }],
+        },
+      })
+      await queuedReorderLayer.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.800Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const reorderLayerResult = await reorderLayerPromise
+      expect(reorderLayerResult.result?.structuredContent?.id).toBe("item-1")
+      expect(reorderLayerResult.result?.structuredContent?.direction).toBe("front")
+
+      const freeformUpResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-reorder-layer-bad",
+        method: "tools/call",
+        params: {
+          name: "reorder_layer",
+          arguments: { id: "item-2", direction: "up" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(freeformUpResponse.result?.isError).toBe(true)
+      expect(freeformUpResponse.result?.content?.[0]?.text).toMatch(/artboard or section/)
+
+      // wrap_items_in_section: two queued ops — the section is created FIRST,
+      // then the items re-parent into it, so a dangling parentId never exists.
+      const wrapInSectionPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-wrap-in-section",
+        method: "tools/call",
+        params: {
+          name: "wrap_items_in_section",
+          arguments: { ids: ["wrap-a", "wrap-b"], section: { name: "Hero" } },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedWrapCreate = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedWrapCreate.request).toMatchObject({
+        toolName: "wrap_items_in_section",
+        operation: {
+          type: "create_item",
+          select: true,
+          item: {
+            type: "section",
+            name: "Hero",
+            parentId: "artboard-1",
+            order: 0,
+            layout: { display: "grid", columns: 2 },
+          },
+        },
+      })
+      const wrapSectionId = queuedWrapCreate.request.operation.item.id as string
+      expect(wrapSectionId).toMatch(/^canvas-section-/)
+      await queuedWrapCreate.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.850Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+
+      const queuedWrapReparent = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedWrapReparent.request).toMatchObject({
+        toolName: "wrap_items_in_section",
+        operation: {
+          type: "update_items",
+          select: false,
+          updates: [
+            {
+              id: "wrap-a",
+              updates: { parentId: wrapSectionId, order: 0, position: { x: 0, y: 0 }, rotation: 0 },
+            },
+            {
+              id: "wrap-b",
+              updates: { parentId: wrapSectionId, order: 1, position: { x: 0, y: 0 }, rotation: 0 },
+            },
+          ],
+        },
+      })
+      await queuedWrapReparent.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.900Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const wrapInSectionResult = await wrapInSectionPromise
+      expect(wrapInSectionResult.result?.structuredContent?.sectionId).toBe(wrapSectionId)
+      expect(wrapInSectionResult.result?.structuredContent?.wrappedIds).toEqual([
+        "wrap-a",
+        "wrap-b",
+      ])
+      expect(wrapInSectionResult.result?.structuredContent?.mode).toBe("existing-parent")
+
+      // wrap_items_in_section rejects selections without a shared container.
+      const badWrapResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-wrap-in-section-bad",
+        method: "tools/call",
+        params: {
+          name: "wrap_items_in_section",
+          arguments: { ids: ["item-1", "wrap-a"] },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badWrapResponse.result?.isError).toBe(true)
+      expect(badWrapResponse.result?.content?.[0]?.text).toMatch(/share one artboard/)
+
+      // convert_mermaid_to_excalidraw: UI-side conversion (mermaid renders
+      // through the DOM), so the tool validates the item server-side and
+      // queues the operation for the live canvas.
+      const convertMermaidPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-convert-mermaid",
+        method: "tools/call",
+        params: {
+          name: "convert_mermaid_to_excalidraw",
+          arguments: { itemId: "mermaid-1", keepOriginal: true },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedConvertMermaid = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedConvertMermaid.request).toMatchObject({
+        toolName: "convert_mermaid_to_excalidraw",
+        operation: {
+          type: "convert_mermaid_to_excalidraw",
+          itemId: "mermaid-1",
+          keepOriginal: true,
+        },
+      })
+      await queuedConvertMermaid.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.950Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const convertMermaidResult = await convertMermaidPromise
+      expect(convertMermaidResult.result?.structuredContent?.itemId).toBe("mermaid-1")
+      expect(convertMermaidResult.result?.structuredContent?.keepOriginal).toBe(true)
+
+      // convert_mermaid_to_excalidraw rejects non-mermaid items without queueing.
+      const badConvertResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-convert-mermaid-bad",
+        method: "tools/call",
+        params: {
+          name: "convert_mermaid_to_excalidraw",
+          arguments: { itemId: "markdown-1" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badConvertResponse.result?.isError).toBe(true)
+      expect(badConvertResponse.result?.content?.[0]?.text).toMatch(/Mermaid item not found/)
+
+      // capture_embed_snapshot queues the browser-side capture pipeline;
+      // check_embed_frame_policy is the inspector's Re-check (an update_item
+      // that resets the frame-status fields so the canvas re-probes).
+      const captureEmbedPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-capture-embed",
+        method: "tools/call",
+        params: {
+          name: "capture_embed_snapshot",
+          arguments: { itemId: "embed-1", targets: ["desktop", "mobile"], provider: "playwright" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedCaptureEmbed = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedCaptureEmbed.request).toMatchObject({
+        toolName: "capture_embed_snapshot",
+        operation: {
+          type: "capture_embed_snapshots",
+          itemId: "embed-1",
+          targets: ["desktop", "mobile"],
+          provider: "playwright",
+        },
+      })
+      await queuedCaptureEmbed.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.960Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await captureEmbedPromise).result?.structuredContent?.targets).toEqual([
+        "desktop",
+        "mobile",
+      ])
+
+      const checkFramePolicyPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-check-frame-policy",
+        method: "tools/call",
+        params: {
+          name: "check_embed_frame_policy",
+          arguments: { itemId: "embed-1" },
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+      const queuedFramePolicy = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedFramePolicy.request).toMatchObject({
+        toolName: "check_embed_frame_policy",
+        operation: {
+          type: "update_item",
+          id: "embed-1",
+          updates: { embedFrameStatus: "unknown" },
+        },
+      })
+      await queuedFramePolicy.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:06.970Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      expect((await checkFramePolicyPromise).result?.structuredContent?.itemId).toBe("embed-1")
+
+      // Both embed tools reject non-embed items without queueing.
+      const badEmbedResponse = (await sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-capture-embed-bad",
+        method: "tools/call",
+        params: {
+          name: "capture_embed_snapshot",
+          arguments: { itemId: "markdown-1" },
+        },
+      })) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+      expect(badEmbedResponse.result?.isError).toBe(true)
+      expect(badEmbedResponse.result?.content?.[0]?.text).toMatch(/Embed item not found/)
+
       // undo_source_mutation / redo_source_mutation: cmd-Z / cmd-shift-Z
       // parity. The MCP tool enqueues the op; the UI bridge routes it to
       // handleUndoMutation/handleRedoMutation which re-apply the stored
@@ -2791,5 +3376,60 @@ describe("canvas MCP server", () => {
     }
 
     expect(stderr).toBe("")
+  })
+
+  it("still handshakes over legacy Content-Length framing and mirrors it in responses", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "canvas-mcp-legacy-test-"))
+    await mkdir(path.join(tempDir, "queue"), { recursive: true })
+    await mkdir(path.join(tempDir, "results"), { recursive: true })
+
+    const child = spawn("node", ["bin/canvas-mcp-server"], {
+      cwd: WORKSPACE_ROOT,
+      env: {
+        ...process.env,
+        CANVAS_AGENT_SESSION_DIR: tempDir,
+        CANVAS_AGENT_PROJECT_ID: "demo",
+        CANVAS_AGENT_SESSION_ID: "session-legacy",
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+
+    let rawStdout = ""
+    child.stdout.on("data", (chunk) => {
+      rawStdout += chunk.toString()
+    })
+    const readRpcMessage = createRpcReader(child.stdout, "lsp")
+
+    try {
+      child.stdin.write(
+        encodeLegacyRpcMessage({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2025-03-26" },
+        })
+      )
+      const initialize = (await readRpcMessage()) as { result?: Record<string, any> }
+      expect(initialize.result?.serverInfo?.name).toBe("canvas-agent-mcp")
+
+      child.stdin.write(encodeLegacyRpcMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }))
+      const toolsList = (await readRpcMessage()) as {
+        result?: { tools?: Array<{ name: string }> }
+      }
+      expect(toolsList.result?.tools?.map((tool) => tool.name)).toContain(
+        "get_workspace_manifest"
+      )
+
+      // Responses must mirror the client's framing.
+      expect(rawStdout.startsWith("Content-Length:")).toBe(true)
+
+      // Drift guard: the codex lean launch profile writes a per-tool
+      // approval_mode block for every tool in CANVAS_MCP_TOOL_NAMES. If this
+      // fails, update utils/canvasMcpToolNames.ts to match the server.
+      expect(toolsList.result?.tools?.map((tool) => tool.name)).toEqual(CANVAS_MCP_TOOL_NAMES)
+    } finally {
+      child.kill("SIGTERM")
+      await once(child, "exit")
+    }
   })
 })

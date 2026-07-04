@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { GalleryEntry } from "../core/types"
 import type {
   CanvasAgentDefinition,
+  CanvasAgentLaunchProfile,
   CanvasAgentPrimitive,
   CanvasAgentSessionDebug,
   CanvasAgentSession,
@@ -32,19 +33,30 @@ export interface CanvasAgentBridgeStatus {
 }
 
 export interface UseCanvasAgentBridgeResult {
+  /**
+   * Raw PTY output chunks, dispatched as CustomEvent("session-output",
+   * { detail: { sessionId, chunk } }). Terminals consume these append-only —
+   * the trimmed outputBySession string breaks prefix-diffing past 200KB
+   * (FOX2-51) and is only suitable for transcript views and seeding.
+   */
+  outputEvents: EventTarget
   agents: CanvasAgentDefinition[]
   sessions: CanvasAgentSession[]
   status: CanvasAgentBridgeStatus
   outputBySession: Record<string, string>
   debugBySession: Record<string, CanvasAgentSessionDebug>
   refreshSessions: () => Promise<void>
-  createSession: (agentId: string) => Promise<CanvasAgentSession | null>
+  createSession: (
+    agentId: string,
+    options?: { launchProfile?: CanvasAgentLaunchProfile }
+  ) => Promise<CanvasAgentSession | null>
   loadSessionOutput: (sessionId: string) => Promise<string>
   loadSessionDebug: (sessionId: string) => Promise<CanvasAgentSessionDebug | null>
   startSession: (sessionId: string, size?: { cols: number; rows: number }) => Promise<CanvasAgentSession | null>
   stopSession: (sessionId: string) => Promise<CanvasAgentSession | null>
   writeSessionInput: (sessionId: string, input: string) => Promise<void>
   resizeSession: (sessionId: string, size: { cols: number; rows: number }) => Promise<void>
+  emitUserAction: (action: string, payload?: Record<string, unknown>) => void
 }
 
 function buildQuery(params: Record<string, string | undefined>) {
@@ -148,15 +160,25 @@ export function useCanvasAgentBridge({
   hasActiveCanvasFile = false,
 }: UseCanvasAgentBridgeOptions): UseCanvasAgentBridgeResult {
   const clientIdRef = useRef(`canvas-client-${Math.random().toString(36).slice(2, 10)}`)
+  const outputEventsRef = useRef<EventTarget>(new EventTarget())
   const snapshotRef = useRef(snapshot)
   const hasActiveCanvasFileRef = useRef(hasActiveCanvasFile)
   const didHydrateProjectRef = useRef<string | null>(null)
+  // The SSE effect reads this through a ref so the stream survives canvas
+  // state changes. applyRemoteOperation depends on `items` upstream, so
+  // listing it in the effect deps reconnected the EventSource on EVERY
+  // canvas mutation — and operations broadcast during a reconnect gap were
+  // silently dropped (no replay).
+  const applyRemoteOperationRef = useRef(applyRemoteOperation)
   useEffect(() => {
     snapshotRef.current = snapshot
   }, [snapshot])
   useEffect(() => {
     hasActiveCanvasFileRef.current = hasActiveCanvasFile
   }, [hasActiveCanvasFile])
+  useEffect(() => {
+    applyRemoteOperationRef.current = applyRemoteOperation
+  }, [applyRemoteOperation])
   const canvasWorkspaceKey = projectId ? `gallery-${projectId}:canvas` : null
   const [agents, setAgents] = useState<CanvasAgentDefinition[]>([])
   const [sessions, setSessions] = useState<CanvasAgentSession[]>([])
@@ -181,6 +203,36 @@ export function useCanvasAgentBridge({
       return [session, ...previous]
     })
   }, [])
+
+  // Semantic user-action events (FOX2-45). Batched fire-and-forget: UI
+  // handlers report what the user did as operation-shaped payloads; a short
+  // flush window folds bursts (multi-select, rapid toggles) into one POST.
+  const userActionQueueRef = useRef<Array<{ action: string; payload?: Record<string, unknown> }>>([])
+  const userActionFlushRef = useRef<number | null>(null)
+  const emitUserAction = useCallback(
+    (action: string, payload?: Record<string, unknown>) => {
+      if (!canvasWorkspaceKey) return
+      userActionQueueRef.current.push({ action, payload })
+      if (userActionFlushRef.current != null) return
+      userActionFlushRef.current = window.setTimeout(() => {
+        userActionFlushRef.current = null
+        const events = userActionQueueRef.current.splice(0, 50)
+        if (events.length === 0) return
+        void fetch("/api/agent-native/workspaces/canvas/user-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspaceKey: canvasWorkspaceKey,
+            clientId: clientIdRef.current,
+            events,
+          }),
+        }).catch(() => {
+          // Observability only — never disturb the interaction that fired it.
+        })
+      }, 300)
+    },
+    [canvasWorkspaceKey]
+  )
 
   const refreshSessions = useCallback(async () => {
     if (!projectId) {
@@ -208,7 +260,7 @@ export function useCanvasAgentBridge({
   }, [])
 
   const createSession = useCallback(
-    async (agentId: string) => {
+    async (agentId: string, options?: { launchProfile?: CanvasAgentLaunchProfile }) => {
       if (!projectId) return null
       const response = await fetch("/api/canvas-agent/sessions", {
         method: "POST",
@@ -218,6 +270,7 @@ export function useCanvasAgentBridge({
         body: JSON.stringify({
           projectId,
           agentId,
+          launchProfile: options?.launchProfile ?? "lean",
         }),
       })
 
@@ -380,6 +433,7 @@ export function useCanvasAgentBridge({
       }
     }
     didHydrateProjectRef.current = projectId
+    let hydrationCompleted = false
 
     setBridgeReady(false)
     setError(null)
@@ -418,10 +472,12 @@ export function useCanvasAgentBridge({
             )
           })(),
         ])
+        hydrationCompleted = true
         if (!cancelled) {
           setBridgeReady(true)
         }
       } catch (nextError) {
+        hydrationCompleted = true
         if (!cancelled) {
           setError(nextError instanceof Error ? nextError.message : "Canvas agent bridge failed.")
           setBridgeReady(true)
@@ -431,6 +487,14 @@ export function useCanvasAgentBridge({
 
     return () => {
       cancelled = true
+      // StrictMode double-mounts effects: this cleanup cancels the in-flight
+      // hydration, and the didHydrateProjectRef guard would then make the
+      // second run a no-op — bridgeReady would stay false forever and the
+      // workspace up-sync (state/selection/themes) would never fire
+      // ("Last Sync: Never"). Clear the guard so the next run re-hydrates.
+      if (!hydrationCompleted && didHydrateProjectRef.current === projectId) {
+        didHydrateProjectRef.current = null
+      }
     }
   }, [
     loadAgents,
@@ -467,6 +531,11 @@ export function useCanvasAgentBridge({
     const handleSessionOutput = (event: MessageEvent) => {
       const payload = JSON.parse(event.data) as { sessionId?: string; chunk?: string }
       if (!payload.sessionId || typeof payload.chunk !== "string") return
+      outputEventsRef.current.dispatchEvent(
+        new CustomEvent("session-output", {
+          detail: { sessionId: payload.sessionId, chunk: payload.chunk },
+        })
+      )
       setOutputBySession((previous) => ({
         ...previous,
         [payload.sessionId!]: trimSessionOutput(
@@ -506,7 +575,7 @@ export function useCanvasAgentBridge({
       if (!payload.operation || payload.sourceClientId === clientIdRef.current) {
         return
       }
-      applyRemoteOperation(payload.operation)
+      applyRemoteOperationRef.current(payload.operation)
       if (payload.sessionId) {
         void loadSessionDebug(payload.sessionId).catch(() => {
           // Session debug is supplemental; ignore fetch failures here.
@@ -536,7 +605,7 @@ export function useCanvasAgentBridge({
       source.removeEventListener("canvas-operation", handleCanvasOperation)
       source.close()
     }
-  }, [applyRemoteOperation, loadSessionDebug, projectId, upsertSession])
+  }, [loadSessionDebug, projectId, upsertSession])
 
   useEffect(() => {
     if (!projectId || !bridgeReady) return
@@ -609,6 +678,7 @@ export function useCanvasAgentBridge({
     sessions,
     status,
     outputBySession,
+    outputEvents: outputEventsRef.current,
     debugBySession,
     refreshSessions,
     createSession,
@@ -618,5 +688,6 @@ export function useCanvasAgentBridge({
     stopSession,
     writeSessionInput,
     resizeSession,
+    emitUserAction,
   }
 }

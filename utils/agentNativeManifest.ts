@@ -177,7 +177,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "insert_native_slot_part",
         title: "Insert native slot part",
-        description: "Append a native HTML part such as div, section, button, image, svg, or video into a slotted HTML shell node.",
+        description: "Insert content into a slotted HTML shell node: a native HTML part (div, section, button, image, svg, video), a registered library primitive via componentId, or the inspector's slot-aware starter via starter: true.",
         status: "ready",
       },
       {
@@ -211,7 +211,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         id: "update_markdown_block",
         title: "Update markdown block",
         description:
-          "Patch, reorder, insert, or delete markdown blocks on a live markdown item and sync the item source. Supports the patch | reorder | insert | delete actions of the markdown writer.",
+          "Edit markdown blocks on a live markdown item and sync the item source. Actions: update (replace block), insert (splice new block at index; index === block count appends), remove (delete block), reorder (move block).",
         status: "ready",
       },
       {
@@ -458,9 +458,75 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
       },
       {
+        id: "move_items_into_artboard",
+        title: "Move items into artboard",
+        description: "Re-parent canvas items onto an artboard in one call: appends after current children in layout order and resets position/rotation. Mirrors the UI move-selection-into-artboard action and returns { movedIds }.",
+        status: "ready",
+      },
+      {
+        id: "update_section_sizing",
+        title: "Update section sizing",
+        description: "Set a section's sizing behavior like the inspector: fill matches the parent's inner size (remembering the previous size so hug restores it); an explicit width/height sets that size in hug mode.",
+        status: "ready",
+      },
+      {
+        id: "wrap_items_in_section",
+        title: "Wrap items in section",
+        description: "Wrap canvas items in a new grid section in one call. Mirrors the UI wrap-in-section: creates the section under the shared parent (or the containing artboard for freeform items), re-parents the items into it, and selects it. Returns { sectionId, wrappedIds }.",
+        status: "ready",
+      },
+      {
+        id: "reorder_layer",
+        title: "Reorder layer",
+        description: "Reorder a canvas item: front/back adjust freeform zIndex (front mirrors the UI bring-to-front), up/down swap layout order with the adjacent sibling inside an artboard or section.",
+        status: "ready",
+      },
+      {
         id: "set_canvas_active_theme",
         title: "Set canvas active theme",
         description: "Set the active Canvas theme by id. Paired write for get_canvas_themes — same UI handler as picking a theme in CanvasThemePanel.",
+        status: "ready",
+      },
+      {
+        id: "convert_mermaid_to_excalidraw",
+        title: "Convert mermaid to Excalidraw",
+        description: "Convert a mermaid canvas item to an Excalidraw sketch, mirroring the UI action. Runs in the live browser canvas; the new item keeps sourceMermaid for remapping and the original is removed unless keepOriginal is true.",
+        status: "ready",
+      },
+      {
+        id: "set_canvas_tool",
+        title: "Set canvas tool mode",
+        description: "Set the active Canvas tool mode: select (item move/resize), edit (element-level editing inside html nodes), or interact (live iframe interaction). Same handler as the toolbar toggle.",
+        status: "ready",
+      },
+      {
+        id: "create_canvas_theme",
+        title: "Create canvas theme",
+        description: "Create a new in-canvas theme like the Theme panel's Add theme: id slugged from the label, current resolved token values snapshotted as vars, and the theme becomes active.",
+        status: "ready",
+      },
+      {
+        id: "update_canvas_theme_var",
+        title: "Update canvas theme variable",
+        description: "Set one CSS variable on an in-canvas theme like the Theme panel's token inputs. An empty value clears the override.",
+        status: "ready",
+      },
+      {
+        id: "delete_canvas_theme",
+        title: "Delete canvas theme",
+        description: "Delete an in-canvas theme by id. The registry keeps at least one theme; the active theme falls back to the first remaining one.",
+        status: "ready",
+      },
+      {
+        id: "capture_embed_snapshot",
+        title: "Capture embed snapshot",
+        description: "Capture website snapshots for an embed item like the inspector's Capture action. Ready captures land as media items below the embed; targets defaults to desktop, provider to auto.",
+        status: "ready",
+      },
+      {
+        id: "check_embed_frame_policy",
+        title: "Check embed frame policy",
+        description: "Re-check whether an embed URL allows iframing, like the inspector's Re-check: resets the frame-status fields so the live canvas re-probes the URL.",
         status: "ready",
       },
       {

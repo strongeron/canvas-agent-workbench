@@ -69,6 +69,7 @@ interface CanvasToolbarProps {
   onMoveSelectionToArtboard?: () => void
   onWrapSelectionInSection?: () => void
   onDuplicateSelected: () => void
+  onCopyForAgent?: () => void
   onToggleThemePanel: () => void
   onToggleCopilotPanel: () => void
   itemCount: number
@@ -117,6 +118,7 @@ export function CanvasToolbar({
   onMoveSelectionToArtboard,
   onWrapSelectionInSection,
   onDuplicateSelected,
+  onCopyForAgent,
   onToggleThemePanel,
   onToggleCopilotPanel,
   itemCount,
@@ -350,6 +352,20 @@ export function CanvasToolbar({
               <Copy className="h-5 w-5" />
             </Button>
           </Tooltip>
+
+          {onCopyForAgent && (
+            <Tooltip content="Copy for agent — paste-ready context for the selected frames">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onCopyForAgent}
+                className={iconButtonClass}
+                aria-label="Copy selection context for agent"
+              >
+                <Bot className="h-5 w-5" />
+              </Button>
+            </Tooltip>
+          )}
 
           <Tooltip content="Delete selected [ Delete ]">
             <Button

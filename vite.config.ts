@@ -1,4 +1,6 @@
+/// <reference types="vitest/config" />
 import { defineConfig, loadEnv } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path, { dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -95,6 +97,7 @@ import {
 } from './utils/agentNativeWorkspaceEvents'
 import {
   applyCanvasRemoteOperationToState,
+  applyCanvasThemeOperationToSnapshot,
   normalizeCanvasStateSnapshot,
 } from './utils/canvasAgentOperations.mjs'
 import { buildColorAuditWorkspaceManifest } from './utils/colorAuditWorkspaceAdapter'
@@ -593,11 +596,19 @@ function trimCanvasAgentStateHistory(entries) {
 
 function sanitizeCanvasAgentTranscriptText(value) {
   if (typeof value !== 'string') return ''
-  return value
-    .replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
-    .replace(/\r/g, '')
-    .trim()
-    .slice(0, 1_000)
+  return (
+    value
+      // OSC/DCS/APC/PM/SOS sequences with their payload (e.g. the TUI's
+      // "\x1b]10;?" / "\x1b]11;?" color queries), terminated by BEL or ST —
+      // stripping only the ESC prefix used to leave "10;?" noise in the
+      // transcript entries.
+      .replace(/\u001B[\]PX^_][\s\S]*?(?:\u0007|\u001B\\|$)/g, '')
+      .replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+      .replace(/\r/g, '')
+      .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '')
+      .trim()
+      .slice(0, 1_000)
+  )
 }
 
 function resolveCanvasAgentShell() {
@@ -3906,6 +3917,7 @@ function paperImportPlugin() {
         })
 
         if (launch.mcpConfigPath && launch.mcpConfigContent) {
+          await fs.mkdir(path.dirname(launch.mcpConfigPath), { recursive: true })
           await fs.writeFile(launch.mcpConfigPath, launch.mcpConfigContent)
         }
 
@@ -4063,7 +4075,12 @@ function paperImportPlugin() {
           Array.isArray(meta.primitives) || (meta.primitives && typeof meta.primitives === 'object')
             ? normalizeCanvasAgentPrimitiveList(meta.primitives)
             : canvasAgentPrimitivesByProject.get(projectId) || []
-        const normalizedThemeSnapshot = normalizeCanvasThemeSnapshot(meta.themeSnapshot)
+        // Fall back to the existing record like primitives do — otherwise any
+        // agent operation without meta.themeSnapshot wipes the themes the
+        // browser last synced (FOX2-54).
+        const normalizedThemeSnapshot = normalizeCanvasThemeSnapshot(
+          meta.themeSnapshot ?? canvasAgentStateByProject.get(projectId)?.themeSnapshot
+        )
         const record = {
           projectId,
           state: normalizedState,
@@ -4212,11 +4229,19 @@ function paperImportPlugin() {
           canvasAgentStateByProject.get(projectId) ||
           upsertCanvasAgentState(projectId, { items: [], groups: [], nextZIndex: 1, selectedIds: [] }, null)
         const nextState = applyCanvasRemoteOperationToState(currentRecord.state, operation)
+        // Theme ops don't touch canvas state, but the record's themeSnapshot
+        // is the agents' read model — apply them here so get_canvas_themes
+        // reflects the op even with no browser tab connected (FOX2-54).
+        const nextThemeSnapshot = applyCanvasThemeOperationToSnapshot(
+          currentRecord.themeSnapshot,
+          operation
+        )
         const updatedRecord = upsertCanvasAgentState(projectId, nextState, clientId, {
           source,
           operationType: operation?.type || null,
           sessionId,
           toolName,
+          themeSnapshot: nextThemeSnapshot,
         })
         acknowledgeAgentNativeWorkspaceOperations('canvas', canvasWorkspaceKey, operationRecord.cursor)
 
@@ -4984,7 +5009,7 @@ function paperImportPlugin() {
         }
 
         const agentNativeWorkspaceMatch = pathname.match(
-          /^\/api\/agent-native\/workspaces\/([^/]+)\/(manifest|state|selection|primitives|sections|export-preview|screenshot|operations|events|debug)$/
+          /^\/api\/agent-native\/workspaces\/([^/]+)\/(manifest|state|selection|primitives|sections|export-preview|screenshot|operations|events|user-events|debug)$/
         )
         if (agentNativeWorkspaceMatch) {
           const workspaceId = decodeURIComponent(agentNativeWorkspaceMatch[1])
@@ -5129,6 +5154,60 @@ function paperImportPlugin() {
             })
           }
 
+          // Semantic user-action events (FOX2-45): the browser reports
+          // user-initiated mutations as operation-shaped payloads so agents
+          // can observe what the human did, not just coarse state-synced
+          // blobs.
+          if (req.method === 'POST' && resourceName === 'user-events') {
+            try {
+              const body = await readJson(req)
+              const nextWorkspaceKey =
+                typeof body.workspaceKey === 'string' && body.workspaceKey.trim()
+                  ? body.workspaceKey.trim()
+                  : workspaceKey
+              if (!nextWorkspaceKey) {
+                return sendJson(res, 400, { error: 'workspaceKey is required.' })
+              }
+              const incoming = Array.isArray(body.events) ? body.events.slice(0, 50) : []
+              const accepted = []
+              for (const entry of incoming) {
+                if (!entry || typeof entry !== 'object') continue
+                const action =
+                  typeof entry.action === 'string' && entry.action.trim()
+                    ? entry.action.trim()
+                    : ''
+                if (!action) continue
+                const record = appendWorkspaceEvent(
+                  getAgentNativeWorkspaceEventLog(workspaceId, nextWorkspaceKey),
+                  {
+                    kind: 'user-action',
+                    actor: 'user',
+                    source:
+                      typeof body.source === 'string' && body.source.trim()
+                        ? body.source.trim()
+                        : 'canvas-ui',
+                    sourceClientId: typeof body.clientId === 'string' ? body.clientId : null,
+                    operation:
+                      entry.payload && typeof entry.payload === 'object' ? entry.payload : null,
+                    stateSummary: null,
+                    metadata: { action },
+                  }
+                )
+                accepted.push({ id: record.id, cursor: record.cursor })
+              }
+              return sendJson(res, 200, {
+                ok: true,
+                workspaceId,
+                workspaceKey: nextWorkspaceKey,
+                accepted,
+              })
+            } catch (error) {
+              return sendJson(res, 400, {
+                error: error?.message || 'Failed to record user events.',
+              })
+            }
+          }
+
           if (req.method === 'GET' && resourceName === 'debug') {
             const limit = Number.parseInt(requestUrl.searchParams.get('limit') || '60', 10)
             const fallbackDebugStateRecord =
@@ -5184,6 +5263,7 @@ function paperImportPlugin() {
                             ? body.payload.source.trim()
                             : 'canvas-ui',
                         primitives: body.payload.primitives,
+                        themeSnapshot: body.payload.themeSnapshot,
                         sessionId:
                           typeof body.payload?.sessionId === 'string' && body.payload.sessionId.trim()
                             ? body.payload.sessionId.trim()
@@ -5382,6 +5462,7 @@ function paperImportPlugin() {
               title: body.title,
               surfaceId: body.surfaceId,
               reuseSession: body.reuseSession !== false,
+              launchProfile: body.launchProfile,
             })
 
             return sendJson(res, 200, { ok: true, bootstrap })
@@ -5407,6 +5488,7 @@ function paperImportPlugin() {
               agentId,
               cwd: body.cwd,
               title: body.title,
+              launchProfile: body.launchProfile,
             })
 
             broadcastCanvasAgentEvent(projectId, 'session-created', { session })
@@ -5431,6 +5513,45 @@ function paperImportPlugin() {
             session,
             output: canvasAgentOutputBySession.get(sessionId) || '',
           })
+        }
+
+        const canvasAgentSessionOpenTerminalMatch = pathname.match(
+          /^\/api\/canvas-agent\/sessions\/([^/]+)\/open-terminal$/
+        )
+        if (req.method === 'POST' && canvasAgentSessionOpenTerminalMatch) {
+          const sessionId = decodeURIComponent(canvasAgentSessionOpenTerminalMatch[1])
+          const session = findCanvasAgentSession(sessionId)
+          if (!session) {
+            return sendJson(res, 404, { error: 'Canvas agent session not found.' })
+          }
+          if (process.platform !== 'darwin') {
+            return sendJson(res, 400, {
+              error: 'Open in Terminal is only available on macOS. Copy the launch command instead.',
+            })
+          }
+          const launchCommand =
+            typeof session.launchCommand === 'string' ? session.launchCommand.trim() : ''
+          if (!launchCommand) {
+            return sendJson(res, 400, { error: 'Session has no launch command.' })
+          }
+          try {
+            // The command comes from the server-side session record only — the
+            // request carries just the session id, so this endpoint cannot run
+            // arbitrary input. A .command file avoids AppleScript quoting of
+            // the (heavily nested-quoted) launch command: `open` hands it to
+            // Terminal, which executes it in a new window.
+            const sessionDir = await ensureCanvasAgentSessionDir(sessionId)
+            const scriptPath = path.join(sessionDir, 'open-terminal.command')
+            await fs.writeFile(scriptPath, `#!/bin/zsh\n${launchCommand}\n`, { mode: 0o755 })
+            await new Promise((resolve, reject) => {
+              execFile('open', [scriptPath], (error) => (error ? reject(error) : resolve(undefined)))
+            })
+            return sendJson(res, 200, { ok: true, sessionId })
+          } catch (error) {
+            return sendJson(res, 500, {
+              error: error?.message || 'Failed to open Terminal for this session.',
+            })
+          }
         }
 
         const canvasAgentSessionDebugMatch = pathname.match(/^\/api\/canvas-agent\/sessions\/([^/]+)\/debug$/)
@@ -6716,6 +6837,11 @@ if (!HAS_COPILOTKIT_REACT_UI) {
 
 export default defineConfig({
   plugins: [localScanAliasPlugin(), react(), paperImportPlugin(), copilotKitPlugin()],
+  test: {
+    // .canvas-agent holds per-session agent homes; codex populates plugin
+    // caches inside them that ship their own *.test.* files.
+    exclude: [...configDefaults.exclude, '**/.canvas-agent/**'],
+  },
   envDir: __dirname,
   resolve: {
     alias: [

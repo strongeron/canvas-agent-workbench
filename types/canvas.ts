@@ -431,6 +431,11 @@ export type CanvasRemoteOperation =
       updates: CanvasItemUpdate
     }
   | {
+      type: "update_items"
+      updates: Array<{ id: string; updates: CanvasItemUpdate }>
+      select?: boolean
+    }
+  | {
       type: "delete_items"
       ids: string[]
     }
@@ -471,6 +476,35 @@ export type CanvasRemoteOperation =
       themeId: string
     }
   | {
+      type: "set_canvas_tool"
+      tool: "select" | "edit" | "interact"
+    }
+  | {
+      type: "convert_mermaid_to_excalidraw"
+      itemId: string
+      keepOriginal?: boolean
+    }
+  | {
+      type: "create_canvas_theme"
+      label: string
+    }
+  | {
+      type: "update_canvas_theme_var"
+      themeId: string
+      cssVar: string
+      value: string
+    }
+  | {
+      type: "delete_canvas_theme"
+      themeId: string
+    }
+  | {
+      type: "capture_embed_snapshots"
+      itemId: string
+      targets?: Array<"desktop" | "mobile">
+      provider?: "auto" | "playwright" | "fetch"
+    }
+  | {
       type: "undo_source_mutation"
       scope?: "active-file" | "log-entry"
       logEntryId?: string
@@ -481,6 +515,8 @@ export type CanvasRemoteOperation =
       logEntryId?: string
     }
 
+export type CanvasAgentLaunchProfile = "lean" | "full"
+
 export interface CanvasAgentDefinition {
   id: string
   label: string
@@ -488,7 +524,7 @@ export interface CanvasAgentDefinition {
   launchCommand: string
   transport: "cli" | "pty"
   mcpSupport: "native" | "planned"
-  configScope: "global" | "project" | "user"
+  configScope: "global" | "project" | "user" | "session"
   status: AgentCapabilityStatus
   configMode: "inline-overrides" | "strict-config-file"
   startupMode: "inline-bootstrap" | "append-system-prompt"
@@ -502,6 +538,7 @@ export interface CanvasAgentSession {
   agentLabel: string
   title: string
   cwd: string
+  launchProfile?: CanvasAgentLaunchProfile
   agentCommand: string
   launchCommand: string
   toolCommand: string
