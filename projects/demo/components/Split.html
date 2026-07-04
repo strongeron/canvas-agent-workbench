@@ -1,0 +1,54 @@
+<!doctype html>
+<html data-component="split">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font: 16px/1.5 system-ui, sans-serif;
+        color: #0f172a;
+        background: transparent;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 280px;
+        gap: 24px;
+        padding: 24px;
+        min-height: 360px;
+        border: 1px solid #dbe2ea;
+        border-radius: 20px;
+        background: white;
+      }
+      .content {
+        padding: 20px;
+        border: 1px dashed #cbd5e1;
+        border-radius: 14px;
+        color: #475569;
+      }
+      aside {
+        padding: 20px;
+        border: 1px dashed #94a3b8;
+        border-radius: 14px;
+        background: #f8fafc;
+        color: #475569;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="split" data-slot="root" data-slot-kind="container">
+      <div class="content" data-slot="content" data-slot-kind="container">
+        <p>Split</p>
+      </div>
+      <aside data-slot="aside" data-slot-kind="container">
+        <p>Sidebar content</p>
+      </aside>
+    </div>
+  </body>
+</html>

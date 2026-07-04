@@ -1,0 +1,88 @@
+{
+  "kind": "gallery-poc.canvas",
+  "schemaVersion": 1,
+  "surface": "canvas",
+  "meta": {
+    "id": "canvas_1783201416996_vtzc8b",
+    "title": "agent-demo",
+    "slug": "agent-demo",
+    "projectId": "demo",
+    "createdAt": "2026-07-04T21:43:36.996Z",
+    "updatedAt": "2026-07-04T23:45:52.429Z",
+    "tags": [],
+    "favorite": false,
+    "archived": false
+  },
+  "document": {
+    "items": [
+      {
+        "id": "artboard-1783201565737-33dmbu",
+        "type": "artboard",
+        "name": "Codex was here",
+        "position": {
+          "x": 100,
+          "y": 120
+        },
+        "size": {
+          "width": 640,
+          "height": 400
+        },
+        "rotation": 0,
+        "zIndex": 32,
+        "layout": {
+          "display": "flex",
+          "direction": "column",
+          "align": "stretch",
+          "justify": "start",
+          "gap": 24,
+          "padding": 32
+        }
+      },
+      {
+        "id": "claude-note",
+        "type": "markdown",
+        "title": "Claude Code",
+        "source": "# Hello from Claude Code\n\nRunning with a strict session-scoped MCP config (lean profile).",
+        "position": {
+          "x": 900,
+          "y": 120
+        },
+        "size": {
+          "width": 420,
+          "height": 220
+        },
+        "rotation": 0,
+        "zIndex": 29
+      },
+      {
+        "id": "codex-note",
+        "type": "markdown",
+        "title": "Codex",
+        "source": "# Hello from Codex\n\nRunning in an isolated lean CODEX_HOME with only the canvas MCP server.",
+        "position": {
+          "x": 140,
+          "y": 200
+        },
+        "size": {
+          "width": 420,
+          "height": 200
+        },
+        "rotation": 0,
+        "zIndex": 10,
+        "parentId": "artboard-1783201565737-33dmbu"
+      }
+    ],
+    "groups": [],
+    "nextZIndex": 33,
+    "selectedIds": []
+  },
+  "view": {
+    "transform": {
+      "scale": 0.7475450438328894,
+      "offset": {
+        "x": 2.578274034851006,
+        "y": 266.40858777954514
+      }
+    }
+  }
+}

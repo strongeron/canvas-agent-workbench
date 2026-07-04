@@ -1,4 +1,38 @@
 {
-  "ui": [],
+  "ui": [
+    {
+      "id": "primitive/stack",
+      "displayName": "Stack",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Stack.html",
+      "componentSlug": "stack",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "body",
+          "kind": "text",
+          "tag": "p"
+        }
+      ]
+    },
+    {
+      "id": "primitive/video",
+      "displayName": "Video",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Video.html",
+      "componentSlug": "video"
+    }
+  ],
   "page": []
 }
