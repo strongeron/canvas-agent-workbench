@@ -433,6 +433,7 @@ export function useCanvasAgentBridge({
       }
     }
     didHydrateProjectRef.current = projectId
+    let hydrationCompleted = false
 
     setBridgeReady(false)
     setError(null)
@@ -471,10 +472,12 @@ export function useCanvasAgentBridge({
             )
           })(),
         ])
+        hydrationCompleted = true
         if (!cancelled) {
           setBridgeReady(true)
         }
       } catch (nextError) {
+        hydrationCompleted = true
         if (!cancelled) {
           setError(nextError instanceof Error ? nextError.message : "Canvas agent bridge failed.")
           setBridgeReady(true)
@@ -484,6 +487,14 @@ export function useCanvasAgentBridge({
 
     return () => {
       cancelled = true
+      // StrictMode double-mounts effects: this cleanup cancels the in-flight
+      // hydration, and the didHydrateProjectRef guard would then make the
+      // second run a no-op — bridgeReady would stay false forever and the
+      // workspace up-sync (state/selection/themes) would never fire
+      // ("Last Sync: Never"). Clear the guard so the next run re-hydrates.
+      if (!hydrationCompleted && didHydrateProjectRef.current === projectId) {
+        didHydrateProjectRef.current = null
+      }
     }
   }, [
     loadAgents,
