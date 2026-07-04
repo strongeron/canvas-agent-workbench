@@ -234,7 +234,7 @@ export function CanvasAgentPanel({
         // sessions — taller than any viewport. Without its own scroll region
         // the page body scrolls instead, clipping the panel and hiding the
         // session list / launch commands entirely (FOX2-39 MT-04 report).
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
           <div className="border-b border-default px-4 py-3">
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg border border-default bg-surface-50 px-3 py-2">
@@ -441,9 +441,18 @@ export function CanvasAgentPanel({
                       <Copy className="h-3.5 w-3.5" />
                       Copy
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenInTerminal(activeSession.id)}
+                      title="Open this session in macOS Terminal"
+                      className="inline-flex items-center gap-1 rounded-md border border-default px-2 py-1.5 text-xs font-medium text-foreground hover:bg-surface-50"
+                    >
+                      <TerminalSquare className="h-3.5 w-3.5" />
+                      Terminal
+                    </button>
                   </div>
                 </div>
-                <div className="mt-3 rounded-md bg-foreground px-3 py-2 font-mono text-[11px] leading-5 text-muted">
+                <div className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap break-all rounded-md bg-foreground px-3 py-2 font-mono text-[11px] leading-5 text-muted">
                   {activeSession.launchCommand}
                 </div>
                 <div className="mt-2 text-[11px] text-muted-foreground">
