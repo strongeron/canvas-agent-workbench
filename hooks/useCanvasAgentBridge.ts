@@ -32,6 +32,13 @@ export interface CanvasAgentBridgeStatus {
 }
 
 export interface UseCanvasAgentBridgeResult {
+  /**
+   * Raw PTY output chunks, dispatched as CustomEvent("session-output",
+   * { detail: { sessionId, chunk } }). Terminals consume these append-only —
+   * the trimmed outputBySession string breaks prefix-diffing past 200KB
+   * (FOX2-51) and is only suitable for transcript views and seeding.
+   */
+  outputEvents: EventTarget
   agents: CanvasAgentDefinition[]
   sessions: CanvasAgentSession[]
   status: CanvasAgentBridgeStatus
@@ -148,6 +155,7 @@ export function useCanvasAgentBridge({
   hasActiveCanvasFile = false,
 }: UseCanvasAgentBridgeOptions): UseCanvasAgentBridgeResult {
   const clientIdRef = useRef(`canvas-client-${Math.random().toString(36).slice(2, 10)}`)
+  const outputEventsRef = useRef<EventTarget>(new EventTarget())
   const snapshotRef = useRef(snapshot)
   const hasActiveCanvasFileRef = useRef(hasActiveCanvasFile)
   const didHydrateProjectRef = useRef<string | null>(null)
@@ -476,6 +484,11 @@ export function useCanvasAgentBridge({
     const handleSessionOutput = (event: MessageEvent) => {
       const payload = JSON.parse(event.data) as { sessionId?: string; chunk?: string }
       if (!payload.sessionId || typeof payload.chunk !== "string") return
+      outputEventsRef.current.dispatchEvent(
+        new CustomEvent("session-output", {
+          detail: { sessionId: payload.sessionId, chunk: payload.chunk },
+        })
+      )
       setOutputBySession((previous) => ({
         ...previous,
         [payload.sessionId!]: trimSessionOutput(
@@ -618,6 +631,7 @@ export function useCanvasAgentBridge({
     sessions,
     status,
     outputBySession,
+    outputEvents: outputEventsRef.current,
     debugBySession,
     refreshSessions,
     createSession,

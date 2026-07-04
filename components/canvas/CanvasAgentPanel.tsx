@@ -571,6 +571,7 @@ export function CanvasAgentPanel({
             <CanvasAgentTerminal
               sessionId={activeSession?.id}
               output={activeOutput}
+              outputEvents={bridge.outputEvents}
               running={activeSession?.status === "running"}
               onInput={handleTerminalInput}
               onResize={handleTerminalResize}
