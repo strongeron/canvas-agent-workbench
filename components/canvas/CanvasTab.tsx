@@ -60,6 +60,7 @@ import type { CanvasReactNodeResizeEvent, CanvasReactNodeSelection } from "./Can
 import type { CanvasOverlayDragKind } from "./CanvasIframeOverlay"
 import type { CanvasReactNodeRect } from "../../utils/canvasReactNodeBridge"
 import { dispatchCanvasResize } from "../../utils/canvasResizeDispatch"
+import { buildCanvasAgentSelectionContext } from "../../utils/canvasAgentSelectionContext"
 import { dispatchCanvasGroupResize } from "../../utils/canvasGroupResizeDispatch"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMcpAppPropsPanel } from "./CanvasMcpAppPropsPanel"
@@ -1816,6 +1817,23 @@ export function CanvasTab({
     },
     [emitUserAction]
   )
+  // "Copy for agent" (FOX2-56): paste-ready selection context for external
+  // codex/claude sessions or the in-panel terminal.
+  const handleCopyForAgent = useCallback(async () => {
+    const block = buildCanvasAgentSelectionContext({
+      projectId: activeProjectId,
+      canvasPath: activeCanvasFile?.path ?? null,
+      items,
+      selectedIds,
+    })
+    if (!block) return
+    try {
+      await navigator.clipboard.writeText(block)
+      emitUserAction("copy-agent-context", { ids: [...selectedIds] })
+    } catch {
+      // Clipboard unavailable (permissions/insecure context) — nothing to do.
+    }
+  }, [activeCanvasFile, activeProjectId, emitUserAction, items, selectedIds])
 
   const buildCurrentCanvasFilePayload = useCallback(() => {
     return {
@@ -4377,6 +4395,7 @@ export function CanvasTab({
           onMoveSelectionToArtboard={handleMoveSelectionToArtboard}
           onWrapSelectionInSection={handleWrapSelectionInSection}
           onDuplicateSelected={handleDuplicate}
+          onCopyForAgent={() => void handleCopyForAgent()}
           itemCount={items.length}
           selectedCount={selectedIds.length}
           canGroup={canGroup}
