@@ -1,4 +1,6 @@
+/// <reference types="vitest/config" />
 import { defineConfig, loadEnv } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path, { dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -95,6 +97,7 @@ import {
 } from './utils/agentNativeWorkspaceEvents'
 import {
   applyCanvasRemoteOperationToState,
+  applyCanvasThemeOperationToSnapshot,
   normalizeCanvasStateSnapshot,
 } from './utils/canvasAgentOperations.mjs'
 import { buildColorAuditWorkspaceManifest } from './utils/colorAuditWorkspaceAdapter'
@@ -4072,7 +4075,12 @@ function paperImportPlugin() {
           Array.isArray(meta.primitives) || (meta.primitives && typeof meta.primitives === 'object')
             ? normalizeCanvasAgentPrimitiveList(meta.primitives)
             : canvasAgentPrimitivesByProject.get(projectId) || []
-        const normalizedThemeSnapshot = normalizeCanvasThemeSnapshot(meta.themeSnapshot)
+        // Fall back to the existing record like primitives do — otherwise any
+        // agent operation without meta.themeSnapshot wipes the themes the
+        // browser last synced (FOX2-54).
+        const normalizedThemeSnapshot = normalizeCanvasThemeSnapshot(
+          meta.themeSnapshot ?? canvasAgentStateByProject.get(projectId)?.themeSnapshot
+        )
         const record = {
           projectId,
           state: normalizedState,
@@ -4221,11 +4229,19 @@ function paperImportPlugin() {
           canvasAgentStateByProject.get(projectId) ||
           upsertCanvasAgentState(projectId, { items: [], groups: [], nextZIndex: 1, selectedIds: [] }, null)
         const nextState = applyCanvasRemoteOperationToState(currentRecord.state, operation)
+        // Theme ops don't touch canvas state, but the record's themeSnapshot
+        // is the agents' read model — apply them here so get_canvas_themes
+        // reflects the op even with no browser tab connected (FOX2-54).
+        const nextThemeSnapshot = applyCanvasThemeOperationToSnapshot(
+          currentRecord.themeSnapshot,
+          operation
+        )
         const updatedRecord = upsertCanvasAgentState(projectId, nextState, clientId, {
           source,
           operationType: operation?.type || null,
           sessionId,
           toolName,
+          themeSnapshot: nextThemeSnapshot,
         })
         acknowledgeAgentNativeWorkspaceOperations('canvas', canvasWorkspaceKey, operationRecord.cursor)
 
@@ -5193,6 +5209,7 @@ function paperImportPlugin() {
                             ? body.payload.source.trim()
                             : 'canvas-ui',
                         primitives: body.payload.primitives,
+                        themeSnapshot: body.payload.themeSnapshot,
                         sessionId:
                           typeof body.payload?.sessionId === 'string' && body.payload.sessionId.trim()
                             ? body.payload.sessionId.trim()
@@ -6766,6 +6783,11 @@ if (!HAS_COPILOTKIT_REACT_UI) {
 
 export default defineConfig({
   plugins: [localScanAliasPlugin(), react(), paperImportPlugin(), copilotKitPlugin()],
+  test: {
+    // .canvas-agent holds per-session agent homes; codex populates plugin
+    // caches inside them that ship their own *.test.* files.
+    exclude: [...configDefaults.exclude, '**/.canvas-agent/**'],
+  },
   envDir: __dirname,
   resolve: {
     alias: [

@@ -41,6 +41,104 @@ export function normalizeCanvasStateSnapshot(input) {
   }
 }
 
+/**
+ * Server-side counterpart of the browser's theme handlers (useThemeRegistry
+ * addTheme/updateThemeVar/removeTheme + set_active_theme). Theme operations
+ * are "UI-side" in applyCanvasRemoteOperationToState, but the workspace
+ * record's themeSnapshot is the agents' read model — without applying them
+ * here, a theme op reports ok while get_canvas_themes stays empty whenever no
+ * browser tab is connected (FOX2-54). The id slug must match the browser's
+ * so both sides converge on the same theme when a tab IS connected.
+ *
+ * Returns the same snapshot reference when the operation is not theme-related.
+ */
+export function applyCanvasThemeOperationToSnapshot(snapshot, operation) {
+  if (!operation || typeof operation !== 'object' || typeof operation.type !== 'string') {
+    return snapshot
+  }
+
+  const current = {
+    themes: Array.isArray(snapshot?.themes) ? snapshot.themes : [],
+    activeThemeId:
+      typeof snapshot?.activeThemeId === 'string' && snapshot.activeThemeId.trim()
+        ? snapshot.activeThemeId.trim()
+        : null,
+    tokenValues:
+      snapshot?.tokenValues && typeof snapshot.tokenValues === 'object'
+        ? snapshot.tokenValues
+        : {},
+  }
+
+  switch (operation.type) {
+    case 'create_canvas_theme': {
+      const label = normalizeString(operation.label)
+      if (!label) return snapshot
+      const baseId = label
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)+/g, '')
+      let nextId = baseId || `theme-${current.themes.length + 1}`
+      let counter = 2
+      while (current.themes.some((theme) => theme.id === nextId)) {
+        nextId = `${baseId || 'theme'}-${counter}`
+        counter += 1
+      }
+      const newTheme = {
+        id: nextId,
+        label,
+        description: 'Custom theme',
+        vars: { ...current.tokenValues },
+        groupId: nextId,
+      }
+      return {
+        ...current,
+        themes: [...current.themes, newTheme],
+        activeThemeId: nextId,
+      }
+    }
+    case 'update_canvas_theme_var': {
+      const themeId = normalizeString(operation.themeId)
+      const cssVar = normalizeString(operation.cssVar)
+      if (!themeId || !cssVar) return snapshot
+      if (!current.themes.some((theme) => theme.id === themeId)) return snapshot
+      const value = typeof operation.value === 'string' ? operation.value.trim() : ''
+      return {
+        ...current,
+        themes: current.themes.map((theme) => {
+          if (theme.id !== themeId) return theme
+          const nextVars = { ...(theme.vars ?? {}) }
+          if (!value) {
+            delete nextVars[cssVar]
+          } else {
+            nextVars[cssVar] = value
+          }
+          return { ...theme, vars: nextVars }
+        }),
+      }
+    }
+    case 'delete_canvas_theme': {
+      const themeId = normalizeString(operation.themeId)
+      if (!themeId || !current.themes.some((theme) => theme.id === themeId)) return snapshot
+      const remaining = current.themes.filter((theme) => theme.id !== themeId)
+      return {
+        ...current,
+        themes: remaining,
+        activeThemeId:
+          current.activeThemeId === themeId
+            ? remaining[0]?.id ?? null
+            : current.activeThemeId,
+      }
+    }
+    case 'set_active_theme': {
+      const themeId = normalizeString(operation.themeId)
+      if (!themeId || !current.themes.some((theme) => theme.id === themeId)) return snapshot
+      return { ...current, activeThemeId: themeId }
+    }
+    default:
+      return snapshot
+  }
+}
+
 export function collectCanvasCascadeDeleteIds(state, ids) {
   const current = normalizeCanvasStateSnapshot(state)
   const idsToRemove = new Set(Array.isArray(ids) ? ids : [])

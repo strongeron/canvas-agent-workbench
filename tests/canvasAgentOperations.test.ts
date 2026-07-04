@@ -565,4 +565,66 @@ describe("canvas agent operations core", () => {
       code: "bad-input",
     })
   })
+
+  it("applies theme operations to the workspace theme snapshot (FOX2-54)", async () => {
+    const ops = await loadCanvasAgentOperations()
+    const empty = { themes: [], activeThemeId: null, tokenValues: { "--color-brand-600": "#4f46e5" } }
+
+    const created = ops.applyCanvasThemeOperationToSnapshot(empty, {
+      type: "create_canvas_theme",
+      label: "Midnight",
+    })
+    expect(created.themes).toHaveLength(1)
+    expect(created.themes[0]).toMatchObject({
+      id: "midnight",
+      label: "Midnight",
+      vars: { "--color-brand-600": "#4f46e5" },
+    })
+    expect(created.activeThemeId).toBe("midnight")
+
+    // Same slug algorithm as the browser: collisions get numeric suffixes.
+    const collided = ops.applyCanvasThemeOperationToSnapshot(created, {
+      type: "create_canvas_theme",
+      label: "midnight!",
+    })
+    expect(collided.themes.map((theme: { id: string }) => theme.id)).toEqual([
+      "midnight",
+      "midnight-2",
+    ])
+
+    const updated = ops.applyCanvasThemeOperationToSnapshot(created, {
+      type: "update_canvas_theme_var",
+      themeId: "midnight",
+      cssVar: "--color-brand-600",
+      value: "#1e1b4b",
+    })
+    expect(updated.themes[0].vars["--color-brand-600"]).toBe("#1e1b4b")
+
+    const cleared = ops.applyCanvasThemeOperationToSnapshot(updated, {
+      type: "update_canvas_theme_var",
+      themeId: "midnight",
+      cssVar: "--color-brand-600",
+      value: "",
+    })
+    expect(cleared.themes[0].vars["--color-brand-600"]).toBeUndefined()
+
+    const deleted = ops.applyCanvasThemeOperationToSnapshot(created, {
+      type: "delete_canvas_theme",
+      themeId: "midnight",
+    })
+    expect(deleted.themes).toHaveLength(0)
+    expect(deleted.activeThemeId).toBeNull()
+
+    // Non-theme operations return the snapshot untouched (same reference).
+    expect(
+      ops.applyCanvasThemeOperationToSnapshot(created, { type: "select_items", ids: [] })
+    ).toBe(created)
+    // Unknown ids are no-ops, not errors.
+    expect(
+      ops.applyCanvasThemeOperationToSnapshot(created, {
+        type: "delete_canvas_theme",
+        themeId: "ghost",
+      })
+    ).toBe(created)
+  })
 })
