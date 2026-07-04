@@ -28,6 +28,7 @@ export function CanvasAgentTerminal({
 }: CanvasAgentTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
   const lastOutputRef = useRef("")
   const lastSessionIdRef = useRef<string | undefined>(undefined)
   const onInputRef = useRef(onInput)
@@ -100,12 +101,14 @@ export function CanvasAgentTerminal({
     resizeObserver.observe(containerRef.current)
 
     terminalRef.current = terminal
+    fitAddonRef.current = fitAddon
     return () => {
       resizeObserver.disconnect()
       dataDisposable.dispose()
       terminal.dispose()
       fitAddon.dispose()
       terminalRef.current = null
+      fitAddonRef.current = null
       lastOutputRef.current = ""
     }
   }, [terminalTheme])
@@ -114,7 +117,17 @@ export function CanvasAgentTerminal({
     const terminal = terminalRef.current
     if (!terminal) return
     terminal.options.disableStdin = !running
-  }, [running])
+    if (!running || !sessionId) return
+    // The PTY may have spawned at the session's stored default (96x28) before
+    // the fitted dimensions were known — push the real fitted size as soon as
+    // the session is running so the TUI re-wraps at the visible edge (FOX2-53).
+    const fitAddon = fitAddonRef.current
+    if (!fitAddon) return
+    fitAddon.fit()
+    const dimensions = fitAddon.proposeDimensions()
+    if (!dimensions) return
+    onResizeRef.current({ cols: dimensions.cols, rows: dimensions.rows })
+  }, [running, sessionId])
 
   useEffect(() => {
     if (!outputEvents) return
