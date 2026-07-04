@@ -1841,6 +1841,10 @@ const PROMPT_DEFINITIONS = [
 
 let protocolVersion = FALLBACK_PROTOCOL_VERSION
 
+// 'ndjson' (spec-correct MCP stdio) | 'lsp' (legacy Content-Length framing).
+// Decided by sniffing the first client bytes; responses mirror the client.
+let framingMode = null
+
 const context = getCanvasAgentContextFromEnv()
 const parser = createMessageParser(handleMessage)
 process.stdin.on('data', (chunk) => parser.push(chunk))
@@ -1870,16 +1874,31 @@ function sizeSchema() {
   }
 }
 
+// MCP stdio transport is newline-delimited JSON (one JSON-RPC message per
+// line). The original implementation spoke LSP-style Content-Length framing,
+// which no real MCP client uses — codex/claude handshakes hung until their
+// 30s startup timeout. The parser now sniffs the first bytes per connection
+// and mirrors the client's framing on responses; ndjson is the default.
 function createMessageParser(onMessage) {
   let buffer = Buffer.alloc(0)
   let expectedLength = null
+
+  const parseBody = (body) => {
+    const text = body.trim()
+    if (!text) return
+    try {
+      void onMessage(JSON.parse(text))
+    } catch (error) {
+      process.stderr.write(`[canvas-mcp] Failed to parse JSON message: ${error instanceof Error ? error.message : String(error)}\n`)
+    }
+  }
 
   return {
     push(chunk) {
       buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)])
 
       while (true) {
-        if (expectedLength == null) {
+        if (framingMode === 'lsp' && expectedLength == null) {
           const headerEnd = buffer.indexOf('\r\n\r\n')
           if (headerEnd < 0) return
 
@@ -1895,17 +1914,43 @@ function createMessageParser(onMessage) {
           expectedLength = contentLength
         }
 
-        if (buffer.length < expectedLength) return
-
-        const body = buffer.slice(0, expectedLength).toString('utf8')
-        buffer = buffer.slice(expectedLength)
-        expectedLength = null
-
-        try {
-          void onMessage(JSON.parse(body))
-        } catch (error) {
-          process.stderr.write(`[canvas-mcp] Failed to parse JSON message: ${error instanceof Error ? error.message : String(error)}\n`)
+        if (framingMode === 'lsp') {
+          if (buffer.length < expectedLength) return
+          const body = buffer.slice(0, expectedLength).toString('utf8')
+          buffer = buffer.slice(expectedLength)
+          expectedLength = null
+          parseBody(body)
+          continue
         }
+
+        // Framing not decided yet: skip leading whitespace, then sniff.
+        let offset = 0
+        while (
+          offset < buffer.length &&
+          (buffer[offset] === 0x0a || buffer[offset] === 0x0d || buffer[offset] === 0x20 || buffer[offset] === 0x09)
+        ) {
+          offset += 1
+        }
+        if (offset > 0) buffer = buffer.slice(offset)
+        if (buffer.length === 0) return
+
+        if (framingMode == null) {
+          if (buffer[0] === 0x7b /* "{" */) {
+            framingMode = 'ndjson'
+          } else {
+            // Anything else (e.g. "Content-Length:") is legacy LSP framing.
+            const headerStart = buffer.indexOf('\r\n\r\n')
+            if (headerStart < 0 && buffer.length < 256) return
+            framingMode = 'lsp'
+            continue
+          }
+        }
+
+        const lineEnd = buffer.indexOf('\n')
+        if (lineEnd < 0) return
+        const body = buffer.slice(0, lineEnd).toString('utf8')
+        buffer = buffer.slice(lineEnd + 1)
+        parseBody(body)
       }
     },
   }
@@ -4015,5 +4060,9 @@ function sendError(id, code, message, data = undefined) {
 
 function sendMessage(payload) {
   const body = JSON.stringify(payload)
-  process.stdout.write(`Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n${body}`)
+  if (framingMode === 'lsp') {
+    process.stdout.write(`Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n${body}`)
+    return
+  }
+  process.stdout.write(`${body}\n`)
 }

@@ -7,15 +7,24 @@ import path from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 import { listCanvasHtmlSlots } from "../utils/canvasHtmlEditor"
+import { CANVAS_MCP_TOOL_NAMES } from "../utils/canvasMcpToolNames"
 
 const WORKSPACE_ROOT = "/Users/strongeron/Evil Martians/Open Source/gallery-poc"
 
+// Spec-correct MCP stdio framing (what codex and claude actually speak):
+// newline-delimited JSON-RPC messages.
 function encodeRpcMessage(payload: unknown) {
+  return `${JSON.stringify(payload)}\n`
+}
+
+// Legacy LSP-style framing the server used to require; still supported for
+// back-compat, response framing mirrors the client.
+function encodeLegacyRpcMessage(payload: unknown) {
   const body = JSON.stringify(payload)
   return `Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`
 }
 
-function createRpcReader(target: NodeJS.ReadableStream) {
+function createRpcReader(target: NodeJS.ReadableStream, framing: "ndjson" | "lsp" = "ndjson") {
   let buffer = Buffer.alloc(0)
   const queue: unknown[] = []
   const waiters: Array<(value: unknown) => void> = []
@@ -32,6 +41,17 @@ function createRpcReader(target: NodeJS.ReadableStream) {
     buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)])
 
     while (true) {
+      if (framing === "ndjson") {
+        const lineEnd = buffer.indexOf("\n")
+        if (lineEnd < 0) break
+        const body = buffer.slice(0, lineEnd).toString("utf8").trim()
+        buffer = buffer.slice(lineEnd + 1)
+        if (!body) continue
+        queue.push(JSON.parse(body))
+        flush()
+        continue
+      }
+
       const headerEnd = buffer.indexOf("\r\n\r\n")
       if (headerEnd < 0) break
 
@@ -3356,5 +3376,60 @@ describe("canvas MCP server", () => {
     }
 
     expect(stderr).toBe("")
+  })
+
+  it("still handshakes over legacy Content-Length framing and mirrors it in responses", async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), "canvas-mcp-legacy-test-"))
+    await mkdir(path.join(tempDir, "queue"), { recursive: true })
+    await mkdir(path.join(tempDir, "results"), { recursive: true })
+
+    const child = spawn("node", ["bin/canvas-mcp-server"], {
+      cwd: WORKSPACE_ROOT,
+      env: {
+        ...process.env,
+        CANVAS_AGENT_SESSION_DIR: tempDir,
+        CANVAS_AGENT_PROJECT_ID: "demo",
+        CANVAS_AGENT_SESSION_ID: "session-legacy",
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+
+    let rawStdout = ""
+    child.stdout.on("data", (chunk) => {
+      rawStdout += chunk.toString()
+    })
+    const readRpcMessage = createRpcReader(child.stdout, "lsp")
+
+    try {
+      child.stdin.write(
+        encodeLegacyRpcMessage({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2025-03-26" },
+        })
+      )
+      const initialize = (await readRpcMessage()) as { result?: Record<string, any> }
+      expect(initialize.result?.serverInfo?.name).toBe("canvas-agent-mcp")
+
+      child.stdin.write(encodeLegacyRpcMessage({ jsonrpc: "2.0", id: 2, method: "tools/list" }))
+      const toolsList = (await readRpcMessage()) as {
+        result?: { tools?: Array<{ name: string }> }
+      }
+      expect(toolsList.result?.tools?.map((tool) => tool.name)).toContain(
+        "get_workspace_manifest"
+      )
+
+      // Responses must mirror the client's framing.
+      expect(rawStdout.startsWith("Content-Length:")).toBe(true)
+
+      // Drift guard: the codex lean launch profile writes a per-tool
+      // approval_mode block for every tool in CANVAS_MCP_TOOL_NAMES. If this
+      // fails, update utils/canvasMcpToolNames.ts to match the server.
+      expect(toolsList.result?.tools?.map((tool) => tool.name)).toEqual(CANVAS_MCP_TOOL_NAMES)
+    } finally {
+      child.kill("SIGTERM")
+      await once(child, "exit")
+    }
   })
 })
