@@ -7,11 +7,15 @@ import path from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-const WORKSPACE_ROOT = "/Users/strongeron/Evil Martians/Open Source/gallery-poc"
+
+// Run subprocesses from the repo root (vitest's cwd), not a hard-coded
+// developer path — the old absolute path did not exist on CI, so spawn
+// emitted an unhandled 'error' event and runCli hung until timeout.
+const WORKSPACE_ROOT = process.cwd()
 
 function runCli(args: string[], env: Record<string, string> = {}) {
   return new Promise<{ stdout: string; stderr: string; exitCode: number | null }>((resolve) => {
-    const child = spawn("node", ["bin/canvas-agent", ...args], {
+    const child = spawn(process.execPath, ["bin/canvas-agent", ...args], {
       cwd: WORKSPACE_ROOT,
       env: {
         ...process.env,
@@ -33,6 +37,9 @@ function runCli(args: string[], env: Record<string, string> = {}) {
 
     child.on("exit", (exitCode) => {
       resolve({ stdout, stderr, exitCode })
+    })
+    child.on("error", (error) => {
+      resolve({ stdout, stderr: `${stderr}${error.message}`, exitCode: 1 })
     })
   })
 }

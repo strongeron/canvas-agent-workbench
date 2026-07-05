@@ -6,10 +6,12 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
+
 import { listCanvasHtmlSlots } from "../utils/canvasHtmlEditor"
 import { CANVAS_MCP_TOOL_NAMES } from "../utils/canvasMcpToolNames"
 
-const WORKSPACE_ROOT = "/Users/strongeron/Evil Martians/Open Source/gallery-poc"
+// Repo root (vitest cwd), not a hard-coded developer path (see canvasAgentCli).
+const WORKSPACE_ROOT = process.cwd()
 
 // Spec-correct MCP stdio framing (what codex and claude actually speak):
 // newline-delimited JSON-RPC messages.
@@ -1056,7 +1058,7 @@ describe("canvas MCP server", () => {
       throw new Error("Expected TCP address for MCP test server.")
     }
 
-    const child = spawn("node", ["bin/canvas-mcp-server"], {
+    const child = spawn(process.execPath, ["bin/canvas-mcp-server"], {
       cwd: WORKSPACE_ROOT,
       env: {
         ...process.env,
@@ -3383,7 +3385,7 @@ describe("canvas MCP server", () => {
     await mkdir(path.join(tempDir, "queue"), { recursive: true })
     await mkdir(path.join(tempDir, "results"), { recursive: true })
 
-    const child = spawn("node", ["bin/canvas-mcp-server"], {
+    const child = spawn(process.execPath, ["bin/canvas-mcp-server"], {
       cwd: WORKSPACE_ROOT,
       env: {
         ...process.env,
