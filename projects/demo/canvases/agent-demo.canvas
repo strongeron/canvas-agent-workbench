@@ -8,7 +8,7 @@
     "slug": "agent-demo",
     "projectId": "demo",
     "createdAt": "2026-07-04T21:43:36.996Z",
-    "updatedAt": "2026-07-04T23:45:52.429Z",
+    "updatedAt": "2026-07-05T16:41:34.948Z",
     "tags": [],
     "favorite": false,
     "archived": false
@@ -28,7 +28,7 @@
           "height": 400
         },
         "rotation": 0,
-        "zIndex": 32,
+        "zIndex": 96,
         "layout": {
           "display": "flex",
           "direction": "column",
@@ -70,18 +70,123 @@
         "rotation": 0,
         "zIndex": 10,
         "parentId": "artboard-1783201565737-33dmbu"
+      },
+      {
+        "type": "artboard",
+        "name": "Artboard 2",
+        "position": {
+          "x": 243.59750148523457,
+          "y": 588.5932943170715
+        },
+        "size": {
+          "width": 960,
+          "height": 600
+        },
+        "rotation": 0,
+        "background": "white",
+        "layout": {
+          "display": "flex",
+          "direction": "column",
+          "align": "start",
+          "justify": "start",
+          "gap": 16,
+          "padding": 24
+        },
+        "id": "canvas-item-1783240967166-sawa27f",
+        "zIndex": 108
+      },
+      {
+        "type": "component",
+        "componentId": "marketing/typography-hero",
+        "variantIndex": 1,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "size": {
+          "width": 912,
+          "height": 347
+        },
+        "rotation": 0,
+        "parentId": "canvas-item-1783240967166-sawa27f",
+        "order": 0,
+        "id": "canvas-item-1783243976749-1mqmdy9",
+        "zIndex": 78,
+        "layoutSizing": {
+          "width": "fill",
+          "hugWidth": 834
+        }
+      },
+      {
+        "type": "html",
+        "title": "Card5",
+        "sourceMode": "inline",
+        "sourceHtml": "<!doctype html>\n<html data-component=\"card-5\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <style>\n      :root {\n        color-scheme: light;\n      }\n      * {\n        box-sizing: border-box;\n      }\n      body {\n        margin: 0;\n        padding: 0;\n        font: 16px/1.5 system-ui, sans-serif;\n        color: #0f172a;\n        background: transparent;\n      }\n      article {\n        display: grid;\n        gap: 20px;\n        padding: 24px;\n        border: 1px solid #dbe2ea;\n        border-radius: 24px;\n        background: white;\n        box-shadow: 0 24px 48px rgb(15 23 42 / 0.08);\n      }\n      figure {\n        display: grid;\n        place-items: center;\n        min-height: 180px;\n        margin: 0;\n        border: 1px dashed #94a3b8;\n        border-radius: 18px;\n        background: linear-gradient(135deg, #eff6ff, #f8fafc);\n        color: #475569;\n      }\n      svg {\n        width: 72px;\n        height: 72px;\n      }\n      h1 {\n        margin: 0;\n        font-size: 28px;\n        line-height: 1.1;\n      }\n      p {\n        margin: 0;\n        color: #475569;\n      }\n      .actions {\n        display: flex;\n        flex-wrap: wrap;\n        gap: 12px;\n      }\n      .button {\n        display: inline-flex;\n        align-items: center;\n        justify-content: center;\n        min-height: 40px;\n        padding: 0 16px;\n        border-radius: 999px;\n        text-decoration: none;\n        background: #0f172a;\n        color: white;\n      }\n      .button.secondary {\n        background: #e2e8f0;\n        color: #0f172a;\n      }\n    </style>\n  </head>\n  <body>\n    <article data-slot=\"root\" data-slot-kind=\"container\">\n      <figure data-slot=\"media\" data-slot-kind=\"container\" data-slot-accepts=\"image,svg,video\">\n        <svg viewBox=\"0 0 64 64\" fill=\"none\" aria-hidden=\"true\">\n          <rect x=\"8\" y=\"10\" width=\"48\" height=\"44\" rx=\"12\" stroke=\"currentColor\" stroke-width=\"3\" />\n          <path d=\"M18 42L28 32L36 38L46 26L52 42\" stroke=\"currentColor\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n          <circle cx=\"24\" cy=\"24\" r=\"4\" fill=\"currentColor\" />\n        </svg>\n        <figcaption>Media slot accepts image, SVG, or video.</figcaption>\n      </figure>\n      <div data-slot=\"content\" data-slot-kind=\"container\">\n        <h1 data-slot=\"title\" data-slot-kind=\"text\">Card</h1>\n        <p data-slot=\"body\" data-slot-kind=\"text\">Group native text and media elements, then promote or save this shell as a reusable component.</p>\n      </div>\n      <div class=\"actions\" data-slot=\"actions\" data-slot-kind=\"container\">\n        <a class=\"button\" href=\"#\">Primary action</a>\n        <a class=\"button secondary\" href=\"#\">Secondary</a>\n      </div>\n    </article>\n  </body>\n</html>",
+        "sourcePath": "projects/demo/components/Card5.html",
+        "sourceHtmlFilePath": "projects/demo/components/Card5.html",
+        "sourceHtmlFileMtime": 1783210173393.0435,
+        "sandbox": "allow-scripts allow-same-origin allow-forms allow-modals allow-popups",
+        "position": {
+          "x": 381.34154271299633,
+          "y": 1892.7512304266318
+        },
+        "size": {
+          "width": 720,
+          "height": 480
+        },
+        "rotation": 0,
+        "id": "canvas-item-1783268626154-c9cnyvj",
+        "zIndex": 97
+      },
+      {
+        "id": "mcp-html-a",
+        "type": "html",
+        "title": "Added via MCP",
+        "sourceMode": "inline",
+        "sourceHtml": "<!doctype html><html><head><meta charset=\"utf-8\"><style>body{margin:0;font:14px system-ui;color:#0f172a}article{padding:20px;border:1px solid #e2e8f0;border-radius:12px;border-left:4px solid #4f46e5}h2{margin:0 0 8px;font-size:16px}p{margin:0;color:#475569}</style></head><body><article><h2>Added via MCP</h2><p>Created by the agent flow directly into Artboard 2.</p></article></body></html>",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "size": {
+          "width": 400,
+          "height": 120
+        },
+        "rotation": 0,
+        "zIndex": 10,
+        "parentId": "canvas-item-1783240967166-sawa27f",
+        "order": 1
+      },
+      {
+        "id": "mcp-html-b",
+        "type": "html",
+        "title": "Second node",
+        "sourceMode": "inline",
+        "sourceHtml": "<!doctype html><html><head><meta charset=\"utf-8\"><style>body{margin:0;font:14px system-ui;color:#0f172a}article{padding:20px;border:1px solid #e2e8f0;border-radius:12px;border-left:4px solid #059669}h2{margin:0 0 8px;font-size:16px}p{margin:0;color:#475569}</style></head><body><article><h2>Second node</h2><p>Sibling order 2, flex-column flow, gap 16.</p></article></body></html>",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "size": {
+          "width": 400,
+          "height": 120
+        },
+        "rotation": 0,
+        "zIndex": 10,
+        "parentId": "canvas-item-1783240967166-sawa27f",
+        "order": 2
       }
     ],
     "groups": [],
-    "nextZIndex": 33,
+    "nextZIndex": 109,
     "selectedIds": []
   },
   "view": {
     "transform": {
       "scale": 0.7475450438328894,
       "offset": {
-        "x": 2.578274034851006,
-        "y": 266.40858777954514
+        "x": 4.578274034851006,
+        "y": -378.59141222045486
       }
     }
   }
