@@ -57,6 +57,7 @@ export interface UseCanvasAgentBridgeResult {
   writeSessionInput: (sessionId: string, input: string) => Promise<void>
   resizeSession: (sessionId: string, size: { cols: number; rows: number }) => Promise<void>
   emitUserAction: (action: string, payload?: Record<string, unknown>) => void
+  emitSourceEdit: (action: string, meta?: Record<string, unknown>) => void
 }
 
 function buildQuery(params: Record<string, string | undefined>) {
@@ -204,34 +205,56 @@ export function useCanvasAgentBridge({
     })
   }, [])
 
-  // Semantic user-action events (FOX2-45). Batched fire-and-forget: UI
-  // handlers report what the user did as operation-shaped payloads; a short
-  // flush window folds bursts (multi-select, rapid toggles) into one POST.
-  const userActionQueueRef = useRef<Array<{ action: string; payload?: Record<string, unknown> }>>([])
+  // Semantic activity events (FOX2-45 user-action, FOX2-46 source-edit).
+  // Batched fire-and-forget: UI handlers report what the user did as
+  // operation-shaped payloads; a short flush window folds bursts into one POST.
+  const userActionQueueRef = useRef<
+    Array<{
+      kind?: "user-action" | "source-edit"
+      action: string
+      payload?: Record<string, unknown>
+      meta?: Record<string, unknown>
+    }>
+  >([])
   const userActionFlushRef = useRef<number | null>(null)
+  const flushActivityEvents = useCallback(() => {
+    if (userActionFlushRef.current != null) return
+    userActionFlushRef.current = window.setTimeout(() => {
+      userActionFlushRef.current = null
+      if (!canvasWorkspaceKey) {
+        userActionQueueRef.current = []
+        return
+      }
+      const events = userActionQueueRef.current.splice(0, 50)
+      if (events.length === 0) return
+      void fetch("/api/agent-native/workspaces/canvas/user-events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspaceKey: canvasWorkspaceKey,
+          clientId: clientIdRef.current,
+          events,
+        }),
+      }).catch(() => {
+        // Observability only — never disturb the interaction that fired it.
+      })
+    }, 300)
+  }, [canvasWorkspaceKey])
   const emitUserAction = useCallback(
     (action: string, payload?: Record<string, unknown>) => {
       if (!canvasWorkspaceKey) return
       userActionQueueRef.current.push({ action, payload })
-      if (userActionFlushRef.current != null) return
-      userActionFlushRef.current = window.setTimeout(() => {
-        userActionFlushRef.current = null
-        const events = userActionQueueRef.current.splice(0, 50)
-        if (events.length === 0) return
-        void fetch("/api/agent-native/workspaces/canvas/user-events", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            workspaceKey: canvasWorkspaceKey,
-            clientId: clientIdRef.current,
-            events,
-          }),
-        }).catch(() => {
-          // Observability only — never disturb the interaction that fired it.
-        })
-      }, 300)
+      flushActivityEvents()
     },
-    [canvasWorkspaceKey]
+    [canvasWorkspaceKey, flushActivityEvents]
+  )
+  const emitSourceEdit = useCallback(
+    (action: string, meta?: Record<string, unknown>) => {
+      if (!canvasWorkspaceKey) return
+      userActionQueueRef.current.push({ kind: "source-edit", action, meta })
+      flushActivityEvents()
+    },
+    [canvasWorkspaceKey, flushActivityEvents]
   )
 
   const refreshSessions = useCallback(async () => {
@@ -689,5 +712,6 @@ export function useCanvasAgentBridge({
     writeSessionInput,
     resizeSession,
     emitUserAction,
+    emitSourceEdit,
   }
 }

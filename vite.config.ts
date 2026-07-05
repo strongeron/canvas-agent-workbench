@@ -5192,6 +5192,10 @@ function paperImportPlugin() {
                 return sendJson(res, 400, { error: 'workspaceKey is required.' })
               }
               const incoming = Array.isArray(body.events) ? body.events.slice(0, 50) : []
+              // Browser-reported human activity. Default kind is user-action
+              // (a semantic UI gesture); source-edit mirrors a mutation-log
+              // write (FOX2-46). Both carry actor "user".
+              const allowedKinds = new Set(['user-action', 'source-edit'])
               const accepted = []
               for (const entry of incoming) {
                 if (!entry || typeof entry !== 'object') continue
@@ -5200,10 +5204,11 @@ function paperImportPlugin() {
                     ? entry.action.trim()
                     : ''
                 if (!action) continue
+                const kind = allowedKinds.has(entry.kind) ? entry.kind : 'user-action'
                 const record = appendWorkspaceEvent(
                   getAgentNativeWorkspaceEventLog(workspaceId, nextWorkspaceKey),
                   {
-                    kind: 'user-action',
+                    kind,
                     actor: 'user',
                     source:
                       typeof body.source === 'string' && body.source.trim()
@@ -5213,7 +5218,10 @@ function paperImportPlugin() {
                     operation:
                       entry.payload && typeof entry.payload === 'object' ? entry.payload : null,
                     stateSummary: null,
-                    metadata: { action },
+                    metadata: {
+                      action,
+                      ...(entry.meta && typeof entry.meta === 'object' ? entry.meta : {}),
+                    },
                   }
                 )
                 accepted.push({ id: record.id, cursor: record.cursor })
