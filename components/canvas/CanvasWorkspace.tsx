@@ -38,6 +38,7 @@ import type {
 } from "./CanvasHtmlFrame"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
+import { resolveLayoutChildShellStyle } from "../../utils/canvasLayoutMetrics"
 import { CanvasMarkdownItem as CanvasMarkdownItemComponent } from "./CanvasMarkdownItem"
 import { CanvasMcpAppItem as CanvasMcpAppItemComponent } from "./CanvasMcpAppItem"
 import { CanvasMermaidItem as CanvasMermaidItemComponent } from "./CanvasMermaidItem"
@@ -293,16 +294,7 @@ export function CanvasWorkspace({
       const childShellClassName = "relative"
       const parentLayoutContainer = layoutContainers.find((container) => container.id === child.parentId)
       const parentLayout = parentLayoutContainer?.layout
-      const widthMode = child.layoutSizing?.width
-      const heightMode = child.layoutSizing?.height
-      const shouldStretchChild =
-        widthMode === "fill" ||
-        (!widthMode && (parentLayout?.align === "stretch" || parentLayout?.display === "grid"))
-      const shouldFillChildHeight = heightMode === "fill"
-      const childShellStyle = {
-        width: shouldStretchChild ? "100%" : child.size.width,
-        height: shouldFillChildHeight ? "100%" : child.size.height,
-      }
+      const childShellStyle = resolveLayoutChildShellStyle(child, parentLayout)
 
       if (child.type === "section") {
         const nestedChildren = getArtboardChildren(child.id)
@@ -321,18 +313,18 @@ export function CanvasWorkspace({
               onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
               onResize={(next, axis) => {
                 // Mirror the inspector's explicit-size semantics: only the
-                // dragged axis flips to "hug" at the dragged size; the other
+                // dragged axis flips to an explicit ("fixed") size; the other
                 // axis keeps its current mode (fill stays fill).
                 const layoutSizing = { ...child.layoutSizing }
                 const size = { ...child.size }
                 if (axis !== "s") {
                   size.width = next.width
-                  layoutSizing.width = "hug"
+                  layoutSizing.width = "fixed"
                   layoutSizing.hugWidth = next.width
                 }
                 if (axis !== "e") {
                   size.height = next.height
-                  layoutSizing.height = "hug"
+                  layoutSizing.height = "fixed"
                   layoutSizing.hugHeight = next.height
                 }
                 onUpdateItem(child.id, { size, layoutSizing })

@@ -930,9 +930,12 @@ export function CanvasTab({
         )
       )
     : undefined
+  // Components default to intrinsic hug — a button should not stretch across
+  // a grid/stretch column just because the mode was never set (FOX2-57).
   const selectedItemWidthMode: CanvasLayoutWidthMode =
     selectedItem?.layoutSizing?.width ??
-    (selectedItemLayoutParent &&
+    (selectedItem?.type !== "component" &&
+    selectedItemLayoutParent &&
     (selectedItemLayoutParent.layout.display === "grid" ||
       selectedItemLayoutParent.layout.align === "stretch")
       ? "fill"
@@ -2353,6 +2356,16 @@ export function CanvasTab({
         return
       }
 
+      // Component hug is intrinsic (fit-content) — don't write the stale
+      // stored width back; the measured backfill trues item.size up from the
+      // real rendered box (FOX2-57).
+      if (selectedItem.type === "component") {
+        updateItem(selectedItem.id, {
+          layoutSizing: { ...currentSizing, width: "hug" },
+        })
+        return
+      }
+
       updateItem(selectedItem.id, {
         layoutSizing: {
           ...currentSizing,
@@ -2390,6 +2403,13 @@ export function CanvasTab({
             ...selectedItem.size,
             height: selectedItemParentInnerHeight ?? selectedItem.size.height,
           },
+        })
+        return
+      }
+
+      if (selectedItem.type === "component") {
+        updateItem(selectedItem.id, {
+          layoutSizing: { ...currentSizing, height: "hug" },
         })
         return
       }
@@ -4598,12 +4618,18 @@ export function CanvasTab({
               canFillParent={Boolean(selectedItemLayoutParent)}
               canFillHeight={Boolean(selectedItemLayoutParent)}
               onSizeChange={(size) =>
+                // Typing a number is an explicit size choice: the edited axis
+                // leaves intrinsic hug and becomes "fixed" (FOX2-57).
                 updateItem(selectedComponentItem.id, {
                   size,
                   layoutSizing: {
                     ...selectedComponentItem.layoutSizing,
-                    ...(selectedItemWidthMode === "hug" ? { hugWidth: size.width } : {}),
-                    ...(selectedItemHeightMode === "hug" ? { hugHeight: size.height } : {}),
+                    ...(size.width !== selectedComponentItem.size.width
+                      ? { width: "fixed" as const, hugWidth: size.width }
+                      : {}),
+                    ...(size.height !== selectedComponentItem.size.height
+                      ? { height: "fixed" as const, hugHeight: size.height }
+                      : {}),
                   },
                 })
               }

@@ -70,11 +70,21 @@ export function CanvasLayoutComponentItem({
     const handleMouseMove = (e: MouseEvent) => {
       const dx = (e.clientX - dragStart.x) / scale
       const dy = (e.clientY - dragStart.y) / scale
+      const width = Math.round(Math.max(MIN_WIDTH, initialSize.width + dx))
+      const height = Math.round(Math.max(MIN_HEIGHT, initialSize.height + dy))
 
+      // Dragging is an explicit size choice: both axes leave intrinsic hug
+      // and become "fixed" so the shell stops tracking the rendered
+      // component (FOX2-57). "Hug content" in the inspector returns to
+      // intrinsic.
       onUpdate({
-        size: {
-          width: Math.max(MIN_WIDTH, initialSize.width + dx),
-          height: Math.max(MIN_HEIGHT, initialSize.height + dy),
+        size: { width, height },
+        layoutSizing: {
+          ...item.layoutSizing,
+          width: "fixed",
+          height: "fixed",
+          hugWidth: width,
+          hugHeight: height,
         },
       })
     }
@@ -90,7 +100,58 @@ export function CanvasLayoutComponentItem({
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [dragStart.x, dragStart.y, initialSize.height, initialSize.width, isResizing, onUpdate, scale])
+  }, [
+    dragStart.x,
+    dragStart.y,
+    initialSize.height,
+    initialSize.width,
+    isResizing,
+    item.layoutSizing,
+    onUpdate,
+    scale,
+  ])
+
+  // One-shot measured backfill (FOX2-57): under intrinsic hug the shell is
+  // fit-content, so the stored size never drives rendering — but agents,
+  // export, and the layout metrics read item.size. Measure the real rendered
+  // box (offsetWidth/Height are layout px, immune to the canvas zoom
+  // transform) and write it back once when it drifts by more than 1px.
+  // Writing does not change the fit-content render, so this converges
+  // immediately — no measure->write->re-render loop.
+  const widthMode = item.layoutSizing?.width ?? "hug"
+  const heightMode = item.layoutSizing?.height ?? "hug"
+  useEffect(() => {
+    if (widthMode !== "hug" && heightMode !== "hug") return
+    const frame = requestAnimationFrame(() => {
+      const node = containerRef.current
+      if (!node) return
+      const measuredWidth = node.offsetWidth
+      const measuredHeight = node.offsetHeight
+      if (!measuredWidth || !measuredHeight) return
+      const size = { ...item.size }
+      let changed = false
+      if (widthMode === "hug" && Math.abs(measuredWidth - item.size.width) > 1) {
+        size.width = Math.round(measuredWidth)
+        changed = true
+      }
+      if (heightMode === "hug" && Math.abs(measuredHeight - item.size.height) > 1) {
+        size.height = Math.round(measuredHeight)
+        changed = true
+      }
+      if (changed) {
+        onUpdate({ size })
+      }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [
+    heightMode,
+    item.componentId,
+    item.customProps,
+    item.size,
+    item.variantIndex,
+    onUpdate,
+    widthMode,
+  ])
 
   const borderClass = isSelected
     ? "border border-brand-400 ring-2 ring-brand-400/15 shadow-sm"

@@ -61,10 +61,15 @@ export interface CanvasItemBase {
   parentId?: string
   /** Order within a layout container */
   order?: number
-  /** Layout behavior when rendered as a child of an artboard or section. */
+  /**
+   * Layout behavior when rendered as a child of an artboard or section.
+   * For component children, "hug" is intrinsic (fit-content of the rendered
+   * component) and "fixed" is an explicit user-set size; for other child
+   * types "hug" and "fixed" both render the stored size (FOX2-57).
+   */
   layoutSizing?: {
-    width?: "hug" | "fill"
-    height?: "hug" | "fill"
+    width?: "hug" | "fill" | "fixed"
+    height?: "hug" | "fill" | "fixed"
     /** Last explicit content width to restore after toggling back from fill. */
     hugWidth?: number
     /** Last explicit content height to restore after toggling back from fill. */
