@@ -2168,12 +2168,15 @@ export function CanvasTab({
   useEffect(() => {
     const handleMouseDown = () => {
       const state = freeformDragStateRef.current
+      // Snapshot every freeform item, not just the selected ones — selection
+      // happens during this same mousedown, so a first drag of an unselected
+      // item would otherwise never qualify. The >8px movement check on
+      // mouseup is what proves a drag happened.
       freeformDragSnapshotRef.current = new Map(
         state.canvasTool === "select"
           ? state.items
               .filter(
                 (item) =>
-                  state.selectedIds.includes(item.id) &&
                   !item.parentId &&
                   item.type !== "artboard" &&
                   item.type !== "section" &&
