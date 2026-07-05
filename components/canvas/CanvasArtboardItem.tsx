@@ -33,6 +33,8 @@ interface CanvasArtboardItemProps {
   libraryDragActive?: boolean
   /** Drop the active library primitive into this artboard as a new child. */
   onLibraryPrimitiveDrop?: () => void
+  /** OS files dropped onto this artboard (media) → new children. */
+  onFilesDrop?: (files: File[]) => void
 }
 
 const MIN_WIDTH = 320
@@ -103,6 +105,7 @@ export function CanvasArtboardItem({
   childItems,
   libraryDragActive = false,
   onLibraryPrimitiveDrop,
+  onFilesDrop,
 }: CanvasArtboardItemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -113,6 +116,9 @@ export function CanvasArtboardItem({
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null)
   const [initialState, setInitialState] = useState({ x: 0, y: 0, width: 0, height: 0, rotation: 0 })
   const [gapScrubStart, setGapScrubStart] = useState({ x: 0, gap: 0 })
+  // Highlight the artboard while a library primitive is dragged over it
+  // (FOX2-58) — the native HTML5 drag has no dnd-kit isOver, so track it here.
+  const [isLibraryDropTarget, setIsLibraryDropTarget] = useState(false)
   const { contextMenu, handleContextMenu, closeContextMenu } = useCanvasItemContextMenu({
     isSelected,
     interactMode,
@@ -364,12 +370,28 @@ export function CanvasArtboardItem({
       }}
       onContextMenu={handleContextMenu}
       onDragOver={(e) => {
-        if (!libraryDragActive || interactMode) return
+        if (interactMode) return
+        const hasFiles = Array.from(e.dataTransfer?.types || []).includes("Files")
+        if (!libraryDragActive && !(hasFiles && onFilesDrop)) return
         e.preventDefault()
         e.stopPropagation()
+        if (!isLibraryDropTarget) setIsLibraryDropTarget(true)
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+        setIsLibraryDropTarget(false)
       }}
       onDrop={(e) => {
-        if (!libraryDragActive || interactMode) return
+        setIsLibraryDropTarget(false)
+        if (interactMode) return
+        const files = Array.from(e.dataTransfer?.files || [])
+        if (files.length > 0 && onFilesDrop) {
+          e.preventDefault()
+          e.stopPropagation()
+          onFilesDrop(files)
+          return
+        }
+        if (!libraryDragActive) return
         // Slot drop zones inside html children preventDefault in the target
         // phase but don't stop propagation — a drop they handled must not
         // also create an artboard child (FOX2-58).
@@ -380,7 +402,9 @@ export function CanvasArtboardItem({
       }}
     >
       <div
-        className={`relative h-full w-full overflow-hidden rounded-2xl bg-white shadow-sm transition-shadow ${borderClass}`}
+        className={`relative h-full w-full overflow-hidden rounded-2xl bg-white shadow-sm transition-shadow ${
+          isLibraryDropTarget ? "ring-2 ring-brand-400 ring-offset-2" : borderClass
+        }`}
         style={{
           background: item.background || "white",
         }}

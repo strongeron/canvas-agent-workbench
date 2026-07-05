@@ -139,6 +139,8 @@ interface CanvasWorkspaceProps {
   onLibraryPrimitiveDropOnArtboard?: (artboardId: string) => void
   /** Drop the active library primitive onto empty canvas as a freeform item (FOX2-58). */
   onLibraryPrimitiveDropOnCanvas?: (position: { x: number; y: number }) => void
+  /** OS files dropped onto an artboard → media children (FOX2-58). */
+  onFilesDropOnArtboard?: (artboardId: string, files: File[]) => void
 }
 
 export function CanvasWorkspace({
@@ -177,6 +179,7 @@ export function CanvasWorkspace({
   onLibraryDropWrap,
   onLibraryPrimitiveDropOnArtboard,
   onLibraryPrimitiveDropOnCanvas,
+  onFilesDropOnArtboard,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -920,6 +923,9 @@ export function CanvasWorkspace({
               onLibraryPrimitiveDropOnArtboard
                 ? () => onLibraryPrimitiveDropOnArtboard(item.id)
                 : undefined
+            }
+            onFilesDrop={
+              onFilesDropOnArtboard ? (files) => onFilesDropOnArtboard(item.id, files) : undefined
             }
           >
             {children.map((child, index) => renderLayoutChild(child, index, children.length))}

@@ -22,6 +22,7 @@ const ARTBOARD: CanvasArtboardItemType = {
 function renderArtboard(props: {
   libraryDragActive: boolean
   onLibraryPrimitiveDrop: () => void
+  onFilesDrop?: (files: File[]) => void
 }) {
   const container = document.createElement("div")
   document.body.appendChild(container)
@@ -41,6 +42,7 @@ function renderArtboard(props: {
           interactMode={false}
           libraryDragActive={props.libraryDragActive}
           onLibraryPrimitiveDrop={props.onLibraryPrimitiveDrop}
+          onFilesDrop={props.onFilesDrop}
         >
           <div />
         </CanvasArtboardItem>
@@ -57,11 +59,14 @@ function renderArtboard(props: {
   }
 }
 
-function fireDrop(node: HTMLElement, init?: { defaultPrevented?: boolean }) {
+function fireDrop(
+  node: HTMLElement,
+  init?: { defaultPrevented?: boolean; files?: File[] }
+) {
   const event = new Event("drop", { bubbles: true, cancelable: true }) as Event & {
     dataTransfer?: unknown
   }
-  event.dataTransfer = { files: [], types: [] }
+  event.dataTransfer = { files: init?.files ?? [], types: init?.files?.length ? ["Files"] : [] }
   if (init?.defaultPrevented) {
     event.preventDefault()
   }
@@ -100,6 +105,24 @@ describe("CanvasArtboardItem library drop (FOX2-58)", () => {
     // A slot zone deeper in the tree calls preventDefault without stopping
     // propagation — the artboard must not double-handle it.
     fireDrop(active.node, { defaultPrevented: true })
+    expect(onDrop).not.toHaveBeenCalled()
+  })
+
+  it("routes an OS file drop to onFilesDrop, not the library primitive path", () => {
+    const onDrop = vi.fn()
+    const onFilesDrop = vi.fn()
+    const rendered = renderArtboard({
+      libraryDragActive: false,
+      onLibraryPrimitiveDrop: onDrop,
+      onFilesDrop,
+    })
+    cleanup = rendered.cleanup
+
+    const file = new File(["x"], "hero.png", { type: "image/png" })
+    fireDrop(rendered.node, { files: [file] })
+
+    expect(onFilesDrop).toHaveBeenCalledTimes(1)
+    expect(onFilesDrop.mock.calls[0][0]).toEqual([file])
     expect(onDrop).not.toHaveBeenCalled()
   })
 })
