@@ -724,6 +724,7 @@ export function CanvasTab({
     removeSelected,
     duplicateSelected,
     duplicateItem,
+    pasteItems,
     replaceState,
     applyRemoteOperation,
   } = useCanvasState(storageKey ? `${storageKey}-state` : undefined)
@@ -902,6 +903,28 @@ export function CanvasTab({
   const selectedSectionItem = selectedItem?.type === "section" ? selectedItem : null
   const selectedLayoutContainerItem: CanvasArtboardItem | CanvasSectionItem | null =
     selectedArtboardItem || selectedSectionItem
+  // Where a new/pasted node lands (FOX2-59): a selected artboard, else the
+  // artboard containing the current selection, else null (open canvas).
+  const addTargetArtboardId = useMemo(() => {
+    if (selectedArtboardItem) return selectedArtboardItem.id
+    for (const id of selectedIds) {
+      const item = items.find((candidate) => candidate.id === id)
+      if (item?.parentId) {
+        const parent = items.find((candidate) => candidate.id === item.parentId)
+        if (parent?.type === "artboard") return parent.id
+      }
+    }
+    return null
+  }, [items, selectedArtboardItem, selectedIds])
+  const nextArtboardChildOrder = useCallback(
+    (artboardId: string) => {
+      const siblings = items.filter(
+        (item) => item.parentId === artboardId && item.type !== "artboard"
+      )
+      return siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1) + 1
+    },
+    [items]
+  )
   const selectedItemLayoutParent =
     selectedItem?.parentId && selectedItem.type !== "artboard"
       ? (items.find(
@@ -1358,6 +1381,10 @@ export function CanvasTab({
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [handleRedoMutation, handleUndoMutation])
 
+  // In-memory clipboard for canvas node copy/paste (FOX2-59); the keydown
+  // effect is registered below emitUserAction's declaration.
+  const clipboardRef = useRef<CanvasItem[]>([])
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!selectedComponentItem || !selectedComponent) return
@@ -1792,6 +1819,63 @@ export function CanvasTab({
   // Only UI handlers call this — agent operations arrive via
   // applyCanvasAgentOperation and are logged server-side with actor "agent".
   const emitUserAction = agentBridge.emitUserAction
+
+  // Copy / paste / duplicate of canvas nodes (FOX2-59). Paste and duplicate
+  // target the selected/containing artboard, else open canvas at a cascade
+  // offset. Registered here (not with the other shortcuts) because it needs
+  // emitUserAction, addTargetArtboardId, and pasteItems.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isMod = event.metaKey || event.ctrlKey
+      if (!isMod || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key !== "c" && key !== "v" && key !== "d") return
+      if (isEditableEventTarget(event.target as HTMLElement | null)) return
+
+      if (key === "d") {
+        if (selectedIds.length === 0) return
+        event.preventDefault()
+        duplicateSelected()
+        return
+      }
+      // Let the OS handle a real text-selection copy.
+      if (key === "c" && (window.getSelection()?.toString() ?? "")) return
+
+      if (key === "c") {
+        const copied = items.filter(
+          (item) => selectedIds.includes(item.id) && item.type !== "artboard"
+        )
+        if (copied.length === 0) return
+        event.preventDefault()
+        clipboardRef.current = copied.map((item) => ({ ...item }))
+        return
+      }
+
+      if (clipboardRef.current.length === 0) return
+      event.preventDefault()
+      const parentId = addTargetArtboardId ?? undefined
+      pasteItems(
+        clipboardRef.current,
+        parentId ? { parentId, order: nextArtboardChildOrder(parentId) } : undefined
+      )
+      emitUserAction("paste-items", {
+        count: clipboardRef.current.length,
+        parentId: parentId ?? null,
+        target: parentId ? "artboard" : "canvas",
+      })
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [
+    addTargetArtboardId,
+    duplicateSelected,
+    emitUserAction,
+    items,
+    nextArtboardChildOrder,
+    pasteItems,
+    selectedIds,
+  ])
+
   const handleUserCanvasToolChange = useCallback(
     (tool: CanvasTool) => {
       emitUserAction("set-canvas-tool", { tool })
@@ -4643,6 +4727,9 @@ export function CanvasTab({
             <CanvasLibraryPanel
               projectId={activeProjectId || "design-system-foundation"}
               onInstantiate={async (input) => {
+                // Insert into the selected artboard if there is one, else
+                // freeform (FOX2-59 method 3).
+                const parentId = addTargetArtboardId ?? undefined
                 await handleAddInlineHtml({
                   title: input.title,
                   sourceReact: input.sourceReact,
@@ -4650,7 +4737,16 @@ export function CanvasTab({
                   sourcePath: input.sourcePath,
                   sourceHtmlFilePath: input.sourceHtmlFilePath,
                   sourceHtmlFileMtime: input.sourceHtmlFileMtime,
+                  parentId,
+                  order: parentId ? nextArtboardChildOrder(parentId) : undefined,
                 })
+                if (parentId) {
+                  emitUserAction("create-item", {
+                    itemType: "html",
+                    parentId,
+                    target: "artboard",
+                  })
+                }
               }}
               onCreateFromPaste={() => setComponentPasteDialogVisible(true)}
               onClose={() => setLibraryPanelVisible(false)}
