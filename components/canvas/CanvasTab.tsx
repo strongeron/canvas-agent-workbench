@@ -42,6 +42,7 @@ import {
   type NativeComponentTemplate,
 } from "../../utils/canvasNativeComponentShell"
 import type { CanvasLibraryDragPayload } from "../../utils/canvasLibraryDrag"
+import { buildPrimitiveInstantiateInput } from "../../utils/canvasLibraryInstantiate"
 import {
   dispatchCanvasLibraryDrop,
   type CanvasLibraryDropIntent,
@@ -2918,6 +2919,44 @@ export function CanvasTab({
     ]
   )
 
+  // Library primitive dropped onto an artboard surface (FOX2-58): create a
+  // new html child in the artboard's flow — same conversion as the panel's
+  // click-to-instantiate, so both paths produce identical items.
+  const handleLibraryPrimitiveDropOnArtboard = useCallback(
+    async (artboardId: string) => {
+      const primitive = activeLibraryDrag?.primitive
+      setActiveLibraryDrag(null)
+      if (!primitive || !activeProjectId) return
+      try {
+        const input = await buildPrimitiveInstantiateInput(primitive, activeProjectId)
+        const siblings = items.filter(
+          (item) => item.parentId === artboardId && item.type !== "artboard"
+        )
+        const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+        emitUserAction("create-item", {
+          itemType: "html",
+          primitiveId: primitive.id,
+          parentId: artboardId,
+          order: maxOrder + 1,
+          target: "artboard",
+        })
+        await handleAddInlineHtml({
+          ...input,
+          parentId: artboardId,
+          order: maxOrder + 1,
+        })
+      } catch (error) {
+        setHistoryToast({
+          id: Date.now(),
+          tone: "error",
+          message:
+            error instanceof Error ? error.message : "Failed to add primitive to artboard.",
+        })
+      }
+    },
+    [activeLibraryDrag, activeProjectId, emitUserAction, handleAddInlineHtml, items]
+  )
+
   const createFileBackedNativeShell = useCallback(
     async (
       template: NativeComponentTemplate = "section",
@@ -4593,6 +4632,9 @@ export function CanvasTab({
             onReactNodeGroupResize={handleReactNodeGroupResize}
             onMarkdownWriteSuccess={handleMarkdownWriteSuccess}
             libraryDragActive={activeLibraryDrag !== null}
+            onLibraryPrimitiveDropOnArtboard={(artboardId) =>
+              void handleLibraryPrimitiveDropOnArtboard(artboardId)
+            }
             onLibraryDropInsert={handleLibraryDropInsert}
             onLibraryDropWrap={handleLibraryDropWrap}
           />

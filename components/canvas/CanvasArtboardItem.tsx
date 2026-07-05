@@ -29,6 +29,10 @@ interface CanvasArtboardItemProps {
   children: React.ReactNode
   /** Child items, for content-height metrics (overflow cue + fit height). */
   childItems?: CanvasItem[]
+  /** A library-panel primitive drag (native HTML5 DnD) is in progress. */
+  libraryDragActive?: boolean
+  /** Drop the active library primitive into this artboard as a new child. */
+  onLibraryPrimitiveDrop?: () => void
 }
 
 const MIN_WIDTH = 320
@@ -97,6 +101,8 @@ export function CanvasArtboardItem({
   interactMode,
   children,
   childItems,
+  libraryDragActive = false,
+  onLibraryPrimitiveDrop,
 }: CanvasArtboardItemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -357,6 +363,21 @@ export function CanvasArtboardItem({
         onBringToFront()
       }}
       onContextMenu={handleContextMenu}
+      onDragOver={(e) => {
+        if (!libraryDragActive || interactMode) return
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+      onDrop={(e) => {
+        if (!libraryDragActive || interactMode) return
+        // Slot drop zones inside html children preventDefault in the target
+        // phase but don't stop propagation — a drop they handled must not
+        // also create an artboard child (FOX2-58).
+        if (e.defaultPrevented) return
+        e.preventDefault()
+        e.stopPropagation()
+        onLibraryPrimitiveDrop?.()
+      }}
     >
       <div
         className={`relative h-full w-full overflow-hidden rounded-2xl bg-white shadow-sm transition-shadow ${borderClass}`}

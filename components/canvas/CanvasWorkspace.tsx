@@ -135,6 +135,8 @@ interface CanvasWorkspaceProps {
   libraryDragActive?: boolean
   onLibraryDropInsert?: (input: { itemId: string; parentCanvasId: string; index: number }) => void
   onLibraryDropWrap?: (input: { itemId: string; canvasId: string }) => void
+  /** Drop the active library primitive onto an artboard as a new child (FOX2-58). */
+  onLibraryPrimitiveDropOnArtboard?: (artboardId: string) => void
 }
 
 export function CanvasWorkspace({
@@ -171,6 +173,7 @@ export function CanvasWorkspace({
   libraryDragActive = false,
   onLibraryDropInsert,
   onLibraryDropWrap,
+  onLibraryPrimitiveDropOnArtboard,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -895,6 +898,12 @@ export function CanvasWorkspace({
             scale={transform.scale}
             interactMode={interactMode}
             childItems={children}
+            libraryDragActive={libraryDragActive}
+            onLibraryPrimitiveDrop={
+              onLibraryPrimitiveDropOnArtboard
+                ? () => onLibraryPrimitiveDropOnArtboard(item.id)
+                : undefined
+            }
           >
             {children.map((child, index) => renderLayoutChild(child, index, children.length))}
           </CanvasArtboardItemComponent>
