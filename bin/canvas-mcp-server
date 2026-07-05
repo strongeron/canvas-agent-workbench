@@ -574,7 +574,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'get_workspace_events',
     description:
-      'Return the append-only event log for a workspace surface, cursor-paged. Pass sinceCursor to fetch only events newer than a prior read; the response nextCursor is the value to pass on the next poll. Event kinds: "user-action" (a human edit, operation-shaped payload, actor "user"), "operation-queued"/"operation-applied" (an agent op via this MCP), "state-synced" (a coarse full-state sync). Recommended loop: get_workspace_events → act on new events → poll again with sinceCursor=nextCursor.',
+      'Return the append-only event log for a workspace surface, cursor-paged. Pass sinceCursor to fetch only events newer than a prior read; the response nextCursor is the value to pass on the next poll. Event kinds: "user-action" (a human UI gesture), "source-edit" (a human source/markdown write; metadata has summary + mutationTypes), "operation-queued"/"operation-applied" (an agent op via this MCP), "state-synced" (a coarse full-state sync). Recommended loop: get_workspace_events → act on new events → poll again with sinceCursor=nextCursor.',
     inputSchema: {
       type: 'object',
       properties: {

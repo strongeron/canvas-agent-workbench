@@ -1096,6 +1096,14 @@ export function CanvasTab({
     return () => window.clearTimeout(timeout)
   }, [historyToast])
 
+  // FOX2-46: mirror source-edit writes to the agent feed. Held in a ref
+  // because the write-success handlers are declared before the bridge; set
+  // once the bridge exists. Snapshots stay out of the feed (size) — agents
+  // fetch current source via read_html_node.
+  const emitSourceEditRef = useRef<(action: string, meta?: Record<string, unknown>) => void>(
+    () => {}
+  )
+
   const handleReactNodeWriteSuccess = useCallback((result: CanvasReactNodeWriteSuccess) => {
     if (!result.prevSourceSnapshot || result.appliedMutations <= 0) return
     // Inline items have no file; log them under a synthetic per-item key so
@@ -1117,6 +1125,14 @@ export function CanvasTab({
         summary: summarizeSourceMutations(result.mutations),
       })
     )
+    emitSourceEditRef.current("source-edit", {
+      itemId: result.itemId ?? null,
+      target: result.filePath ? "file" : "inline",
+      filePath: result.filePath ?? null,
+      summary: summarizeSourceMutations(result.mutations),
+      mutationTypes: Array.from(new Set(result.mutations.map((mutation) => mutation.type))),
+      mutationCount: result.appliedMutations,
+    })
   }, [])
 
   // U4b. A drop bubbled up from a CanvasHtmlFrame zone. Resolve the dropped-
@@ -1209,6 +1225,13 @@ export function CanvasTab({
         summary: summarizeSourceMutations(result.mutations),
       })
     )
+    emitSourceEditRef.current("source-edit", {
+      target: "file",
+      filePath: result.filePath,
+      summary: summarizeSourceMutations(result.mutations),
+      mutationTypes: Array.from(new Set(result.mutations.map((mutation) => mutation.type))),
+      mutationCount: result.mutations.length,
+    })
   }, [])
 
   const applyMutationHistoryEntry = useCallback(
@@ -1329,6 +1352,11 @@ export function CanvasTab({
         id: Date.now(),
         tone: "info",
         message: `${direction === "undo" ? "Undid" : "Redid"}: ${entry.summary ?? "source edit"}`,
+      })
+      emitSourceEditRef.current(direction === "undo" ? "source-undo" : "source-redo", {
+        target: parseInlineLogKey(entry.filePath) ? "inline" : "file",
+        filePath: entry.filePath,
+        summary: entry.summary ?? "source edit",
       })
     },
     [groups, items, nextZIndex, replaceState, selectedIds]
@@ -1829,6 +1857,7 @@ export function CanvasTab({
   // Only UI handlers call this — agent operations arrive via
   // applyCanvasAgentOperation and are logged server-side with actor "agent".
   const emitUserAction = agentBridge.emitUserAction
+  emitSourceEditRef.current = agentBridge.emitSourceEdit
 
   // Copy / paste / duplicate of canvas nodes (FOX2-59). Paste and duplicate
   // target the selected/containing artboard, else open canvas at a cascade

@@ -591,6 +591,7 @@ user and agent activity, not just query current state. Read it with
 | kind | actor | meaning | payload |
 | -- | -- | -- | -- |
 | `user-action` | `user` | a human edit in the browser (tool switch, theme change, create/delete, paste, move-into-artboard, copy-agent-context) | operation-shaped; `metadata.action` names the gesture |
+| `source-edit` | `user` | a human source/markdown write (panel edit, slot insertion, overlay resize) or a source undo/redo | `metadata`: summary, mutationTypes, filePath/target; snapshots stay out — fetch source with `read_html_node` |
 | `operation-queued` | `agent` / `system` | an operation entered the queue (usually an agent op via this MCP) | the operation |
 | `operation-applied` | `agent` / `system` | the queued operation was applied to workspace state | — |
 | `state-synced` | `system` | a coarse full-state sync from the browser (fallback signal) | `stateSummary` |
