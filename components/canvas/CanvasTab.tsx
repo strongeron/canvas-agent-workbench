@@ -133,6 +133,8 @@ import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { hydrateNativeComponentShellFromProps } from "../../utils/canvasNativeShellHydration"
 import { suggestNativeTemplateForComponentName } from "../../utils/canvasNativeComponentSuggestion"
+import { useCanvasActivityFeed } from "../../hooks/useCanvasActivityFeed"
+import { CanvasActivityPanel } from "./CanvasActivityPanel"
 import { SerialTaskQueue } from "../../utils/serialTaskQueue"
 import type { CanvasMcpAppTransport } from "../../utils/mcpApp"
 
@@ -797,6 +799,7 @@ export function CanvasTab({
   })
   const [themePanelVisible, setThemePanelVisible] = useState(false)
   const [copilotPanelVisible, setCopilotPanelVisible] = useState(false)
+  const [activityPanelVisible, setActivityPanelVisible] = useState(false)
   const [canvasTool, setCanvasTool] = useState<CanvasTool>("select")
   const interactMode = canvasTool === "interact"
   const editMode = canvasTool === "edit"
@@ -1860,6 +1863,16 @@ export function CanvasTab({
   const emitFileLifecycle = agentBridge.emitFileLifecycle
   emitSourceEditRef.current = agentBridge.emitSourceEdit
 
+  // In-app activity feed (FOX2-48): the same cursor-paged event log external
+  // agents read, surfaced for the human; only polls while the panel is open.
+  const activityWorkspaceKey = activeProjectId ? `gallery-${activeProjectId}:canvas` : null
+  // Poll when the human's feed OR the copilot panel is open, so the internal
+  // copilot can read the same recent activity as context (FOX2-48).
+  const { events: activityEvents } = useCanvasActivityFeed({
+    workspaceKey: activityWorkspaceKey,
+    enabled: activityPanelVisible || copilotPanelVisible,
+  })
+
   // Copy / paste / duplicate of canvas nodes (FOX2-59). Paste and duplicate
   // target the selected/containing artboard, else open canvas at a cascade
   // offset. Registered here (not with the other shortcuts) because it needs
@@ -2709,6 +2722,7 @@ export function CanvasTab({
     removeItem,
     clearCanvas,
     updateThemeVar,
+    recentActivity: activityEvents,
   })
 
   const handleImportFromPaper = useCallback(async () => {
@@ -4691,6 +4705,8 @@ export function CanvasTab({
           onCreateComponentFromPaste={() => setComponentPasteDialogVisible(true)}
           onToggleThemePanel={toggleThemePanel}
           onToggleCopilotPanel={toggleCopilotPanel}
+          onToggleActivityPanel={() => setActivityPanelVisible((v) => !v)}
+          activityPanelActive={activityPanelVisible}
           canvasTool={canvasTool}
           onCanvasToolChange={handleUserCanvasToolChange}
           onAddArtboard={handleAddArtboard}
@@ -5505,6 +5521,13 @@ export function CanvasTab({
               projectId={activeProjectId}
               instructions={COPILOT_INSTRUCTIONS}
               bridge={agentBridge}
+            />
+          )}
+
+          {activityPanelVisible && (
+            <CanvasActivityPanel
+              events={activityEvents}
+              onClose={() => setActivityPanelVisible(false)}
             />
           )}
 

@@ -1,4 +1,5 @@
 import {
+  Activity,
   Bot,
   Code2,
   Copy,
@@ -72,6 +73,8 @@ interface CanvasToolbarProps {
   onCopyForAgent?: () => void
   onToggleThemePanel: () => void
   onToggleCopilotPanel: () => void
+  onToggleActivityPanel?: () => void
+  activityPanelActive?: boolean
   itemCount: number
   selectedCount: number
   canGroup: boolean
@@ -121,6 +124,8 @@ export function CanvasToolbar({
   onCopyForAgent,
   onToggleThemePanel,
   onToggleCopilotPanel,
+  onToggleActivityPanel,
+  activityPanelActive = false,
   itemCount,
   selectedCount,
   canGroup,
@@ -548,6 +553,22 @@ export function CanvasToolbar({
           <HelpCircle className="h-5 w-5" />
         </Button>
       </Tooltip>
+
+      {/* Activity feed */}
+      {onToggleActivityPanel && (
+        <Tooltip content="Activity — user + agent edits">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleActivityPanel}
+            className={activityPanelActive ? activeIconButtonClass : iconButtonClass}
+            aria-label="Toggle activity feed"
+            aria-pressed={activityPanelActive}
+          >
+            <Activity className="h-5 w-5" />
+          </Button>
+        </Tooltip>
+      )}
 
       {/* Copilot */}
       <Tooltip content="Canvas agent chat">

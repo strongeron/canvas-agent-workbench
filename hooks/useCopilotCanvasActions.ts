@@ -213,6 +213,14 @@ interface UseCopilotCanvasActionsInput {
   removeItem: (id: string) => void
   clearCanvas: () => void
   updateThemeVar: (themeId: string, cssVar: string, value: string) => void
+  /** Recent user/agent activity for copilot context (FOX2-48). */
+  recentActivity?: Array<{
+    kind: string
+    actor: string
+    action?: string | null
+    summary?: string | null
+    createdAt: string
+  }>
 }
 
 function clampPosition(position?: Point): Point {
@@ -397,6 +405,7 @@ export function useCopilotCanvasActions({
   removeItem,
   clearCanvas,
   updateThemeVar,
+  recentActivity,
 }: UseCopilotCanvasActionsInput) {
   const artboardSummaries = useMemo(() => {
     const counts = new Map<string, number>()
@@ -440,6 +449,13 @@ export function useCopilotCanvasActions({
   useCopilotReadable({
     description: "All canvas items in lightweight form.",
     value: lightweightItems,
+    parentId: canvasReadableId,
+  })
+
+  useCopilotReadable({
+    description:
+      "Recent activity on this canvas (newest first): user edits and agent operations, kind + actor + action/summary + time. Use to understand what just changed.",
+    value: (recentActivity ?? []).slice(0, 30),
     parentId: canvasReadableId,
   })
 
