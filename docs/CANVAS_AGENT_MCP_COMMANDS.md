@@ -30,6 +30,7 @@ Related files:
 
 - [CANVAS_AGENT_MCP_SETUP.md](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/docs/CANVAS_AGENT_MCP_SETUP.md)
 - [CANVAS_AGENT_STORED_FILE_SMOKE_TESTS.md](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/docs/CANVAS_AGENT_STORED_FILE_SMOKE_TESTS.md)
+- [FIGMA_MCP_IMPORT.md](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/docs/FIGMA_MCP_IMPORT.md)
 - [run-claude-canvas.sh](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/scripts/run-claude-canvas.sh)
 - [run-codex-canvas.sh](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/scripts/run-codex-canvas.sh)
 
@@ -133,6 +134,7 @@ Use these when you want the agent to manage the file library itself:
 - `invoke_mcp_app_tool` calls one embedded MCP tool and returns the synchronous result. The proxy enforces recursion depth and redacts secret-like args in the log.
 - `get_mcp_app_log` returns recent redacted tool calls for one node.
 - `disconnect_mcp_app` closes the transport and marks the node disconnected.
+- Figma MCP presets are available in the canvas UI. A connected Figma node can import a Figma frame/layer URL as a screenshot media item plus editable React/HTML context when the server returns those artifacts.
 - `focus_canvas_items`
 - `capture_canvas_items_screenshot`
 - `clear_canvas`

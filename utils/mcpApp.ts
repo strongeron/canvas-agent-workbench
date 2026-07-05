@@ -85,6 +85,25 @@ export const MCP_APP_STDIO_PRESETS: McpAppPreset[] = [
 
 export const MCP_APP_HTTP_PRESETS: McpAppPreset[] = [
   {
+    id: "figma-desktop",
+    label: "Figma Desktop MCP",
+    description: "Local Figma desktop MCP server. Enable it in Figma Dev Mode first.",
+    transport: {
+      kind: "http",
+      url: "http://127.0.0.1:3845/mcp",
+    },
+  },
+  {
+    id: "figma-remote",
+    label: "Figma Remote MCP",
+    description: "Hosted Figma MCP endpoint. Requires a saved Authorization header.",
+    transport: {
+      kind: "http",
+      url: "https://mcp.figma.com/mcp",
+      headersRef: "figma-headers",
+    },
+  },
+  {
     id: "zapier",
     label: "Zapier MCP",
     description: "Hosted Zapier MCP endpoint.",
@@ -174,4 +193,28 @@ export function parseJsonObjectInput(value: string) {
     throw new Error("Tool arguments must be a JSON object.")
   }
   return parsed as Record<string, unknown>
+}
+
+export function mergeMcpRecentCallsById(
+  prior: McpCallRecord[],
+  next: McpCallRecord[]
+): McpCallRecord[] {
+  const byId = new Map<string, McpCallRecord>()
+  for (const record of prior) {
+    if (record?.id) byId.set(record.id, record)
+  }
+  for (const record of next) {
+    if (!record?.id) continue
+    const existing = byId.get(record.id)
+    if (!existing) {
+      byId.set(record.id, record)
+      continue
+    }
+    if (existing.status === "running" && record.status !== "running") {
+      byId.set(record.id, record)
+    }
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""))
+    .slice(0, 100)
 }

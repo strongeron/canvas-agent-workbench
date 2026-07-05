@@ -9,6 +9,7 @@ interface CanvasMcpAppPropsPanelProps {
   onChange: (updates: Partial<Omit<CanvasMcpAppItem, "id">>) => void
   onDelete: () => void
   onClose: () => void
+  onImportFigmaNode?: (url: string) => void | Promise<void>
 }
 
 function splitArgs(value: string) {
@@ -18,12 +19,33 @@ function splitArgs(value: string) {
     .filter(Boolean)
 }
 
+function parseSecretValue(value: string): string | Record<string, string> {
+  const trimmed = value.trim()
+  if (!trimmed) return ""
+  if (!trimmed.startsWith("{")) return trimmed
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    throw new Error("Secret JSON is invalid.")
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Secret JSON must be an object.")
+  }
+  const entries = Object.entries(parsed)
+  if (entries.length === 0) throw new Error("Secret JSON must not be empty.")
+  const invalid = entries.find(([, entry]) => typeof entry !== "string" || !entry)
+  if (invalid) throw new Error("Secret JSON values must be non-empty strings.")
+  return parsed as Record<string, string>
+}
+
 export function CanvasMcpAppPropsPanel({
   projectId,
   item,
   onChange,
   onDelete,
   onClose,
+  onImportFigmaNode,
 }: CanvasMcpAppPropsPanelProps) {
   const [secretRef, setSecretRef] = useState(
     item.transport.kind === "http" ? item.transport.headersRef || "" : item.transport.envRef || ""
@@ -31,6 +53,9 @@ export function CanvasMcpAppPropsPanel({
   const [secretValue, setSecretValue] = useState("")
   const [busy, setBusy] = useState<null | "connect" | "disconnect" | "secret">(null)
   const [error, setError] = useState<string | null>(null)
+  const [pendingConfirm, setPendingConfirm] = useState(false)
+  const [figmaUrl, setFigmaUrl] = useState("")
+  const [figmaImportBusy, setFigmaImportBusy] = useState(false)
 
   // Track mount + per-action AbortControllers so we can cancel in-flight
   // connect/disconnect/secret requests when the panel unmounts (the node
@@ -75,9 +100,9 @@ export function CanvasMcpAppPropsPanel({
     onChange({ transport: { ...item.transport, ...updates } })
   }
 
-  async function persistSecretIfNeeded() {
+  async function persistSecretIfNeeded(manageBusy = true) {
     if (!secretRef.trim() || !secretValue.trim()) return
-    safeSetBusy("secret")
+    if (manageBusy) safeSetBusy("secret")
     secretAbortRef.current?.abort()
     const controller = new AbortController()
     secretAbortRef.current = controller
@@ -88,7 +113,7 @@ export function CanvasMcpAppPropsPanel({
         body: JSON.stringify({
           projectId,
           ref: secretRef.trim(),
-          secret: secretValue.trim(),
+          secret: parseSecretValue(secretValue),
         }),
         signal: controller.signal,
       })
@@ -99,9 +124,63 @@ export function CanvasMcpAppPropsPanel({
       if (mountedRef.current) setSecretValue("")
     } finally {
       if (secretAbortRef.current === controller) secretAbortRef.current = null
+      if (manageBusy) safeSetBusy(null)
+    }
+  }
+
+  async function connectMcpApp(confirmed = false) {
+    safeSetBusy("connect")
+    safeSetError(null)
+    setPendingConfirm(false)
+    connectAbortRef.current?.abort()
+    const controller = new AbortController()
+    connectAbortRef.current = controller
+    try {
+      await persistSecretIfNeeded(false)
+      const response = await fetch("/api/canvas/mcp-app/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          nodeId: item.id,
+          appName: item.appName,
+          transport: item.transport,
+          ...(confirmed ? { confirmed: true } : {}),
+        }),
+        signal: controller.signal,
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || !payload?.ok) {
+        const code = typeof payload?.code === "string" ? payload.code : ""
+        if (code === "requires-user-confirm") setPendingConfirm(true)
+        throw new Error(payload?.error || "Failed to connect MCP app.")
+      }
+      safeOnChange({
+        status: "connected",
+        lastError: undefined,
+        toolsCache: Array.isArray(payload.tools) ? payload.tools : [],
+        resourcesCache: Array.isArray(payload.resources) ? payload.resources : [],
+        promptsCache: Array.isArray(payload.prompts) ? payload.prompts : [],
+      })
+    } catch (connectError) {
+      if ((connectError as Error)?.name === "AbortError") return
+      safeOnChange({
+        status: "error",
+        lastError: connectError instanceof Error ? connectError.message : "Failed to connect MCP app.",
+      })
+      safeSetError(connectError instanceof Error ? connectError.message : "Failed to connect MCP app.")
+    } finally {
+      if (connectAbortRef.current === controller) connectAbortRef.current = null
       safeSetBusy(null)
     }
   }
+
+  const isLikelyFigmaApp =
+    /figma/i.test(item.appName) ||
+    (item.transport.kind === "http" && /figma/i.test(item.transport.url)) ||
+    item.toolsCache?.some((tool) =>
+      ["get_design_context", "get_screenshot", "get_variable_defs", "get_metadata"].includes(tool.name)
+    )
 
   return (
     <div className="flex h-full w-80 flex-col border-l border-default bg-white">
@@ -249,7 +328,7 @@ export function CanvasMcpAppPropsPanel({
             type="password"
             value={secretValue}
             onChange={(event) => setSecretValue(event.target.value)}
-            placeholder="Stored server-side only"
+            placeholder='Stored server-side only, or {"Authorization":"Bearer ..."}'
             className="w-full rounded-md border border-default bg-white px-3 py-2 text-sm text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <button
@@ -273,50 +352,7 @@ export function CanvasMcpAppPropsPanel({
           <button
             type="button"
             disabled={busy !== null}
-            onClick={async () => {
-              safeSetBusy("connect")
-              safeSetError(null)
-              connectAbortRef.current?.abort()
-              const controller = new AbortController()
-              connectAbortRef.current = controller
-              try {
-                await persistSecretIfNeeded()
-                const response = await fetch("/api/canvas/mcp-app/connect", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    projectId,
-                    nodeId: item.id,
-                    appName: item.appName,
-                    transport: item.transport,
-                  }),
-                  signal: controller.signal,
-                })
-                const payload = await response.json().catch(() => ({}))
-                if (!response.ok || !payload?.ok) {
-                  throw new Error(payload?.error || "Failed to connect MCP app.")
-                }
-                safeOnChange({
-                  status: "connected",
-                  lastError: undefined,
-                  toolsCache: Array.isArray(payload.tools) ? payload.tools : [],
-                  resourcesCache: Array.isArray(payload.resources) ? payload.resources : [],
-                  promptsCache: Array.isArray(payload.prompts) ? payload.prompts : [],
-                })
-              } catch (connectError) {
-                if ((connectError as Error)?.name === "AbortError") return
-                safeOnChange({
-                  status: "error",
-                  lastError: connectError instanceof Error ? connectError.message : "Failed to connect MCP app.",
-                })
-                safeSetError(
-                  connectError instanceof Error ? connectError.message : "Failed to connect MCP app."
-                )
-              } finally {
-                if (connectAbortRef.current === controller) connectAbortRef.current = null
-                safeSetBusy(null)
-              }
-            }}
+            onClick={() => void connectMcpApp(false)}
             className="rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
           >
             Connect
@@ -372,9 +408,52 @@ export function CanvasMcpAppPropsPanel({
             Status
           </div>
           <div className="mt-1 text-sm text-foreground">{item.status}</div>
+          {pendingConfirm && (
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void connectMcpApp(true)}
+              className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+            >
+              Confirm and Connect
+            </button>
+          )}
           {item.lastError && <div className="mt-2 text-xs text-red-600">{item.lastError}</div>}
           {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
         </div>
+
+        {onImportFigmaNode && isLikelyFigmaApp && (
+          <div className="rounded-md border border-default bg-white p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Figma Import
+            </div>
+            <input
+              type="url"
+              value={figmaUrl}
+              onChange={(event) => setFigmaUrl(event.target.value)}
+              placeholder="Paste Figma frame or layer URL"
+              className="mt-2 w-full rounded-md border border-default bg-white px-3 py-2 text-sm text-foreground focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+            <button
+              type="button"
+              disabled={figmaImportBusy || item.status !== "connected" || !figmaUrl.trim()}
+              onClick={async () => {
+                setFigmaImportBusy(true)
+                setError(null)
+                try {
+                  await onImportFigmaNode(figmaUrl.trim())
+                } catch (importError) {
+                  setError(importError instanceof Error ? importError.message : "Failed to import Figma node.")
+                } finally {
+                  setFigmaImportBusy(false)
+                }
+              }}
+              className="mt-2 rounded-md bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {figmaImportBusy ? "Importing..." : "Import Node"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

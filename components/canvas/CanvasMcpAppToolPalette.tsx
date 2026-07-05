@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 
 import type { McpCallRecord, McpToolDescriptor } from "../../utils/mcpApp"
-import { parseJsonObjectInput } from "../../utils/mcpApp"
+import { mergeMcpRecentCallsById, parseJsonObjectInput } from "../../utils/mcpApp"
 
 interface CanvasMcpAppToolPaletteProps {
   projectId: string
@@ -20,26 +20,7 @@ export function mergeRecentCallsById(
   prior: McpCallRecord[],
   next: McpCallRecord[]
 ): McpCallRecord[] {
-  const byId = new Map<string, McpCallRecord>()
-  for (const record of prior) {
-    if (record?.id) byId.set(record.id, record)
-  }
-  for (const record of next) {
-    if (!record?.id) continue
-    const existing = byId.get(record.id)
-    if (!existing) {
-      byId.set(record.id, record)
-      continue
-    }
-    // Prefer the more-progressed record (finished > running) so a stale
-    // snapshot cannot overwrite a completed record back into "running".
-    if (existing.status === "running" && record.status !== "running") {
-      byId.set(record.id, record)
-    }
-  }
-  return Array.from(byId.values())
-    .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""))
-    .slice(0, 100)
+  return mergeMcpRecentCallsById(prior, next)
 }
 
 export function CanvasMcpAppToolPalette({

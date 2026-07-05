@@ -51,6 +51,17 @@ So the answer is:
 - yes, you can ask agents to create and iterate on nodes/items
 - no, `Node Catalog` itself is not editable by design
 
+## Figma MCP Import
+
+The canvas can add Figma as an MCP-app node and import a Figma frame or layer
+into local canvas items. Use:
+
+- `Figma Desktop MCP` for local Figma desktop at `http://127.0.0.1:3845/mcp`
+- `Figma Remote MCP` for `https://mcp.figma.com/mcp` with saved auth headers
+
+See [FIGMA_MCP_IMPORT.md](/Users/strongeron/Evil%20Martians/Open%20Source/gallery-poc/docs/FIGMA_MCP_IMPORT.md)
+for setup, credentials, and import behavior.
+
 ## One-Time Flow
 
 Start the app:
