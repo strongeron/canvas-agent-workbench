@@ -123,6 +123,7 @@ export type AgentWorkspaceEventKind =
   | "state-synced"
   | "user-action"
   | "source-edit"
+  | "file-lifecycle"
 
 export interface AgentWorkspaceEvent<TOperation = unknown> {
   id: string

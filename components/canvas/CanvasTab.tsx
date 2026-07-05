@@ -1857,6 +1857,7 @@ export function CanvasTab({
   // Only UI handlers call this — agent operations arrive via
   // applyCanvasAgentOperation and are logged server-side with actor "agent".
   const emitUserAction = agentBridge.emitUserAction
+  const emitFileLifecycle = agentBridge.emitFileLifecycle
   emitSourceEditRef.current = agentBridge.emitSourceEdit
 
   // Copy / paste / duplicate of canvas nodes (FOX2-59). Paste and duplicate
@@ -2063,8 +2064,9 @@ export function CanvasTab({
       } else {
         resetZoom()
       }
+      emitFileLifecycle("file-open", { path: file.path })
     },
-    [replaceState, resetZoom, setViewport]
+    [emitFileLifecycle, replaceState, resetZoom, setViewport]
   )
 
   useEffect(() => {
@@ -2173,6 +2175,10 @@ export function CanvasTab({
       )
       setActiveCanvasFile(saved)
       setLastSavedCanvasFileSignature(JSON.stringify(payload))
+      emitFileLifecycle("file-save", {
+        path: saved.path,
+        itemCount: payload.document.items.length,
+      })
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to save canvas file."
@@ -2185,6 +2191,7 @@ export function CanvasTab({
     activeProjectId,
     buildCurrentCanvasFileAssets,
     buildCurrentCanvasFilePayload,
+    emitFileLifecycle,
     runCanvasPersistenceTask,
     saveCanvasFile,
   ])
@@ -4146,6 +4153,7 @@ export function CanvasTab({
             folder: nextFolder || undefined,
           })
         )
+        emitFileLifecycle("file-create", { path: file.path, title: nextTitle })
         applyCanvasFileToWorkspace(file)
       } else if (canvasFileActionModal.mode === "save-as") {
         const payload = buildCurrentCanvasFilePayload()
@@ -4159,6 +4167,7 @@ export function CanvasTab({
             assets,
           })
         )
+        emitFileLifecycle("file-create", { path: created.path, title: nextTitle })
         setActiveCanvasFile(created)
         setLastSavedCanvasFileSignature(JSON.stringify(payload))
       } else if (canvasFileActionModal.mode === "rename" && canvasFileActionModal.targetPath) {
@@ -4182,6 +4191,7 @@ export function CanvasTab({
           setActiveCanvasFile(moved)
         }
         canvasFileBrowser.replaceTrackedPath(targetPath, moved.path)
+        emitFileLifecycle("file-rename", { fromPath: targetPath, toPath: moved.path, title: nextTitle })
       } else if (canvasFileActionModal.mode === "duplicate" && canvasFileActionModal.targetPath) {
         const targetPath = canvasFileActionModal.targetPath
         const duplicated = await runCanvasPersistenceTask(() =>
@@ -4190,6 +4200,7 @@ export function CanvasTab({
             folder: nextFolder,
           })
         )
+        emitFileLifecycle("file-duplicate", { fromPath: targetPath, toPath: duplicated.path })
         applyCanvasFileToWorkspace(duplicated)
       }
 
@@ -4212,6 +4223,7 @@ export function CanvasTab({
     canvasFiles,
     createCanvasFile,
     duplicateCanvasFile,
+    emitFileLifecycle,
     moveCanvasFile,
     runCanvasPersistenceTask,
   ])
@@ -4223,6 +4235,7 @@ export function CanvasTab({
     try {
       await runCanvasPersistenceTask(() => deleteCanvasFile(canvasFileDeleteModal.path))
       canvasFileBrowser.removeTrackedPath(canvasFileDeleteModal.path)
+      emitFileLifecycle("file-delete", { path: canvasFileDeleteModal.path })
       if (activeCanvasFile?.path === canvasFileDeleteModal.path) {
         setActiveCanvasFile(null)
         setLastSavedCanvasFileSignature(null)
@@ -4240,6 +4253,7 @@ export function CanvasTab({
     canvasFileBrowser,
     canvasFileDeleteModal,
     deleteCanvasFile,
+    emitFileLifecycle,
     runCanvasPersistenceTask,
   ])
 

@@ -58,6 +58,7 @@ export interface UseCanvasAgentBridgeResult {
   resizeSession: (sessionId: string, size: { cols: number; rows: number }) => Promise<void>
   emitUserAction: (action: string, payload?: Record<string, unknown>) => void
   emitSourceEdit: (action: string, meta?: Record<string, unknown>) => void
+  emitFileLifecycle: (action: string, meta?: Record<string, unknown>) => void
 }
 
 function buildQuery(params: Record<string, string | undefined>) {
@@ -210,7 +211,7 @@ export function useCanvasAgentBridge({
   // operation-shaped payloads; a short flush window folds bursts into one POST.
   const userActionQueueRef = useRef<
     Array<{
-      kind?: "user-action" | "source-edit"
+      kind?: "user-action" | "source-edit" | "file-lifecycle"
       action: string
       payload?: Record<string, unknown>
       meta?: Record<string, unknown>
@@ -252,6 +253,14 @@ export function useCanvasAgentBridge({
     (action: string, meta?: Record<string, unknown>) => {
       if (!canvasWorkspaceKey) return
       userActionQueueRef.current.push({ kind: "source-edit", action, meta })
+      flushActivityEvents()
+    },
+    [canvasWorkspaceKey, flushActivityEvents]
+  )
+  const emitFileLifecycle = useCallback(
+    (action: string, meta?: Record<string, unknown>) => {
+      if (!canvasWorkspaceKey) return
+      userActionQueueRef.current.push({ kind: "file-lifecycle", action, meta })
       flushActivityEvents()
     },
     [canvasWorkspaceKey, flushActivityEvents]
@@ -713,5 +722,6 @@ export function useCanvasAgentBridge({
     resizeSession,
     emitUserAction,
     emitSourceEdit,
+    emitFileLifecycle,
   }
 }
