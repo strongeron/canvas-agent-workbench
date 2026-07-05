@@ -5,17 +5,13 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
-// These suites spawn real bin/canvas-agent and bin/canvas-mcp-server
-// subprocesses and round-trip over HTTP/stdio. On cold CI runners the first
-// node spawn + module load exceeds vitest's 5s default, so scope a generous
-// timeout to the whole file (locally each test is well under a second).
-vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 })
 import { listCanvasHtmlSlots } from "../utils/canvasHtmlEditor"
 import { CANVAS_MCP_TOOL_NAMES } from "../utils/canvasMcpToolNames"
 
-const WORKSPACE_ROOT = "/Users/strongeron/Evil Martians/Open Source/gallery-poc"
+// Repo root (vitest cwd), not a hard-coded developer path (see canvasAgentCli).
+const WORKSPACE_ROOT = process.cwd()
 
 // Spec-correct MCP stdio framing (what codex and claude actually speak):
 // newline-delimited JSON-RPC messages.
