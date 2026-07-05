@@ -430,6 +430,7 @@ describe("canvas-agent CLI bootstrap", () => {
         },
       ],
       cursor: 4,
+      nextCursor: 4,
     })
   })
 

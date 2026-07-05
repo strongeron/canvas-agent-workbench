@@ -84,6 +84,10 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_mcp_app_log")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "disconnect_mcp_app")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_events")).toBe(true)
+    // FOX2-47: agents discover the cursor-paged feed + vocabulary from the manifest.
+    expect(
+      canvasWorkspace?.tools.find((tool) => tool.id === "get_workspace_events")?.description
+    ).toMatch(/sinceCursor.*nextCursor|user-action/)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "get_workspace_debug")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "duplicate_items")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "move_items_into_artboard")).toBe(true)

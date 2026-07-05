@@ -265,6 +265,7 @@ describe("canvas agent runtime", () => {
         },
       ],
       cursor: 2,
+      nextCursor: 2,
     })
 
     expect(fetchMock).toHaveBeenCalledWith(

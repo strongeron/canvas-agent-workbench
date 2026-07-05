@@ -26,6 +26,12 @@ describe("agent native runtime adapters", () => {
     },
   } as const
 
+  it("teaches the workspace-events poll loop in the MCP guidance (FOX2-47)", () => {
+    expect(CANVAS_AGENT_RUNTIME_MCP_GUIDANCE).toContain("get_workspace_events")
+    expect(CANVAS_AGENT_RUNTIME_MCP_GUIDANCE).toContain("sinceCursor")
+    expect(CANVAS_AGENT_RUNTIME_MCP_GUIDANCE).toContain("nextCursor")
+  })
+
   it("registers the supported runtime adapters", () => {
     expect(AGENT_NATIVE_RUNTIME_ADAPTERS.map((adapter) => adapter.id)).toEqual([
       "codex",

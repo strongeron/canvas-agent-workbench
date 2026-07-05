@@ -3212,6 +3212,9 @@ describe("canvas MCP server", () => {
 
       expect(systemEvents.result?.structuredContent?.events?.[0]?.id).toBe("event-1")
       expect(systemEvents.result?.structuredContent?.events?.[0]?.kind).toBe("operation-queued")
+      // Cursor-paged contract (FOX2-47): nextCursor is present for poll loops.
+      // (sinceCursor filtering itself is covered in agentNativeWorkspaceEvents.)
+      expect(typeof systemEvents.result?.structuredContent?.nextCursor).toBe("number")
 
       const canvasDebug = (await sendRpc({
         jsonrpc: "2.0",

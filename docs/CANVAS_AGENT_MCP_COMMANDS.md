@@ -41,8 +41,10 @@ These work across surfaces:
   Returns the global workspace/runtime manifest.
 - `get_surface_manifest`
   Returns the manifest for one surface: `canvas`, `color-audit`, `system-canvas`, `node-catalog`.
-- `get_workspace_events`
-  Returns the append-only event log for one surface.
+- `get_workspace_events { workspaceId, sinceCursor?, limit? }`
+  Returns the append-only event log for one surface, cursor-paged as
+  `{ events, nextCursor }`. Pass `sinceCursor` to fetch only events newer than a
+  prior read. See [Observing what the human does](#observing-what-the-human-does).
 - `get_workspace_debug`
   Returns replay/debug info for one surface.
 - `capture_workspace_screenshot`
@@ -578,11 +580,41 @@ Expected:
 - may capture screenshot
 - does not attempt writes on Node Catalog
 
+## Observing what the human does
+
+Every surface exposes an append-only event feed the agent can poll to see
+user and agent activity, not just query current state. Read it with
+`get_workspace_events`.
+
+### Event vocabulary
+
+| kind | actor | meaning | payload |
+| -- | -- | -- | -- |
+| `user-action` | `user` | a human edit in the browser (tool switch, theme change, create/delete, paste, move-into-artboard, copy-agent-context) | operation-shaped; `metadata.action` names the gesture |
+| `operation-queued` | `agent` / `system` | an operation entered the queue (usually an agent op via this MCP) | the operation |
+| `operation-applied` | `agent` / `system` | the queued operation was applied to workspace state | — |
+| `state-synced` | `system` | a coarse full-state sync from the browser (fallback signal) | `stateSummary` |
+
+### Cursor loop (poll → act → ack)
+
+```
+cursor = 0
+loop:
+  { events, nextCursor } = get_workspace_events { workspaceId: "canvas", sinceCursor: cursor }
+  for each event: react (e.g. the user selected items -> operate on them)
+  cursor = nextCursor        # ack: next poll only returns newer events
+```
+
+`sinceCursor` filters strictly greater than the given cursor, so passing the
+returned `nextCursor` back never re-delivers an event. Omit `sinceCursor` to
+read the whole retained log (capped, newest-last).
+
 ## Practical Rule
 
 For this repo:
 
 - use MCP/resources/tools for live app surfaces
+- poll `get_workspace_events` to observe user + agent activity over time
 - use Bash/file edits only for code changes, tests, or debugging outside the live scene graph
 
 That split is the most reliable way to get Claude and Codex to behave correctly here.
