@@ -5195,7 +5195,7 @@ function paperImportPlugin() {
               // Browser-reported human activity. Default kind is user-action
               // (a semantic UI gesture); source-edit mirrors a mutation-log
               // write (FOX2-46). Both carry actor "user".
-              const allowedKinds = new Set(['user-action', 'source-edit'])
+              const allowedKinds = new Set(['user-action', 'source-edit', 'file-lifecycle'])
               const accepted = []
               for (const entry of incoming) {
                 if (!entry || typeof entry !== 'object') continue
