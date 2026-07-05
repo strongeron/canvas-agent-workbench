@@ -2157,6 +2157,88 @@ export function CanvasTab({
     return { artboard, movableItems }
   }, [items, selectedIds])
 
+  // FOX2-58: releasing a dragged freeform item over an artboard re-parents it
+  // into the artboard's flow — same semantics as the toolbar's "Move to
+  // artboard" and the agent's move_items_into_artboard. Centralized here
+  // (position snapshot on mousedown, containment check on mouseup) because
+  // every freeform item type owns its own drag loop.
+  const freeformDragSnapshotRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const freeformDragStateRef = useRef({ items, selectedIds, canvasTool })
+  freeformDragStateRef.current = { items, selectedIds, canvasTool }
+  useEffect(() => {
+    const handleMouseDown = () => {
+      const state = freeformDragStateRef.current
+      freeformDragSnapshotRef.current = new Map(
+        state.canvasTool === "select"
+          ? state.items
+              .filter(
+                (item) =>
+                  state.selectedIds.includes(item.id) &&
+                  !item.parentId &&
+                  item.type !== "artboard" &&
+                  item.type !== "section" &&
+                  item.type !== "mcp-app"
+              )
+              .map((item) => [item.id, { ...item.position }])
+          : []
+      )
+    }
+
+    const handleMouseUp = () => {
+      const snapshot = freeformDragSnapshotRef.current
+      freeformDragSnapshotRef.current = new Map()
+      if (snapshot.size === 0) return
+      const state = freeformDragStateRef.current
+      const artboards = state.items.filter(
+        (item): item is CanvasArtboardItem => item.type === "artboard"
+      )
+      if (artboards.length === 0) return
+
+      for (const [itemId, start] of snapshot) {
+        const item = state.items.find((candidate) => candidate.id === itemId)
+        if (!item || item.parentId) continue
+        // Only a real drag counts — clicks on items that happen to overlap an
+        // artboard must not re-parent them.
+        if (Math.hypot(item.position.x - start.x, item.position.y - start.y) <= 8) continue
+        const centerX = item.position.x + item.size.width / 2
+        const centerY = item.position.y + item.size.height / 2
+        const artboard = artboards
+          .filter(
+            (candidate) =>
+              centerX >= candidate.position.x &&
+              centerX <= candidate.position.x + candidate.size.width &&
+              centerY >= candidate.position.y &&
+              centerY <= candidate.position.y + candidate.size.height
+          )
+          .sort((a, b) => b.zIndex - a.zIndex)[0]
+        if (!artboard) continue
+        const siblings = state.items.filter(
+          (candidate) => candidate.parentId === artboard.id && candidate.type !== "artboard"
+        )
+        const maxOrder = siblings.reduce((max, candidate) => Math.max(max, candidate.order ?? 0), -1)
+        emitUserAction("move-items-into-artboard", { ids: [itemId], artboardId: artboard.id })
+        updateItem(itemId, {
+          parentId: artboard.id,
+          order: maxOrder + 1,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+        })
+        setHistoryToast({
+          id: Date.now(),
+          tone: "info",
+          message: `Moved into ${artboard.name}.`,
+        })
+      }
+    }
+
+    document.addEventListener("mousedown", handleMouseDown, true)
+    document.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown, true)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [emitUserAction, updateItem])
+
   const handleMoveSelectionToArtboard = useCallback(() => {
     if (!moveIntoArtboardTarget) return
     const { artboard, movableItems } = moveIntoArtboardTarget
