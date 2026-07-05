@@ -64,6 +64,7 @@ import {
   buildCanvasAgentSelectionContext,
   CANVAS_COPY_FOR_AGENT_EVENT,
 } from "../../utils/canvasAgentSelectionContext"
+import { computeLayoutContentHeight } from "../../utils/canvasLayoutMetrics"
 import { dispatchCanvasGroupResize } from "../../utils/canvasGroupResizeDispatch"
 import { CanvasMarkdownPropsPanel } from "./CanvasMarkdownPropsPanel"
 import { CanvasMcpAppPropsPanel } from "./CanvasMcpAppPropsPanel"
@@ -908,18 +909,25 @@ export function CanvasTab({
             (item.type === "artboard" || item.type === "section")
         ) ?? null)
       : null
+  // Rounded: these become persisted child sizes on fill toggles — a
+  // fractional artboard height must not leak fractions into the document
+  // (FOX2-41).
   const selectedItemParentInnerWidth = selectedItemLayoutParent
     ? Math.max(
         120,
-        selectedItemLayoutParent.size.width -
-          (selectedItemLayoutParent.layout.padding ?? 0) * 2
+        Math.round(
+          selectedItemLayoutParent.size.width -
+            (selectedItemLayoutParent.layout.padding ?? 0) * 2
+        )
       )
     : undefined
   const selectedItemParentInnerHeight = selectedItemLayoutParent
     ? Math.max(
         120,
-        selectedItemLayoutParent.size.height -
-          (selectedItemLayoutParent.layout.padding ?? 0) * 2
+        Math.round(
+          selectedItemLayoutParent.size.height -
+            (selectedItemLayoutParent.layout.padding ?? 0) * 2
+        )
       )
     : undefined
   const selectedItemWidthMode: CanvasLayoutWidthMode =
@@ -943,40 +951,7 @@ export function CanvasTab({
     : []
   const selectedSectionContentHugHeight =
     selectedSectionItem && selectedSectionChildren.length > 0
-      ? (() => {
-          const padding = selectedSectionItem.layout.padding ?? 0
-          const gap = selectedSectionItem.layout.gap ?? 0
-          if (
-            selectedSectionItem.layout.display === "flex" &&
-            selectedSectionItem.layout.direction !== "row"
-          ) {
-            return (
-              selectedSectionChildren.reduce((sum, child) => sum + child.size.height, 0) +
-              Math.max(0, selectedSectionChildren.length - 1) * gap +
-              padding * 2
-            )
-          }
-          if (selectedSectionItem.layout.display === "grid") {
-            const columns = Math.max(1, selectedSectionItem.layout.columns ?? 1)
-            const rowCount = Math.ceil(selectedSectionChildren.length / columns)
-            const rowHeights = Array.from({ length: rowCount }, (_, rowIndex) => {
-              const rowChildren = selectedSectionChildren.slice(
-                rowIndex * columns,
-                rowIndex * columns + columns
-              )
-              return Math.max(...rowChildren.map((child) => child.size.height), 0)
-            })
-            return (
-              rowHeights.reduce((sum, height) => sum + height, 0) +
-              Math.max(0, rowCount - 1) * gap +
-              padding * 2
-            )
-          }
-          return (
-            Math.max(...selectedSectionChildren.map((child) => child.size.height), 0) +
-            padding * 2
-          )
-        })()
+      ? computeLayoutContentHeight(selectedSectionItem, selectedSectionChildren)
       : 120
   const nativeComponentTargetArtboard: CanvasArtboardItem | CanvasSectionItem | null =
     selectedLayoutContainerItem ||
@@ -2357,10 +2332,11 @@ export function CanvasTab({
       if (!selectedItem || !selectedItemLayoutParent) return
 
       const currentSizing = selectedItem.layoutSizing
-      const hugWidth =
+      const hugWidth = Math.round(
         currentSizing?.hugWidth && currentSizing.hugWidth > 0
           ? currentSizing.hugWidth
           : selectedItem.size.width
+      )
 
       if (mode === "fill") {
         updateItem(selectedItem.id, {
@@ -2397,10 +2373,11 @@ export function CanvasTab({
       if (!selectedItem || !selectedItemLayoutParent) return
 
       const currentSizing = selectedItem.layoutSizing
-      const hugHeight =
+      const hugHeight = Math.round(
         currentSizing?.hugHeight && currentSizing.hugHeight > 0
           ? currentSizing.hugHeight
           : selectedItem.size.height
+      )
 
       if (mode === "fill") {
         updateItem(selectedItem.id, {

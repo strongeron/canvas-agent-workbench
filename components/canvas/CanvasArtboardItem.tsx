@@ -1,8 +1,15 @@
-import { MoveHorizontal, RotateCw } from "lucide-react"
+import { ArrowDownToLine, MoveHorizontal, RotateCw } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useDroppable } from "@dnd-kit/core"
 
-import type { CanvasArtboardItem as CanvasArtboardItemType } from "../../types/canvas"
+import type {
+  CanvasArtboardItem as CanvasArtboardItemType,
+  CanvasItem,
+} from "../../types/canvas"
+import {
+  computeLayoutContentHeight,
+  computeLayoutHeightOverflow,
+} from "../../utils/canvasLayoutMetrics"
 import { CanvasContextMenu } from "./CanvasContextMenu"
 import { useCanvasItemContextMenu } from "./useCanvasItemContextMenu"
 
@@ -20,6 +27,8 @@ interface CanvasArtboardItemProps {
   scale: number
   interactMode: boolean
   children: React.ReactNode
+  /** Child items, for content-height metrics (overflow cue + fit height). */
+  childItems?: CanvasItem[]
 }
 
 const MIN_WIDTH = 320
@@ -87,6 +96,7 @@ export function CanvasArtboardItem({
   scale,
   interactMode,
   children,
+  childItems,
 }: CanvasArtboardItemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -239,9 +249,12 @@ export function CanvasArtboardItem({
           newY = initialState.y + heightDelta
         }
 
+        // Rounded: /scale deltas are fractional and these persist into the
+        // document; a fractional artboard height also leaks into children on
+        // later fill toggles (FOX2-41).
         onUpdate({
-          position: { x: newX, y: newY },
-          size: { width: newWidth, height: newHeight },
+          position: { x: Math.round(newX), y: Math.round(newY) },
+          size: { width: Math.round(newWidth), height: Math.round(newHeight) },
         })
       } else if (isRotating && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect()
@@ -286,6 +299,20 @@ export function CanvasArtboardItem({
     resizeHandle,
     scale,
   ])
+
+  // Layout-derived content height vs the explicit artboard height. When
+  // content is taller, the overflow-hidden frame silently clips it — the cue
+  // below plus a one-shot "Fit height" is the affordance (FOX2-41). One-shot
+  // rather than a persistent hug mode: continuous measure-and-write-back is
+  // the same feedback-loop class as the FOX2-40 autosave bug.
+  const overflowPx =
+    childItems && childItems.length > 0 ? computeLayoutHeightOverflow(item, childItems) : 0
+  const handleFitHeight = useCallback(() => {
+    if (!childItems || childItems.length === 0) return
+    onUpdate({
+      size: { ...item.size, height: computeLayoutContentHeight(item, childItems) },
+    })
+  }, [childItems, item, onUpdate])
 
   const layout = item.layout
   const layoutClassName =
@@ -349,7 +376,40 @@ export function CanvasArtboardItem({
         >
           {children}
         </div>
+
+        {overflowPx > 1 && !interactMode && (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-10 border-b-2 border-dashed border-amber-400 bg-gradient-to-t from-amber-200/60 to-transparent"
+            data-artboard-overflow="true"
+          />
+        )}
       </div>
+
+      {overflowPx > 1 && !interactMode && (
+        <div
+          className={`absolute -bottom-[26px] left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 transition-opacity duration-100 ${
+            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+        >
+          <span className="whitespace-nowrap rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+            Clipped +{overflowPx}px
+          </span>
+          <button
+            type="button"
+            data-artboard-handle="true"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleFitHeight()
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="pointer-events-auto flex shrink-0 items-center gap-1 whitespace-nowrap rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700 shadow-sm hover:bg-amber-50"
+            title="Grow the artboard to fit its content height"
+          >
+            <ArrowDownToLine className="h-3 w-3" />
+            Fit height
+          </button>
+        </div>
+      )}
 
       {!interactMode ? (
         <div className="pointer-events-none absolute -top-[24px] left-0 z-20 flex max-w-full items-center gap-1.5">
