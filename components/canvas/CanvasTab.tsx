@@ -925,6 +925,16 @@ export function CanvasTab({
     },
     [items]
   )
+  // Placement for a newly added asset (markdown/mermaid/media/etc): into the
+  // selected artboard's flow when there is one and the caller didn't pin an
+  // explicit position (e.g. a drop), else null → freeform (FOX2-58).
+  const resolveAssetArtboardPlacement = useCallback(
+    (explicitPosition?: { x: number; y: number }) => {
+      if (explicitPosition || !addTargetArtboardId) return null
+      return { parentId: addTargetArtboardId, order: nextArtboardChildOrder(addTargetArtboardId) }
+    },
+    [addTargetArtboardId, nextArtboardChildOrder]
+  )
   const selectedItemLayoutParent =
     selectedItem?.parentId && selectedItem.type !== "artboard"
       ? (items.find(
@@ -3514,6 +3524,7 @@ export function CanvasTab({
       file?: File
       mediaKind?: CanvasMediaItem["mediaKind"]
       position?: { x: number; y: number }
+      parentId?: string
     }) => {
       let src = input.src?.trim() || ""
       let mediaKind = input.mediaKind
@@ -3568,6 +3579,11 @@ export function CanvasTab({
       const targetX = input.position ? input.position.x : centerX
       const targetY = input.position ? input.position.y : centerY
 
+      // An explicit parentId (a file dropped onto an artboard) wins; else fall
+      // back to the selected-artboard placement (FOX2-58).
+      const placement = input.parentId
+        ? { parentId: input.parentId, order: nextArtboardChildOrder(input.parentId) }
+        : resolveAssetArtboardPlacement(input.position)
       addItem({
         type: "media",
         src,
@@ -3587,10 +3603,12 @@ export function CanvasTab({
         },
         size: { width: mediaWidth, height: mediaHeight },
         rotation: 0,
+        ...(placement ?? {}),
       })
+      if (placement) emitUserAction("create-item", { itemType: "media", parentId: placement.parentId, target: "artboard" })
       setPropsPanelVisible(true)
     },
-    [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, nextArtboardChildOrder, resolveAssetArtboardPlacement, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddMermaid = useCallback(
@@ -3609,6 +3627,7 @@ export function CanvasTab({
       const targetX = input?.position ? input.position.x : centerX
       const targetY = input?.position ? input.position.y : centerY
 
+      const placement = resolveAssetArtboardPlacement(input?.position)
       addItem({
         type: "mermaid",
         source,
@@ -3621,10 +3640,12 @@ export function CanvasTab({
         },
         size: { width: mermaidWidth, height: mermaidHeight },
         rotation: 0,
+        ...(placement ?? {}),
       })
+      if (placement) emitUserAction("create-item", { itemType: "mermaid", parentId: placement.parentId, target: "artboard" })
       setPropsPanelVisible(true)
     },
-    [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, resolveAssetArtboardPlacement, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddMcpApp = useCallback(
@@ -3675,6 +3696,7 @@ export function CanvasTab({
       const targetX = input?.position ? input.position.x : centerX
       const targetY = input?.position ? input.position.y : centerY
 
+      const placement = resolveAssetArtboardPlacement(input?.position)
       addItem({
         type: "markdown",
         source,
@@ -3689,10 +3711,12 @@ export function CanvasTab({
         },
         size: { width: markdownWidth, height: markdownHeight },
         rotation: 0,
+        ...(placement ?? {}),
       })
+      if (placement) emitUserAction("create-item", { itemType: "markdown", parentId: placement.parentId, target: "artboard" })
       setPropsPanelVisible(true)
     },
-    [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, resolveAssetArtboardPlacement, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddExcalidraw = useCallback(
@@ -4847,6 +4871,12 @@ export function CanvasTab({
             onLibraryPrimitiveDropOnCanvas={(position) =>
               void handleLibraryPrimitiveDropOnCanvas(position)
             }
+            onFilesDropOnArtboard={(artboardId, files) => {
+              for (const file of files) {
+                if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) continue
+                void handleAddMedia({ file, parentId: artboardId })
+              }
+            }}
             onLibraryDropInsert={handleLibraryDropInsert}
             onLibraryDropWrap={handleLibraryDropWrap}
           />
