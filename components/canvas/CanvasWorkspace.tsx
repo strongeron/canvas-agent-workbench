@@ -902,6 +902,7 @@ export function CanvasWorkspace({
             onBringToFront={() => onBringToFront(item.id)}
             scale={transform.scale}
             interactMode={interactMode}
+            childItems={children}
           >
             {children.map((child, index) => renderLayoutChild(child, index, children.length))}
           </CanvasArtboardItemComponent>
