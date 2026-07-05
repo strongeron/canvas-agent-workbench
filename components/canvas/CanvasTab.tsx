@@ -2957,6 +2957,34 @@ export function CanvasTab({
     [activeLibraryDrag, activeProjectId, emitUserAction, handleAddInlineHtml, items]
   )
 
+  // Library primitive dropped on empty canvas: freeform item centered at the
+  // cursor (FOX2-58).
+  const handleLibraryPrimitiveDropOnCanvas = useCallback(
+    async (position: { x: number; y: number }) => {
+      const primitive = activeLibraryDrag?.primitive
+      setActiveLibraryDrag(null)
+      if (!primitive || !activeProjectId) return
+      try {
+        const input = await buildPrimitiveInstantiateInput(primitive, activeProjectId)
+        emitUserAction("create-item", {
+          itemType: "html",
+          primitiveId: primitive.id,
+          position,
+          target: "canvas",
+        })
+        await handleAddInlineHtml({ ...input, position })
+      } catch (error) {
+        setHistoryToast({
+          id: Date.now(),
+          tone: "error",
+          message:
+            error instanceof Error ? error.message : "Failed to add primitive to canvas.",
+        })
+      }
+    },
+    [activeLibraryDrag, activeProjectId, emitUserAction, handleAddInlineHtml]
+  )
+
   const createFileBackedNativeShell = useCallback(
     async (
       template: NativeComponentTemplate = "section",
@@ -4634,6 +4662,9 @@ export function CanvasTab({
             libraryDragActive={activeLibraryDrag !== null}
             onLibraryPrimitiveDropOnArtboard={(artboardId) =>
               void handleLibraryPrimitiveDropOnArtboard(artboardId)
+            }
+            onLibraryPrimitiveDropOnCanvas={(position) =>
+              void handleLibraryPrimitiveDropOnCanvas(position)
             }
             onLibraryDropInsert={handleLibraryDropInsert}
             onLibraryDropWrap={handleLibraryDropWrap}

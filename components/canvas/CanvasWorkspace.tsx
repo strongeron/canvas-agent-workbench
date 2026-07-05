@@ -137,6 +137,8 @@ interface CanvasWorkspaceProps {
   onLibraryDropWrap?: (input: { itemId: string; canvasId: string }) => void
   /** Drop the active library primitive onto an artboard as a new child (FOX2-58). */
   onLibraryPrimitiveDropOnArtboard?: (artboardId: string) => void
+  /** Drop the active library primitive onto empty canvas as a freeform item (FOX2-58). */
+  onLibraryPrimitiveDropOnCanvas?: (position: { x: number; y: number }) => void
 }
 
 export function CanvasWorkspace({
@@ -174,6 +176,7 @@ export function CanvasWorkspace({
   onLibraryDropInsert,
   onLibraryDropWrap,
   onLibraryPrimitiveDropOnArtboard,
+  onLibraryPrimitiveDropOnCanvas,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -750,17 +753,24 @@ export function CanvasWorkspace({
 
   const handleNativeDragOver = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
-      if (!onDropMediaFiles) return
       const hasFiles = Array.from(e.dataTransfer?.types || []).includes("Files")
-      if (!hasFiles) return
-      e.preventDefault()
-      e.stopPropagation()
-      e.dataTransfer.dropEffect = "copy"
-      if (!isFileDragOver) {
-        setIsFileDragOver(true)
+      if (hasFiles && onDropMediaFiles) {
+        e.preventDefault()
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = "copy"
+        if (!isFileDragOver) {
+          setIsFileDragOver(true)
+        }
+        return
+      }
+      // Library primitive drags may land on empty canvas as freeform items
+      // (FOX2-58). Artboards handle their own dragover with stopPropagation,
+      // so this only allows the drop when the cursor is over open canvas.
+      if (libraryDragActive && onLibraryPrimitiveDropOnCanvas) {
+        e.preventDefault()
       }
     },
-    [isFileDragOver, onDropMediaFiles]
+    [isFileDragOver, libraryDragActive, onDropMediaFiles, onLibraryPrimitiveDropOnCanvas]
   )
 
   const handleNativeDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -771,18 +781,25 @@ export function CanvasWorkspace({
 
   const handleNativeDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
-      if (!onDropMediaFiles) return
       const files = Array.from(e.dataTransfer?.files || [])
-      if (files.length === 0) return
+      if (files.length > 0 && onDropMediaFiles) {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsFileDragOver(false)
 
-      e.preventDefault()
-      e.stopPropagation()
-      setIsFileDragOver(false)
+        const position = screenToCanvas(e.clientX, e.clientY)
+        void onDropMediaFiles({ files, position })
+        return
+      }
 
-      const position = screenToCanvas(e.clientX, e.clientY)
-      void onDropMediaFiles({ files, position })
+      // Artboard drops stop propagation before reaching here; slot-zone
+      // drops preventDefault, which the guard below respects (FOX2-58).
+      if (libraryDragActive && onLibraryPrimitiveDropOnCanvas && !e.defaultPrevented) {
+        e.preventDefault()
+        onLibraryPrimitiveDropOnCanvas(screenToCanvas(e.clientX, e.clientY))
+      }
     },
-    [onDropMediaFiles, screenToCanvas]
+    [libraryDragActive, onDropMediaFiles, onLibraryPrimitiveDropOnCanvas, screenToCanvas]
   )
 
   // Determine cursor based on state
