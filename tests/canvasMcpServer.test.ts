@@ -1056,7 +1056,7 @@ describe("canvas MCP server", () => {
       throw new Error("Expected TCP address for MCP test server.")
     }
 
-    const child = spawn("node", ["bin/canvas-mcp-server"], {
+    const child = spawn(process.execPath, ["bin/canvas-mcp-server"], {
       cwd: WORKSPACE_ROOT,
       env: {
         ...process.env,
@@ -3383,7 +3383,7 @@ describe("canvas MCP server", () => {
     await mkdir(path.join(tempDir, "queue"), { recursive: true })
     await mkdir(path.join(tempDir, "results"), { recursive: true })
 
-    const child = spawn("node", ["bin/canvas-mcp-server"], {
+    const child = spawn(process.execPath, ["bin/canvas-mcp-server"], {
       cwd: WORKSPACE_ROOT,
       env: {
         ...process.env,

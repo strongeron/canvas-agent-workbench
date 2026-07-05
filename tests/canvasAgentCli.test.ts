@@ -11,7 +11,7 @@ const WORKSPACE_ROOT = "/Users/strongeron/Evil Martians/Open Source/gallery-poc"
 
 function runCli(args: string[], env: Record<string, string> = {}) {
   return new Promise<{ stdout: string; stderr: string; exitCode: number | null }>((resolve) => {
-    const child = spawn("node", ["bin/canvas-agent", ...args], {
+    const child = spawn(process.execPath, ["bin/canvas-agent", ...args], {
       cwd: WORKSPACE_ROOT,
       env: {
         ...process.env,
