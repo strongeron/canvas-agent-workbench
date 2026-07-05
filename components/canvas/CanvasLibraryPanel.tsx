@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { Loader2, Package, Plus, RotateCw, X } from "lucide-react"
 
-import {
-  buildPrimitiveSnippet,
-  type CanvasRegistryPrimitive,
-} from "../../utils/canvasRegistry"
+import { type CanvasRegistryPrimitive } from "../../utils/canvasRegistry"
+import { buildPrimitiveInstantiateInput } from "../../utils/canvasLibraryInstantiate"
 import {
   buildLibraryDragPayload,
   writeLibraryDragPayload,
@@ -102,42 +100,7 @@ export function CanvasLibraryPanel({
 
   const instantiate = useCallback(
     async (primitive: CanvasRegistryPrimitive) => {
-      if (primitive.kind === "html" && primitive.filePath) {
-        const response = await fetch("/api/canvas/ast/load", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filePath: `projects/${projectId}/${primitive.filePath}`,
-          }),
-        })
-        const payload = (await response.json().catch(() => ({}))) as {
-          ok?: boolean
-          sourceHtml?: string
-          source?: string
-          filePath?: string
-          mtimeMs?: number
-          error?: string
-        }
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.error || "Failed to load HTML primitive.")
-        }
-        const filePath = `projects/${projectId}/${primitive.filePath}`
-        await onInstantiate({
-          title: primitive.displayName,
-          sourceHtml: payload.sourceHtml || payload.source || "",
-          sourceMode: "inline",
-          sourcePath: filePath,
-          sourceHtmlFilePath: payload.filePath || filePath,
-          sourceHtmlFileMtime: payload.mtimeMs,
-        })
-        return
-      }
-      const sourceReact = buildPrimitiveSnippet(primitive)
-      await onInstantiate({
-        title: primitive.displayName,
-        sourceReact,
-        sourceMode: "react",
-      })
+      await onInstantiate(await buildPrimitiveInstantiateInput(primitive, projectId))
     },
     [onInstantiate, projectId]
   )

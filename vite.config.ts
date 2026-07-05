@@ -4442,6 +4442,29 @@ function paperImportPlugin() {
       server.watcher.on('change', handleLocalScanEvent)
       server.watcher.on('unlink', handleLocalScanEvent)
       await fs.mkdir(canvasAgentServerRuntimeRoot, { recursive: true })
+      // Every process that boots this plugin (dev servers AND vitest runs)
+      // creates a per-PID runtime dir; without pruning, hundreds of dead-PID
+      // trees pile up in .canvas-agent/servers. Best-effort sweep of siblings
+      // whose process is gone.
+      void (async () => {
+        try {
+          const siblings = await fs.readdir(path.join(CANVAS_AGENT_RUNTIME_ROOT))
+          for (const entry of siblings) {
+            const pid = Number.parseInt(entry, 10)
+            if (!Number.isFinite(pid) || pid === process.pid) continue
+            try {
+              process.kill(pid, 0)
+            } catch {
+              await fs.rm(path.join(CANVAS_AGENT_RUNTIME_ROOT, entry), {
+                recursive: true,
+                force: true,
+              })
+            }
+          }
+        } catch {
+          // Pruning is hygiene only — never block server startup on it.
+        }
+      })()
       server.watcher.add(canvasAgentServerRuntimeRoot)
       server.watcher.on('add', handleCanvasAgentQueueEvent)
       server.watcher.on('change', handleCanvasAgentQueueEvent)

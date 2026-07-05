@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest"
 import {
   computeLayoutContentHeight,
   computeLayoutHeightOverflow,
+  resolveLayoutChildShellStyle,
 } from "../utils/canvasLayoutMetrics"
+import type { CanvasItem } from "../types/canvas"
 
 const child = (height: number) => ({ size: { width: 100, height } })
 
@@ -39,6 +41,58 @@ describe("canvas layout metrics", () => {
       layout: { display: "flex" as const, direction: "column" as const, gap: 0, padding: 0 },
     }
     expect(computeLayoutContentHeight(container, [child(874.8407805456532)])).toBe(875)
+  })
+
+  it("renders component shells at intrinsic fit-content under hug (FOX2-57)", () => {
+    const stretchParent = { display: "flex" as const, align: "stretch" as const }
+    const componentChild = (layoutSizing?: CanvasItem["layoutSizing"]) =>
+      ({
+        type: "component",
+        size: { width: 220, height: 60 },
+        layoutSizing,
+      }) as unknown as Pick<CanvasItem, "type" | "size" | "layoutSizing">
+
+    // Unset mode: components hug (not fill), even in stretch/grid parents.
+    expect(resolveLayoutChildShellStyle(componentChild(undefined), stretchParent)).toEqual({
+      width: "fit-content",
+      height: "fit-content",
+    })
+    // Explicit hug: intrinsic.
+    expect(
+      resolveLayoutChildShellStyle(componentChild({ width: "hug", height: "hug" }), stretchParent)
+    ).toEqual({ width: "fit-content", height: "fit-content" })
+    // Fixed: stored px.
+    expect(
+      resolveLayoutChildShellStyle(
+        componentChild({ width: "fixed", height: "fixed" }),
+        stretchParent
+      )
+    ).toEqual({ width: 220, height: 60 })
+    // Fill stays opt-in.
+    expect(
+      resolveLayoutChildShellStyle(componentChild({ width: "fill", height: "hug" }), stretchParent)
+    ).toEqual({ width: "100%", height: "fit-content" })
+  })
+
+  it("keeps non-component shell semantics, including fill-by-default in stretch parents", () => {
+    const stretchParent = { display: "flex" as const, align: "stretch" as const }
+    const sectionChild = (layoutSizing?: CanvasItem["layoutSizing"]) =>
+      ({
+        type: "section",
+        size: { width: 896, height: 376 },
+        layoutSizing,
+      }) as unknown as Pick<CanvasItem, "type" | "size" | "layoutSizing">
+
+    expect(resolveLayoutChildShellStyle(sectionChild(undefined), stretchParent)).toEqual({
+      width: "100%",
+      height: 376,
+    })
+    expect(
+      resolveLayoutChildShellStyle(sectionChild({ width: "hug", height: "hug" }), stretchParent)
+    ).toEqual({ width: 896, height: 376 })
+    expect(
+      resolveLayoutChildShellStyle(sectionChild({ width: "fixed", height: "fill" }), stretchParent)
+    ).toEqual({ width: 896, height: "100%" })
   })
 
   it("reports height overflow against the explicit container height", () => {

@@ -42,6 +42,7 @@ import {
   type NativeComponentTemplate,
 } from "../../utils/canvasNativeComponentShell"
 import type { CanvasLibraryDragPayload } from "../../utils/canvasLibraryDrag"
+import { buildPrimitiveInstantiateInput } from "../../utils/canvasLibraryInstantiate"
 import {
   dispatchCanvasLibraryDrop,
   type CanvasLibraryDropIntent,
@@ -723,6 +724,7 @@ export function CanvasTab({
     removeSelected,
     duplicateSelected,
     duplicateItem,
+    pasteItems,
     replaceState,
     applyRemoteOperation,
   } = useCanvasState(storageKey ? `${storageKey}-state` : undefined)
@@ -901,6 +903,28 @@ export function CanvasTab({
   const selectedSectionItem = selectedItem?.type === "section" ? selectedItem : null
   const selectedLayoutContainerItem: CanvasArtboardItem | CanvasSectionItem | null =
     selectedArtboardItem || selectedSectionItem
+  // Where a new/pasted node lands (FOX2-59): a selected artboard, else the
+  // artboard containing the current selection, else null (open canvas).
+  const addTargetArtboardId = useMemo(() => {
+    if (selectedArtboardItem) return selectedArtboardItem.id
+    for (const id of selectedIds) {
+      const item = items.find((candidate) => candidate.id === id)
+      if (item?.parentId) {
+        const parent = items.find((candidate) => candidate.id === item.parentId)
+        if (parent?.type === "artboard") return parent.id
+      }
+    }
+    return null
+  }, [items, selectedArtboardItem, selectedIds])
+  const nextArtboardChildOrder = useCallback(
+    (artboardId: string) => {
+      const siblings = items.filter(
+        (item) => item.parentId === artboardId && item.type !== "artboard"
+      )
+      return siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1) + 1
+    },
+    [items]
+  )
   const selectedItemLayoutParent =
     selectedItem?.parentId && selectedItem.type !== "artboard"
       ? (items.find(
@@ -930,9 +954,12 @@ export function CanvasTab({
         )
       )
     : undefined
+  // Components default to intrinsic hug — a button should not stretch across
+  // a grid/stretch column just because the mode was never set (FOX2-57).
   const selectedItemWidthMode: CanvasLayoutWidthMode =
     selectedItem?.layoutSizing?.width ??
-    (selectedItemLayoutParent &&
+    (selectedItem?.type !== "component" &&
+    selectedItemLayoutParent &&
     (selectedItemLayoutParent.layout.display === "grid" ||
       selectedItemLayoutParent.layout.align === "stretch")
       ? "fill"
@@ -1353,6 +1380,10 @@ export function CanvasTab({
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [handleRedoMutation, handleUndoMutation])
+
+  // In-memory clipboard for canvas node copy/paste (FOX2-59); the keydown
+  // effect is registered below emitUserAction's declaration.
+  const clipboardRef = useRef<CanvasItem[]>([])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1788,6 +1819,63 @@ export function CanvasTab({
   // Only UI handlers call this — agent operations arrive via
   // applyCanvasAgentOperation and are logged server-side with actor "agent".
   const emitUserAction = agentBridge.emitUserAction
+
+  // Copy / paste / duplicate of canvas nodes (FOX2-59). Paste and duplicate
+  // target the selected/containing artboard, else open canvas at a cascade
+  // offset. Registered here (not with the other shortcuts) because it needs
+  // emitUserAction, addTargetArtboardId, and pasteItems.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isMod = event.metaKey || event.ctrlKey
+      if (!isMod || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key !== "c" && key !== "v" && key !== "d") return
+      if (isEditableEventTarget(event.target as HTMLElement | null)) return
+
+      if (key === "d") {
+        if (selectedIds.length === 0) return
+        event.preventDefault()
+        duplicateSelected()
+        return
+      }
+      // Let the OS handle a real text-selection copy.
+      if (key === "c" && (window.getSelection()?.toString() ?? "")) return
+
+      if (key === "c") {
+        const copied = items.filter(
+          (item) => selectedIds.includes(item.id) && item.type !== "artboard"
+        )
+        if (copied.length === 0) return
+        event.preventDefault()
+        clipboardRef.current = copied.map((item) => ({ ...item }))
+        return
+      }
+
+      if (clipboardRef.current.length === 0) return
+      event.preventDefault()
+      const parentId = addTargetArtboardId ?? undefined
+      pasteItems(
+        clipboardRef.current,
+        parentId ? { parentId, order: nextArtboardChildOrder(parentId) } : undefined
+      )
+      emitUserAction("paste-items", {
+        count: clipboardRef.current.length,
+        parentId: parentId ?? null,
+        target: parentId ? "artboard" : "canvas",
+      })
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [
+    addTargetArtboardId,
+    duplicateSelected,
+    emitUserAction,
+    items,
+    nextArtboardChildOrder,
+    pasteItems,
+    selectedIds,
+  ])
+
   const handleUserCanvasToolChange = useCallback(
     (tool: CanvasTool) => {
       emitUserAction("set-canvas-tool", { tool })
@@ -2153,6 +2241,91 @@ export function CanvasTab({
     return { artboard, movableItems }
   }, [items, selectedIds])
 
+  // FOX2-58: releasing a dragged freeform item over an artboard re-parents it
+  // into the artboard's flow — same semantics as the toolbar's "Move to
+  // artboard" and the agent's move_items_into_artboard. Centralized here
+  // (position snapshot on mousedown, containment check on mouseup) because
+  // every freeform item type owns its own drag loop.
+  const freeformDragSnapshotRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const freeformDragStateRef = useRef({ items, selectedIds, canvasTool })
+  freeformDragStateRef.current = { items, selectedIds, canvasTool }
+  useEffect(() => {
+    const handleMouseDown = () => {
+      const state = freeformDragStateRef.current
+      // Snapshot every freeform item, not just the selected ones — selection
+      // happens during this same mousedown, so a first drag of an unselected
+      // item would otherwise never qualify. The >8px movement check on
+      // mouseup is what proves a drag happened.
+      freeformDragSnapshotRef.current = new Map(
+        state.canvasTool === "select"
+          ? state.items
+              .filter(
+                (item) =>
+                  !item.parentId &&
+                  item.type !== "artboard" &&
+                  item.type !== "section" &&
+                  item.type !== "mcp-app"
+              )
+              .map((item) => [item.id, { ...item.position }])
+          : []
+      )
+    }
+
+    const handleMouseUp = () => {
+      const snapshot = freeformDragSnapshotRef.current
+      freeformDragSnapshotRef.current = new Map()
+      if (snapshot.size === 0) return
+      const state = freeformDragStateRef.current
+      const artboards = state.items.filter(
+        (item): item is CanvasArtboardItem => item.type === "artboard"
+      )
+      if (artboards.length === 0) return
+
+      for (const [itemId, start] of snapshot) {
+        const item = state.items.find((candidate) => candidate.id === itemId)
+        if (!item || item.parentId) continue
+        // Only a real drag counts — clicks on items that happen to overlap an
+        // artboard must not re-parent them.
+        if (Math.hypot(item.position.x - start.x, item.position.y - start.y) <= 8) continue
+        const centerX = item.position.x + item.size.width / 2
+        const centerY = item.position.y + item.size.height / 2
+        const artboard = artboards
+          .filter(
+            (candidate) =>
+              centerX >= candidate.position.x &&
+              centerX <= candidate.position.x + candidate.size.width &&
+              centerY >= candidate.position.y &&
+              centerY <= candidate.position.y + candidate.size.height
+          )
+          .sort((a, b) => b.zIndex - a.zIndex)[0]
+        if (!artboard) continue
+        const siblings = state.items.filter(
+          (candidate) => candidate.parentId === artboard.id && candidate.type !== "artboard"
+        )
+        const maxOrder = siblings.reduce((max, candidate) => Math.max(max, candidate.order ?? 0), -1)
+        emitUserAction("move-items-into-artboard", { ids: [itemId], artboardId: artboard.id })
+        updateItem(itemId, {
+          parentId: artboard.id,
+          order: maxOrder + 1,
+          position: { x: 0, y: 0 },
+          rotation: 0,
+        })
+        setHistoryToast({
+          id: Date.now(),
+          tone: "info",
+          message: `Moved into ${artboard.name}.`,
+        })
+      }
+    }
+
+    document.addEventListener("mousedown", handleMouseDown, true)
+    document.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown, true)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [emitUserAction, updateItem])
+
   const handleMoveSelectionToArtboard = useCallback(() => {
     if (!moveIntoArtboardTarget) return
     const { artboard, movableItems } = moveIntoArtboardTarget
@@ -2353,6 +2526,16 @@ export function CanvasTab({
         return
       }
 
+      // Component hug is intrinsic (fit-content) — don't write the stale
+      // stored width back; the measured backfill trues item.size up from the
+      // real rendered box (FOX2-57).
+      if (selectedItem.type === "component") {
+        updateItem(selectedItem.id, {
+          layoutSizing: { ...currentSizing, width: "hug" },
+        })
+        return
+      }
+
       updateItem(selectedItem.id, {
         layoutSizing: {
           ...currentSizing,
@@ -2390,6 +2573,13 @@ export function CanvasTab({
             ...selectedItem.size,
             height: selectedItemParentInnerHeight ?? selectedItem.size.height,
           },
+        })
+        return
+      }
+
+      if (selectedItem.type === "component") {
+        updateItem(selectedItem.id, {
+          layoutSizing: { ...currentSizing, height: "hug" },
         })
         return
       }
@@ -2896,6 +3086,72 @@ export function CanvasTab({
       workspaceSize.height,
       workspaceSize.width,
     ]
+  )
+
+  // Library primitive dropped onto an artboard surface (FOX2-58): create a
+  // new html child in the artboard's flow — same conversion as the panel's
+  // click-to-instantiate, so both paths produce identical items.
+  const handleLibraryPrimitiveDropOnArtboard = useCallback(
+    async (artboardId: string) => {
+      const primitive = activeLibraryDrag?.primitive
+      setActiveLibraryDrag(null)
+      if (!primitive || !activeProjectId) return
+      try {
+        const input = await buildPrimitiveInstantiateInput(primitive, activeProjectId)
+        const siblings = items.filter(
+          (item) => item.parentId === artboardId && item.type !== "artboard"
+        )
+        const maxOrder = siblings.reduce((max, item) => Math.max(max, item.order ?? 0), -1)
+        emitUserAction("create-item", {
+          itemType: "html",
+          primitiveId: primitive.id,
+          parentId: artboardId,
+          order: maxOrder + 1,
+          target: "artboard",
+        })
+        await handleAddInlineHtml({
+          ...input,
+          parentId: artboardId,
+          order: maxOrder + 1,
+        })
+      } catch (error) {
+        setHistoryToast({
+          id: Date.now(),
+          tone: "error",
+          message:
+            error instanceof Error ? error.message : "Failed to add primitive to artboard.",
+        })
+      }
+    },
+    [activeLibraryDrag, activeProjectId, emitUserAction, handleAddInlineHtml, items]
+  )
+
+  // Library primitive dropped on empty canvas: freeform item centered at the
+  // cursor (FOX2-58).
+  const handleLibraryPrimitiveDropOnCanvas = useCallback(
+    async (position: { x: number; y: number }) => {
+      const primitive = activeLibraryDrag?.primitive
+      setActiveLibraryDrag(null)
+      if (!primitive || !activeProjectId) return
+      try {
+        const input = await buildPrimitiveInstantiateInput(primitive, activeProjectId)
+        emitUserAction("create-item", {
+          itemType: "html",
+          primitiveId: primitive.id,
+          position,
+          target: "canvas",
+        })
+        await handleAddInlineHtml({ ...input, position })
+      } catch (error) {
+        setHistoryToast({
+          id: Date.now(),
+          tone: "error",
+          message:
+            error instanceof Error ? error.message : "Failed to add primitive to canvas.",
+        })
+      }
+    },
+    [activeLibraryDrag, activeProjectId, emitUserAction, handleAddInlineHtml]
   )
 
   const createFileBackedNativeShell = useCallback(
@@ -4471,6 +4727,9 @@ export function CanvasTab({
             <CanvasLibraryPanel
               projectId={activeProjectId || "design-system-foundation"}
               onInstantiate={async (input) => {
+                // Insert into the selected artboard if there is one, else
+                // freeform (FOX2-59 method 3).
+                const parentId = addTargetArtboardId ?? undefined
                 await handleAddInlineHtml({
                   title: input.title,
                   sourceReact: input.sourceReact,
@@ -4478,7 +4737,16 @@ export function CanvasTab({
                   sourcePath: input.sourcePath,
                   sourceHtmlFilePath: input.sourceHtmlFilePath,
                   sourceHtmlFileMtime: input.sourceHtmlFileMtime,
+                  parentId,
+                  order: parentId ? nextArtboardChildOrder(parentId) : undefined,
                 })
+                if (parentId) {
+                  emitUserAction("create-item", {
+                    itemType: "html",
+                    parentId,
+                    target: "artboard",
+                  })
+                }
               }}
               onCreateFromPaste={() => setComponentPasteDialogVisible(true)}
               onClose={() => setLibraryPanelVisible(false)}
@@ -4573,6 +4841,12 @@ export function CanvasTab({
             onReactNodeGroupResize={handleReactNodeGroupResize}
             onMarkdownWriteSuccess={handleMarkdownWriteSuccess}
             libraryDragActive={activeLibraryDrag !== null}
+            onLibraryPrimitiveDropOnArtboard={(artboardId) =>
+              void handleLibraryPrimitiveDropOnArtboard(artboardId)
+            }
+            onLibraryPrimitiveDropOnCanvas={(position) =>
+              void handleLibraryPrimitiveDropOnCanvas(position)
+            }
             onLibraryDropInsert={handleLibraryDropInsert}
             onLibraryDropWrap={handleLibraryDropWrap}
           />
@@ -4598,12 +4872,18 @@ export function CanvasTab({
               canFillParent={Boolean(selectedItemLayoutParent)}
               canFillHeight={Boolean(selectedItemLayoutParent)}
               onSizeChange={(size) =>
+                // Typing a number is an explicit size choice: the edited axis
+                // leaves intrinsic hug and becomes "fixed" (FOX2-57).
                 updateItem(selectedComponentItem.id, {
                   size,
                   layoutSizing: {
                     ...selectedComponentItem.layoutSizing,
-                    ...(selectedItemWidthMode === "hug" ? { hugWidth: size.width } : {}),
-                    ...(selectedItemHeightMode === "hug" ? { hugHeight: size.height } : {}),
+                    ...(size.width !== selectedComponentItem.size.width
+                      ? { width: "fixed" as const, hugWidth: size.width }
+                      : {}),
+                    ...(size.height !== selectedComponentItem.size.height
+                      ? { height: "fixed" as const, hugHeight: size.height }
+                      : {}),
                   },
                 })
               }

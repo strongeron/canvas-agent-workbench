@@ -38,6 +38,7 @@ import type {
 } from "./CanvasHtmlFrame"
 import type { CanvasMarkdownWriteClientResult } from "../../utils/canvasMarkdownWriteClient"
 import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
+import { resolveLayoutChildShellStyle } from "../../utils/canvasLayoutMetrics"
 import { CanvasMarkdownItem as CanvasMarkdownItemComponent } from "./CanvasMarkdownItem"
 import { CanvasMcpAppItem as CanvasMcpAppItemComponent } from "./CanvasMcpAppItem"
 import { CanvasMermaidItem as CanvasMermaidItemComponent } from "./CanvasMermaidItem"
@@ -134,6 +135,10 @@ interface CanvasWorkspaceProps {
   libraryDragActive?: boolean
   onLibraryDropInsert?: (input: { itemId: string; parentCanvasId: string; index: number }) => void
   onLibraryDropWrap?: (input: { itemId: string; canvasId: string }) => void
+  /** Drop the active library primitive onto an artboard as a new child (FOX2-58). */
+  onLibraryPrimitiveDropOnArtboard?: (artboardId: string) => void
+  /** Drop the active library primitive onto empty canvas as a freeform item (FOX2-58). */
+  onLibraryPrimitiveDropOnCanvas?: (position: { x: number; y: number }) => void
 }
 
 export function CanvasWorkspace({
@@ -170,6 +175,8 @@ export function CanvasWorkspace({
   libraryDragActive = false,
   onLibraryDropInsert,
   onLibraryDropWrap,
+  onLibraryPrimitiveDropOnArtboard,
+  onLibraryPrimitiveDropOnCanvas,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -293,16 +300,7 @@ export function CanvasWorkspace({
       const childShellClassName = "relative"
       const parentLayoutContainer = layoutContainers.find((container) => container.id === child.parentId)
       const parentLayout = parentLayoutContainer?.layout
-      const widthMode = child.layoutSizing?.width
-      const heightMode = child.layoutSizing?.height
-      const shouldStretchChild =
-        widthMode === "fill" ||
-        (!widthMode && (parentLayout?.align === "stretch" || parentLayout?.display === "grid"))
-      const shouldFillChildHeight = heightMode === "fill"
-      const childShellStyle = {
-        width: shouldStretchChild ? "100%" : child.size.width,
-        height: shouldFillChildHeight ? "100%" : child.size.height,
-      }
+      const childShellStyle = resolveLayoutChildShellStyle(child, parentLayout)
 
       if (child.type === "section") {
         const nestedChildren = getArtboardChildren(child.id)
@@ -321,18 +319,18 @@ export function CanvasWorkspace({
               onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
               onResize={(next, axis) => {
                 // Mirror the inspector's explicit-size semantics: only the
-                // dragged axis flips to "hug" at the dragged size; the other
+                // dragged axis flips to an explicit ("fixed") size; the other
                 // axis keeps its current mode (fill stays fill).
                 const layoutSizing = { ...child.layoutSizing }
                 const size = { ...child.size }
                 if (axis !== "s") {
                   size.width = next.width
-                  layoutSizing.width = "hug"
+                  layoutSizing.width = "fixed"
                   layoutSizing.hugWidth = next.width
                 }
                 if (axis !== "e") {
                   size.height = next.height
-                  layoutSizing.height = "hug"
+                  layoutSizing.height = "fixed"
                   layoutSizing.hugHeight = next.height
                 }
                 onUpdateItem(child.id, { size, layoutSizing })
@@ -755,17 +753,24 @@ export function CanvasWorkspace({
 
   const handleNativeDragOver = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
-      if (!onDropMediaFiles) return
       const hasFiles = Array.from(e.dataTransfer?.types || []).includes("Files")
-      if (!hasFiles) return
-      e.preventDefault()
-      e.stopPropagation()
-      e.dataTransfer.dropEffect = "copy"
-      if (!isFileDragOver) {
-        setIsFileDragOver(true)
+      if (hasFiles && onDropMediaFiles) {
+        e.preventDefault()
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = "copy"
+        if (!isFileDragOver) {
+          setIsFileDragOver(true)
+        }
+        return
+      }
+      // Library primitive drags may land on empty canvas as freeform items
+      // (FOX2-58). Artboards handle their own dragover with stopPropagation,
+      // so this only allows the drop when the cursor is over open canvas.
+      if (libraryDragActive && onLibraryPrimitiveDropOnCanvas) {
+        e.preventDefault()
       }
     },
-    [isFileDragOver, onDropMediaFiles]
+    [isFileDragOver, libraryDragActive, onDropMediaFiles, onLibraryPrimitiveDropOnCanvas]
   )
 
   const handleNativeDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -776,18 +781,25 @@ export function CanvasWorkspace({
 
   const handleNativeDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
-      if (!onDropMediaFiles) return
       const files = Array.from(e.dataTransfer?.files || [])
-      if (files.length === 0) return
+      if (files.length > 0 && onDropMediaFiles) {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsFileDragOver(false)
 
-      e.preventDefault()
-      e.stopPropagation()
-      setIsFileDragOver(false)
+        const position = screenToCanvas(e.clientX, e.clientY)
+        void onDropMediaFiles({ files, position })
+        return
+      }
 
-      const position = screenToCanvas(e.clientX, e.clientY)
-      void onDropMediaFiles({ files, position })
+      // Artboard drops stop propagation before reaching here; slot-zone
+      // drops preventDefault, which the guard below respects (FOX2-58).
+      if (libraryDragActive && onLibraryPrimitiveDropOnCanvas && !e.defaultPrevented) {
+        e.preventDefault()
+        onLibraryPrimitiveDropOnCanvas(screenToCanvas(e.clientX, e.clientY))
+      }
     },
-    [onDropMediaFiles, screenToCanvas]
+    [libraryDragActive, onDropMediaFiles, onLibraryPrimitiveDropOnCanvas, screenToCanvas]
   )
 
   // Determine cursor based on state
@@ -903,6 +915,12 @@ export function CanvasWorkspace({
             scale={transform.scale}
             interactMode={interactMode}
             childItems={children}
+            libraryDragActive={libraryDragActive}
+            onLibraryPrimitiveDrop={
+              onLibraryPrimitiveDropOnArtboard
+                ? () => onLibraryPrimitiveDropOnArtboard(item.id)
+                : undefined
+            }
           >
             {children.map((child, index) => renderLayoutChild(child, index, children.length))}
           </CanvasArtboardItemComponent>

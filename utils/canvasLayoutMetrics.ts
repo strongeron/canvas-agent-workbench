@@ -3,6 +3,36 @@ import type { CanvasArtboardItem, CanvasItem, CanvasSectionItem } from "../types
 type LayoutContainer = Pick<CanvasArtboardItem | CanvasSectionItem, "layout">
 
 /**
+ * Shell dimensions for a layout child (FOX2-57). Components hug their real
+ * rendered size: "hug"/unset render fit-content so the shell IS the
+ * component, live across variant/prop changes with zero measurement
+ * write-back; "fixed" (drags, numeric edits) keeps the stored px. Other
+ * child types keep the older semantics — stored px for hug/fixed, plus
+ * fill-by-default in grid/stretch parents.
+ */
+export function resolveLayoutChildShellStyle(
+  child: Pick<CanvasItem, "type" | "size" | "layoutSizing">,
+  parentLayout?: CanvasArtboardItem["layout"] | null
+): { width: number | string; height: number | string } {
+  const widthMode = child.layoutSizing?.width
+  const heightMode = child.layoutSizing?.height
+  const isComponentChild = child.type === "component"
+  const shouldStretchChild =
+    widthMode === "fill" ||
+    (!widthMode &&
+      !isComponentChild &&
+      (parentLayout?.align === "stretch" || parentLayout?.display === "grid"))
+  const intrinsicWidth = isComponentChild && (!widthMode || widthMode === "hug")
+  const intrinsicHeight = isComponentChild && (!heightMode || heightMode === "hug")
+
+  return {
+    width: shouldStretchChild ? "100%" : intrinsicWidth ? "fit-content" : child.size.width,
+    height:
+      heightMode === "fill" ? "100%" : intrinsicHeight ? "fit-content" : child.size.height,
+  }
+}
+
+/**
  * Height the container's content occupies under its layout rules, from the
  * child items' persisted sizes — the same math the section inspector uses for
  * "hug". Rounded: measured/derived values must never persist fractions into

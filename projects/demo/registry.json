@@ -319,6 +319,49 @@
           "tag": "p"
         }
       ]
+    },
+    {
+      "id": "primitive/cover",
+      "displayName": "Cover",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Cover.html",
+      "componentSlug": "cover",
+      "slots": [
+        {
+          "name": "root",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "top",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "center",
+          "kind": "container",
+          "tag": "div"
+        },
+        {
+          "name": "title",
+          "kind": "text",
+          "tag": "h1"
+        },
+        {
+          "name": "bottom",
+          "kind": "container",
+          "tag": "div"
+        }
+      ]
+    },
+    {
+      "id": "primitive/heading3",
+      "displayName": "Heading3",
+      "category": "ui",
+      "kind": "html",
+      "filePath": "components/Heading3.html",
+      "componentSlug": "heading3"
     }
   ],
   "page": []

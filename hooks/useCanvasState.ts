@@ -375,22 +375,42 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
     [setState]
   )
 
+  // Clone semantics: a layout child (has parentId) duplicates *in place* —
+  // same artboard, ordered right after the original, position reset — instead
+  // of the +20px open-canvas offset a freeform item gets (FOX2-59).
+  const buildDuplicate = (
+    prev: CanvasState,
+    item: CanvasItem,
+    index: number,
+    orderBump: number
+  ): CanvasItem => {
+    const base = {
+      ...resetMcpAppConnectionState(item),
+      id: `canvas-item-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
+      zIndex: prev.nextZIndex + index,
+      groupId: undefined,
+    }
+    if (item.parentId) {
+      return {
+        ...base,
+        order: (item.order ?? 0) + orderBump,
+        position: { x: 0, y: 0 },
+      } as CanvasItem
+    }
+    return {
+      ...base,
+      position: { x: item.position.x + 20, y: item.position.y + 20 },
+    } as CanvasItem
+  }
+
   const duplicateSelected = useCallback(() => {
     setState((prev) => {
       const selectedItems = prev.items.filter((item) =>
         prev.selectedIds.includes(item.id)
       )
-
-      const newItems = selectedItems.map((item, index) => ({
-        ...resetMcpAppConnectionState(item),
-        id: `canvas-item-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
-        position: {
-          x: item.position.x + 20,
-          y: item.position.y + 20,
-        },
-        zIndex: prev.nextZIndex + index,
-        groupId: undefined, // Don't copy group association
-      }))
+      const newItems = selectedItems.map((item, index) =>
+        buildDuplicate(prev, item, index, index + 1)
+      )
 
       return {
         ...prev,
@@ -406,24 +426,56 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
       setState((prev) => {
         const item = prev.items.find((i) => i.id === id)
         if (!item) return prev
-
-        const newId = `canvas-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-        const newItem = {
-          ...resetMcpAppConnectionState(item),
-          id: newId,
-          position: {
-            x: item.position.x + 20,
-            y: item.position.y + 20,
-          },
-          zIndex: prev.nextZIndex,
-          groupId: undefined, // Don't copy group association
-        }
+        const newItem = buildDuplicate(prev, item, 0, 1)
 
         return {
           ...prev,
           items: [...prev.items, newItem],
           nextZIndex: prev.nextZIndex + 1,
-          selectedIds: [newId], // Select the new item
+          selectedIds: [newItem.id],
+        }
+      })
+    },
+    [setState]
+  )
+
+  // Paste clipboard items as fresh nodes (FOX2-59). Into an artboard when
+  // `parentId` is given (ordered at the end of its flow, position reset),
+  // else freeform at a +20px cascade so a paste is visibly distinct from the
+  // source.
+  const pasteItems = useCallback(
+    (clipboardItems: CanvasItem[], target?: { parentId?: string; order?: number }) => {
+      if (clipboardItems.length === 0) return
+      setState((prev) => {
+        const parentId = target?.parentId
+        const baseOrder = target?.order ?? 0
+        const pasted = clipboardItems.map((item, index) => {
+          const base = {
+            ...resetMcpAppConnectionState(normalizeItem(item)),
+            id: `canvas-item-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
+            zIndex: prev.nextZIndex + index,
+            groupId: undefined,
+          }
+          if (parentId) {
+            return {
+              ...base,
+              parentId,
+              order: baseOrder + index,
+              position: { x: 0, y: 0 },
+            } as CanvasItem
+          }
+          return {
+            ...base,
+            parentId: undefined,
+            order: undefined,
+            position: { x: item.position.x + 20, y: item.position.y + 20 },
+          } as CanvasItem
+        })
+        return {
+          ...prev,
+          items: [...prev.items, ...pasted],
+          nextZIndex: prev.nextZIndex + pasted.length,
+          selectedIds: pasted.map((item) => item.id),
         }
       })
     },
@@ -654,6 +706,7 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
     moveSelected,
     duplicateSelected,
     duplicateItem,
+    pasteItems,
 
     // Canvas operations
     clearCanvas,
