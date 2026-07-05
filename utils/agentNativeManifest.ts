@@ -335,7 +335,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "get_workspace_events",
         title: "Get workspace events",
-        description: "Read the append-only event log for the current Canvas workspace.",
+        description: "Read the append-only event log for the current Canvas workspace. Cursor-paged: pass sinceCursor to fetch only newer events, poll again with the returned nextCursor. Event kinds: user-action, operation-queued, operation-applied, state-synced.",
         status: "ready",
       },
       {
@@ -757,7 +757,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "get_workspace_events",
         title: "Get workspace events",
-        description: "Read the append-only event log for the current Color Audit workspace.",
+        description: "Read the append-only event log for the current Color Audit workspace. Cursor-paged: pass sinceCursor to fetch only newer events, poll again with the returned nextCursor. Event kinds: user-action, operation-queued, operation-applied, state-synced.",
         status: "ready",
       },
       {
@@ -982,7 +982,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "get_workspace_events",
         title: "Get workspace events",
-        description: "Read the append-only event log for the current System Canvas workspace.",
+        description: "Read the append-only event log for the current System Canvas workspace. Cursor-paged: pass sinceCursor to fetch only newer events, poll again with the returned nextCursor. Event kinds: user-action, operation-queued, operation-applied, state-synced.",
         status: "ready",
       },
       {
@@ -1071,7 +1071,7 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
       {
         id: "get_workspace_events",
         title: "Get workspace events",
-        description: "Read the append-only event log for the current Node Catalog surface.",
+        description: "Read the append-only event log for the current Node Catalog surface. Cursor-paged: pass sinceCursor to fetch only newer events, poll again with the returned nextCursor. Event kinds: user-action, operation-queued, operation-applied, state-synced.",
         status: "ready",
       },
       {

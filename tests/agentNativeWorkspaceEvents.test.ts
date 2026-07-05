@@ -64,5 +64,18 @@ describe("agent native workspace events", () => {
     const eventsAfterAck = listAgentNativeWorkspaceEvents(log, 0, 20)
     expect(eventsAfterAck.events.some((entry) => entry.kind === "operation-applied")).toBe(true)
     expect(eventsAfterAck.events.some((entry) => entry.kind === "state-synced")).toBe(true)
+
+    // FOX2-47 cursor contract: sinceCursor filters strictly greater, and the
+    // returned cursor is the value to pass on the next poll (never redelivers).
+    const all = listAgentNativeWorkspaceEvents(log, 0, 20)
+    expect(all.events.length).toBeGreaterThan(0)
+    const drained = listAgentNativeWorkspaceEvents(log, all.cursor, 20)
+    expect(drained.events).toHaveLength(0)
+    expect(drained.cursor).toBe(all.cursor)
+    // A mid-point cursor returns only the strictly newer tail.
+    const firstCursor = all.events[0].cursor
+    const afterFirst = listAgentNativeWorkspaceEvents(log, firstCursor, 20)
+    expect(afterFirst.events.every((entry) => entry.cursor > firstCursor)).toBe(true)
+    expect(afterFirst.events.length).toBe(all.events.length - 1)
   })
 })

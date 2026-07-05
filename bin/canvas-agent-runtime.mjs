@@ -361,9 +361,14 @@ export async function readAgentNativeWorkspaceEvents(
           : '',
     }
   )
+  const cursor = Number.isFinite(payload?.cursor) ? Number(payload.cursor) : 0
   return {
     events: Array.isArray(payload?.events) ? payload.events : [],
-    cursor: Number.isFinite(payload?.cursor) ? Number(payload.cursor) : 0,
+    // `cursor` is the highest event cursor emitted so far; pass it back as
+    // `sinceCursor` to fetch only newer events. `nextCursor` is the
+    // FOX2-47 contract name (kept alongside `cursor` for existing callers).
+    cursor,
+    nextCursor: cursor,
   }
 }
 
