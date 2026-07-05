@@ -153,14 +153,18 @@ export function CanvasLayoutComponentItem({
     widthMode,
   ])
 
-  const borderClass = isSelected
-    ? "border border-brand-400 ring-2 ring-brand-400/15 shadow-sm"
-    : "border border-default"
+  // No card chrome around layout components (FOX2-57): the shell is
+  // invisible — you see and operate on the component itself. Selection and
+  // hover are outlines, which don't participate in layout, so they never
+  // change the intrinsic (fit-content) size the shell hugs.
+  const selectionClass = isSelected
+    ? "outline outline-2 outline-brand-400 rounded"
+    : "outline-none hover:outline hover:outline-1 hover:outline-brand-300 rounded"
 
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full"
+      className={`relative h-full w-full ${interactMode ? "" : selectionClass}`}
       data-canvas-item-id={item.id}
       data-canvas-item-type={item.type}
       onMouseDown={(e) => {
@@ -179,29 +183,27 @@ export function CanvasLayoutComponentItem({
         }
       }}
     >
-      <div className={`h-full w-full rounded-lg bg-white shadow-card ${borderClass}`}>
-        <div
-          className={`flex h-full w-full items-center justify-center overflow-hidden rounded-lg px-3 py-3 ${
-            interactMode ? "pointer-events-auto" : "pointer-events-none"
-          }`}
-        >
-          <div className="w-full">
-            {component && variant ? (
-              <Renderer
-                componentName={component.name}
-                importPath={component.importPath}
-                variant={variant}
-                allowOverflow={false}
-                renderMode="canvas"
-                propsOverride={item.customProps}
-                showInteractivePanel={false}
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                Missing component
-              </div>
-            )}
-          </div>
+      <div
+        className={`flex h-full w-full items-center justify-center ${
+          interactMode ? "pointer-events-auto" : "pointer-events-none"
+        }`}
+      >
+        <div className="w-full">
+          {component && variant ? (
+            <Renderer
+              componentName={component.name}
+              importPath={component.importPath}
+              variant={variant}
+              allowOverflow={false}
+              renderMode="canvas"
+              propsOverride={item.customProps}
+              showInteractivePanel={false}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center rounded border border-dashed border-default px-3 py-2 text-xs text-muted-foreground">
+              Missing component
+            </div>
+          )}
         </div>
       </div>
 
