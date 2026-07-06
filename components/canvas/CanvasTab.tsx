@@ -28,6 +28,7 @@ import type {
 } from "../../types/canvas"
 import { CanvasAddMcpAppDialog } from "./CanvasAddMcpAppDialog"
 import { CanvasArtboardAddMenu } from "./CanvasArtboardAddMenu"
+import { useCanvasKeyboardShortcuts } from "../../hooks/useCanvasKeyboardShortcuts"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
 import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
@@ -109,7 +110,6 @@ import {
   serializeHtmlBundleFiles,
   useCanvasAddHandlers,
 } from "../../hooks/useCanvasAddHandlers"
-import { cycleVariantIndex } from "../../utils/canvasVariantCycle"
 import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
 import { resolveHtmlSourceFilePath } from "../../utils/canvasHtmlSourceResolve"
 import { isEditableEventTarget } from "../../utils/isEditableEventTarget"
@@ -1124,32 +1124,6 @@ export function CanvasTab({
     })
   }, [appendMutationLogEntry])
 
-  // In-memory clipboard for canvas node copy/paste (FOX2-59); the keydown
-  // effect is registered below emitUserAction's declaration.
-  const clipboardRef = useRef<CanvasItem[]>([])
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!selectedComponentItem || !selectedComponent) return
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-      const target = event.target as HTMLElement | null
-      if (isEditableEventTarget(target)) {
-        return
-      }
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
-      const nextIndex = cycleVariantIndex(
-        selectedComponentItem.variantIndex,
-        selectedComponent.variants.length,
-        event.key === "ArrowLeft" ? "previous" : "next"
-      )
-      if (nextIndex === selectedComponentItem.variantIndex) return
-      event.preventDefault()
-      updateItem(selectedComponentItem.id, { variantIndex: nextIndex })
-    }
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [selectedComponent, selectedComponentItem, updateItem])
-
   const handleReactNodeResize = useCallback(
     async (event: CanvasReactNodeResizeEvent) => {
       const item = items.find((candidate) => candidate.id === event.itemId)
@@ -1623,61 +1597,21 @@ export function CanvasTab({
     runCanvasPersistenceTask,
   })
 
-  // Copy / paste / duplicate of canvas nodes (FOX2-59). Paste and duplicate
-  // target the selected/containing artboard, else open canvas at a cascade
-  // offset. Registered here (not with the other shortcuts) because it needs
-  // emitUserAction, addTargetArtboardId, and pasteItems.
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const isMod = event.metaKey || event.ctrlKey
-      if (!isMod || event.altKey) return
-      const key = event.key.toLowerCase()
-      if (key !== "c" && key !== "v" && key !== "d") return
-      if (isEditableEventTarget(event.target as HTMLElement | null)) return
-
-      if (key === "d") {
-        if (selectedIds.length === 0) return
-        event.preventDefault()
-        duplicateSelected()
-        return
-      }
-      // Let the OS handle a real text-selection copy.
-      if (key === "c" && (window.getSelection()?.toString() ?? "")) return
-
-      if (key === "c") {
-        const copied = items.filter(
-          (item) => selectedIds.includes(item.id) && item.type !== "artboard"
-        )
-        if (copied.length === 0) return
-        event.preventDefault()
-        clipboardRef.current = copied.map((item) => ({ ...item }))
-        return
-      }
-
-      if (clipboardRef.current.length === 0) return
-      event.preventDefault()
-      const parentId = addTargetArtboardId ?? undefined
-      pasteItems(
-        clipboardRef.current,
-        parentId ? { parentId, order: nextArtboardChildOrder(parentId) } : undefined
-      )
-      emitUserAction("paste-items", {
-        count: clipboardRef.current.length,
-        parentId: parentId ?? null,
-        target: parentId ? "artboard" : "canvas",
-      })
-    }
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [
-    addTargetArtboardId,
-    duplicateSelected,
-    emitUserAction,
+  // Cmd-C/V/D clipboard + duplicate and variant arrows (FOX2-62 Scale-1
+  // PR 3). Registered here (not earlier) because it needs emitUserAction,
+  // addTargetArtboardId, and pasteItems.
+  useCanvasKeyboardShortcuts({
     items,
-    nextArtboardChildOrder,
-    pasteItems,
     selectedIds,
-  ])
+    selectedComponentItem,
+    selectedComponent,
+    updateItem,
+    duplicateSelected,
+    pasteItems,
+    addTargetArtboardId,
+    nextArtboardChildOrder,
+    emitUserAction,
+  })
 
   const handleUserCanvasToolChange = useCallback(
     (tool: CanvasTool) => {
