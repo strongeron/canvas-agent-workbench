@@ -4,8 +4,9 @@ import { act, useRef } from "react"
 import { createRoot } from "react-dom/client"
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 
+import { useCanvasAddHandlers } from "../hooks/useCanvasAddHandlers"
 import { useCanvasState } from "../hooks/useCanvasState"
-import type { CanvasItem } from "../types/canvas"
+import type { CanvasArtboardItem, CanvasItem, CanvasItemInput } from "../types/canvas"
 
 const originalActEnvironmentDescriptor = Object.getOwnPropertyDescriptor(
   globalThis,
@@ -160,5 +161,143 @@ describe("useCanvasState artboard add primitives (FOX2-59)", () => {
     const pasted = h.api().items[0]
     expect(pasted?.parentId).toBeUndefined()
     expect(pasted?.position).toEqual({ x: 320, y: 60 })
+  })
+})
+
+const artboard = (id: string) =>
+  ({
+    id,
+    type: "artboard",
+    name: id,
+    layout: { display: "flex", direction: "column" },
+    position: { x: 0, y: 0 },
+    size: { width: 800, height: 600 },
+    rotation: 0,
+    zIndex: 0,
+  }) as unknown as CanvasArtboardItem
+
+type AddHandlersApi = ReturnType<typeof useCanvasAddHandlers>
+
+function mountAddHandlers(options: {
+  items: CanvasItem[]
+  selectedIds?: string[]
+  selectedArtboardItem?: CanvasArtboardItem | null
+}) {
+  const container = document.createElement("div")
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  const ref: { current: AddHandlersApi | null } = { current: null }
+  const added: CanvasItemInput[] = []
+  const events: Array<{ action: string; payload?: Record<string, unknown> }> = []
+
+  function Probe() {
+    ref.current = useCanvasAddHandlers({
+      items: options.items,
+      selectedIds: options.selectedIds ?? [],
+      selectedArtboardItem: options.selectedArtboardItem ?? null,
+      addItem: (item) => {
+        added.push(item)
+        return `added-${added.length}`
+      },
+      transform: { scale: 1, offset: { x: 0, y: 0 } },
+      workspaceSize: { width: 1200, height: 800 },
+      activeProjectId: "project-1",
+      activeCanvasFilePath: null,
+      emitUserAction: (action, payload) => {
+        events.push({ action, payload })
+      },
+      setPropsPanelVisible: () => {},
+      setSidebarVisible: () => {},
+      setHistoryToast: () => {},
+      importCanvasHtmlBundle: async () => {
+        throw new Error("not used in these tests")
+      },
+      refreshCanvasFiles: async () => {},
+      runCanvasPersistenceTask: (task) => task(),
+    })
+    return null
+  }
+
+  act(() => {
+    root.render(<Probe />)
+  })
+  return {
+    api: () => ref.current as AddHandlersApi,
+    added,
+    events,
+    cleanup: () => {
+      act(() => root.unmount())
+      container.remove()
+    },
+  }
+}
+
+describe("useCanvasAddHandlers explicit-target convention (FOX2-63)", () => {
+  let cleanup: (() => void) | null = null
+  afterEach(() => {
+    cleanup?.()
+    cleanup = null
+  })
+
+  it("adds an embed into the artboard flow when given an explicit parentId", () => {
+    const h = mountAddHandlers({
+      items: [artboard("board-a"), artboardChild("child-1", 0, "board-a")],
+    })
+    cleanup = h.cleanup
+    act(() => h.api().handleAddEmbed("https://example.com", { parentId: "board-a" }))
+
+    expect(h.added).toHaveLength(1)
+    expect(h.added[0]).toMatchObject({ type: "embed", parentId: "board-a", order: 1 })
+    expect(h.events).toContainEqual({
+      action: "create-item",
+      payload: { itemType: "embed", parentId: "board-a", target: "artboard" },
+    })
+  })
+
+  it("explicit parentId wins over a different selected artboard", () => {
+    const boardB = artboard("board-b")
+    const h = mountAddHandlers({
+      items: [artboard("board-a"), boardB, artboardChild("child-1", 3, "board-a")],
+      selectedIds: ["board-b"],
+      selectedArtboardItem: boardB,
+    })
+    cleanup = h.cleanup
+    act(() =>
+      h.api().handleAddMcpApp({
+        transport: { kind: "http", url: "https://example.com/mcp" },
+        parentId: "board-a",
+      })
+    )
+
+    expect(h.added).toHaveLength(1)
+    expect(h.added[0]).toMatchObject({ type: "mcp-app", parentId: "board-a", order: 4 })
+  })
+
+  it("falls back to the selected artboard when no explicit parentId is given", () => {
+    const boardA = artboard("board-a")
+    const h = mountAddHandlers({
+      items: [boardA],
+      selectedIds: ["board-a"],
+      selectedArtboardItem: boardA,
+    })
+    cleanup = h.cleanup
+    act(() => h.api().handleAddExcalidraw())
+
+    expect(h.added).toHaveLength(1)
+    expect(h.added[0]).toMatchObject({ type: "excalidraw", parentId: "board-a", order: 0 })
+    expect(h.events).toContainEqual({
+      action: "create-item",
+      payload: { itemType: "excalidraw", parentId: "board-a", target: "artboard" },
+    })
+  })
+
+  it("stays freeform when nothing is selected and no parentId is passed", () => {
+    const h = mountAddHandlers({ items: [artboard("board-a")] })
+    cleanup = h.cleanup
+    act(() => h.api().handleAddEmbed("https://example.com"))
+
+    expect(h.added).toHaveLength(1)
+    expect(h.added[0].parentId).toBeUndefined()
+    expect(h.events).toHaveLength(0)
   })
 })

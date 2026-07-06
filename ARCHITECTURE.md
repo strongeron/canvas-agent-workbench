@@ -191,6 +191,10 @@ interface ComponentUsage {
 }
 ```
 
+### 5. Explicit-target convention (FOX2-63)
+
+Canvas add handlers (`hooks/useCanvasAddHandlers.ts`) take explicit targets: every handler accepts an optional `parentId` naming the artboard the new item belongs to, and an explicit `parentId` always wins. Selection-derived targeting (`addTargetArtboardId`, computed from the current selection) exists only as the fallback inside the shared `resolveAddPlacement` helper — handlers never consult the selection directly. New entry points (drop zones, add menus, agent operations) must pass an explicit `parentId` rather than relying on what happens to be selected. This keeps placement deterministic for programmatic callers while UI entry points still get the "add into the selected artboard" convenience for free.
+
 ## Styling Strategy
 
 The POC uses CSS custom properties (design tokens) for theming:
