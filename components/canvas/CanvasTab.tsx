@@ -29,7 +29,6 @@ import type {
   CanvasExcalidrawItem,
   CanvasEmbedItem,
   CanvasHtmlItem,
-  CanvasMarkdownItem,
 } from "../../types/canvas"
 import { CanvasAddMcpAppDialog } from "./CanvasAddMcpAppDialog"
 import { CanvasArtboardAddMenu } from "./CanvasArtboardAddMenu"
@@ -110,24 +109,13 @@ import {
   parseColor,
 } from "../../utils/apca"
 import {
-  createMutationLogState,
-  pushEntry,
-  redo,
-  undo,
-  type CanvasMutationLogEntry,
-  type CanvasMutationLogState,
-} from "../../utils/canvasMutationLog"
-import {
-  applySourceSnapshotToItems,
   buildInlineLogKey,
-  inferSourceKindFromFilePath,
-  invertCanvasIdMap,
-  parseInlineLogKey,
-  resolveSourceFileMtime,
-  selectionMatchesLoggedFile,
   summarizeSourceMutations,
-  type CanvasSourceMutation,
 } from "../../utils/canvasMutationHistory"
+import {
+  useCanvasMutationHistory,
+  type CanvasHistoryToast,
+} from "../../hooks/useCanvasMutationHistory"
 import { cycleVariantIndex } from "../../utils/canvasVariantCycle"
 import { CANVAS_REGISTRY_UPDATED_EVENT } from "../../utils/canvasRegistryEvents"
 import { resolveHtmlSourceFilePath } from "../../utils/canvasHtmlSourceResolve"
@@ -316,12 +304,6 @@ const DEFAULT_THEMES: ThemeOption[] = [
     groupId: "thicket",
   },
 ]
-
-interface CanvasHistoryToast {
-  id: number
-  tone: "info" | "error"
-  message: string
-}
 
 const DEFAULT_THEME_TOKENS: ThemeToken[] = [
   { label: "Brand 600", cssVar: "--color-brand-600", category: "color", subcategory: "brand" },
@@ -761,11 +743,24 @@ export function CanvasTab({
   const [propsPanelVisible, setPropsPanelVisible] = useState(true)
   const [reactNodeSelection, setReactNodeSelection] = useState<CanvasReactNodeSelection | null>(null)
   const [reactCompileGenerations, setReactCompileGenerations] = useState<Record<string, number>>({})
-  const [mutationLogState, setMutationLogState] = useState<CanvasMutationLogState<CanvasSourceMutation>>(() =>
-    createMutationLogState<CanvasSourceMutation>()
-  )
-  const [mutationHistoryBusy, setMutationHistoryBusy] = useState(false)
   const [historyToast, setHistoryToast] = useState<CanvasHistoryToast | null>(null)
+  // FOX2-46: mirror source-edit writes to the agent feed. Held in a ref
+  // because the write-success handlers are declared before the bridge; set
+  // once the bridge exists.
+  const emitSourceEditRef = useRef<(action: string, meta?: Record<string, unknown>) => void>(
+    () => {}
+  )
+  const { appendMutationLogEntry, handleUndoMutation, handleRedoMutation } =
+    useCanvasMutationHistory({
+      items,
+      groups,
+      nextZIndex,
+      selectedIds,
+      replaceState,
+      setReactNodeSelection,
+      showToast: setHistoryToast,
+      emitSourceEditRef,
+    })
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
   const [layersPanelVisible, setLayersPanelVisible] = useState(false)
   const [libraryPanelVisible, setLibraryPanelVisible] = useState(false)
@@ -1111,14 +1106,6 @@ export function CanvasTab({
     return () => window.clearTimeout(timeout)
   }, [historyToast])
 
-  // FOX2-46: mirror source-edit writes to the agent feed. Held in a ref
-  // because the write-success handlers are declared before the bridge; set
-  // once the bridge exists. Snapshots stay out of the feed (size) — agents
-  // fetch current source via read_html_node.
-  const emitSourceEditRef = useRef<(action: string, meta?: Record<string, unknown>) => void>(
-    () => {}
-  )
-
   const handleReactNodeWriteSuccess = useCallback((result: CanvasReactNodeWriteSuccess) => {
     if (!result.prevSourceSnapshot || result.appliedMutations <= 0) return
     // Inline items have no file; log them under a synthetic per-item key so
@@ -1127,19 +1114,16 @@ export function CanvasTab({
       result.filePath ||
       (result.itemId ? buildInlineLogKey(result.sourceKind, result.itemId) : undefined)
     if (!filePath) return
-    const prevSourceSnapshot = result.prevSourceSnapshot
-    setMutationLogState((current) =>
-      pushEntry(current, {
-        id: `canvas-mutation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        timestamp: Date.now(),
-        filePath,
-        mutations: result.mutations,
-        prevSourceSnapshot,
-        postSourceSnapshot: result.nextSourceSnapshot,
-        canvasIdMap: result.canvasIdMap,
-        summary: summarizeSourceMutations(result.mutations),
-      })
-    )
+    appendMutationLogEntry({
+      id: `canvas-mutation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: Date.now(),
+      filePath,
+      mutations: result.mutations,
+      prevSourceSnapshot: result.prevSourceSnapshot,
+      postSourceSnapshot: result.nextSourceSnapshot,
+      canvasIdMap: result.canvasIdMap,
+      summary: summarizeSourceMutations(result.mutations),
+    })
     emitSourceEditRef.current("source-edit", {
       itemId: result.itemId ?? null,
       target: result.filePath ? "file" : "inline",
@@ -1148,7 +1132,7 @@ export function CanvasTab({
       mutationTypes: Array.from(new Set(result.mutations.map((mutation) => mutation.type))),
       mutationCount: result.appliedMutations,
     })
-  }, [])
+  }, [appendMutationLogEntry])
 
   // U4b. A drop bubbled up from a CanvasHtmlFrame zone. Resolve the dropped-
   // into item's source deps (TSX vs inline HTML, file-backed vs inline) the
@@ -1226,20 +1210,16 @@ export function CanvasTab({
 
   const handleMarkdownWriteSuccess = useCallback((result: CanvasMarkdownWriteClientResult) => {
     if (!result.filePath || !result.prevSourceSnapshot || result.mutations.length === 0) return
-    const filePath = result.filePath
-    const prevSourceSnapshot = result.prevSourceSnapshot
-    setMutationLogState((current) =>
-      pushEntry(current, {
-        id: `canvas-mutation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        timestamp: Date.now(),
-        filePath,
-        mutations: result.mutations,
-        prevSourceSnapshot,
-        postSourceSnapshot: result.source,
-        canvasIdMap: {},
-        summary: summarizeSourceMutations(result.mutations),
-      })
-    )
+    appendMutationLogEntry({
+      id: `canvas-mutation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: Date.now(),
+      filePath: result.filePath,
+      mutations: result.mutations,
+      prevSourceSnapshot: result.prevSourceSnapshot,
+      postSourceSnapshot: result.source,
+      canvasIdMap: {},
+      summary: summarizeSourceMutations(result.mutations),
+    })
     emitSourceEditRef.current("source-edit", {
       target: "file",
       filePath: result.filePath,
@@ -1247,192 +1227,7 @@ export function CanvasTab({
       mutationTypes: Array.from(new Set(result.mutations.map((mutation) => mutation.type))),
       mutationCount: result.mutations.length,
     })
-  }, [])
-
-  const applyMutationHistoryEntry = useCallback(
-    async (entry: CanvasMutationLogEntry<CanvasSourceMutation>, direction: "undo" | "redo") => {
-      const kind = inferSourceKindFromFilePath(entry.filePath)
-      const sourceBackedItems = items.filter(
-        (item): item is CanvasHtmlItem | CanvasMarkdownItem =>
-          item.type === "html" || item.type === "markdown"
-      )
-      const expectedMtime = resolveSourceFileMtime(sourceBackedItems, entry.filePath, kind)
-      const sourceSnapshot =
-        direction === "undo" ? entry.prevSourceSnapshot : entry.postSourceSnapshot
-
-      let nextKind = kind
-      let nextSource: string | undefined
-      let nextMtime: number | undefined
-
-      if (parseInlineLogKey(entry.filePath)) {
-        // Inline entries have no backing file — the snapshot itself is the
-        // source of truth; apply it to item state without an endpoint write.
-        nextSource = sourceSnapshot
-      } else if (kind === "markdown") {
-        const response = await fetch("/api/canvas/markdown/write", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filePath: entry.filePath,
-            sourceSnapshot,
-            mtimeMs: expectedMtime,
-          }),
-        })
-        const payload = (await response.json().catch(() => ({}))) as {
-          ok?: boolean
-          source?: string
-          mtimeMs?: number | null
-          error?: string
-          code?: string
-        }
-        if (!response.ok || !payload.ok || typeof payload.source !== "string") {
-          const errorMessage = payload.error || `Failed to ${direction} source edit.`
-          throw new Error(
-            payload.code === "mtime-conflict"
-              ? `${errorMessage} The file changed on disk since it was loaded.`
-              : errorMessage
-          )
-        }
-        nextSource = payload.source
-        nextMtime = typeof payload.mtimeMs === "number" ? payload.mtimeMs : undefined
-      } else {
-        const response = await fetch("/api/canvas/ast/write", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filePath: entry.filePath,
-            sourceSnapshot,
-            mtimeMs: expectedMtime,
-          }),
-        })
-        const payload = (await response.json().catch(() => ({}))) as {
-          ok?: boolean
-          kind?: "tsx" | "html"
-          sourceReact?: string
-          sourceHtml?: string
-          mtimeMs?: number | null
-          error?: string
-          code?: string
-        }
-        nextKind = payload.kind ?? kind
-        nextSource = nextKind === "html" ? payload.sourceHtml : payload.sourceReact
-        if (!response.ok || !payload.ok || typeof nextSource !== "string") {
-          const errorMessage = payload.error || `Failed to ${direction} source edit.`
-          throw new Error(
-            payload.code === "mtime-conflict"
-              ? `${errorMessage} The file changed on disk since it was loaded.`
-              : errorMessage
-          )
-        }
-        nextMtime = typeof payload.mtimeMs === "number" ? payload.mtimeMs : undefined
-      }
-
-      if (typeof nextSource !== "string") {
-        throw new Error(`Failed to ${direction} source edit.`)
-      }
-
-      const nextItemsResult = applySourceSnapshotToItems(
-        sourceBackedItems,
-        entry.filePath,
-        nextKind,
-        nextSource,
-        nextMtime
-      )
-      if (nextItemsResult.changed) {
-        const rewrittenItems = items.map((item) =>
-          item.type === "html" || item.type === "markdown"
-            ? nextItemsResult.items.find((candidate) => candidate.id === item.id) ?? item
-            : item
-        )
-        replaceState({ items: rewrittenItems, groups, nextZIndex, selectedIds })
-      }
-
-      setReactNodeSelection((current) => {
-        if (!current) return current
-        if (!selectionMatchesLoggedFile(current, sourceBackedItems, entry.filePath, nextKind)) {
-          return current
-        }
-        const canvasIdMap =
-          direction === "undo"
-            ? invertCanvasIdMap(entry.canvasIdMap ?? {})
-            : (entry.canvasIdMap ?? {})
-        const rebasedCanvasId = canvasIdMap[current.canvasId]
-        if (rebasedCanvasId === null) return null
-        if (typeof rebasedCanvasId === "string" && rebasedCanvasId !== current.canvasId) {
-          return { ...current, canvasId: rebasedCanvasId }
-        }
-        return current
-      })
-      setHistoryToast({
-        id: Date.now(),
-        tone: "info",
-        message: `${direction === "undo" ? "Undid" : "Redid"}: ${entry.summary ?? "source edit"}`,
-      })
-      emitSourceEditRef.current(direction === "undo" ? "source-undo" : "source-redo", {
-        target: parseInlineLogKey(entry.filePath) ? "inline" : "file",
-        filePath: entry.filePath,
-        summary: entry.summary ?? "source edit",
-      })
-    },
-    [groups, items, nextZIndex, replaceState, selectedIds]
-  )
-
-  const handleUndoMutation = useCallback(async () => {
-    if (mutationHistoryBusy) return
-    const next = undo(mutationLogState)
-    if (!next.entry) return
-    setMutationHistoryBusy(true)
-    try {
-      await applyMutationHistoryEntry(next.entry, "undo")
-      setMutationLogState(next.state)
-    } catch (error) {
-      setHistoryToast({
-        id: Date.now(),
-        tone: "error",
-        message: error instanceof Error ? error.message : "Failed to undo source edit.",
-      })
-    } finally {
-      setMutationHistoryBusy(false)
-    }
-  }, [applyMutationHistoryEntry, mutationHistoryBusy, mutationLogState])
-
-  const handleRedoMutation = useCallback(async () => {
-    if (mutationHistoryBusy) return
-    const next = redo(mutationLogState)
-    if (!next.entry) return
-    setMutationHistoryBusy(true)
-    try {
-      await applyMutationHistoryEntry(next.entry, "redo")
-      setMutationLogState(next.state)
-    } catch (error) {
-      setHistoryToast({
-        id: Date.now(),
-        tone: "error",
-        message: error instanceof Error ? error.message : "Failed to redo source edit.",
-      })
-    } finally {
-      setMutationHistoryBusy(false)
-    }
-  }, [applyMutationHistoryEntry, mutationHistoryBusy, mutationLogState])
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const isMod = event.metaKey || event.ctrlKey
-      if (!isMod || event.altKey || event.key.toLowerCase() !== "z") return
-      const target = event.target as HTMLElement | null
-      if (isEditableEventTarget(target)) {
-        return
-      }
-      event.preventDefault()
-      if (event.shiftKey) {
-        void handleRedoMutation()
-        return
-      }
-      void handleUndoMutation()
-    }
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [handleRedoMutation, handleUndoMutation])
+  }, [appendMutationLogEntry])
 
   // In-memory clipboard for canvas node copy/paste (FOX2-59); the keydown
   // effect is registered below emitUserAction's declaration.
