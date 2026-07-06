@@ -173,15 +173,34 @@ export function useCanvasAddHandlers({
     },
     [addTargetArtboardId, nextArtboardChildOrder]
   )
+  // Explicit parentId (drop/add-menu/agent) wins; else fall back to the
+  // selected-artboard placement (FOX2-58/59/63).
+  const resolveAddPlacement = useCallback(
+    (input?: { parentId?: string; position?: { x: number; y: number } }) =>
+      input?.parentId
+        ? { parentId: input.parentId, order: nextArtboardChildOrder(input.parentId) }
+        : resolveAssetArtboardPlacement(input?.position),
+    [nextArtboardChildOrder, resolveAssetArtboardPlacement]
+  )
 
   const handleAddEmbed = useCallback(
-    (url: string) => {
+    (
+      url: string,
+      input?: {
+        position?: { x: number; y: number }
+        parentId?: string
+        via?: "add-menu"
+      }
+    ) => {
       const normalized = normalizeCanvasEmbedUrl(url)
       const embedWidth = 640
       const embedHeight = 360
       const centerX = (workspaceSize.width / 2 - transform.offset.x) / transform.scale
       const centerY = (workspaceSize.height / 2 - transform.offset.y) / transform.scale
+      const targetX = input?.position ? input.position.x : centerX
+      const targetY = input?.position ? input.position.y : centerY
 
+      const placement = resolveAddPlacement({ parentId: input?.parentId, position: input?.position })
       addItem({
         type: "embed",
         url: normalized.url,
@@ -191,19 +210,21 @@ export function useCanvasAddHandlers({
         embedLiveStatus: "idle",
         embedCaptureStatus: "idle",
         position: {
-          x: Math.max(0, centerX - embedWidth / 2),
-          y: Math.max(0, centerY - embedHeight / 2),
+          x: Math.max(0, targetX - embedWidth / 2),
+          y: Math.max(0, targetY - embedHeight / 2),
         },
         size: { width: embedWidth, height: embedHeight },
         rotation: 0,
+        ...(placement ?? {}),
       })
+      if (placement) emitUserAction("create-item", { itemType: "embed", parentId: placement.parentId, target: "artboard", ...(input?.via ? { via: input.via } : {}) })
 
       if (normalized.wasNormalized && typeof window !== "undefined") {
         window.console.info(`[Canvas Embed] ${normalized.reason || "URL normalized."}`)
       }
       setPropsPanelVisible(true)
     },
-    [addItem, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, resolveAddPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddHtmlBundle = useCallback(
@@ -212,6 +233,8 @@ export function useCanvasAddHandlers({
       fileEntries?: Array<{ file: File; relativePath: string }>
       title?: string
       position?: { x: number; y: number }
+      parentId?: string
+      via?: "add-menu"
     }) => {
       if (!activeProjectId) {
         throw new Error("Select a project before importing an HTML bundle.")
@@ -248,6 +271,7 @@ export function useCanvasAddHandlers({
             imported.entryAsset.split("/").filter(Boolean).pop()?.replace(/\.html?$/i, "") ||
             "HTML bundle"
 
+          const placement = resolveAddPlacement({ parentId: input.parentId, position: input.position })
           addItem({
             type: "html",
             src: imported.entryUrl,
@@ -262,7 +286,9 @@ export function useCanvasAddHandlers({
             },
             size: { width: htmlWidth, height: htmlHeight },
             rotation: 0,
+            ...(placement ?? {}),
           })
+          if (placement) emitUserAction("create-item", { itemType: "html", parentId: placement.parentId, target: "artboard", ...(input.via ? { via: input.via } : {}) })
           setPropsPanelVisible(true)
           if (typeof window !== "undefined" && window.innerWidth < 1100) {
             setSidebarVisible(false)
@@ -281,8 +307,10 @@ export function useCanvasAddHandlers({
       activeCanvasFilePath,
       activeProjectId,
       addItem,
+      emitUserAction,
       importCanvasHtmlBundle,
       refreshCanvasFiles,
+      resolveAddPlacement,
       runCanvasPersistenceTask,
       setPropsPanelVisible,
       setSidebarVisible,
@@ -470,11 +498,7 @@ export function useCanvasAddHandlers({
       const targetX = input.position ? input.position.x : centerX
       const targetY = input.position ? input.position.y : centerY
 
-      // An explicit parentId (a file dropped onto an artboard) wins; else fall
-      // back to the selected-artboard placement (FOX2-58).
-      const placement = input.parentId
-        ? { parentId: input.parentId, order: nextArtboardChildOrder(input.parentId) }
-        : resolveAssetArtboardPlacement(input.position)
+      const placement = resolveAddPlacement(input)
       addItem({
         type: "media",
         src,
@@ -499,7 +523,7 @@ export function useCanvasAddHandlers({
       if (placement) emitUserAction("create-item", { itemType: "media", parentId: placement.parentId, target: "artboard", ...(input.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
-    [addItem, emitUserAction, nextArtboardChildOrder, resolveAssetArtboardPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, resolveAddPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddMermaid = useCallback(
@@ -520,11 +544,7 @@ export function useCanvasAddHandlers({
       const targetX = input?.position ? input.position.x : centerX
       const targetY = input?.position ? input.position.y : centerY
 
-      // An explicit parentId (the artboard add-menu) wins; else fall back to
-      // the selected-artboard placement (FOX2-58/59).
-      const placement = input?.parentId
-        ? { parentId: input.parentId, order: nextArtboardChildOrder(input.parentId) }
-        : resolveAssetArtboardPlacement(input?.position)
+      const placement = resolveAddPlacement(input)
       addItem({
         type: "mermaid",
         source,
@@ -542,7 +562,7 @@ export function useCanvasAddHandlers({
       if (placement) emitUserAction("create-item", { itemType: "mermaid", parentId: placement.parentId, target: "artboard", ...(input?.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
-    [addItem, emitUserAction, nextArtboardChildOrder, resolveAssetArtboardPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, resolveAddPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddMcpApp = useCallback(
@@ -550,6 +570,8 @@ export function useCanvasAddHandlers({
       appName?: string
       transport: CanvasMcpAppTransport
       position?: { x: number; y: number }
+      parentId?: string
+      via?: "add-menu"
     }) => {
       const panelWidth = 760
       const panelHeight = 480
@@ -558,6 +580,7 @@ export function useCanvasAddHandlers({
       const targetX = input?.position ? input.position.x : centerX
       const targetY = input?.position ? input.position.y : centerY
 
+      const placement = resolveAddPlacement({ parentId: input?.parentId, position: input?.position })
       addItem({
         type: "mcp-app",
         appName: input.appName?.trim() || "MCP app",
@@ -569,10 +592,12 @@ export function useCanvasAddHandlers({
         },
         size: { width: panelWidth, height: panelHeight },
         rotation: 0,
+        ...(placement ?? {}),
       })
+      if (placement) emitUserAction("create-item", { itemType: "mcp-app", parentId: placement.parentId, target: "artboard", ...(input?.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
-    [addItem, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, resolveAddPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddMarkdown = useCallback(
@@ -595,11 +620,7 @@ export function useCanvasAddHandlers({
       const targetX = input?.position ? input.position.x : centerX
       const targetY = input?.position ? input.position.y : centerY
 
-      // An explicit parentId (the artboard add-menu) wins; else fall back to
-      // the selected-artboard placement (FOX2-58/59).
-      const placement = input?.parentId
-        ? { parentId: input.parentId, order: nextArtboardChildOrder(input.parentId) }
-        : resolveAssetArtboardPlacement(input?.position)
+      const placement = resolveAddPlacement(input)
       addItem({
         type: "markdown",
         source,
@@ -619,7 +640,7 @@ export function useCanvasAddHandlers({
       if (placement) emitUserAction("create-item", { itemType: "markdown", parentId: placement.parentId, target: "artboard", ...(input?.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
-    [addItem, emitUserAction, nextArtboardChildOrder, resolveAssetArtboardPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, resolveAddPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddExcalidraw = useCallback(
@@ -628,6 +649,8 @@ export function useCanvasAddHandlers({
       scene?: CanvasExcalidrawItem["scene"]
       sourceMermaid?: string
       position?: { x: number; y: number }
+      parentId?: string
+      via?: "add-menu"
     }) => {
       const excalidrawWidth = 760
       const excalidrawHeight = 500
@@ -636,6 +659,7 @@ export function useCanvasAddHandlers({
       const targetX = input?.position ? input.position.x : centerX
       const targetY = input?.position ? input.position.y : centerY
 
+      const placement = resolveAddPlacement({ parentId: input?.parentId, position: input?.position })
       addItem({
         type: "excalidraw",
         title: input?.title?.trim() || "Excalidraw sketch",
@@ -653,10 +677,12 @@ export function useCanvasAddHandlers({
         },
         size: { width: excalidrawWidth, height: excalidrawHeight },
         rotation: 0,
+        ...(placement ?? {}),
       })
+      if (placement) emitUserAction("create-item", { itemType: "excalidraw", parentId: placement.parentId, target: "artboard", ...(input?.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
-    [addItem, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, resolveAddPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   // Artboard add-menu dispatch (FOX2-59 method 4): a picked library primitive
@@ -779,6 +805,7 @@ export function useCanvasAddHandlers({
     addTargetArtboardId,
     nextArtboardChildOrder,
     resolveAssetArtboardPlacement,
+    resolveAddPlacement,
     handleAddEmbed,
     handleAddHtmlBundle,
     handleAddInlineHtml,
