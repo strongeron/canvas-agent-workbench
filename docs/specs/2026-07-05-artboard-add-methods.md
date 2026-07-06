@@ -1,6 +1,6 @@
 # Every way to add nodes into an artboard
 
-**Date:** 2026-07-05 · **Issue:** FOX2-59 · **Status:** approved-in-principle (user: "we need all options"); picker-menu layout pending user input
+**Date:** 2026-07-05 · **Issue:** FOX2-59 · **Status:** shipped (methods 1–3 first; method 4 followed 2026-07-06 with both triggers + grouped picker)
 
 ## Problem
 
@@ -31,13 +31,16 @@ shares one code path (and one place to keep agent parity).
    component currently always creates freeform. When an artboard is selected,
    insert into it instead. Makes the existing click path artboard-aware; no new
    UI.
-4. **Artboard add menu** (deferred — needs layout input) — a `+` affordance on
-   the selected artboard and/or a context-menu "Add here…" opening a picker
-   (components, project-native HTML, markdown, mermaid, media). Biggest UI
-   surface; split out so 1–3 ship first.
+4. **Artboard add menu** — both triggers: a `+ Add` button on the selected
+   artboard's chrome (next to the Gap scrubber) and a context-menu "Add
+   here…", each opening the same grouped picker (`CanvasArtboardAddMenu`).
+   Groups: **Components** (registry primitives via the method-3 instantiate
+   path, plus "New native component…") and **Assets** (HTML, markdown,
+   mermaid, media via a file picker). Every choice inserts at the end of the
+   artboard's flow and emits `create-item` with `via: "add-menu"` so the
+   activity feed can tell menu adds apart.
 
 ## Non-goals (this issue)
 
 - OS-file paste beyond the existing media path.
 - Cross-document copy/paste (clipboard is in-memory, per session).
-- The picker-menu visual design (method 4) until the user weighs in.

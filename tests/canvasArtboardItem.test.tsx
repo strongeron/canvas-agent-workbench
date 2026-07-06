@@ -187,4 +187,155 @@ describe("CanvasArtboardItem", () => {
       })
     )
   })
+
+  it("opens the add menu from the selected-state Add button (FOX2-59 method 4)", async () => {
+    const onAddMenuRequest = vi.fn()
+    harness = await mount(
+      <CanvasArtboardItem
+        item={{
+          id: "artboard-1",
+          type: "artboard",
+          name: "Board",
+          position: { x: 20, y: 40 },
+          size: { width: 800, height: 600 },
+          rotation: 0,
+          zIndex: 1,
+          background: "#ffffff",
+          layout: {
+            display: "flex",
+            direction: "column",
+            align: "stretch",
+            justify: "start",
+            gap: 16,
+            padding: 24,
+          },
+        }}
+        isSelected={true}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onRemove={() => {}}
+        onDuplicate={() => {}}
+        onBringToFront={() => {}}
+        scale={1}
+        interactMode={false}
+        onAddMenuRequest={onAddMenuRequest}
+      >
+        <div data-artboard-child="true">Child</div>
+      </CanvasArtboardItem>
+    )
+
+    const addButton = harness.container.querySelector(
+      'button[aria-label="Add to artboard"]'
+    ) as HTMLButtonElement
+    expect(addButton).toBeTruthy()
+
+    await act(async () => {
+      addButton.click()
+    })
+
+    expect(onAddMenuRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) })
+    )
+  })
+
+  it("hides the Add button when the artboard is not selected", async () => {
+    harness = await mount(
+      <CanvasArtboardItem
+        item={{
+          id: "artboard-1",
+          type: "artboard",
+          name: "Board",
+          position: { x: 20, y: 40 },
+          size: { width: 800, height: 600 },
+          rotation: 0,
+          zIndex: 1,
+          background: "#ffffff",
+          layout: {
+            display: "flex",
+            direction: "column",
+            align: "stretch",
+            justify: "start",
+            gap: 16,
+            padding: 24,
+          },
+        }}
+        isSelected={false}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onRemove={() => {}}
+        onDuplicate={() => {}}
+        onBringToFront={() => {}}
+        scale={1}
+        interactMode={false}
+        onAddMenuRequest={() => {}}
+      >
+        <div data-artboard-child="true">Child</div>
+      </CanvasArtboardItem>
+    )
+
+    expect(
+      harness.container.querySelector('button[aria-label="Add to artboard"]')
+    ).toBeNull()
+  })
+
+  it("offers Add here… in the context menu that reopens as the add menu", async () => {
+    const onAddMenuRequest = vi.fn()
+    harness = await mount(
+      <CanvasArtboardItem
+        item={{
+          id: "artboard-1",
+          type: "artboard",
+          name: "Board",
+          position: { x: 20, y: 40 },
+          size: { width: 800, height: 600 },
+          rotation: 0,
+          zIndex: 1,
+          background: "#ffffff",
+          layout: {
+            display: "flex",
+            direction: "column",
+            align: "stretch",
+            justify: "start",
+            gap: 16,
+            padding: 24,
+          },
+        }}
+        isSelected={true}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onRemove={() => {}}
+        onDuplicate={() => {}}
+        onBringToFront={() => {}}
+        scale={1}
+        interactMode={false}
+        onAddMenuRequest={onAddMenuRequest}
+      >
+        <div data-artboard-child="true">Child</div>
+      </CanvasArtboardItem>
+    )
+
+    const artboardNode = harness.container.querySelector(
+      '[data-canvas-item-id="artboard-1"]'
+    ) as HTMLDivElement
+    await act(async () => {
+      artboardNode.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, clientX: 150, clientY: 160 })
+      )
+    })
+
+    const addHereButton = Array.from(
+      document.body.querySelectorAll('[role="menuitem"]')
+    ).find((button) => button.textContent?.includes("Add here…")) as HTMLButtonElement
+    expect(addHereButton).toBeTruthy()
+
+    await act(async () => {
+      addHereButton.click()
+    })
+    // The context menu runs the action one frame after closing.
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+    })
+
+    expect(onAddMenuRequest).toHaveBeenCalledWith({ x: 150, y: 160 })
+  })
 })

@@ -1,4 +1,4 @@
-import { Bot, Copy, Layers, Maximize2, Trash2 } from "lucide-react"
+import { Bot, Copy, Layers, Maximize2, Plus, Trash2 } from "lucide-react"
 import { useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 
@@ -7,6 +7,7 @@ import { dispatchCanvasCopyForAgent } from "../../utils/canvasAgentSelectionCont
 interface CanvasContextMenuProps {
   position: { x: number; y: number }
   onClose: () => void
+  onAddHere?: () => void
   onFitToContent?: () => void
   onBringToFront?: () => void
   onDuplicate?: () => void
@@ -16,6 +17,7 @@ interface CanvasContextMenuProps {
 export function CanvasContextMenu({
   position,
   onClose,
+  onAddHere,
   onFitToContent,
   onBringToFront,
   onDuplicate,
@@ -81,6 +83,18 @@ export function CanvasContextMenu({
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
+      {onAddHere && (
+        <button
+          type="button"
+          onClick={(e) => handleAction(e, onAddHere)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-surface-100"
+          role="menuitem"
+        >
+          <Plus className="h-4 w-4 text-muted-foreground" />
+          Add here…
+        </button>
+      )}
+
       {onFitToContent && (
         <button
           type="button"

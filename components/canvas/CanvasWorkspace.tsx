@@ -141,6 +141,11 @@ interface CanvasWorkspaceProps {
   onLibraryPrimitiveDropOnCanvas?: (position: { x: number; y: number }) => void
   /** OS files dropped onto an artboard → media children (FOX2-58). */
   onFilesDropOnArtboard?: (artboardId: string, files: File[]) => void
+  /** Open the add-into-artboard picker for an artboard (FOX2-59 method 4). */
+  onArtboardAddMenuRequest?: (
+    artboardId: string,
+    position: { x: number; y: number }
+  ) => void
 }
 
 export function CanvasWorkspace({
@@ -180,6 +185,7 @@ export function CanvasWorkspace({
   onLibraryPrimitiveDropOnArtboard,
   onLibraryPrimitiveDropOnCanvas,
   onFilesDropOnArtboard,
+  onArtboardAddMenuRequest,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -926,6 +932,11 @@ export function CanvasWorkspace({
             }
             onFilesDrop={
               onFilesDropOnArtboard ? (files) => onFilesDropOnArtboard(item.id, files) : undefined
+            }
+            onAddMenuRequest={
+              onArtboardAddMenuRequest
+                ? (position) => onArtboardAddMenuRequest(item.id, position)
+                : undefined
             }
           >
             {children.map((child, index) => renderLayoutChild(child, index, children.length))}
