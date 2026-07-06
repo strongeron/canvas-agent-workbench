@@ -1,4 +1,4 @@
-import { ArrowDownToLine, MoveHorizontal, RotateCw } from "lucide-react"
+import { ArrowDownToLine, MoveHorizontal, Plus, RotateCw } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useDroppable } from "@dnd-kit/core"
 
@@ -35,6 +35,8 @@ interface CanvasArtboardItemProps {
   onLibraryPrimitiveDrop?: () => void
   /** OS files dropped onto this artboard (media) → new children. */
   onFilesDrop?: (files: File[]) => void
+  /** Open the add-into-artboard picker at a viewport position (FOX2-59 method 4). */
+  onAddMenuRequest?: (position: { x: number; y: number }) => void
 }
 
 const MIN_WIDTH = 320
@@ -106,6 +108,7 @@ export function CanvasArtboardItem({
   libraryDragActive = false,
   onLibraryPrimitiveDrop,
   onFilesDrop,
+  onAddMenuRequest,
 }: CanvasArtboardItemProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -484,6 +487,24 @@ export function CanvasArtboardItem({
               Gap {Math.round(layout.gap ?? 12)}
             </button>
           ) : null}
+          {isSelected && onAddMenuRequest ? (
+            <button
+              type="button"
+              data-artboard-handle="true"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                const rect = e.currentTarget.getBoundingClientRect()
+                onAddMenuRequest({ x: rect.left, y: rect.bottom + 4 })
+              }}
+              className="pointer-events-auto flex shrink-0 items-center gap-1 rounded border border-brand-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-brand-700 shadow-sm hover:bg-brand-50"
+              aria-label="Add to artboard"
+              title="Add to artboard"
+            >
+              <Plus className="h-3 w-3" />
+              Add
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -529,6 +550,9 @@ export function CanvasArtboardItem({
         <CanvasContextMenu
           position={contextMenu}
           onClose={closeContextMenu}
+          onAddHere={
+            onAddMenuRequest ? () => onAddMenuRequest(contextMenu) : undefined
+          }
           onBringToFront={onBringToFront}
           onDuplicate={onDuplicate}
           onDelete={onRemove}

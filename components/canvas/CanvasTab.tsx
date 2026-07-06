@@ -32,6 +32,7 @@ import type {
   CanvasMarkdownItem,
 } from "../../types/canvas"
 import { CanvasAddMcpAppDialog } from "./CanvasAddMcpAppDialog"
+import { CanvasArtboardAddMenu } from "./CanvasArtboardAddMenu"
 import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
 import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
 import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
@@ -43,6 +44,7 @@ import {
 } from "../../utils/canvasNativeComponentShell"
 import type { CanvasLibraryDragPayload } from "../../utils/canvasLibraryDrag"
 import { buildPrimitiveInstantiateInput } from "../../utils/canvasLibraryInstantiate"
+import type { CanvasRegistryPrimitive } from "../../utils/canvasRegistry"
 import {
   dispatchCanvasLibraryDrop,
   type CanvasLibraryDropIntent,
@@ -789,6 +791,16 @@ export function CanvasTab({
   const [componentPasteDialogVisible, setComponentPasteDialogVisible] = useState(false)
   const [nativeComponentDialogVisible, setNativeComponentDialogVisible] = useState(false)
   const [mcpAppDialogVisible, setMcpAppDialogVisible] = useState(false)
+  // Artboard add-menu (FOX2-59 method 4); the media choice routes through a
+  // hidden file input, with the target artboard parked in a ref across the
+  // native file-picker round trip.
+  const [artboardAddMenu, setArtboardAddMenu] = useState<{
+    artboardId: string
+    x: number
+    y: number
+  } | null>(null)
+  const artboardMediaInputRef = useRef<HTMLInputElement>(null)
+  const artboardMediaTargetRef = useRef<string | null>(null)
   const [nativeComponentDialogDefaults, setNativeComponentDialogDefaults] = useState<{
     template: NativeComponentTemplate
     title: string
@@ -3575,6 +3587,7 @@ export function CanvasTab({
       mediaKind?: CanvasMediaItem["mediaKind"]
       position?: { x: number; y: number }
       parentId?: string
+      via?: "add-menu"
     }) => {
       let src = input.src?.trim() || ""
       let mediaKind = input.mediaKind
@@ -3655,7 +3668,7 @@ export function CanvasTab({
         rotation: 0,
         ...(placement ?? {}),
       })
-      if (placement) emitUserAction("create-item", { itemType: "media", parentId: placement.parentId, target: "artboard" })
+      if (placement) emitUserAction("create-item", { itemType: "media", parentId: placement.parentId, target: "artboard", ...(input.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
     [addItem, emitUserAction, nextArtboardChildOrder, resolveAssetArtboardPlacement, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
@@ -3668,6 +3681,8 @@ export function CanvasTab({
       mermaidTheme?: CanvasMermaidItem["mermaidTheme"]
       background?: string
       position?: { x: number; y: number }
+      parentId?: string
+      via?: "add-menu"
     }) => {
       const source = input?.source?.trim() || DEFAULT_MERMAID_SOURCE
       const mermaidWidth = 640
@@ -3677,7 +3692,11 @@ export function CanvasTab({
       const targetX = input?.position ? input.position.x : centerX
       const targetY = input?.position ? input.position.y : centerY
 
-      const placement = resolveAssetArtboardPlacement(input?.position)
+      // An explicit parentId (the artboard add-menu) wins; else fall back to
+      // the selected-artboard placement (FOX2-58/59).
+      const placement = input?.parentId
+        ? { parentId: input.parentId, order: nextArtboardChildOrder(input.parentId) }
+        : resolveAssetArtboardPlacement(input?.position)
       addItem({
         type: "mermaid",
         source,
@@ -3692,10 +3711,10 @@ export function CanvasTab({
         rotation: 0,
         ...(placement ?? {}),
       })
-      if (placement) emitUserAction("create-item", { itemType: "mermaid", parentId: placement.parentId, target: "artboard" })
+      if (placement) emitUserAction("create-item", { itemType: "mermaid", parentId: placement.parentId, target: "artboard", ...(input?.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
-    [addItem, emitUserAction, resolveAssetArtboardPlacement, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, nextArtboardChildOrder, resolveAssetArtboardPlacement, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddMcpApp = useCallback(
@@ -3737,6 +3756,8 @@ export function CanvasTab({
       sourceImportedAt?: string
       sourceFileMtime?: number
       position?: { x: number; y: number }
+      parentId?: string
+      via?: "add-menu"
     }) => {
       const source = input?.source?.trim() || DEFAULT_MARKDOWN_SOURCE
       const markdownWidth = 700
@@ -3746,7 +3767,11 @@ export function CanvasTab({
       const targetX = input?.position ? input.position.x : centerX
       const targetY = input?.position ? input.position.y : centerY
 
-      const placement = resolveAssetArtboardPlacement(input?.position)
+      // An explicit parentId (the artboard add-menu) wins; else fall back to
+      // the selected-artboard placement (FOX2-58/59).
+      const placement = input?.parentId
+        ? { parentId: input.parentId, order: nextArtboardChildOrder(input.parentId) }
+        : resolveAssetArtboardPlacement(input?.position)
       addItem({
         type: "markdown",
         source,
@@ -3763,10 +3788,10 @@ export function CanvasTab({
         rotation: 0,
         ...(placement ?? {}),
       })
-      if (placement) emitUserAction("create-item", { itemType: "markdown", parentId: placement.parentId, target: "artboard" })
+      if (placement) emitUserAction("create-item", { itemType: "markdown", parentId: placement.parentId, target: "artboard", ...(input?.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
-    [addItem, emitUserAction, resolveAssetArtboardPlacement, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [addItem, emitUserAction, nextArtboardChildOrder, resolveAssetArtboardPlacement, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddExcalidraw = useCallback(
@@ -3804,6 +3829,73 @@ export function CanvasTab({
       setPropsPanelVisible(true)
     },
     [addItem, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+  )
+
+  // Artboard add-menu dispatch (FOX2-59 method 4): a picked library primitive
+  // becomes an html child at the end of the artboard's flow — same conversion
+  // as method 3 and the FOX2-58 drop path, so all entry points produce
+  // identical items.
+  const handleArtboardAddMenuPrimitive = useCallback(
+    async (artboardId: string, primitive: CanvasRegistryPrimitive) => {
+      if (!activeProjectId) return
+      try {
+        const input = await buildPrimitiveInstantiateInput(primitive, activeProjectId)
+        const order = nextArtboardChildOrder(artboardId)
+        emitUserAction("create-item", {
+          itemType: "html",
+          primitiveId: primitive.id,
+          parentId: artboardId,
+          order,
+          target: "artboard",
+          via: "add-menu",
+        })
+        await handleAddInlineHtml({ ...input, parentId: artboardId, order })
+      } catch (error) {
+        setHistoryToast({
+          id: Date.now(),
+          tone: "error",
+          message:
+            error instanceof Error ? error.message : "Failed to add primitive to artboard.",
+        })
+      }
+    },
+    [activeProjectId, emitUserAction, handleAddInlineHtml, nextArtboardChildOrder]
+  )
+
+  const handleArtboardAddMenuAsset = useCallback(
+    (artboardId: string, kind: "html" | "markdown" | "mermaid" | "media") => {
+      switch (kind) {
+        case "html": {
+          const order = nextArtboardChildOrder(artboardId)
+          emitUserAction("create-item", {
+            itemType: "html",
+            parentId: artboardId,
+            order,
+            target: "artboard",
+            via: "add-menu",
+          })
+          void handleAddInlineHtml({ parentId: artboardId, order })
+          break
+        }
+        case "markdown":
+          handleAddMarkdown({ parentId: artboardId, via: "add-menu" })
+          break
+        case "mermaid":
+          handleAddMermaid({ parentId: artboardId, via: "add-menu" })
+          break
+        case "media":
+          artboardMediaTargetRef.current = artboardId
+          artboardMediaInputRef.current?.click()
+          break
+      }
+    },
+    [
+      emitUserAction,
+      handleAddInlineHtml,
+      handleAddMarkdown,
+      handleAddMermaid,
+      nextArtboardChildOrder,
+    ]
   )
 
   const handleImportDiagramFile = useCallback(
@@ -4884,6 +4976,51 @@ export function CanvasTab({
             }}
           />
 
+          {artboardAddMenu && (
+            <CanvasArtboardAddMenu
+              position={artboardAddMenu}
+              artboardName={
+                items.find(
+                  (item): item is CanvasArtboardItem =>
+                    item.id === artboardAddMenu.artboardId && item.type === "artboard"
+                )?.name ?? "artboard"
+              }
+              projectId={activeProjectId || "design-system-foundation"}
+              onClose={() => setArtboardAddMenu(null)}
+              onAddPrimitive={(primitive) =>
+                void handleArtboardAddMenuPrimitive(artboardAddMenu.artboardId, primitive)
+              }
+              onAddAsset={(kind) => {
+                if (kind === "native-component") {
+                  // The dialog targets the selected layout container — the
+                  // menu's artboard, selected by both trigger paths.
+                  openNativeComponentDialog()
+                  return
+                }
+                handleArtboardAddMenuAsset(artboardAddMenu.artboardId, kind)
+              }}
+            />
+          )}
+
+          <input
+            ref={artboardMediaInputRef}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? [])
+              e.target.value = ""
+              const artboardId = artboardMediaTargetRef.current
+              artboardMediaTargetRef.current = null
+              if (!artboardId) return
+              for (const file of files) {
+                if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) continue
+                void handleAddMedia({ file, parentId: artboardId, via: "add-menu" })
+              }
+            }}
+          />
+
           <CanvasWorkspace
             items={items}
             projectId={activeProjectId || "demo"}
@@ -4938,6 +5075,9 @@ export function CanvasTab({
             }}
             onLibraryDropInsert={handleLibraryDropInsert}
             onLibraryDropWrap={handleLibraryDropWrap}
+            onArtboardAddMenuRequest={(artboardId, position) =>
+              setArtboardAddMenu({ artboardId, ...position })
+            }
           />
 
           {/* Right sidebar - Props Panel (single selection only) */}
