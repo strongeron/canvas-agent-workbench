@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useRef } from "react"
 
 import { useLocalStorage } from "./useLocalStorage"
 
@@ -12,6 +12,45 @@ import type {
   CanvasStateSnapshot,
 } from "../types/canvas"
 import { GROUP_COLORS } from "../types/canvas"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CanvasDocumentStore seam (FOX2-66)
+//
+// Every document mutation funnels through a single internal `applyChange`
+// (the only `setRawState` write in this file — enforced by
+// tests/canvasDocumentStoreInvariant.test.ts). Each change carries meta
+// describing who made it and why, and a ref-based change stream lets the
+// undo layer (FOX2-67) and gesture events (FOX2-60) observe prev/next
+// snapshots without adding re-renders.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type CanvasChangeActor = "user" | "agent" | "history"
+
+export interface CanvasChangeMeta {
+  actor: CanvasChangeActor
+  source: string
+  /** Present (true) on changes applied between beginGesture/endGesture. */
+  gesture?: boolean
+}
+
+/** The document portion of canvas state — what history snapshots care about. */
+export interface CanvasDocumentSnapshot {
+  items: CanvasItem[]
+  groups: CanvasGroup[]
+}
+
+export interface CanvasDocumentChangeEvent {
+  meta: CanvasChangeMeta
+  prevSnapshot: CanvasDocumentSnapshot
+  nextSnapshot: CanvasDocumentSnapshot
+}
+
+export type CanvasDocumentChangeListener = (event: CanvasDocumentChangeEvent) => void
+
+interface ActiveGesture {
+  prevSnapshot: CanvasDocumentSnapshot
+  lastMeta: CanvasChangeMeta | null
+}
 
 const DEFAULT_STATE: CanvasState = {
   items: [],
@@ -108,12 +147,89 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   // Normalize state to ensure all properties exist
   const state = normalizeState(rawState)
 
-  // Wrapper to normalize prev state in callbacks (memoized to avoid dependency warnings)
-  const setState = useCallback(
-    (updater: (prev: CanvasState) => CanvasState) => {
-      setRawState((prev) => updater(normalizeState(prev)))
+  // Latest normalized state, kept fresh both per render and eagerly inside
+  // applyChange so batched same-tick mutations compose on each other's output.
+  const stateRef = useRef(state)
+  stateRef.current = state
+
+  const listenersRef = useRef(new Set<CanvasDocumentChangeListener>())
+  const gestureRef = useRef<ActiveGesture | null>(null)
+
+  const emitDocumentChange = useCallback((event: CanvasDocumentChangeEvent) => {
+    listenersRef.current.forEach((listener) => listener(event))
+  }, [])
+
+  // The single write path: computes next state exactly once (mutators mint ids
+  // inside their transitions), commits it, and fires the change stream
+  // synchronously with prev/next document snapshots.
+  const applyChange = useCallback(
+    (change: (prev: CanvasState) => CanvasState, meta: CanvasChangeMeta) => {
+      const prev = stateRef.current
+      const next = change(prev)
+      stateRef.current = next
+      setRawState(() => next)
+
+      const gesture = gestureRef.current
+      const taggedMeta = gesture ? { ...meta, gesture: true } : meta
+      if (gesture) {
+        gesture.lastMeta = taggedMeta
+      }
+      if (listenersRef.current.size > 0) {
+        emitDocumentChange({
+          meta: taggedMeta,
+          prevSnapshot: { items: prev.items, groups: prev.groups },
+          nextSnapshot: { items: next.items, groups: next.groups },
+        })
+      }
     },
-    [setRawState]
+    [emitDocumentChange, setRawState]
+  )
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Change Stream + Gesture Boundaries (FOX2-66)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const subscribeToDocumentChanges = useCallback((listener: CanvasDocumentChangeListener) => {
+    listenersRef.current.add(listener)
+    return () => {
+      listenersRef.current.delete(listener)
+    }
+  }, [])
+
+  // High-frequency streams (drag/resize per mousemove) bracket their changes so
+  // consumers can coalesce. Nested begins are ignored — the first begin wins.
+  const beginGesture = useCallback(() => {
+    if (gestureRef.current) return
+    const current = stateRef.current
+    gestureRef.current = {
+      prevSnapshot: { items: current.items, groups: current.groups },
+      lastMeta: null,
+    }
+  }, [])
+
+  const endGesture = useCallback(
+    (summary?: string) => {
+      const gesture = gestureRef.current
+      gestureRef.current = null
+      if (!gesture?.lastMeta) return
+
+      const current = stateRef.current
+      if (
+        current.items === gesture.prevSnapshot.items &&
+        current.groups === gesture.prevSnapshot.groups
+      ) {
+        return
+      }
+      emitDocumentChange({
+        meta: {
+          ...gesture.lastMeta,
+          source: summary ? `gesture:${summary}` : "gesture",
+        },
+        prevSnapshot: gesture.prevSnapshot,
+        nextSnapshot: { items: current.items, groups: current.groups },
+      })
+    },
+    [emitDocumentChange]
   )
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -123,62 +239,74 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   const addItem = useCallback(
     (item: CanvasItemInput) => {
       const newId = `canvas-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-      setState((prev) => ({
-        ...prev,
-        items: [
-          ...prev.items,
-          {
-            ...item,
-            id: newId,
-            zIndex: prev.nextZIndex,
-          } as CanvasItem,
-        ],
-        nextZIndex: prev.nextZIndex + 1,
-        selectedIds: [newId], // Auto-select the new item
-      }))
+      applyChange(
+        (prev) => ({
+          ...prev,
+          items: [
+            ...prev.items,
+            {
+              ...item,
+              id: newId,
+              zIndex: prev.nextZIndex,
+            } as CanvasItem,
+          ],
+          nextZIndex: prev.nextZIndex + 1,
+          selectedIds: [newId], // Auto-select the new item
+        }),
+        { actor: "user", source: "add-item" }
+      )
       return newId
     },
-    [setState]
+    [applyChange]
   )
 
   const updateItem = useCallback(
     (id: string, updates: CanvasItemUpdate) => {
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.map((item) =>
-          item.id === id ? ({ ...item, ...updates } as CanvasItem) : item
-        ),
-      }))
+      applyChange(
+        (prev) => ({
+          ...prev,
+          items: prev.items.map((item) =>
+            item.id === id ? ({ ...item, ...updates } as CanvasItem) : item
+          ),
+        }),
+        { actor: "user", source: "update-item" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   const removeItem = useCallback(
     (id: string) => {
-      setState((prev) => {
-        const idsToRemove = collectCascadeDeleteIds(prev, [id])
+      applyChange(
+        (prev) => {
+          const idsToRemove = collectCascadeDeleteIds(prev, [id])
 
-        return {
-          ...prev,
-          items: prev.items.filter((item) => !idsToRemove.has(item.id)),
-          selectedIds: prev.selectedIds.filter((selectedId) => !idsToRemove.has(selectedId)),
-        }
-      })
+          return {
+            ...prev,
+            items: prev.items.filter((item) => !idsToRemove.has(item.id)),
+            selectedIds: prev.selectedIds.filter((selectedId) => !idsToRemove.has(selectedId)),
+          }
+        },
+        { actor: "user", source: "remove-item" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   const bringToFront = useCallback(
     (id: string) => {
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.map((item) =>
-          item.id === id ? { ...item, zIndex: prev.nextZIndex } : item
-        ),
-        nextZIndex: prev.nextZIndex + 1,
-      }))
+      applyChange(
+        (prev) => ({
+          ...prev,
+          items: prev.items.map((item) =>
+            item.id === id ? { ...item, zIndex: prev.nextZIndex } : item
+          ),
+          nextZIndex: prev.nextZIndex + 1,
+        }),
+        { actor: "user", source: "bring-to-front" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -187,35 +315,47 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
 
   const selectItem = useCallback(
     (id: string, addToSelection = false) => {
-      setState((prev) => {
-        if (addToSelection) {
-          // Toggle selection
-          if (prev.selectedIds.includes(id)) {
-            return { ...prev, selectedIds: prev.selectedIds.filter((i) => i !== id) }
+      applyChange(
+        (prev) => {
+          if (addToSelection) {
+            // Toggle selection
+            if (prev.selectedIds.includes(id)) {
+              return { ...prev, selectedIds: prev.selectedIds.filter((i) => i !== id) }
+            }
+            return { ...prev, selectedIds: [...prev.selectedIds, id] }
           }
-          return { ...prev, selectedIds: [...prev.selectedIds, id] }
-        }
-        // Replace selection
-        return { ...prev, selectedIds: [id] }
-      })
+          // Replace selection
+          return { ...prev, selectedIds: [id] }
+        },
+        { actor: "user", source: "select-item" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   const selectItems = useCallback(
     (ids: string[]) => {
-      setState((prev) => ({ ...prev, selectedIds: ids }))
+      applyChange((prev) => ({ ...prev, selectedIds: ids }), {
+        actor: "user",
+        source: "select-items",
+      })
     },
-    [setState]
+    [applyChange]
   )
 
   const selectAll = useCallback(() => {
-    setState((prev) => ({ ...prev, selectedIds: prev.items.map((item) => item.id) }))
-  }, [setState])
+    applyChange((prev) => ({ ...prev, selectedIds: prev.items.map((item) => item.id) }), {
+      actor: "user",
+      source: "select-all",
+    })
+  }, [applyChange])
 
   const clearSelection = useCallback(() => {
-    setState((prev) => ({ ...prev, selectedIds: [] }))
-  }, [setState])
+    applyChange((prev) => ({ ...prev, selectedIds: [] }), {
+      actor: "user",
+      source: "clear-selection",
+    })
+  }, [applyChange])
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Group Operations
@@ -234,64 +374,76 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
       const minX = Math.min(...groupItems.map((item) => item.position.x))
       const minY = Math.min(...groupItems.map((item) => item.position.y))
 
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.map((item) =>
-          itemIds.includes(item.id) ? { ...item, groupId } : item
-        ),
-        groups: [
-          ...prev.groups,
-          {
-            id: groupId,
-            name: groupName,
-            position: { x: minX, y: minY },
-            isLocked: false,
-            color: GROUP_COLORS[colorIndex],
-          },
-        ],
-        selectedIds: [], // Clear selection after grouping
-      }))
+      applyChange(
+        (prev) => ({
+          ...prev,
+          items: prev.items.map((item) =>
+            itemIds.includes(item.id) ? { ...item, groupId } : item
+          ),
+          groups: [
+            ...prev.groups,
+            {
+              id: groupId,
+              name: groupName,
+              position: { x: minX, y: minY },
+              isLocked: false,
+              color: GROUP_COLORS[colorIndex],
+            },
+          ],
+          selectedIds: [], // Clear selection after grouping
+        }),
+        { actor: "user", source: "create-group" }
+      )
 
       return groupId
     },
-    [state.groups, state.items, setState]
+    [state.groups, state.items, applyChange]
   )
 
   const ungroup = useCallback(
     (groupId: string) => {
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.map((item) =>
-          item.groupId === groupId ? { ...item, groupId: undefined } : item
-        ),
-        groups: prev.groups.filter((group) => group.id !== groupId),
-      }))
+      applyChange(
+        (prev) => ({
+          ...prev,
+          items: prev.items.map((item) =>
+            item.groupId === groupId ? { ...item, groupId: undefined } : item
+          ),
+          groups: prev.groups.filter((group) => group.id !== groupId),
+        }),
+        { actor: "user", source: "ungroup" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   const updateGroup = useCallback(
     (groupId: string, updates: Partial<Omit<CanvasGroup, "id">>) => {
-      setState((prev) => ({
-        ...prev,
-        groups: prev.groups.map((group) =>
-          group.id === groupId ? { ...group, ...updates } : group
-        ),
-      }))
+      applyChange(
+        (prev) => ({
+          ...prev,
+          groups: prev.groups.map((group) =>
+            group.id === groupId ? { ...group, ...updates } : group
+          ),
+        }),
+        { actor: "user", source: "update-group" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   const toggleGroupLock = useCallback(
     (groupId: string) => {
-      setState((prev) => ({
-        ...prev,
-        groups: prev.groups.map((group) =>
-          group.id === groupId ? { ...group, isLocked: !group.isLocked } : group
-        ),
-      }))
+      applyChange(
+        (prev) => ({
+          ...prev,
+          groups: prev.groups.map((group) =>
+            group.id === groupId ? { ...group, isLocked: !group.isLocked } : group
+          ),
+        }),
+        { actor: "user", source: "toggle-group-lock" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   const selectGroup = useCallback(
@@ -299,44 +451,50 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
       const groupItemIds = state.items
         .filter((item) => item.groupId === groupId)
         .map((item) => item.id)
-      setState((prev) => ({ ...prev, selectedIds: groupItemIds }))
+      applyChange((prev) => ({ ...prev, selectedIds: groupItemIds }), {
+        actor: "user",
+        source: "select-group",
+      })
     },
-    [state.items, setState]
+    [state.items, applyChange]
   )
 
   const moveGroup = useCallback(
     (groupId: string, deltaX: number, deltaY: number) => {
-      setState((prev) => {
-        // Move all items in the group
-        const updatedItems = prev.items.map((item) =>
-          item.groupId === groupId
-            ? {
-                ...item,
-                position: {
-                  x: item.position.x + deltaX,
-                  y: item.position.y + deltaY,
-                },
-              }
-            : item
-        )
+      applyChange(
+        (prev) => {
+          // Move all items in the group
+          const updatedItems = prev.items.map((item) =>
+            item.groupId === groupId
+              ? {
+                  ...item,
+                  position: {
+                    x: item.position.x + deltaX,
+                    y: item.position.y + deltaY,
+                  },
+                }
+              : item
+          )
 
-        // Update group position
-        const updatedGroups = prev.groups.map((group) =>
-          group.id === groupId
-            ? {
-                ...group,
-                position: {
-                  x: group.position.x + deltaX,
-                  y: group.position.y + deltaY,
-                },
-              }
-            : group
-        )
+          // Update group position
+          const updatedGroups = prev.groups.map((group) =>
+            group.id === groupId
+              ? {
+                  ...group,
+                  position: {
+                    x: group.position.x + deltaX,
+                    y: group.position.y + deltaY,
+                  },
+                }
+              : group
+          )
 
-        return { ...prev, items: updatedItems, groups: updatedGroups }
-      })
+          return { ...prev, items: updatedItems, groups: updatedGroups }
+        },
+        { actor: "user", source: "move-group" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -344,35 +502,41 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const removeSelected = useCallback(() => {
-    setState((prev) => {
-      const idsToRemove = collectCascadeDeleteIds(prev, prev.selectedIds)
+    applyChange(
+      (prev) => {
+        const idsToRemove = collectCascadeDeleteIds(prev, prev.selectedIds)
 
-      return {
-        ...prev,
-        items: prev.items.filter((item) => !idsToRemove.has(item.id)),
-        selectedIds: [],
-      }
-    })
-  }, [setState])
+        return {
+          ...prev,
+          items: prev.items.filter((item) => !idsToRemove.has(item.id)),
+          selectedIds: [],
+        }
+      },
+      { actor: "user", source: "remove-selected" }
+    )
+  }, [applyChange])
 
   const moveSelected = useCallback(
     (deltaX: number, deltaY: number) => {
-      setState((prev) => ({
-        ...prev,
-        items: prev.items.map((item) =>
-          prev.selectedIds.includes(item.id)
-            ? {
-                ...item,
-                position: {
-                  x: item.position.x + deltaX,
-                  y: item.position.y + deltaY,
-                },
-              }
-            : item
-        ),
-      }))
+      applyChange(
+        (prev) => ({
+          ...prev,
+          items: prev.items.map((item) =>
+            prev.selectedIds.includes(item.id)
+              ? {
+                  ...item,
+                  position: {
+                    x: item.position.x + deltaX,
+                    y: item.position.y + deltaY,
+                  },
+                }
+              : item
+          ),
+        }),
+        { actor: "user", source: "move-selected" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   // Clone semantics: a layout child (has parentId) duplicates *in place* —
@@ -404,39 +568,45 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   }
 
   const duplicateSelected = useCallback(() => {
-    setState((prev) => {
-      const selectedItems = prev.items.filter((item) =>
-        prev.selectedIds.includes(item.id)
-      )
-      const newItems = selectedItems.map((item, index) =>
-        buildDuplicate(prev, item, index, index + 1)
-      )
-
-      return {
-        ...prev,
-        items: [...prev.items, ...newItems],
-        nextZIndex: prev.nextZIndex + newItems.length,
-        selectedIds: newItems.map((item) => item.id),
-      }
-    })
-  }, [setState])
-
-  const duplicateItem = useCallback(
-    (id: string) => {
-      setState((prev) => {
-        const item = prev.items.find((i) => i.id === id)
-        if (!item) return prev
-        const newItem = buildDuplicate(prev, item, 0, 1)
+    applyChange(
+      (prev) => {
+        const selectedItems = prev.items.filter((item) =>
+          prev.selectedIds.includes(item.id)
+        )
+        const newItems = selectedItems.map((item, index) =>
+          buildDuplicate(prev, item, index, index + 1)
+        )
 
         return {
           ...prev,
-          items: [...prev.items, newItem],
-          nextZIndex: prev.nextZIndex + 1,
-          selectedIds: [newItem.id],
+          items: [...prev.items, ...newItems],
+          nextZIndex: prev.nextZIndex + newItems.length,
+          selectedIds: newItems.map((item) => item.id),
         }
-      })
+      },
+      { actor: "user", source: "duplicate-selected" }
+    )
+  }, [applyChange])
+
+  const duplicateItem = useCallback(
+    (id: string) => {
+      applyChange(
+        (prev) => {
+          const item = prev.items.find((i) => i.id === id)
+          if (!item) return prev
+          const newItem = buildDuplicate(prev, item, 0, 1)
+
+          return {
+            ...prev,
+            items: [...prev.items, newItem],
+            nextZIndex: prev.nextZIndex + 1,
+            selectedIds: [newItem.id],
+          }
+        },
+        { actor: "user", source: "duplicate-item" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   // Paste clipboard items as fresh nodes (FOX2-59). Into an artboard when
@@ -446,40 +616,43 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   const pasteItems = useCallback(
     (clipboardItems: CanvasItem[], target?: { parentId?: string; order?: number }) => {
       if (clipboardItems.length === 0) return
-      setState((prev) => {
-        const parentId = target?.parentId
-        const baseOrder = target?.order ?? 0
-        const pasted = clipboardItems.map((item, index) => {
-          const base = {
-            ...resetMcpAppConnectionState(normalizeItem(item)),
-            id: `canvas-item-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
-            zIndex: prev.nextZIndex + index,
-            groupId: undefined,
-          }
-          if (parentId) {
+      applyChange(
+        (prev) => {
+          const parentId = target?.parentId
+          const baseOrder = target?.order ?? 0
+          const pasted = clipboardItems.map((item, index) => {
+            const base = {
+              ...resetMcpAppConnectionState(normalizeItem(item)),
+              id: `canvas-item-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
+              zIndex: prev.nextZIndex + index,
+              groupId: undefined,
+            }
+            if (parentId) {
+              return {
+                ...base,
+                parentId,
+                order: baseOrder + index,
+                position: { x: 0, y: 0 },
+              } as CanvasItem
+            }
             return {
               ...base,
-              parentId,
-              order: baseOrder + index,
-              position: { x: 0, y: 0 },
+              parentId: undefined,
+              order: undefined,
+              position: { x: item.position.x + 20, y: item.position.y + 20 },
             } as CanvasItem
-          }
+          })
           return {
-            ...base,
-            parentId: undefined,
-            order: undefined,
-            position: { x: item.position.x + 20, y: item.position.y + 20 },
-          } as CanvasItem
-        })
-        return {
-          ...prev,
-          items: [...prev.items, ...pasted],
-          nextZIndex: prev.nextZIndex + pasted.length,
-          selectedIds: pasted.map((item) => item.id),
-        }
-      })
+            ...prev,
+            items: [...prev.items, ...pasted],
+            nextZIndex: prev.nextZIndex + pasted.length,
+            selectedIds: pasted.map((item) => item.id),
+          }
+        },
+        { actor: "user", source: "paste-items" }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -487,23 +660,28 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const clearCanvas = useCallback(() => {
-    setState(() => DEFAULT_STATE)
-  }, [setState])
+    applyChange(() => DEFAULT_STATE, { actor: "user", source: "clear-canvas" })
+  }, [applyChange])
 
+  // Callers may tag the restore: the mutation-history hook passes
+  // `{ actor: "history" }`, file persistence `{ source: "file-load" }`.
   const replaceState = useCallback(
-    (nextState: CanvasStateSnapshot) => {
+    (nextState: CanvasStateSnapshot, meta?: Partial<CanvasChangeMeta>) => {
       const normalized = normalizeState(nextState)
-      setState(() => ({
-        ...normalized,
-        nextZIndex: Math.max(normalized.nextZIndex, deriveNextZIndex(normalized.items)),
-      }))
+      applyChange(
+        () => ({
+          ...normalized,
+          nextZIndex: Math.max(normalized.nextZIndex, deriveNextZIndex(normalized.items)),
+        }),
+        { actor: "user", source: "replace-state", ...meta }
+      )
     },
-    [setState]
+    [applyChange]
   )
 
   const applyRemoteOperation = useCallback(
     (operation: CanvasRemoteOperation) => {
-      setState((prev) => {
+      applyChange((prev) => {
         switch (operation.type) {
           case "create_item": {
             const nextItem = normalizeItem(operation.item)
@@ -621,9 +799,9 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
           default:
             return prev
         }
-      })
+      }, { actor: "agent", source: operation.type })
     },
-    [setState]
+    [applyChange]
   )
 
   // Get group for an item
@@ -712,5 +890,10 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
     clearCanvas,
     replaceState,
     applyRemoteOperation,
+
+    // Change stream + gesture boundaries (FOX2-66)
+    subscribeToDocumentChanges,
+    beginGesture,
+    endGesture,
   }
 }
