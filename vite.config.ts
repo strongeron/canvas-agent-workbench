@@ -6897,8 +6897,15 @@ export default defineConfig({
   plugins: [localScanAliasPlugin(), react(), paperImportPlugin(), copilotKitPlugin()],
   test: {
     // .canvas-agent holds per-session agent homes; codex populates plugin
-    // caches inside them that ship their own *.test.* files.
-    exclude: [...configDefaults.exclude, '**/.canvas-agent/**'],
+    // caches inside them that ship their own *.test.* files. e2e/ is the
+    // Playwright gesture harness (FOX2-64). .claude/worktrees holds linked
+    // worktrees whose full checkouts would otherwise be collected twice.
+    exclude: [
+      ...configDefaults.exclude,
+      '**/.canvas-agent/**',
+      'e2e/**',
+      '**/.claude/worktrees/**',
+    ],
   },
   envDir: __dirname,
   resolve: {

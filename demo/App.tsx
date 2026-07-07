@@ -686,6 +686,7 @@ function CanvasButton({
   disabled,
   onClick,
   children,
+  "aria-label": ariaLabel,
 }: {
   variant?: "ghost" | "brand" | "outline" | "destructive" | string
   size?: "sm" | "md" | "lg" | string
@@ -693,6 +694,7 @@ function CanvasButton({
   disabled?: boolean
   onClick?: () => void
   children: ReactNode
+  "aria-label"?: string
 }) {
   const mappedVariant: ButtonProps["variant"] =
     variant === "brand"
@@ -715,6 +717,7 @@ function CanvasButton({
       className={className}
       disabled={disabled}
       onClick={onClick}
+      aria-label={ariaLabel}
     >
       {children}
     </Button>

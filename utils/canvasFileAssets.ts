@@ -11,6 +11,9 @@ import type {
   CanvasHtmlBundleImportResult,
   CanvasStateSnapshot,
 } from "../types/canvas"
+import { buildCanvasAssetFileName, sanitizeAssetSegment } from "./canvasFileAssetName"
+
+export { buildCanvasAssetFileName } from "./canvasFileAssetName"
 
 const DOCUMENT_ASSETS_FOLDER = ".assets"
 const HTML_BUNDLE_SCAN_IGNORE_DIRECTORIES = new Set([
@@ -57,42 +60,6 @@ function assertWithinDirectory(directory: string, absolutePath: string) {
   const normalizedDirectory = directory.endsWith(path.sep) ? directory : `${directory}${path.sep}`
   if (absolutePath !== directory && !absolutePath.startsWith(normalizedDirectory)) {
     throw new Error("Resolved path is outside the allowed canvas directory.")
-  }
-}
-
-function sanitizeAssetSegment(value: string) {
-  const safe = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-  return safe || "asset"
-}
-
-function extensionForMime(mime: string) {
-  switch ((mime || "").toLowerCase()) {
-    case "image/png":
-      return ".png"
-    case "image/jpeg":
-      return ".jpg"
-    case "image/gif":
-      return ".gif"
-    case "image/webp":
-      return ".webp"
-    case "image/svg+xml":
-      return ".svg"
-    case "video/mp4":
-      return ".mp4"
-    case "video/webm":
-      return ".webm"
-    case "video/quicktime":
-      return ".mov"
-    case "video/x-m4v":
-      return ".m4v"
-    case "video/ogg":
-      return ".ogg"
-    default:
-      return ".bin"
   }
 }
 
@@ -153,29 +120,6 @@ function getDocumentAssetNameFromUrl(
   } catch {
     return null
   }
-}
-
-export function buildCanvasAssetFileName(
-  itemId: string,
-  field: CanvasFileAssetField,
-  preferredFileName: string | undefined,
-  mimeType: string
-) {
-  const preferredExt = path.extname(preferredFileName || "").toLowerCase()
-  const extension = preferredExt || extensionForMime(mimeType)
-  const itemSegment = sanitizeAssetSegment(itemId)
-  const fieldSegment = sanitizeAssetSegment(field)
-  if (preferredFileName?.trim()) {
-    const titleSegment = sanitizeAssetSegment(
-      path.basename(preferredFileName, preferredExt || undefined)
-    )
-    if (titleSegment && titleSegment !== "asset") {
-      // Always suffix the canvas item id so repeated clipboard names like
-      // "image.png" cannot overwrite each other in document-local assets.
-      return `${titleSegment}-${itemSegment}${extension}`
-    }
-  }
-  return `${itemSegment}-${fieldSegment}${extension}`
 }
 
 function inferFileName(
