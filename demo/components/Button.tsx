@@ -14,6 +14,7 @@ export interface ButtonProps {
   isLoading?: boolean
   fullWidth?: boolean
   onClick?: () => void
+  "aria-label"?: string
 }
 
 export function Button({
@@ -25,6 +26,7 @@ export function Button({
   isLoading,
   fullWidth,
   onClick,
+  "aria-label": ariaLabel,
 }: ButtonProps) {
   const baseStyles =
     "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2"
@@ -60,6 +62,7 @@ export function Button({
       )}
       disabled={disabled || isLoading}
       onClick={onClick}
+      aria-label={ariaLabel}
     >
       {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
       {children}

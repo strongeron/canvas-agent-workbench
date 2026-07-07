@@ -28,3 +28,7 @@ tests/visual-baselines/.tmp/
 /review-*.png
 /ux-critique-*.png
 .storybook-wrapper-previews/
+
+# Playwright (FOX2-64)
+test-results/
+playwright-report/

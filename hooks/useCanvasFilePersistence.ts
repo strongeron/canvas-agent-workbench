@@ -11,7 +11,7 @@ import type {
   CanvasStateSnapshot,
   CanvasTransform,
 } from "../types/canvas"
-import { buildCanvasAssetFileName } from "../utils/canvasFileAssets"
+import { buildCanvasAssetFileName } from "../utils/canvasFileAssetName"
 import { SerialTaskQueue } from "../utils/serialTaskQueue"
 import { blobToDataUrl } from "./useCanvasAddHandlers"
 
