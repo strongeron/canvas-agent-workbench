@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import type { Dispatch, MutableRefObject, SetStateAction } from "react"
 
 import type { CanvasReactNodeSelection } from "../components/canvas/CanvasHtmlFrame"
-import type { CanvasDocumentChangeEvent } from "./useCanvasState"
+import type { CanvasChangeMeta, CanvasDocumentChangeEvent } from "./useCanvasState"
 import type {
   CanvasGroup,
   CanvasHtmlItem,
@@ -15,6 +15,7 @@ import {
   pushEntry,
   redo,
   undo,
+  type CanvasDocumentMutationLogEntry,
   type CanvasMutationLogState,
   type CanvasSourceMutationLogEntry,
 } from "../utils/canvasMutationLog"
@@ -44,7 +45,7 @@ interface UseCanvasMutationHistoryInput {
   groups: CanvasGroup[]
   nextZIndex: number
   selectedIds: string[]
-  replaceState: (nextState: CanvasStateSnapshot) => void
+  replaceState: (nextState: CanvasStateSnapshot, meta?: Partial<CanvasChangeMeta>) => void
   setReactNodeSelection: Dispatch<SetStateAction<CanvasReactNodeSelection | null>>
   showToast: (toast: CanvasHistoryToast) => void
   /**
@@ -52,6 +53,11 @@ interface UseCanvasMutationHistoryInput {
    * provides it is created after the write-success handlers that need it.
    */
   emitSourceEditRef: MutableRefObject<(action: string, meta?: Record<string, unknown>) => void>
+  /**
+   * User-action feed emitter for document-entry undo/redo (FOX2-67 PR 2).
+   * Held in a ref for the same reason as emitSourceEditRef.
+   */
+  emitUserActionRef: MutableRefObject<(action: string, meta?: Record<string, unknown>) => void>
   /**
    * Log key for document-kind entries (FOX2-67): the active `.canvas` file
    * path, or a per-workspace key while the canvas is unsaved.
@@ -64,8 +70,10 @@ interface UseCanvasMutationHistoryInput {
  * replay against the write endpoints and the global keydown binding
  * (extracted from CanvasTab in FOX2-62 Scale-1 PR 1), extended with
  * document-kind entries recorded from the FOX2-66 change stream (FOX2-67
- * PR 1). Document entries share the same timeline and caps; their undo/redo
- * replay lands in PR 2.
+ * PR 1). Document entries share the same timeline and caps; Cmd-Z pops
+ * whichever kind is on top — source entries replay through the write
+ * endpoints, document entries restore their `{items, groups}` snapshot
+ * through replaceState with `actor: "history"` (FOX2-67 PR 2).
  */
 export function useCanvasMutationHistory({
   items,
@@ -76,6 +84,7 @@ export function useCanvasMutationHistory({
   setReactNodeSelection,
   showToast,
   emitSourceEditRef,
+  emitUserActionRef,
   documentLogKey,
 }: UseCanvasMutationHistoryInput) {
   const [mutationLogState, setMutationLogState] = useState<
@@ -222,7 +231,16 @@ export function useCanvasMutationHistory({
             ? nextItemsResult.items.find((candidate) => candidate.id === item.id) ?? item
             : item
         )
-        replaceState({ items: rewrittenItems, groups, nextZIndex, selectedIds })
+        // `actor: "history"` keeps recordDocumentChange from re-logging this
+        // restore as a document entry (which would also clear the redo stack
+        // mid-walk) — same loop guard as the document replay below.
+        replaceState(
+          { items: rewrittenItems, groups, nextZIndex, selectedIds },
+          {
+            actor: "history",
+            source: direction === "undo" ? "undo-source-mutation" : "redo-source-mutation",
+          }
+        )
       }
 
       setReactNodeSelection((current) => {
@@ -255,13 +273,51 @@ export function useCanvasMutationHistory({
     [emitSourceEditRef, groups, items, nextZIndex, replaceState, selectedIds, setReactNodeSelection, showToast]
   )
 
+  // Document-entry replay (FOX2-67 PR 2): a whole-document state restore
+  // through the normal replaceState path, so autosave and the change stream
+  // see one ordinary change. `actor: "history"` is the loop guard —
+  // recordDocumentChange skips it, so a replay can never push a new entry.
+  const applyDocumentHistoryEntry = useCallback(
+    (entry: CanvasDocumentMutationLogEntry, direction: "undo" | "redo") => {
+      const doc = direction === "undo" ? entry.prevDoc : entry.postDoc
+      const restoredIds = new Set(doc.items.map((item) => item.id))
+      replaceState(
+        {
+          items: doc.items,
+          groups: doc.groups,
+          nextZIndex,
+          // The restored document may not contain everything currently
+          // selected (undo of an add, redo of a delete) — drop those ids so
+          // selection never dangles.
+          selectedIds: selectedIds.filter((id) => restoredIds.has(id)),
+        },
+        {
+          actor: "history",
+          source: direction === "undo" ? "undo-canvas-change" : "redo-canvas-change",
+        }
+      )
+      showToast({
+        id: Date.now(),
+        tone: "info",
+        message: `${direction === "undo" ? "Undid" : "Redid"}: ${entry.summary}`,
+      })
+      emitUserActionRef.current(direction === "undo" ? "canvas-undo" : "canvas-redo", {
+        summary: entry.summary,
+        actor: entry.actor,
+      })
+    },
+    [emitUserActionRef, nextZIndex, replaceState, selectedIds, showToast]
+  )
+
   const handleUndoMutation = useCallback(async () => {
     if (mutationHistoryBusy) return
     const next = undo(mutationLogState)
     if (!next.entry) return
-    // Document-entry replay (state restore with actor "history") lands in
-    // FOX2-67 PR 2; until then leave the entry on the timeline untouched.
-    if (next.entry.kind === "document") return
+    if (next.entry.kind === "document") {
+      applyDocumentHistoryEntry(next.entry, "undo")
+      setMutationLogState(next.state)
+      return
+    }
     setMutationHistoryBusy(true)
     try {
       await applyMutationHistoryEntry(next.entry, "undo")
@@ -275,14 +331,23 @@ export function useCanvasMutationHistory({
     } finally {
       setMutationHistoryBusy(false)
     }
-  }, [applyMutationHistoryEntry, mutationHistoryBusy, mutationLogState, showToast])
+  }, [
+    applyDocumentHistoryEntry,
+    applyMutationHistoryEntry,
+    mutationHistoryBusy,
+    mutationLogState,
+    showToast,
+  ])
 
   const handleRedoMutation = useCallback(async () => {
     if (mutationHistoryBusy) return
     const next = redo(mutationLogState)
     if (!next.entry) return
-    // Document-entry replay lands in FOX2-67 PR 2 (see handleUndoMutation).
-    if (next.entry.kind === "document") return
+    if (next.entry.kind === "document") {
+      applyDocumentHistoryEntry(next.entry, "redo")
+      setMutationLogState(next.state)
+      return
+    }
     setMutationHistoryBusy(true)
     try {
       await applyMutationHistoryEntry(next.entry, "redo")
@@ -296,7 +361,13 @@ export function useCanvasMutationHistory({
     } finally {
       setMutationHistoryBusy(false)
     }
-  }, [applyMutationHistoryEntry, mutationHistoryBusy, mutationLogState, showToast])
+  }, [
+    applyDocumentHistoryEntry,
+    applyMutationHistoryEntry,
+    mutationHistoryBusy,
+    mutationLogState,
+    showToast,
+  ])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

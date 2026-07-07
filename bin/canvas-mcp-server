@@ -76,6 +76,8 @@ import {
   createCaptureEmbedSnapshotsOperation,
   createUndoSourceMutationOperation,
   createRedoSourceMutationOperation,
+  createUndoCanvasChangeOperation,
+  createRedoCanvasChangeOperation,
   buildDuplicateItemsResult,
   buildMoveItemsIntoArtboardResult,
   buildReorderLayerResult,
@@ -1556,6 +1558,26 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'undo_canvas_change',
+    description:
+      'Undo the most recent canvas change on the unified history (cmd-Z parity). Document operations (add/delete/paste/move/resize/re-parent/group changes) and source edits share one timeline — whichever entry is most recent is undone: document entries restore the whole-document {items, groups} snapshot through the normal state path, source entries re-apply the previous source snapshot via the AST writer.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'redo_canvas_change',
+    description:
+      'Redo the most recently undone canvas change on the unified history (cmd-shift-Z parity). Document operations and source edits share one timeline — document entries restore the post-change {items, groups} snapshot, source entries re-apply the post-snapshot via the AST writer.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'register_mcp_app',
     description: 'Create a live MCP-app canvas node and connect it through the localhost-guarded proxy.',
     inputSchema: {
@@ -2622,6 +2644,10 @@ async function callTool(name, args) {
       return runUndoSourceMutation(args)
     case 'redo_source_mutation':
       return runRedoSourceMutation(args)
+    case 'undo_canvas_change':
+      return runUndoCanvasChange()
+    case 'redo_canvas_change':
+      return runRedoCanvasChange()
     default:
       return asToolError(`Unknown tool: ${name}`)
   }
@@ -3934,6 +3960,17 @@ async function runRedoSourceMutation(args) {
   return applyOperation('redo_source_mutation', createRedoSourceMutationOperation(args), {
     scope: 'active-file',
   })
+}
+
+// Unified-timeline aliases (FOX2-67): the UI routes these to the SAME
+// handleUndoMutation/handleRedoMutation handlers as the source ops — the
+// history is one interleaved timeline of document and source entries.
+async function runUndoCanvasChange() {
+  return applyOperation('undo_canvas_change', createUndoCanvasChangeOperation())
+}
+
+async function runRedoCanvasChange() {
+  return applyOperation('redo_canvas_change', createRedoCanvasChangeOperation())
 }
 
 async function applyOperation(toolName, operation, meta = {}) {

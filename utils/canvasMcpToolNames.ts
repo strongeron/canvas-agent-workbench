@@ -98,6 +98,8 @@ export const CANVAS_MCP_TOOL_NAMES = [
   'check_embed_frame_policy',
   'undo_source_mutation',
   'redo_source_mutation',
+  'undo_canvas_change',
+  'redo_canvas_change',
   'register_mcp_app',
   'list_mcp_app_tools',
   'invoke_mcp_app_tool',

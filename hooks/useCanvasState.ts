@@ -795,6 +795,8 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
           case "set_active_theme":
           case "undo_source_mutation":
           case "redo_source_mutation":
+          case "undo_canvas_change":
+          case "redo_canvas_change":
             return prev
           default:
             return prev

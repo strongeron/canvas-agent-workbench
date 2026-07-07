@@ -3061,6 +3061,60 @@ describe("canvas MCP server", () => {
       expect(redoLogEntryResult.result?.isError).toBe(true)
       expect(redoLogEntryResult.result?.structuredContent?.code).toBe("not-implemented")
 
+      // undo_canvas_change / redo_canvas_change: the unified-timeline aliases
+      // (FOX2-67 PR 2). Same enqueue → browser-bridge path as the source ops;
+      // the UI routes all four operation types to the same
+      // handleUndoMutation/handleRedoMutation handlers.
+      const undoCanvasPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-undo-canvas",
+        method: "tools/call",
+        params: {
+          name: "undo_canvas_change",
+          arguments: {},
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedUndoCanvas = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedUndoCanvas.request).toMatchObject({
+        toolName: "undo_canvas_change",
+        operation: {
+          type: "undo_canvas_change",
+        },
+      })
+      await queuedUndoCanvas.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:09.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const undoCanvasResult = await undoCanvasPromise
+      expect(undoCanvasResult.result?.structuredContent?.ok).toBe(true)
+
+      const redoCanvasPromise = sendRpc({
+        jsonrpc: "2.0",
+        id: "5e-redo-canvas",
+        method: "tools/call",
+        params: {
+          name: "redo_canvas_change",
+          arguments: {},
+        },
+      }) as Promise<{ result?: { structuredContent?: Record<string, any> } }>
+
+      const queuedRedoCanvas = await waitForQueuedCanvasOperation(tempDir)
+      expect(queuedRedoCanvas.request).toMatchObject({
+        toolName: "redo_canvas_change",
+        operation: {
+          type: "redo_canvas_change",
+        },
+      })
+      await queuedRedoCanvas.respond({
+        ok: true,
+        updatedAt: "2026-04-19T18:20:10.000Z",
+        state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+      })
+      const redoCanvasResult = await redoCanvasPromise
+      expect(redoCanvasResult.result?.structuredContent?.ok).toBe(true)
+
       const movedCanvasFile = (await sendRpc({
         jsonrpc: "2.0",
         id: "5f",
