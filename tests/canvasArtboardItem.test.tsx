@@ -188,6 +188,125 @@ describe("CanvasArtboardItem", () => {
     )
   })
 
+  it("brackets a drag cycle with onGestureStart and onGestureEnd('move-artboard')", async () => {
+    const onGestureStart = vi.fn()
+    const onGestureEnd = vi.fn()
+    harness = await mount(
+      <CanvasArtboardItem
+        item={{
+          id: "artboard-1",
+          type: "artboard",
+          name: "Board",
+          position: { x: 20, y: 40 },
+          size: { width: 800, height: 600 },
+          rotation: 0,
+          zIndex: 1,
+          background: "#ffffff",
+          layout: {
+            display: "flex",
+            direction: "column",
+            align: "stretch",
+            justify: "start",
+            gap: 16,
+            padding: 24,
+          },
+        }}
+        isSelected={true}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onRemove={() => {}}
+        onDuplicate={() => {}}
+        onBringToFront={() => {}}
+        onGestureStart={onGestureStart}
+        onGestureEnd={onGestureEnd}
+        scale={1}
+        interactMode={false}
+      >
+        <div data-artboard-child="true">Child</div>
+      </CanvasArtboardItem>
+    )
+
+    const artboardNode = harness.container.querySelector(
+      '[data-canvas-item-id="artboard-1"]'
+    ) as HTMLDivElement
+    await act(async () => {
+      artboardNode.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 100, clientY: 100 })
+      )
+      await Promise.resolve()
+    })
+    expect(onGestureStart).toHaveBeenCalledTimes(1)
+    expect(onGestureEnd).not.toHaveBeenCalled()
+
+    await act(async () => {
+      document.dispatchEvent(
+        new MouseEvent("mousemove", { bubbles: true, clientX: 140, clientY: 120 })
+      )
+      document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onGestureStart).toHaveBeenCalledTimes(1)
+    expect(onGestureEnd).toHaveBeenCalledTimes(1)
+    expect(onGestureEnd).toHaveBeenCalledWith("move-artboard")
+  })
+
+  it("ends a gap-scrub cycle with onGestureEnd('scrub-gap')", async () => {
+    const onGestureStart = vi.fn()
+    const onGestureEnd = vi.fn()
+    harness = await mount(
+      <CanvasArtboardItem
+        item={{
+          id: "artboard-1",
+          type: "artboard",
+          name: "Board",
+          position: { x: 20, y: 40 },
+          size: { width: 800, height: 600 },
+          rotation: 0,
+          zIndex: 1,
+          background: "#ffffff",
+          layout: {
+            display: "flex",
+            direction: "column",
+            align: "stretch",
+            justify: "start",
+            gap: 16,
+            padding: 24,
+          },
+        }}
+        isSelected={true}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onRemove={() => {}}
+        onDuplicate={() => {}}
+        onBringToFront={() => {}}
+        onGestureStart={onGestureStart}
+        onGestureEnd={onGestureEnd}
+        scale={1}
+        interactMode={false}
+      >
+        <div data-artboard-child="true">Child</div>
+      </CanvasArtboardItem>
+    )
+
+    const scrubButton = harness.container.querySelector(
+      'button[aria-label="Scrub artboard gap"]'
+    ) as HTMLButtonElement
+    await act(async () => {
+      scrubButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 100 }))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 124 }))
+      document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onGestureStart).toHaveBeenCalledTimes(1)
+    expect(onGestureEnd).toHaveBeenCalledTimes(1)
+    expect(onGestureEnd).toHaveBeenCalledWith("scrub-gap")
+  })
+
   it("opens the add menu from the selected-state Add button (FOX2-59 method 4)", async () => {
     const onAddMenuRequest = vi.fn()
     harness = await mount(

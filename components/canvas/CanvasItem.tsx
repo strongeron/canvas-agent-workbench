@@ -32,6 +32,9 @@ interface CanvasItemProps {
   onRemove: () => void
   onDuplicate: () => void
   onBringToFront: () => void
+  /** Bracket a mouse-drag mutation stream so history/events coalesce it (FOX2-66). */
+  onGestureStart?: () => void
+  onGestureEnd?: (summary: string) => void
   scale: number
   interactMode: boolean
   /** Injected component renderer */
@@ -64,6 +67,8 @@ export function CanvasItem({
   onRemove,
   onDuplicate,
   onBringToFront,
+  onGestureStart,
+  onGestureEnd,
   scale,
   interactMode,
   Renderer,
@@ -104,6 +109,7 @@ export function CanvasItem({
       }
 
       setIsDragging(true)
+      onGestureStart?.()
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
         x: item.position.x,
@@ -113,7 +119,7 @@ export function CanvasItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   // Handle resize
@@ -125,6 +131,7 @@ export function CanvasItem({
       onSelect()
 
       setIsResizing(true)
+      onGestureStart?.()
       setResizeHandle(handle)
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
@@ -135,7 +142,7 @@ export function CanvasItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   // Handle rotation
@@ -147,6 +154,7 @@ export function CanvasItem({
       onSelect()
 
       setIsRotating(true)
+      onGestureStart?.()
       setInitialState({
         x: item.position.x,
         y: item.position.y,
@@ -155,7 +163,7 @@ export function CanvasItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   // Fit to content handler for context menu
@@ -232,6 +240,9 @@ export function CanvasItem({
     }
 
     const handleMouseUp = () => {
+      // The effect only runs while a gesture-starting handler set a flag, so
+      // end always pairs with a start; the store drops no-change gestures.
+      onGestureEnd?.(isDragging ? "move-item" : isResizing ? "resize-item" : "rotate-item")
       setIsDragging(false)
       setIsResizing(false)
       setIsRotating(false)
@@ -245,7 +256,7 @@ export function CanvasItem({
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [isDragging, isResizing, isRotating, dragStart, initialState, resizeHandle, scale, onUpdate])
+  }, [isDragging, isResizing, isRotating, dragStart, initialState, resizeHandle, scale, onGestureEnd, onUpdate])
 
   // Auto-fit to content on mount (one-time only)
   useEffect(() => {

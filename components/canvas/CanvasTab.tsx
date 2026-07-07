@@ -6,6 +6,7 @@ import { useCanvasFileBrowserState } from "../../hooks/useCanvasFileBrowserState
 import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShortcuts"
 import { useCanvasFiles } from "../../hooks/useCanvasFiles"
 import { useCanvasState } from "../../hooks/useCanvasState"
+import { useCanvasDocumentUserActions } from "../../hooks/useCanvasDocumentUserActions"
 import { useCanvasScenes } from "../../hooks/useCanvasScenes"
 import { useCanvasTransform } from "../../hooks/useCanvasTransform"
 import { useLocalStorage } from "../../hooks/useLocalStorage"
@@ -599,6 +600,9 @@ export function CanvasTab({
     pasteItems,
     replaceState,
     applyRemoteOperation,
+    subscribeToDocumentChanges,
+    beginGesture,
+    endGesture,
   } = useCanvasState(storageKey ? `${storageKey}-state` : undefined)
 
   const {
@@ -636,7 +640,13 @@ export function CanvasTab({
   const emitSourceEditRef = useRef<(action: string, meta?: Record<string, unknown>) => void>(
     () => {}
   )
-  const { appendMutationLogEntry, handleUndoMutation, handleRedoMutation } =
+  // Declared before the mutation history so its path can key document
+  // entries; the persistence hook that manages it runs further down.
+  const [activeCanvasFile, setActiveCanvasFile] = useState<{
+    path: string
+    document: CanvasFileDocument
+  } | null>(null)
+  const { appendMutationLogEntry, recordDocumentChange, handleUndoMutation, handleRedoMutation } =
     useCanvasMutationHistory({
       items,
       groups,
@@ -646,6 +656,7 @@ export function CanvasTab({
       setReactNodeSelection,
       showToast: setHistoryToast,
       emitSourceEditRef,
+      documentLogKey: activeCanvasFile?.path ?? `workspace:${storageKey ?? "gallery-canvas"}`,
     })
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
   const [layersPanelVisible, setLayersPanelVisible] = useState(false)
@@ -696,10 +707,6 @@ export function CanvasTab({
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 })
   const [isImportingPaper, setIsImportingPaper] = useState(false)
   const [importKind, setImportKind] = useState<"ui" | "page">("ui")
-  const [activeCanvasFile, setActiveCanvasFile] = useState<{
-    path: string
-    document: CanvasFileDocument
-  } | null>(null)
   const [canvasViewportOverride, setCanvasViewportOverride] = useLocalStorage<CanvasTransform | null>(
     storageKey ? `${storageKey}-viewport-override` : "gallery-canvas-viewport-override",
     null
@@ -1480,6 +1487,20 @@ export function CanvasTab({
   const emitUserAction = agentBridge.emitUserAction
   const emitFileLifecycle = agentBridge.emitFileLifecycle
   emitSourceEditRef.current = agentBridge.emitSourceEdit
+
+  // One change-stream subscription, two consumers (FOX2-66 seam): every
+  // document change feeds the unified history log (FOX2-67 PR 1), and
+  // coalesced gestures + debounced selection reach the agent feed (FOX2-60).
+  const handleDocumentUserAction = useCanvasDocumentUserActions({
+    emitUserAction,
+    getSelectionSnapshot: () => ({ selectedIds, items }),
+  })
+  useEffect(() => {
+    return subscribeToDocumentChanges((event) => {
+      recordDocumentChange(event)
+      handleDocumentUserAction(event)
+    })
+  }, [handleDocumentUserAction, recordDocumentChange, subscribeToDocumentChanges])
 
   // In-app activity feed (FOX2-48): the same cursor-paged event log external
   // agents read, surfaced for the human; only polls while the panel is open.
@@ -3590,6 +3611,8 @@ export function CanvasTab({
             onSelectItems={selectItems}
             onClearSelection={clearSelection}
             onUpdateItem={updateItem}
+            onGestureStart={beginGesture}
+            onGestureEnd={endGesture}
             onRemoveItem={removeItem}
             onRemoveSelected={handleDeleteSelected}
             onDuplicateItem={duplicateItem}

@@ -23,6 +23,9 @@ interface CanvasMarkdownItemProps {
   onRemove: () => void
   onDuplicate: () => void
   onBringToFront: () => void
+  /** Bracket a mouse-drag mutation stream so history/events coalesce it (FOX2-66). */
+  onGestureStart?: () => void
+  onGestureEnd?: (summary: string) => void
   scale: number
   interactMode: boolean
   onWriteSuccess?: (result: CanvasMarkdownWriteClientResult) => void
@@ -52,6 +55,8 @@ export function CanvasMarkdownItem({
   onRemove,
   onDuplicate,
   onBringToFront,
+  onGestureStart,
+  onGestureEnd,
   scale,
   interactMode,
   onWriteSuccess,
@@ -92,6 +97,7 @@ export function CanvasMarkdownItem({
       }
 
       setIsDragging(true)
+      onGestureStart?.()
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
         x: item.position.x,
@@ -101,7 +107,7 @@ export function CanvasMarkdownItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   useEffect(() => {
@@ -194,6 +200,7 @@ export function CanvasMarkdownItem({
       onSelect()
 
       setIsResizing(true)
+      onGestureStart?.()
       setResizeHandle(handle)
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
@@ -204,7 +211,7 @@ export function CanvasMarkdownItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   const handleRotateStart = useCallback(
@@ -215,6 +222,7 @@ export function CanvasMarkdownItem({
       onSelect()
 
       setIsRotating(true)
+      onGestureStart?.()
       setInitialState({
         x: item.position.x,
         y: item.position.y,
@@ -223,7 +231,7 @@ export function CanvasMarkdownItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   useEffect(() => {
@@ -285,6 +293,9 @@ export function CanvasMarkdownItem({
     }
 
     const handleMouseUp = () => {
+      // The effect only runs while a gesture-starting handler set a flag, so
+      // end always pairs with a start; the store drops no-change gestures.
+      onGestureEnd?.(isDragging ? "move-item" : isResizing ? "resize-item" : "rotate-item")
       setIsDragging(false)
       setIsResizing(false)
       setIsRotating(false)
@@ -297,7 +308,7 @@ export function CanvasMarkdownItem({
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [dragStart, initialState, isDragging, isResizing, isRotating, onUpdate, resizeHandle, scale])
+  }, [dragStart, initialState, isDragging, isResizing, isRotating, onGestureEnd, onUpdate, resizeHandle, scale])
 
   const borderClass = isMultiSelected
     ? "border-2 border-violet-500 ring-4 ring-violet-500/20"
