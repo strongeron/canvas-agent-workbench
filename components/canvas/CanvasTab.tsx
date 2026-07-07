@@ -640,6 +640,12 @@ export function CanvasTab({
   const emitSourceEditRef = useRef<(action: string, meta?: Record<string, unknown>) => void>(
     () => {}
   )
+  // FOX2-67 PR 2: canvas-undo/canvas-redo user-action feed events for
+  // document-entry replay. Same ref pattern as emitSourceEditRef — the
+  // bridge that provides the emitter is created further down.
+  const emitUserActionRef = useRef<(action: string, meta?: Record<string, unknown>) => void>(
+    () => {}
+  )
   // Declared before the mutation history so its path can key document
   // entries; the persistence hook that manages it runs further down.
   const [activeCanvasFile, setActiveCanvasFile] = useState<{
@@ -656,6 +662,7 @@ export function CanvasTab({
       setReactNodeSelection,
       showToast: setHistoryToast,
       emitSourceEditRef,
+      emitUserActionRef,
       documentLogKey: activeCanvasFile?.path ?? `workspace:${storageKey ?? "gallery-canvas"}`,
     })
   const [scenesPanelVisible, setScenesPanelVisible] = useState(false)
@@ -1440,12 +1447,21 @@ export function CanvasTab({
         return
       }
 
-      if (operation.type === "undo_source_mutation") {
+      // The history is one unified timeline (FOX2-67): undo_canvas_change /
+      // redo_canvas_change are aliases of the source ops kept for
+      // agent-intent clarity — all four route to the same handlers.
+      if (
+        operation.type === "undo_source_mutation" ||
+        operation.type === "undo_canvas_change"
+      ) {
         void handleUndoMutation()
         return
       }
 
-      if (operation.type === "redo_source_mutation") {
+      if (
+        operation.type === "redo_source_mutation" ||
+        operation.type === "redo_canvas_change"
+      ) {
         void handleRedoMutation()
         return
       }
@@ -1487,6 +1503,7 @@ export function CanvasTab({
   const emitUserAction = agentBridge.emitUserAction
   const emitFileLifecycle = agentBridge.emitFileLifecycle
   emitSourceEditRef.current = agentBridge.emitSourceEdit
+  emitUserActionRef.current = agentBridge.emitUserAction
 
   // One change-stream subscription, two consumers (FOX2-66 seam): every
   // document change feeds the unified history log (FOX2-67 PR 1), and

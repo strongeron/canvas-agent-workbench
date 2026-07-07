@@ -286,6 +286,8 @@ export function applyCanvasRemoteOperationToState(state, operation) {
     case 'capture_embed_snapshots':
     case 'undo_source_mutation':
     case 'redo_source_mutation':
+    case 'undo_canvas_change':
+    case 'redo_canvas_change':
       // UI-side effects only — no canvas state mutation. The dev server still
       // records the operation in the event log and broadcasts it so the
       // browser bridge can call the matching UI handler (setActiveThemeId,
@@ -513,6 +515,18 @@ export function createRedoSourceMutationOperation(args = {}) {
     scope,
     logEntryId: normalizeString(args.logEntryId) || undefined,
   }
+}
+
+// Unified-timeline aliases (FOX2-67): document operations and source edits
+// share one history, so the UI routes these to the same
+// handleUndoMutation/handleRedoMutation handlers as the source ops. Two names
+// are kept for agent-intent clarity.
+export function createUndoCanvasChangeOperation() {
+  return { type: 'undo_canvas_change' }
+}
+
+export function createRedoCanvasChangeOperation() {
+  return { type: 'redo_canvas_change' }
 }
 
 /**

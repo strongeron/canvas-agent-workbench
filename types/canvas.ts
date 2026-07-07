@@ -519,6 +519,12 @@ export type CanvasRemoteOperation =
       scope?: "active-file" | "log-entry"
       logEntryId?: string
     }
+  | {
+      type: "undo_canvas_change"
+    }
+  | {
+      type: "redo_canvas_change"
+    }
 
 export type CanvasAgentLaunchProfile = "lean" | "full"
 

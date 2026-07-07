@@ -104,6 +104,8 @@ describe("agent native manifest", () => {
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "set_canvas_tool")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "undo_source_mutation")).toBe(true)
     expect(canvasWorkspace?.tools.some((tool) => tool.id === "redo_source_mutation")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "undo_canvas_change")).toBe(true)
+    expect(canvasWorkspace?.tools.some((tool) => tool.id === "redo_canvas_change")).toBe(true)
     expect(
       canvasWorkspace?.tools.find((tool) => tool.id === "capture_workspace_screenshot")?.status
     ).toBe("ready")

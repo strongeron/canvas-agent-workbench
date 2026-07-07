@@ -152,6 +152,8 @@ Use these when you want the agent to manage the file library itself:
 - `set_canvas_tool`
 - `undo_source_mutation`
 - `redo_source_mutation`
+- `undo_canvas_change`
+- `redo_canvas_change`
 
 What this surface supports:
 
@@ -210,6 +212,7 @@ Web-native editing tools:
 - `capture_embed_snapshot` and `check_embed_frame_policy` mirror the embed inspector. Capture — `{ itemId, targets?, provider? }` (targets default `["desktop"]`, provider default `"auto"`) — queues the browser-side capture pipeline: ready captures land as media items below the embed and the embed's capture-status fields update. Frame policy — `{ itemId }` — resets `embedFrameStatus` to `"unknown"` so the live canvas re-probes the URL; read the item afterwards for the verdict. Both require the live canvas to be open.
 - `set_canvas_tool` sets the active tool mode — `{ tool: "select" | "edit" | "interact" }`. Select owns item-level move/resize, Edit owns element-level editing inside html nodes (overlay handles, drop zones), Interact makes iframe content live. Same handler as the toolbar toggle; set the mode before `capture_canvas_items_screenshot` when the capture depends on interactive vs editable rendering.
 - `undo_source_mutation` and `redo_source_mutation` are agent-side cmd-Z / cmd-shift-Z parity. The UI's in-memory mutation log (U5) holds the per-file snapshots; the MCP tool enqueues a `undo_source_mutation` / `redo_source_mutation` operation that the canvas bridge routes to the same `handleUndoMutation` / `handleRedoMutation` handlers the keyboard path uses, which re-apply the stored snapshot through the existing AST writer (or the markdown writer for `.md` files). `scope` defaults to `"active-file"`; pass `scope: "log-entry"` with `logEntryId` to target a specific entry once the UI surface exposes log ids.
+- `undo_canvas_change` and `redo_canvas_change` are the unified-timeline aliases (FOX2-67). Document operations (add/delete/paste/move/resize/re-parent/group changes) and source edits share ONE history: these ops route to the same `handleUndoMutation` / `handleRedoMutation` handlers, so whichever entry is most recent is undone or redone — document entries restore their whole-document `{items, groups}` snapshot through the normal state path (selection ids that no longer exist are dropped), source entries replay exactly like the source ops above. Both take no arguments and require the live canvas to be open.
 
 Direct-manipulation parity audit (v3, complete):
 

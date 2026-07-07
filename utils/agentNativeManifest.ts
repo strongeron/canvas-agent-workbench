@@ -543,6 +543,20 @@ export const AGENT_NATIVE_WORKSPACE_DEFINITIONS: AgentWorkspaceDefinition[] = [
         status: "ready",
         destructive: true,
       },
+      {
+        id: "undo_canvas_change",
+        title: "Undo canvas change",
+        description: "Undo the most recent canvas change on the unified history (cmd-Z parity). Document operations and source edits share one timeline: document entries restore the whole-document snapshot, source entries re-apply the previous source snapshot.",
+        status: "ready",
+        destructive: true,
+      },
+      {
+        id: "redo_canvas_change",
+        title: "Redo canvas change",
+        description: "Redo the most recently undone canvas change on the unified history (cmd-shift-Z parity). Document entries restore the post-change snapshot, source entries re-apply the post-snapshot.",
+        status: "ready",
+        destructive: true,
+      },
     ],
     prompts: [
       {
