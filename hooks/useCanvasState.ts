@@ -237,8 +237,10 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const addItem = useCallback(
-    (item: CanvasItemInput) => {
-      const newId = `canvas-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+    (item: CanvasItemInput, options?: { id?: string }) => {
+      const newId =
+        options?.id?.trim() ||
+        `canvas-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
       applyChange(
         (prev) => ({
           ...prev,

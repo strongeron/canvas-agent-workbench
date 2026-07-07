@@ -11,6 +11,7 @@ import type {
   CanvasStateSnapshot,
   CanvasTransform,
 } from "../types/canvas"
+import { buildCanvasAssetFileName } from "../utils/canvasFileAssets"
 import { SerialTaskQueue } from "../utils/serialTaskQueue"
 import { blobToDataUrl } from "./useCanvasAddHandlers"
 
@@ -38,27 +39,9 @@ function fileNameFromCanvasAsset(
   fallbackName: string | undefined,
   sourceUrl: string
 ) {
-  const candidate = (fallbackName || "").trim()
-  if (candidate) return candidate
-
-  if (sourceUrl.startsWith("data:")) {
-    const mimeMatch = /^data:([^;,]+)?/i.exec(sourceUrl)
-    const extension =
-      mimeMatch?.[1] === "image/png"
-        ? ".png"
-        : mimeMatch?.[1] === "image/jpeg"
-          ? ".jpg"
-          : mimeMatch?.[1] === "image/gif"
-            ? ".gif"
-            : mimeMatch?.[1] === "image/webp"
-              ? ".webp"
-              : mimeMatch?.[1] === "video/mp4"
-                ? ".mp4"
-                : ""
-    return `${itemId}-${field}${extension}`
-  }
-
-  return `${itemId}-${field}`
+  const mimeMatch = /^data:([^;,]+)?/i.exec(sourceUrl)
+  const mimeType = mimeMatch?.[1] || "application/octet-stream"
+  return buildCanvasAssetFileName(itemId, field, fallbackName, mimeType)
 }
 
 interface UseCanvasFilePersistenceInput {

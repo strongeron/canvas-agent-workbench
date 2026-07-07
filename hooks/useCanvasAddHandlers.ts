@@ -23,6 +23,7 @@ import { normalizeCanvasEmbedUrl } from "../components/canvas/embedUrl"
 import {
   inferMediaKindFromFile,
   inferMediaKindFromSrc,
+  storeCanvasDocumentMediaFile,
   storeLocalMediaFile,
 } from "../components/canvas/mediaStorageService"
 import { buildPrimitiveInstantiateInput } from "../utils/canvasLibraryInstantiate"
@@ -96,7 +97,7 @@ interface UseCanvasAddHandlersInput {
   items: CanvasItem[]
   selectedIds: string[]
   selectedArtboardItem: CanvasArtboardItem | null
-  addItem: (item: CanvasItemInput) => string
+  addItem: (item: CanvasItemInput, options?: { id?: string }) => string
   transform: CanvasTransform
   workspaceSize: { width: number; height: number }
   activeProjectId?: string
@@ -445,6 +446,7 @@ export function useCanvasAddHandlers({
       parentId?: string
       via?: "add-menu"
     }) => {
+      const mediaItemId = `canvas-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
       let src = input.src?.trim() || ""
       let mediaKind = input.mediaKind
       let title: string | undefined
@@ -453,7 +455,19 @@ export function useCanvasAddHandlers({
       let sourceCapturedAt: string | undefined
 
       if (input.file) {
-        const stored = await storeLocalMediaFile(input.file)
+        const canStoreInCanvasDocument =
+          Boolean(activeProjectId?.trim()) && Boolean(activeCanvasFilePath?.trim())
+
+        const stored = canStoreInCanvasDocument
+          ? await storeCanvasDocumentMediaFile({
+              projectId: activeProjectId!,
+              canvasPath: activeCanvasFilePath!,
+              itemId: mediaItemId,
+              file: input.file,
+              preferredFileName: input.file.name,
+            })
+          : await storeLocalMediaFile(input.file)
+
         if (stored.status !== "ready" || !stored.mediaUrl) {
           const reason = stored.reason || "Failed to upload media file."
           const canUseSessionBlob =
@@ -499,31 +513,34 @@ export function useCanvasAddHandlers({
       const targetY = input.position ? input.position.y : centerY
 
       const placement = resolveAddPlacement(input)
-      addItem({
-        type: "media",
-        src,
-        mediaKind,
-        title,
-        sourceUrl,
-        sourceProvider,
-        sourceCapturedAt,
-        controls: mediaKind === "video",
-        muted: mediaKind === "video" ? true : undefined,
-        loop: mediaKind === "gif",
-        autoplay: false,
-        objectFit: "cover",
-        position: {
-          x: Math.max(0, targetX - mediaWidth / 2),
-          y: Math.max(0, targetY - mediaHeight / 2),
+      addItem(
+        {
+          type: "media",
+          src,
+          mediaKind,
+          title,
+          sourceUrl,
+          sourceProvider,
+          sourceCapturedAt,
+          controls: mediaKind === "video",
+          muted: mediaKind === "video" ? true : undefined,
+          loop: mediaKind === "gif",
+          autoplay: false,
+          objectFit: "cover",
+          position: {
+            x: Math.max(0, targetX - mediaWidth / 2),
+            y: Math.max(0, targetY - mediaHeight / 2),
+          },
+          size: { width: mediaWidth, height: mediaHeight },
+          rotation: 0,
+          ...(placement ?? {}),
         },
-        size: { width: mediaWidth, height: mediaHeight },
-        rotation: 0,
-        ...(placement ?? {}),
-      })
+        { id: mediaItemId }
+      )
       if (placement) emitUserAction("create-item", { itemType: "media", parentId: placement.parentId, target: "artboard", ...(input.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
-    [addItem, emitUserAction, resolveAddPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [activeCanvasFilePath, activeProjectId, addItem, emitUserAction, resolveAddPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddMermaid = useCallback(

@@ -210,6 +210,61 @@ export function inferMediaKindFromSrc(src: string): "image" | "video" | "gif" {
   return "image"
 }
 
+export async function storeCanvasDocumentMediaFile(input: {
+  projectId: string
+  canvasPath: string
+  itemId: string
+  file: File
+  preferredFileName?: string
+}): Promise<StoreMediaResult> {
+  try {
+    const dataUrl = await readFileAsDataUrl(input.file)
+    const response = await fetch(
+      `/api/projects/${encodeURIComponent(input.projectId)}/canvases/assets/store`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: input.canvasPath,
+          itemId: input.itemId,
+          field: "src",
+          dataUrl,
+          fileName: input.preferredFileName || input.file.name,
+        }),
+      }
+    )
+    const payload = (await response.json().catch(() => null)) as
+      | StoredMediaPayload
+      | { error?: string }
+      | null
+    if (!response.ok) {
+      return {
+        status: "error",
+        reason:
+          payload && "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : `Canvas asset upload failed (${response.status}).`,
+      }
+    }
+    const stored = payload as StoredMediaPayload | null
+    if (!stored?.mediaUrl) {
+      return { status: "error", reason: "Canvas asset upload succeeded but URL was missing." }
+    }
+    return {
+      status: "ready",
+      mediaUrl: stored.mediaUrl,
+      provider: stored.provider || "canvas-document-asset",
+      storedAt: stored.storedAt,
+      mimeType: stored.mimeType,
+    }
+  } catch (error) {
+    return {
+      status: "error",
+      reason: error instanceof Error ? error.message : "Failed to store canvas document media.",
+    }
+  }
+}
+
 export async function storeLocalMediaFile(file: File): Promise<StoreMediaResult> {
   try {
     const dataUrl = await readFileAsDataUrl(file)

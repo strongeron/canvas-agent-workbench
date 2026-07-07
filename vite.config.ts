@@ -82,6 +82,7 @@ import {
   openProjectCanvasFile,
   scanProjectCanvasHtmlBundles,
   saveProjectCanvasFile,
+  storeProjectCanvasDocumentAsset,
   updateProjectCanvasFileMetadata,
 } from './utils/canvasFileApi'
 import {
@@ -5911,6 +5912,32 @@ function paperImportPlugin() {
             return
           } catch (error) {
             return sendJson(res, 404, { error: error?.message || 'Failed to read canvas asset.' })
+          }
+        }
+
+        const canvasAssetStoreMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/assets\/store$/)
+        if (req.method === 'POST' && canvasAssetStoreMatch) {
+          try {
+            const projectId = decodeURIComponent(canvasAssetStoreMatch[1])
+            const body = await readJson(req)
+            const stored = await storeProjectCanvasDocumentAsset(PROJECTS_ROOT, projectId, body)
+            return sendJson(res, 200, {
+              ok: true,
+              mediaUrl: stored.assetUrl,
+              assetName: stored.assetName,
+              mimeType: stored.mimeType,
+              sizeBytes: stored.sizeBytes,
+              provider: 'canvas-document-asset',
+              storedAt: stored.storedAt,
+            })
+          } catch (error) {
+            const status =
+              error?.message === 'path is required.' ||
+              error?.message === 'itemId is required.' ||
+              error?.message === 'dataUrl is required.'
+                ? 400
+                : 500
+            return sendJson(res, status, { error: error?.message || 'Failed to store canvas asset.' })
           }
         }
 

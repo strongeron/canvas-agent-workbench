@@ -1,5 +1,6 @@
 import type {
   CanvasDocumentSurface,
+  CanvasFileAssetField,
   CanvasFileAssetInput,
   CanvasFileDocument,
   CanvasHtmlBundleImportInput,
@@ -15,8 +16,12 @@ import {
   saveCanvasFile,
   updateCanvasFileMetadata,
 } from "./canvasFileStore"
-import { packCanvasDocumentAssets } from "./canvasFileAssets"
-import { importCanvasHtmlBundle, scanCanvasHtmlBundleLibrary } from "./canvasFileAssets"
+import {
+  importCanvasHtmlBundle,
+  packCanvasDocumentAssets,
+  scanCanvasHtmlBundleLibrary,
+  storeCanvasDocumentAssetFromDataUrl,
+} from "./canvasFileAssets"
 
 export async function listProjectCanvasFiles(
   projectsRoot: string,
@@ -243,4 +248,40 @@ export async function scanProjectCanvasHtmlBundles(
   }
 
   return scanCanvasHtmlBundleLibrary(normalizedRootPath)
+}
+
+export async function storeProjectCanvasDocumentAsset(
+  projectsRoot: string,
+  projectId: string,
+  body: {
+    path?: string
+    itemId?: string
+    field?: CanvasFileAssetField
+    dataUrl?: string
+    fileName?: string
+  }
+) {
+  const canvasPath = typeof body.path === "string" ? body.path.trim() : ""
+  const itemId = typeof body.itemId === "string" ? body.itemId.trim() : ""
+  const field = body.field === "poster" || body.field === "embedSnapshotUrl" ? body.field : "src"
+  const dataUrl = typeof body.dataUrl === "string" ? body.dataUrl.trim() : ""
+
+  if (!canvasPath) {
+    throw new Error("path is required.")
+  }
+  if (!itemId) {
+    throw new Error("itemId is required.")
+  }
+  if (!dataUrl) {
+    throw new Error("dataUrl is required.")
+  }
+
+  return storeCanvasDocumentAssetFromDataUrl(projectsRoot, {
+    projectId,
+    canvasPath,
+    itemId,
+    field,
+    dataUrl,
+    preferredFileName: typeof body.fileName === "string" ? body.fileName : undefined,
+  })
 }

@@ -175,8 +175,21 @@ function extensionForClipboardMime(mime: string) {
   return ".bin"
 }
 
+const GENERIC_CLIPBOARD_FILENAMES = new Set([
+  "image.png",
+  "image.jpeg",
+  "image.jpg",
+  "image.webp",
+  "image.gif",
+  "screenshot.png",
+  "pasted-image.png",
+])
+
 function normalizeClipboardFile(file: File, index: number) {
-  if (file.name && file.name.trim()) return file
+  const trimmedName = file.name?.trim() ?? ""
+  if (trimmedName && !GENERIC_CLIPBOARD_FILENAMES.has(trimmedName.toLowerCase())) {
+    return file
+  }
   const ext = extensionForClipboardMime(file.type || "")
   const name = `clipboard-${Date.now()}-${index}${ext}`
   return new File([file], name, { type: file.type || "application/octet-stream" })

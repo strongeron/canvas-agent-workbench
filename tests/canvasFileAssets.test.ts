@@ -97,7 +97,7 @@ describe("canvas file assets", () => {
       "/api/projects/demo/canvases/assets/file?path=boards%2Fmedia-board.canvas&asset="
     )
     expect(packedItems[1]?.src).toContain(
-      "/api/projects/demo/canvases/assets/file?path=boards%2Fmedia-board.canvas&asset=inline.png"
+      "/api/projects/demo/canvases/assets/file?path=boards%2Fmedia-board.canvas&asset=inline-media-2.png"
     )
 
     const sharedAssetName = decodeURIComponent(new URL(`http://localhost${packedItems[0]?.src}`).searchParams.get("asset") || "")
@@ -113,9 +113,89 @@ describe("canvas file assets", () => {
       projectsRoot,
       "demo",
       "boards/media-board.canvas",
-      "inline.png"
+      "inline-media-2.png"
     )
     expect(inlineAsset.content.toString("utf8")).toBe("inline-image")
+  })
+
+  it("keeps distinct document-local assets for repeated clipboard image.png titles", async () => {
+    const projectsRoot = await createTempProjectsRoot()
+    const sharedMediaRoot = path.join(projectsRoot, ".canvas-media")
+    await fs.mkdir(sharedMediaRoot, { recursive: true })
+    await fs.writeFile(path.join(sharedMediaRoot, "first.png"), Buffer.from("first-image"))
+    await fs.writeFile(path.join(sharedMediaRoot, "second.png"), Buffer.from("second-image"))
+
+    const document = buildCanvasFileDocument({
+      projectId: "demo",
+      title: "Screenshots",
+      document: {
+        items: [
+          {
+            id: "media-1",
+            type: "media",
+            src: "/api/media/file/first.png",
+            title: "image.png",
+            mediaKind: "image",
+            position: { x: 0, y: 0 },
+            size: { width: 100, height: 100 },
+            rotation: 0,
+            zIndex: 1,
+          },
+          {
+            id: "media-2",
+            type: "media",
+            src: "/api/media/file/second.png",
+            title: "image.png",
+            mediaKind: "image",
+            position: { x: 120, y: 0 },
+            size: { width: 100, height: 100 },
+            rotation: 0,
+            zIndex: 2,
+          },
+        ],
+        groups: [],
+        nextZIndex: 3,
+        selectedIds: [],
+      },
+    })
+
+    const packed = await packCanvasDocumentAssets(projectsRoot, {
+      projectId: "demo",
+      path: "exploration/screenshots.canvas",
+      document,
+      sharedMediaRoot,
+    })
+
+    const packedState = packed.document as CanvasStateSnapshot
+    const packedItems = packedState.items.filter(
+      (item): item is (typeof packedState.items)[number] & { type: "media"; src: string } =>
+        item.type === "media"
+    )
+    const firstAssetName = decodeURIComponent(
+      new URL(`http://localhost${packedItems[0]?.src}`).searchParams.get("asset") || ""
+    )
+    const secondAssetName = decodeURIComponent(
+      new URL(`http://localhost${packedItems[1]?.src}`).searchParams.get("asset") || ""
+    )
+
+    expect(firstAssetName).toBe("image-media-1.png")
+    expect(secondAssetName).toBe("image-media-2.png")
+    expect(firstAssetName).not.toBe(secondAssetName)
+
+    const firstAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "exploration/screenshots.canvas",
+      firstAssetName
+    )
+    const secondAsset = await readCanvasDocumentAsset(
+      projectsRoot,
+      "demo",
+      "exploration/screenshots.canvas",
+      secondAssetName
+    )
+    expect(firstAsset.content.toString("utf8")).toBe("first-image")
+    expect(secondAsset.content.toString("utf8")).toBe("second-image")
   })
 
   it("rewrites, copies, and deletes document-local asset bundles when canvas paths change", async () => {

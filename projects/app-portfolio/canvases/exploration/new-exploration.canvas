@@ -1,0 +1,216 @@
+{
+  "kind": "gallery-poc.canvas",
+  "schemaVersion": 1,
+  "surface": "canvas",
+  "meta": {
+    "id": "canvas_1783446407762_yibb8r",
+    "title": "New Exploration",
+    "slug": "new-exploration",
+    "projectId": "app-portfolio",
+    "createdAt": "2026-07-07T17:46:47.762Z",
+    "updatedAt": "2026-07-07T19:13:57.699Z",
+    "tags": [],
+    "favorite": false,
+    "archived": false
+  },
+  "document": {
+    "items": [
+      {
+        "type": "media",
+        "src": "/api/projects/app-portfolio/canvases/assets/file?path=exploration%2Fnew-exploration.canvas&asset=image.png",
+        "mediaKind": "image",
+        "title": "image.png",
+        "sourceProvider": "local-media-store",
+        "sourceCapturedAt": "2026-07-07T17:54:08.194Z",
+        "controls": false,
+        "loop": false,
+        "autoplay": false,
+        "objectFit": "cover",
+        "position": {
+          "x": 255.5,
+          "y": 103.5
+        },
+        "size": {
+          "width": 480,
+          "height": 329
+        },
+        "rotation": 0,
+        "id": "canvas-item-1783446848195-gt8w2aa",
+        "zIndex": 3
+      },
+      {
+        "type": "media",
+        "src": "/api/projects/app-portfolio/canvases/assets/file?path=exploration%2Fnew-exploration.canvas&asset=image.png",
+        "mediaKind": "image",
+        "title": "image.png",
+        "sourceProvider": "local-media-store",
+        "sourceCapturedAt": "2026-07-07T18:19:18.648Z",
+        "controls": false,
+        "loop": false,
+        "autoplay": false,
+        "objectFit": "cover",
+        "position": {
+          "x": 253.5,
+          "y": 461.5
+        },
+        "size": {
+          "width": 480,
+          "height": 327
+        },
+        "rotation": 0,
+        "id": "canvas-item-1783448358648-pih4u05",
+        "zIndex": 15
+      },
+      {
+        "type": "media",
+        "src": "/api/projects/app-portfolio/canvases/assets/file?path=exploration%2Fnew-exploration.canvas&asset=image.png",
+        "mediaKind": "image",
+        "title": "image.png",
+        "sourceProvider": "local-media-store",
+        "sourceCapturedAt": "2026-07-07T18:22:28.146Z",
+        "controls": false,
+        "loop": false,
+        "autoplay": false,
+        "objectFit": "cover",
+        "position": {
+          "x": 758.5,
+          "y": 99.5
+        },
+        "size": {
+          "width": 480,
+          "height": 329
+        },
+        "rotation": 0,
+        "id": "canvas-item-1783448548147-x533kpz",
+        "zIndex": 19
+      },
+      {
+        "type": "media",
+        "src": "/api/projects/app-portfolio/canvases/assets/file?path=exploration%2Fnew-exploration.canvas&asset=image.png",
+        "mediaKind": "image",
+        "title": "image.png",
+        "sourceProvider": "local-media-store",
+        "sourceCapturedAt": "2026-07-07T18:31:29.801Z",
+        "controls": false,
+        "loop": false,
+        "autoplay": false,
+        "objectFit": "cover",
+        "position": {
+          "x": 756.5,
+          "y": 461.5
+        },
+        "size": {
+          "width": 480,
+          "height": 325
+        },
+        "rotation": 0,
+        "id": "canvas-item-1783449089802-whct43o",
+        "zIndex": 33
+      },
+      {
+        "type": "media",
+        "src": "/api/projects/app-portfolio/canvases/assets/file?path=exploration%2Fnew-exploration.canvas&asset=image.png",
+        "mediaKind": "image",
+        "title": "image.png",
+        "sourceProvider": "local-media-store",
+        "sourceCapturedAt": "2026-07-07T18:39:49.742Z",
+        "controls": false,
+        "loop": false,
+        "autoplay": false,
+        "objectFit": "cover",
+        "position": {
+          "x": 253.0452408171999,
+          "y": 822.2592785335565
+        },
+        "size": {
+          "width": 480,
+          "height": 309.08916661193564
+        },
+        "rotation": 0,
+        "id": "canvas-item-1783449589743-6gi9uo8",
+        "zIndex": 34
+      },
+      {
+        "type": "media",
+        "src": "/api/projects/app-portfolio/canvases/assets/file?path=exploration%2Fnew-exploration.canvas&asset=image.png",
+        "mediaKind": "image",
+        "title": "image.png",
+        "sourceProvider": "local-media-store",
+        "sourceCapturedAt": "2026-07-07T18:59:28.548Z",
+        "controls": false,
+        "loop": false,
+        "autoplay": false,
+        "objectFit": "cover",
+        "position": {
+          "x": 758.7544341205308,
+          "y": 825.4383686395881
+        },
+        "size": {
+          "width": 480,
+          "height": 270
+        },
+        "rotation": 0,
+        "id": "canvas-item-1783450768549-h5sjkiw",
+        "zIndex": 32
+      },
+      {
+        "type": "media",
+        "src": "/api/projects/app-portfolio/canvases/assets/file?path=exploration%2Fnew-exploration.canvas&asset=image.png",
+        "mediaKind": "image",
+        "title": "image.png",
+        "sourceProvider": "local-media-store",
+        "sourceCapturedAt": "2026-07-07T19:03:48.880Z",
+        "controls": false,
+        "loop": false,
+        "autoplay": false,
+        "objectFit": "cover",
+        "position": {
+          "x": 765.2158992635788,
+          "y": 1108.1274686479337
+        },
+        "size": {
+          "width": 480,
+          "height": 329.76855257319306
+        },
+        "rotation": 0,
+        "id": "canvas-item-1783451028881-j24gq6s",
+        "zIndex": 31
+      },
+      {
+        "type": "media",
+        "src": "/api/projects/app-portfolio/canvases/assets/file?path=exploration%2Fnew-exploration.canvas&asset=image.png",
+        "mediaKind": "image",
+        "title": "image.png",
+        "sourceProvider": "local-media-store",
+        "sourceCapturedAt": "2026-07-07T19:13:41.952Z",
+        "controls": false,
+        "loop": false,
+        "autoplay": false,
+        "objectFit": "cover",
+        "position": {
+          "x": 242.43747471200328,
+          "y": 1153.4429845985358
+        },
+        "size": {
+          "width": 480,
+          "height": 323.63422570573897
+        },
+        "rotation": 0,
+        "id": "canvas-item-1783451621953-sptbaro",
+        "zIndex": 37
+      }
+    ],
+    "groups": [],
+    "nextZIndex": 38,
+    "selectedIds": []
+  },
+  "view": {
+    "transform": {
+      "scale": 0.40455577357079076,
+      "offset": {
+        "x": 325.96767831302907,
+        "y": 190.33008653689808
+      }
+    }
+  }
+}

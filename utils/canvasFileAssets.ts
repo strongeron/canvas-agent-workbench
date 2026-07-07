@@ -155,7 +155,7 @@ function getDocumentAssetNameFromUrl(
   }
 }
 
-function inferFileName(
+export function buildCanvasAssetFileName(
   itemId: string,
   field: CanvasFileAssetField,
   preferredFileName: string | undefined,
@@ -163,10 +163,28 @@ function inferFileName(
 ) {
   const preferredExt = path.extname(preferredFileName || "").toLowerCase()
   const extension = preferredExt || extensionForMime(mimeType)
-  const baseName = preferredFileName
-    ? path.basename(preferredFileName, preferredExt || undefined)
-    : `${sanitizeAssetSegment(itemId)}-${field}`
-  return `${sanitizeAssetSegment(baseName)}${extension}`
+  const itemSegment = sanitizeAssetSegment(itemId)
+  const fieldSegment = sanitizeAssetSegment(field)
+  if (preferredFileName?.trim()) {
+    const titleSegment = sanitizeAssetSegment(
+      path.basename(preferredFileName, preferredExt || undefined)
+    )
+    if (titleSegment && titleSegment !== "asset") {
+      // Always suffix the canvas item id so repeated clipboard names like
+      // "image.png" cannot overwrite each other in document-local assets.
+      return `${titleSegment}-${itemSegment}${extension}`
+    }
+  }
+  return `${itemSegment}-${fieldSegment}${extension}`
+}
+
+function inferFileName(
+  itemId: string,
+  field: CanvasFileAssetField,
+  preferredFileName: string | undefined,
+  mimeType: string
+) {
+  return buildCanvasAssetFileName(itemId, field, preferredFileName, mimeType)
 }
 
 export function buildCanvasDocumentAssetUrl(
@@ -683,6 +701,46 @@ export async function packCanvasDocumentAssets(
   }
 
   return nextDocument
+}
+
+export async function storeCanvasDocumentAssetFromDataUrl(
+  projectsRoot: string,
+  input: {
+    projectId: string
+    canvasPath: string
+    itemId: string
+    field: CanvasFileAssetField
+    dataUrl: string
+    preferredFileName?: string
+  }
+) {
+  const parsed = parseDataUrlPayload(input.dataUrl)
+  if (!parsed) {
+    throw new Error(`Invalid ${input.field} asset payload for item ${input.itemId}.`)
+  }
+
+  const assetUrl = await writeCanvasAssetBuffer(
+    projectsRoot,
+    input.projectId,
+    input.canvasPath,
+    input.itemId,
+    input.field,
+    input.preferredFileName,
+    parsed.mime,
+    parsed.buffer
+  )
+  const assetName = getDocumentAssetNameFromUrl(input.projectId, input.canvasPath, assetUrl)
+  if (!assetName) {
+    throw new Error(`Failed to resolve stored asset name for item ${input.itemId}.`)
+  }
+
+  return {
+    assetUrl,
+    assetName,
+    mimeType: parsed.mime,
+    sizeBytes: parsed.buffer.length,
+    storedAt: new Date().toISOString(),
+  }
 }
 
 export async function readCanvasDocumentAsset(
