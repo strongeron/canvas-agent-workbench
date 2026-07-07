@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, useMemo, useRef } from "react"
 
 import { useCanvasAgentBridge } from "../../hooks/useCanvasAgentBridge"
 import { useCanvasFileBrowserState } from "../../hooks/useCanvasFileBrowserState"
-import { useCanvasShortcuts, CANVAS_SHORTCUTS } from "../../hooks/useCanvasShortcuts"
+import { useCanvasShortcuts } from "../../hooks/useCanvasShortcuts"
 import { useCanvasFiles } from "../../hooks/useCanvasFiles"
 import { useCanvasState } from "../../hooks/useCanvasState"
 import { useCanvasDocumentUserActions } from "../../hooks/useCanvasDocumentUserActions"
@@ -25,13 +25,9 @@ import type {
   CanvasEmbedItem,
   CanvasHtmlItem,
 } from "../../types/canvas"
-import { CanvasAddMcpAppDialog } from "./CanvasAddMcpAppDialog"
-import { CanvasArtboardAddMenu } from "./CanvasArtboardAddMenu"
+import { CanvasDialogs } from "./CanvasDialogs"
 import { useCanvasKeyboardShortcuts } from "../../hooks/useCanvasKeyboardShortcuts"
-import { CanvasHelpOverlay } from "./CanvasHelpOverlay"
-import { CanvasComponentPasteDialog } from "./CanvasComponentPasteDialog"
 import { CanvasLibraryPanel } from "./CanvasLibraryPanel"
-import { CanvasNativeComponentDialog } from "./CanvasNativeComponentDialog"
 import {
   buildNativeComponentShell,
   type NativeComponentTemplate,
@@ -45,7 +41,6 @@ import {
 import { CanvasArtboardPropsPanel, type ColorAuditPair, type LiveAuditPair } from "./CanvasArtboardPropsPanel"
 import { CanvasEmbedPropsPanel } from "./CanvasEmbedPropsPanel"
 import { CanvasExcalidrawPropsPanel } from "./CanvasExcalidrawPropsPanel"
-import { CanvasFileActionDialog, CanvasFileDeleteDialog } from "./CanvasFileDialogs"
 import { CanvasHtmlPropsPanel } from "./CanvasHtmlPropsPanel"
 import type { SyncSelection } from "./canvasSyncWiring"
 import {
@@ -3531,21 +3526,17 @@ export function CanvasTab({
             />
           )}
 
-          {componentPasteDialogVisible && (
-            <CanvasComponentPasteDialog
-              projectId={activeProjectId || "design-system-foundation"}
-              onCreated={handleComponentPasteCreated}
-              onClose={() => setComponentPasteDialogVisible(false)}
-            />
-          )}
-
-          <CanvasNativeComponentDialog
-            open={nativeComponentDialogVisible}
-            artboardName={nativeComponentTargetArtboard?.name ?? null}
-            initialTemplate={nativeComponentDialogDefaults.template}
-            initialTitle={nativeComponentDialogDefaults.title}
-            onClose={() => setNativeComponentDialogVisible(false)}
-            onCreate={async (input) => {
+          <CanvasDialogs
+            projectId={activeProjectId || "design-system-foundation"}
+            componentPasteVisible={componentPasteDialogVisible}
+            onComponentPasteCreated={handleComponentPasteCreated}
+            onCloseComponentPaste={() => setComponentPasteDialogVisible(false)}
+            nativeComponentOpen={nativeComponentDialogVisible}
+            nativeComponentArtboardName={nativeComponentTargetArtboard?.name ?? null}
+            nativeComponentTemplate={nativeComponentDialogDefaults.template}
+            nativeComponentTitle={nativeComponentDialogDefaults.title}
+            onCloseNativeComponent={() => setNativeComponentDialogVisible(false)}
+            onCreateNativeComponent={async (input) => {
               try {
                 await handleAddNativeComponent(
                   input.template,
@@ -3566,50 +3557,36 @@ export function CanvasTab({
                 })
               }
             }}
-          />
-
-          <CanvasAddMcpAppDialog
-            open={mcpAppDialogVisible}
-            onClose={() => setMcpAppDialogVisible(false)}
-            onCreate={async (input) => {
+            mcpAppOpen={mcpAppDialogVisible}
+            onCloseMcpApp={() => setMcpAppDialogVisible(false)}
+            onCreateMcpApp={async (input) => {
               handleAddMcpApp(input)
               setMcpAppDialogVisible(false)
             }}
-          />
-
-          {artboardAddMenu && (
-            <CanvasArtboardAddMenu
-              position={artboardAddMenu}
-              artboardName={
-                items.find(
-                  (item): item is CanvasArtboardItem =>
-                    item.id === artboardAddMenu.artboardId && item.type === "artboard"
-                )?.name ?? "artboard"
+            artboardAddMenu={artboardAddMenu}
+            artboardAddMenuName={
+              items.find(
+                (item): item is CanvasArtboardItem =>
+                  item.id === artboardAddMenu?.artboardId && item.type === "artboard"
+              )?.name ?? "artboard"
+            }
+            onCloseArtboardAddMenu={() => setArtboardAddMenu(null)}
+            onAddPrimitive={(primitive) => {
+              if (!artboardAddMenu) return
+              void handleArtboardAddMenuPrimitive(artboardAddMenu.artboardId, primitive)
+            }}
+            onAddAsset={(kind) => {
+              if (!artboardAddMenu) return
+              if (kind === "native-component") {
+                // The dialog targets the selected layout container — the
+                // menu's artboard, selected by both trigger paths.
+                openNativeComponentDialog()
+                return
               }
-              projectId={activeProjectId || "design-system-foundation"}
-              onClose={() => setArtboardAddMenu(null)}
-              onAddPrimitive={(primitive) =>
-                void handleArtboardAddMenuPrimitive(artboardAddMenu.artboardId, primitive)
-              }
-              onAddAsset={(kind) => {
-                if (kind === "native-component") {
-                  // The dialog targets the selected layout container — the
-                  // menu's artboard, selected by both trigger paths.
-                  openNativeComponentDialog()
-                  return
-                }
-                handleArtboardAddMenuAsset(artboardAddMenu.artboardId, kind)
-              }}
-            />
-          )}
-
-          <input
-            ref={artboardMediaInputRef}
-            type="file"
-            accept="image/*,video/*"
-            multiple
-            className="hidden"
-            onChange={(e) => {
+              handleArtboardAddMenuAsset(artboardAddMenu.artboardId, kind)
+            }}
+            mediaInputRef={artboardMediaInputRef}
+            onMediaInputChange={(e) => {
               const files = Array.from(e.target.files ?? [])
               e.target.value = ""
               const artboardId = artboardMediaTargetRef.current
@@ -3620,6 +3597,28 @@ export function CanvasTab({
                 void handleAddMedia({ file, parentId: artboardId, via: "add-menu" })
               }
             }}
+            fileActionModal={canvasFileActionModal}
+            fileActionError={canvasFileActionError}
+            fileActionBusy={canvasFileActionBusy}
+            onFileActionTitleChange={(value) =>
+              setCanvasFileActionModal((current) =>
+                current ? { ...current, title: value } : current
+              )
+            }
+            onFileActionFolderChange={(value) =>
+              setCanvasFileActionModal((current) =>
+                current ? { ...current, folder: value } : current
+              )
+            }
+            onCloseFileAction={handleCloseCanvasFileActionModal}
+            onSubmitFileAction={handleSubmitCanvasFileActionModal}
+            fileDeleteModal={canvasFileDeleteModal}
+            fileDeleteError={canvasFileDeleteError}
+            fileDeleteBusy={canvasFileDeleteBusy}
+            onCloseFileDelete={handleCloseCanvasFileDeleteModal}
+            onConfirmFileDelete={handleConfirmCanvasFileDelete}
+            showHelp={showHelp}
+            onCloseHelp={toggleHelp}
           />
 
           <CanvasWorkspace
@@ -4296,34 +4295,6 @@ export function CanvasTab({
         </DndContext>
       </div>
 
-      <CanvasFileActionDialog
-        open={canvasFileActionModal !== null}
-        mode={canvasFileActionModal?.mode ?? "create"}
-        surfaceLabel="Canvas"
-        titleValue={canvasFileActionModal?.title ?? ""}
-        folderValue={canvasFileActionModal?.folder ?? ""}
-        error={canvasFileActionError}
-        busy={canvasFileActionBusy}
-        onTitleChange={(value) =>
-          setCanvasFileActionModal((current) => (current ? { ...current, title: value } : current))
-        }
-        onFolderChange={(value) =>
-          setCanvasFileActionModal((current) => (current ? { ...current, folder: value } : current))
-        }
-        onClose={handleCloseCanvasFileActionModal}
-        onSubmit={handleSubmitCanvasFileActionModal}
-      />
-
-      <CanvasFileDeleteDialog
-        open={canvasFileDeleteModal !== null}
-        title={canvasFileDeleteModal?.title ?? ""}
-        path={canvasFileDeleteModal?.path ?? ""}
-        error={canvasFileDeleteError}
-        busy={canvasFileDeleteBusy}
-        onClose={handleCloseCanvasFileDeleteModal}
-        onConfirm={handleConfirmCanvasFileDelete}
-      />
-
       {historyToast ? (
         <div className="pointer-events-none absolute bottom-4 left-1/2 z-30 -translate-x-1/2">
           <div
@@ -4337,9 +4308,6 @@ export function CanvasTab({
           </div>
         </div>
       ) : null}
-
-      {/* Help overlay */}
-      {showHelp && <CanvasHelpOverlay shortcuts={CANVAS_SHORTCUTS} onClose={toggleHelp} />}
     </div>
   )
 }
