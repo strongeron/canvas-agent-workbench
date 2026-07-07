@@ -1,6 +1,6 @@
 # Canvas-document undo: one Cmd-Z stack for node + source edits
 
-**Date:** 2026-07-06 · **Status:** draft — awaiting approval · **Follows:** FOX2-35 (source undo), FOX2-60 (gesture-end events)
+**Date:** 2026-07-06 · **Status:** shipped 2026-07-07 (FOX2-67, PRs #25 + #26; FOX2-60 landed with PR #25) · **Follows:** FOX2-35 (source undo), FOX2-60 (gesture-end events)
 
 ## Problem
 
