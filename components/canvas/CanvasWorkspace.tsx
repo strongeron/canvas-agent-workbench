@@ -108,6 +108,9 @@ interface CanvasWorkspaceProps {
   onSelectItems: (ids: string[]) => void
   onClearSelection: () => void
   onUpdateItem: (id: string, updates: CanvasItemUpdate) => void
+  /** Bracket a mouse-drag mutation stream so history/events coalesce it (FOX2-66). */
+  onGestureStart?: () => void
+  onGestureEnd?: (summary: string) => void
   onRemoveItem: (id: string) => void
   onRemoveSelected: () => void
   onDuplicateItem: (id: string) => void
@@ -161,6 +164,8 @@ export function CanvasWorkspace({
   onSelectItems,
   onClearSelection,
   onUpdateItem,
+  onGestureStart,
+  onGestureEnd,
   onRemoveItem,
   onRemoveSelected,
   onDuplicateItem,
@@ -325,6 +330,8 @@ export function CanvasWorkspace({
               isSelected={isSelected}
               interactMode={interactMode}
               scale={transform.scale}
+              onGestureStart={onGestureStart}
+              onGestureEnd={onGestureEnd}
               onSelect={(addToSelection) => onSelectItem(child.id, addToSelection)}
               onResize={(next, axis) => {
                 // Mirror the inspector's explicit-size semantics: only the
@@ -576,6 +583,8 @@ export function CanvasWorkspace({
       editMode,
       onSelectItem,
       onUpdateItem,
+      onGestureStart,
+      onGestureEnd,
       onReactCompileGenerationChange,
       onReactNodeSelect,
       onReactNodeResize,
@@ -921,6 +930,8 @@ export function CanvasWorkspace({
             }
             onDuplicate={() => onDuplicateItem(item.id)}
             onBringToFront={() => onBringToFront(item.id)}
+            onGestureStart={onGestureStart}
+            onGestureEnd={onGestureEnd}
             scale={transform.scale}
             interactMode={interactMode}
             childItems={children}
@@ -961,6 +972,8 @@ export function CanvasWorkspace({
                 : onRemoveItem(item.id),
             onDuplicate: () => onDuplicateItem(item.id),
             onBringToFront: () => onBringToFront(item.id),
+            onGestureStart,
+            onGestureEnd,
             scale: transform.scale,
             interactMode,
                 editMode,
@@ -1205,14 +1218,19 @@ function LayoutChildResizeHandles({
   size,
   scale,
   onResize,
+  onGestureStart,
+  onGestureEnd,
 }: {
   size: { width: number; height: number }
   scale: number
   onResize: (next: { width: number; height: number }, axis: LayoutChildResizeAxis) => void
+  onGestureStart?: () => void
+  onGestureEnd?: (summary: string) => void
 }) {
   const handlePointerDown = (axis: LayoutChildResizeAxis) => (event: React.PointerEvent) => {
     event.stopPropagation()
     event.preventDefault()
+    onGestureStart?.()
     const start = { x: event.clientX, y: event.clientY, width: size.width, height: size.height }
     const effectiveScale = scale > 0 ? scale : 1
     const handleMove = (moveEvent: PointerEvent) => {
@@ -1229,6 +1247,7 @@ function LayoutChildResizeHandles({
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove)
       window.removeEventListener("pointerup", handleUp)
+      onGestureEnd?.("resize-section")
     }
     window.addEventListener("pointermove", handleMove)
     window.addEventListener("pointerup", handleUp)
@@ -1280,6 +1299,8 @@ function LayoutSectionBox({
   scale,
   onSelect,
   onResize,
+  onGestureStart,
+  onGestureEnd,
   children,
 }: {
   item: CanvasSectionItemType
@@ -1288,6 +1309,8 @@ function LayoutSectionBox({
   scale: number
   onSelect: (addToSelection?: boolean) => void
   onResize: (next: { width: number; height: number }, axis: LayoutChildResizeAxis) => void
+  onGestureStart?: () => void
+  onGestureEnd?: (summary: string) => void
   children: React.ReactNode
 }) {
   const layout = item.layout
@@ -1339,7 +1362,13 @@ function LayoutSectionBox({
         {children}
       </div>
       {showControls ? (
-        <LayoutChildResizeHandles size={item.size} scale={scale} onResize={onResize} />
+        <LayoutChildResizeHandles
+          size={item.size}
+          scale={scale}
+          onResize={onResize}
+          onGestureStart={onGestureStart}
+          onGestureEnd={onGestureEnd}
+        />
       ) : null}
     </div>
   )

@@ -19,6 +19,9 @@ interface CanvasMermaidItemProps {
   onRemove: () => void
   onDuplicate: () => void
   onBringToFront: () => void
+  /** Bracket a mouse-drag mutation stream so history/events coalesce it (FOX2-66). */
+  onGestureStart?: () => void
+  onGestureEnd?: (summary: string) => void
   scale: number
   interactMode: boolean
 }
@@ -47,6 +50,8 @@ export function CanvasMermaidItem({
   onRemove,
   onDuplicate,
   onBringToFront,
+  onGestureStart,
+  onGestureEnd,
   scale,
   interactMode,
 }: CanvasMermaidItemProps) {
@@ -74,6 +79,7 @@ export function CanvasMermaidItem({
       }
 
       setIsDragging(true)
+      onGestureStart?.()
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
         x: item.position.x,
@@ -83,7 +89,7 @@ export function CanvasMermaidItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   const handleResizeStart = useCallback(
@@ -94,6 +100,7 @@ export function CanvasMermaidItem({
       onSelect()
 
       setIsResizing(true)
+      onGestureStart?.()
       setResizeHandle(handle)
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
@@ -104,7 +111,7 @@ export function CanvasMermaidItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   const handleRotateStart = useCallback(
@@ -115,6 +122,7 @@ export function CanvasMermaidItem({
       onSelect()
 
       setIsRotating(true)
+      onGestureStart?.()
       setInitialState({
         x: item.position.x,
         y: item.position.y,
@@ -123,7 +131,7 @@ export function CanvasMermaidItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   useEffect(() => {
@@ -185,6 +193,9 @@ export function CanvasMermaidItem({
     }
 
     const handleMouseUp = () => {
+      // The effect only runs while a gesture-starting handler set a flag, so
+      // end always pairs with a start; the store drops no-change gestures.
+      onGestureEnd?.(isDragging ? "move-item" : isResizing ? "resize-item" : "rotate-item")
       setIsDragging(false)
       setIsResizing(false)
       setIsRotating(false)
@@ -197,7 +208,7 @@ export function CanvasMermaidItem({
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [dragStart, initialState, isDragging, isResizing, isRotating, onUpdate, resizeHandle, scale])
+  }, [dragStart, initialState, isDragging, isResizing, isRotating, onGestureEnd, onUpdate, resizeHandle, scale])
 
   const borderClass = isMultiSelected
     ? "border-2 border-violet-500 ring-4 ring-violet-500/20"

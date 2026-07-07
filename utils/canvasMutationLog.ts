@@ -1,12 +1,19 @@
-// In-memory mutation log for v3 undo/redo (U5).
+// In-memory mutation log for v3 undo/redo (U5), extended for canvas-document
+// undo (FOX2-67).
 //
-// Holds an append-only timeline of `{ prevSourceSnapshot, postSourceSnapshot,
-// filePath, mutations, canvasIdMap }` entries plus a redo stack. Undo and
-// redo both rewrite the file using the stored full-source snapshots — no
-// inverse-mutation computation, no AST diffing, so the log handles every
-// mutation kind (literal setClassName, setTextChild, setPropValue,
-// setAttribute, structural insert/remove/reorder/wrap/unwrap/swapTag)
-// uniformly.
+// Holds an append-only timeline plus a redo stack over a union of two entry
+// kinds:
+// - "source" — `{ prevSourceSnapshot, postSourceSnapshot, filePath,
+//   mutations, canvasIdMap }`. Undo and redo both rewrite the file using the
+//   stored full-source snapshots — no inverse-mutation computation, no AST
+//   diffing, so the log handles every mutation kind (literal setClassName,
+//   setTextChild, setPropValue, setAttribute, structural
+//   insert/remove/reorder/wrap/unwrap/swapTag) uniformly.
+// - "document" — `{ prevDoc, postDoc, summary, actor }` whole-document
+//   `{ items, groups }` snapshots per semantic canvas operation (one entry
+//   per add/delete/paste/re-parent, one per coalesced drag/resize gesture).
+//   Undo is a state restore through the normal replaceState path.
+// pushEntry/undo/redo/caps are kind-agnostic; only byte accounting branches.
 //
 // Hard caps:
 // - 25 entries per filePath (per-file FIFO when exceeded)
@@ -19,7 +26,14 @@
 //
 // Storage: in-memory only. Reload clears the log.
 
-export interface CanvasMutationLogEntry<TMutation = unknown> {
+import type { CanvasGroup, CanvasItem } from "../types/canvas"
+
+export interface CanvasSourceMutationLogEntry<TMutation = unknown> {
+  /**
+   * Optional for backward compatibility — entries without a kind are source
+   * entries. Producers tag explicitly at push time.
+   */
+  kind?: "source"
   id: string
   timestamp: number
   filePath: string
@@ -30,6 +44,29 @@ export interface CanvasMutationLogEntry<TMutation = unknown> {
   /** Human-readable summary, used by the toast on undo/redo. */
   summary?: string
 }
+
+/** The document portion of canvas state a document entry snapshots. */
+export interface CanvasDocumentEntrySnapshot {
+  items: CanvasItem[]
+  groups: CanvasGroup[]
+}
+
+export interface CanvasDocumentMutationLogEntry {
+  kind: "document"
+  id: string
+  timestamp: number
+  /** Active `.canvas` file path, or a per-workspace key while unsaved. */
+  filePath: string
+  /** Human-readable summary, used by the toast on undo/redo. */
+  summary: string
+  actor: "user" | "agent"
+  prevDoc: CanvasDocumentEntrySnapshot
+  postDoc: CanvasDocumentEntrySnapshot
+}
+
+export type CanvasMutationLogEntry<TMutation = unknown> =
+  | CanvasSourceMutationLogEntry<TMutation>
+  | CanvasDocumentMutationLogEntry
 
 const MAX_ENTRIES_PER_FILE = 25
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024
@@ -158,6 +195,9 @@ function applyPerFileCap<TMutation>(
 
 function entryBytes(entry: CanvasMutationLogEntry<unknown>): number {
   // UTF-16 string size dominates; this is the heuristic the plan calls for.
+  if (entry.kind === "document") {
+    return JSON.stringify(entry.prevDoc).length + JSON.stringify(entry.postDoc).length
+  }
   return entry.prevSourceSnapshot.length + entry.postSourceSnapshot.length
 }
 

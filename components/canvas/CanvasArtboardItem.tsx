@@ -24,6 +24,9 @@ interface CanvasArtboardItemProps {
   onRemove: () => void
   onDuplicate: () => void
   onBringToFront: () => void
+  /** Bracket a mouse-drag mutation stream so history/events coalesce it (FOX2-66). */
+  onGestureStart?: () => void
+  onGestureEnd?: (summary: string) => void
   scale: number
   interactMode: boolean
   children: React.ReactNode
@@ -101,6 +104,8 @@ export function CanvasArtboardItem({
   onRemove,
   onDuplicate,
   onBringToFront,
+  onGestureStart,
+  onGestureEnd,
   scale,
   interactMode,
   children,
@@ -146,6 +151,7 @@ export function CanvasArtboardItem({
       }
 
       setIsDragging(true)
+      onGestureStart?.()
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
         x: item.position.x,
@@ -155,7 +161,7 @@ export function CanvasArtboardItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   const handleResizeStart = useCallback(
@@ -166,6 +172,7 @@ export function CanvasArtboardItem({
       onSelect()
 
       setIsResizing(true)
+      onGestureStart?.()
       setResizeHandle(handle)
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
@@ -176,7 +183,7 @@ export function CanvasArtboardItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   const handleRotateStart = useCallback(
@@ -187,6 +194,7 @@ export function CanvasArtboardItem({
       onSelect()
 
       setIsRotating(true)
+      onGestureStart?.()
       setInitialState({
         x: item.position.x,
         y: item.position.y,
@@ -195,7 +203,7 @@ export function CanvasArtboardItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   const handleGapScrubStart = useCallback(
@@ -205,12 +213,13 @@ export function CanvasArtboardItem({
       e.preventDefault()
       onSelect()
       setIsGapScrubbing(true)
+      onGestureStart?.()
       setGapScrubStart({
         x: e.clientX,
         gap: item.layout.gap ?? 12,
       })
     },
-    [interactMode, item.layout.gap, onSelect]
+    [interactMode, item.layout.gap, onGestureStart, onSelect]
   )
 
   useEffect(() => {
@@ -287,6 +296,17 @@ export function CanvasArtboardItem({
     }
 
     const handleMouseUp = () => {
+      // The effect only runs while a gesture-starting handler set a flag, so
+      // end always pairs with a start; the store drops no-change gestures.
+      onGestureEnd?.(
+        isGapScrubbing
+          ? "scrub-gap"
+          : isDragging
+            ? "move-artboard"
+            : isResizing
+              ? "resize-artboard"
+              : "rotate-artboard"
+      )
       setIsDragging(false)
       setIsResizing(false)
       setIsRotating(false)
@@ -310,6 +330,7 @@ export function CanvasArtboardItem({
     isResizing,
     isRotating,
     item.layout,
+    onGestureEnd,
     onUpdate,
     resizeHandle,
     scale,

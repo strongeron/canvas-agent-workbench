@@ -24,6 +24,9 @@ interface CanvasEmbedItemProps {
   onRemove: () => void
   onDuplicate: () => void
   onBringToFront: () => void
+  /** Bracket a mouse-drag mutation stream so history/events coalesce it (FOX2-66). */
+  onGestureStart?: () => void
+  onGestureEnd?: (summary: string) => void
   scale: number
   interactMode: boolean
 }
@@ -52,6 +55,8 @@ export function CanvasEmbedItem({
   onRemove,
   onDuplicate,
   onBringToFront,
+  onGestureStart,
+  onGestureEnd,
   scale,
   interactMode,
 }: CanvasEmbedItemProps) {
@@ -356,6 +361,7 @@ export function CanvasEmbedItem({
       }
 
       setIsDragging(true)
+      onGestureStart?.()
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
         x: item.position.x,
@@ -365,7 +371,7 @@ export function CanvasEmbedItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   const handleResizeStart = useCallback(
@@ -376,6 +382,7 @@ export function CanvasEmbedItem({
       onSelect()
 
       setIsResizing(true)
+      onGestureStart?.()
       setResizeHandle(handle)
       setDragStart({ x: e.clientX, y: e.clientY })
       setInitialState({
@@ -386,7 +393,7 @@ export function CanvasEmbedItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   const handleRotateStart = useCallback(
@@ -397,6 +404,7 @@ export function CanvasEmbedItem({
       onSelect()
 
       setIsRotating(true)
+      onGestureStart?.()
       setInitialState({
         x: item.position.x,
         y: item.position.y,
@@ -405,7 +413,7 @@ export function CanvasEmbedItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item, onSelect]
+    [interactMode, item, onGestureStart, onSelect]
   )
 
   useEffect(() => {
@@ -467,6 +475,9 @@ export function CanvasEmbedItem({
     }
 
     const handleMouseUp = () => {
+      // The effect only runs while a gesture-starting handler set a flag, so
+      // end always pairs with a start; the store drops no-change gestures.
+      onGestureEnd?.(isDragging ? "move-item" : isResizing ? "resize-item" : "rotate-item")
       setIsDragging(false)
       setIsResizing(false)
       setIsRotating(false)
@@ -480,7 +491,7 @@ export function CanvasEmbedItem({
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [isDragging, isResizing, isRotating, dragStart, initialState, resizeHandle, scale, pushUpdate])
+  }, [isDragging, isResizing, isRotating, dragStart, initialState, resizeHandle, scale, onGestureEnd, pushUpdate])
 
   const getBorderStyle = () => {
     if (isMultiSelected) {

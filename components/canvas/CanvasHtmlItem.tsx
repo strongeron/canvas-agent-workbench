@@ -24,6 +24,9 @@ interface CanvasHtmlItemProps {
   onRemove: () => void
   onDuplicate: () => void
   onBringToFront: () => void
+  /** Bracket a mouse-drag mutation stream so history/events coalesce it (FOX2-66). */
+  onGestureStart?: () => void
+  onGestureEnd?: (summary: string) => void
   scale: number
   interactMode: boolean
   editMode?: boolean
@@ -62,6 +65,8 @@ export function CanvasHtmlItem({
   onRemove,
   onDuplicate,
   onBringToFront,
+  onGestureStart,
+  onGestureEnd,
   scale,
   interactMode,
   editMode = false,
@@ -101,6 +106,7 @@ export function CanvasHtmlItem({
       // gestures and node moves compete on the same pixels.
       if (editMode) return
       setIsDragging(true)
+      onGestureStart?.()
       setDragStart({ x: event.clientX, y: event.clientY })
       setInitialState({
         x: item.position.x,
@@ -110,7 +116,7 @@ export function CanvasHtmlItem({
         rotation: item.rotation,
       })
     },
-    [editMode, interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onSelect]
+    [editMode, interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onGestureStart, onSelect]
   )
 
   const handleResizeStart = useCallback(
@@ -120,6 +126,7 @@ export function CanvasHtmlItem({
       event.preventDefault()
       onSelect()
       setIsResizing(true)
+      onGestureStart?.()
       setResizeHandle(handle)
       setDragStart({ x: event.clientX, y: event.clientY })
       setInitialState({
@@ -130,7 +137,7 @@ export function CanvasHtmlItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onSelect]
+    [interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onGestureStart, onSelect]
   )
 
   const handleRotateStart = useCallback(
@@ -140,6 +147,7 @@ export function CanvasHtmlItem({
       event.preventDefault()
       onSelect()
       setIsRotating(true)
+      onGestureStart?.()
       setInitialState({
         x: item.position.x,
         y: item.position.y,
@@ -148,7 +156,7 @@ export function CanvasHtmlItem({
         rotation: item.rotation,
       })
     },
-    [interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onSelect]
+    [interactMode, item.position.x, item.position.y, item.rotation, item.size.height, item.size.width, onGestureStart, onSelect]
   )
 
   useEffect(() => {
@@ -214,6 +222,9 @@ export function CanvasHtmlItem({
     }
 
     const handleMouseUp = () => {
+      // The effect only runs while a gesture-starting handler set a flag, so
+      // end always pairs with a start; the store drops no-change gestures.
+      onGestureEnd?.(isDragging ? "move-item" : isResizing ? "resize-item" : "rotate-item")
       setIsDragging(false)
       setIsResizing(false)
       setIsRotating(false)
@@ -226,7 +237,7 @@ export function CanvasHtmlItem({
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [dragStart, initialState, isDragging, isResizing, isRotating, onUpdate, resizeHandle, scale])
+  }, [dragStart, initialState, isDragging, isResizing, isRotating, onGestureEnd, onUpdate, resizeHandle, scale])
 
   const selectionStyle = isMultiSelected
     ? "ring-2 ring-violet-500"
