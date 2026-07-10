@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+
 import { describe, expect, it } from "vitest"
 
 import {
@@ -5,6 +9,8 @@ import {
   AGENT_NATIVE_WORKSPACE_DEFINITIONS,
   buildAgentNativeManifest,
 } from "../utils/agentNativeManifest"
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
 describe("agent native manifest", () => {
   it("exposes supported runtimes", () => {
@@ -291,5 +297,34 @@ describe("agent native manifest", () => {
     expect(
       nodeCatalogWorkspace?.prompts.find((prompt) => prompt.id === "review-node-system")?.status
     ).toBe("ready")
+  })
+
+  // Parity guard for the 2026-05-23 agent-canvas coverage audit: the stdio MCP
+  // server and the manifest advertise the same tool surface, so drift between
+  // them fails here instead of resurfacing in a future audit.
+  it("stays in parity with the stdio MCP server tool surface", () => {
+    const serverSource = readFileSync(resolve(repoRoot, "bin/canvas-mcp-server"), "utf8")
+    // Tool registrations are the only single-quoted snake_case `name:` entries
+    // in the server source (the server id and resource titles don't match).
+    const serverToolNames = new Set(
+      Array.from(serverSource.matchAll(/name: '([a-z_]+)'/g), (match) => match[1])
+    )
+    expect(serverToolNames.size).toBeGreaterThan(50)
+
+    const manifestToolsById = new Map(
+      AGENT_NATIVE_WORKSPACE_DEFINITIONS.flatMap((workspace) =>
+        workspace.tools.map((tool) => [tool.id, tool] as const)
+      )
+    )
+
+    const missingFromManifest = [...serverToolNames].filter((name) => !manifestToolsById.has(name))
+    expect(missingFromManifest).toEqual([])
+
+    // Manifest entries may lead the server only when they say so: anything
+    // marked "ready" must actually be callable over stdio MCP.
+    const readyButMissingFromServer = [...manifestToolsById.values()]
+      .filter((tool) => tool.status === "ready" && !serverToolNames.has(tool.id))
+      .map((tool) => tool.id)
+    expect(readyButMissingFromServer).toEqual([])
   })
 })
