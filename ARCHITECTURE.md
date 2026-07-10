@@ -195,6 +195,15 @@ interface ComponentUsage {
 
 Canvas add handlers (`hooks/useCanvasAddHandlers.ts`) take explicit targets: every handler accepts an optional `parentId` naming the artboard the new item belongs to, and an explicit `parentId` always wins. Selection-derived targeting (`addTargetArtboardId`, computed from the current selection) exists only as the fallback inside the shared `resolveAddPlacement` helper — handlers never consult the selection directly. New entry points (drop zones, add menus, agent operations) must pass an explicit `parentId` rather than relying on what happens to be selected. This keeps placement deterministic for programmatic callers while UI entry points still get the "add into the selected artboard" convenience for free.
 
+### 6. Canvas file persistence — folder-backed, autosaved, loud on failure (FOX2-68)
+
+A canvas is a folder with all its assets inside, autosaving every action (`hooks/useCanvasFilePersistence.ts`, spec: `docs/specs/2026-07-08-canvas-folder-backed-autosave.md`):
+
+- **Always folder-backed (FOX2-71).** The first genuine document mutation on an unsaved board materializes an auto-named `Untitled.canvas` containing that mutation. The trigger is the FOX2-66 change stream — user gestures and agent `applyChange` operations both fire it, while restores never do (localStorage hydration bypasses `applyChange`; file opens carry `source: replace-state`), so browsing or panning a project never creates files. Mutations that land before the file index loads are held pending and materialize once restore settles.
+- **Autosave is content-keyed.** The 900 ms debounce effect is keyed on the payload signature string, target path, and dirty/busy booleans — never on object identities, which change every render and would cancel the timer forever under background polling (agent bridge state sync).
+- **Assets live with the canvas (FOX2-69).** Pasted or imported assets go to `projects/<id>/canvases/.assets/<canvas-name>/` via the document asset store; pasting on a draft materializes the file first (waiting out restore if needed). The shared browser media store remains the primary only when no project is selected, and otherwise appears solely as an explicit fallback surfaced with an error toast and an `asset-fallback` feed event.
+- **Failure is a state, not a log line (FOX2-70).** A failed save retries with exponential backoff (900/1800/3600 ms); after three failures autosave stops in a persistent `save-failed` state — badge plus banner with Retry — cleared only by a successful save. Entering the state emits `save-failed` on the canvas lifecycle feed and recovery emits `save-recovered`, so agents reading the event feed see persistence health the same way users see the badge.
+
 ## Styling Strategy
 
 The POC uses CSS custom properties (design tokens) for theming:

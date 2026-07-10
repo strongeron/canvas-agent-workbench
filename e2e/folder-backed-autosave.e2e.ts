@@ -107,6 +107,40 @@ test.describe("folder-backed autosave (FOX2-71)", () => {
       .toContain("/canvases/assets/file")
   })
 
+  // FOX2-70 (FB-3): save failures retry with bounded backoff, then stop in a
+  // loud persistent state; Retry recovers once the backend heals.
+  test("save failures surface a persistent Couldn't-save state and Retry recovers", async ({
+    page,
+  }) => {
+    await openCanvas(page)
+    await addArtboard(page)
+    await expect.poll(listUntitledCanvasFiles).toEqual(["untitled.canvas"])
+
+    await page.route("**/api/projects/demo/canvases/save", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "Injected save failure (e2e)" }),
+      })
+    )
+    await addArtboard(page)
+
+    // Three attempts at 900/1800/3600ms land in the exhausted failed state.
+    await expect(page.getByTestId("canvas-save-failed-banner")).toBeVisible({
+      timeout: 20_000,
+    })
+
+    await page.unroute("**/api/projects/demo/canvases/save")
+    await page.getByRole("button", { name: "Retry save" }).click()
+    await expect(page.getByTestId("canvas-save-failed-banner")).toHaveCount(0)
+    await expect
+      .poll(
+        async () => (await readCanvasDocument("untitled.canvas")).document.items.length,
+        { timeout: 15_000 }
+      )
+      .toBe(2)
+  })
+
   test("browsing and panning a project never creates files", async ({ page }) => {
     await openCanvas(page)
 

@@ -423,6 +423,8 @@ interface CanvasSidebarProps {
   canvasFilesError?: string | null
   canvasFileDirty?: boolean
   canvasFileMaterializing?: boolean
+  canvasSaveFailure?: { message: string; attempts: number; exhausted: boolean } | null
+  onRetryCanvasSave?: () => void
   canvasSaveQueued?: boolean
   onRefreshCanvasFiles?: () => void | Promise<void>
   onOpenCanvasFile?: (filePath: string) => void | Promise<void>
@@ -473,6 +475,8 @@ export function CanvasSidebar({
   canvasFilesError,
   canvasFileDirty,
   canvasFileMaterializing,
+  canvasSaveFailure,
+  onRetryCanvasSave,
   canvasSaveQueued,
   onRefreshCanvasFiles,
   onOpenCanvasFile,
@@ -1252,12 +1256,41 @@ export function CanvasSidebar({
                 <p className="mt-1 text-xs text-muted-foreground">
                   {activeCanvasFilePath || "Empty board — your first change creates a .canvas file here automatically."}
                 </p>
+                {canvasSaveFailure?.exhausted ? (
+                  <div
+                    data-testid="canvas-save-failed-banner"
+                    className="mt-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-800"
+                  >
+                    <p className="font-semibold">
+                      Couldn&apos;t save — changes are only in this browser.
+                    </p>
+                    <p className="mt-0.5 break-words text-red-700">{canvasSaveFailure.message}</p>
+                    {onRetryCanvasSave ? (
+                      <button
+                        type="button"
+                        onClick={() => onRetryCanvasSave()}
+                        className="mt-1.5 rounded-md border border-red-300 bg-white px-2 py-1 text-[11px] font-semibold text-red-800 hover:bg-red-100"
+                      >
+                        Retry save
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="mt-2 flex flex-wrap gap-2">
+                  {canvasSaveFailure?.exhausted ? (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-800">
+                      Couldn&apos;t save
+                    </span>
+                  ) : canvasSaveFailure ? (
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                      Save failed — retrying…
+                    </span>
+                  ) : null}
                   {canvasFileMaterializing ? (
                     <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
                       Creating file…
                     </span>
-                  ) : canvasFileDirty ? (
+                  ) : canvasFileDirty && !canvasSaveFailure ? (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                       Autosave pending
                     </span>

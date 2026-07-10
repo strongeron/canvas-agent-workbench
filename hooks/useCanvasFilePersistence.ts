@@ -35,6 +35,22 @@ export type ActiveCanvasFile = {
 }
 
 /**
+ * FOX2-70 (FB-3): a save failure is a loud, distinct, persistent state.
+ * `attempts` counts consecutive failures; once it reaches
+ * MAX_AUTOSAVE_ATTEMPTS the autosave stops retrying (`exhausted`) and only a
+ * successful save — manual Retry or the next autosave after Retry re-arms
+ * it — clears the state.
+ */
+export interface CanvasSaveFailure {
+  message: string
+  attempts: number
+  exhausted: boolean
+}
+
+const MAX_AUTOSAVE_ATTEMPTS = 3
+const AUTOSAVE_DELAY_MS = 900
+
+/**
  * Auto-name for materialized drafts (FOX2-71): `Untitled`, then `Untitled 2`…
  * against the existing file titles. The server additionally dedupes the file
  * path, so a stale index at worst produces `untitled-2.canvas` with the same
@@ -173,6 +189,9 @@ export function useCanvasFilePersistence({
   const [canvasFileDeleteBusy, setCanvasFileDeleteBusy] = useState(false)
   const [canvasSaveQueued, setCanvasSaveQueued] = useState(false)
   const [canvasFileMaterializing, setCanvasFileMaterializing] = useState(false)
+  const [canvasSaveFailure, setCanvasSaveFailure] = useState<CanvasSaveFailure | null>(null)
+  const canvasSaveFailureRef = useRef(canvasSaveFailure)
+  canvasSaveFailureRef.current = canvasSaveFailure
   const [canvasPersistencePendingCount, setCanvasPersistencePendingCount] = useState(0)
   const canvasPersistenceQueueRef = useRef<SerialTaskQueue | null>(null)
   if (!canvasPersistenceQueueRef.current) {
@@ -351,18 +370,47 @@ export function useCanvasFilePersistence({
   const activeCanvasFileRef = useRef(activeCanvasFile)
   activeCanvasFileRef.current = activeCanvasFile
 
+  // FOX2-70 (FB-3) save-failure transitions. Reading attempts through the
+  // ref keeps these stable and StrictMode-safe (no side effects inside a
+  // state updater); the `save-failed` feed event fires once, on the attempt
+  // that exhausts the retry budget.
+  const recordCanvasSaveFailure = useCallback(
+    (path: string, error: unknown) => {
+      const message = error instanceof Error ? error.message : "Failed to save canvas file."
+      const attempts = (canvasSaveFailureRef.current?.attempts ?? 0) + 1
+      const exhausted = attempts >= MAX_AUTOSAVE_ATTEMPTS
+      if (exhausted && !canvasSaveFailureRef.current?.exhausted) {
+        emitFileLifecycle("save-failed", { path, reason: message, attempts })
+      }
+      setCanvasSaveFailure({ message, attempts, exhausted })
+    },
+    [emitFileLifecycle]
+  )
+  const recordCanvasSaveSuccess = useCallback(
+    (path: string) => {
+      if (!canvasSaveFailureRef.current) return
+      emitFileLifecycle("save-recovered", { path })
+      setCanvasSaveFailure(null)
+    },
+    [emitFileLifecycle]
+  )
+
   useEffect(() => {
     if (
       typeof window === "undefined" ||
       !activeCanvasFilePath ||
       !canvasFileDirty ||
-      canvasFilePersistenceBusy
+      canvasFilePersistenceBusy ||
+      // FOX2-70: the retry budget is spent — stay in the failed state until
+      // an explicit Retry (or any successful save) clears it. No endless
+      // fixed-cadence hammering (FOX2-40).
+      canvasSaveFailure?.exhausted
     ) {
       return
     }
 
-    let cancelled = false
     const targetPath = activeCanvasFilePath
+    const delay = AUTOSAVE_DELAY_MS * 2 ** (canvasSaveFailure?.attempts ?? 0)
     const timeoutId = window.setTimeout(() => {
       void (async () => {
         const target = activeCanvasFileRef.current
@@ -381,37 +429,50 @@ export function useCanvasFilePersistence({
               assets
             )
           )
-          // Do NOT drop the result on `cancelled`: starting this very save
-          // flips canvasFilePersistenceBusy, re-running the effect and
-          // cancelling this closure — the save still completed and its
-          // signature must be recorded or dirty never clears (endless save
-          // loop). Only discard when the active file itself changed.
+          // Do NOT drop the result just because the effect re-ran: starting
+          // this very save flips canvasFilePersistenceBusy, re-running the
+          // effect and replacing this closure — the save still completed and
+          // its signature must be recorded or dirty never clears (endless
+          // save loop). Only discard when the active file itself changed.
           if (activeCanvasFilePathRef.current !== target.path) return
           setActiveCanvasFile(saved)
           setLastSavedCanvasFileSignature(JSON.stringify(payload))
+          recordCanvasSaveSuccess(target.path)
         } catch (error) {
-          if (cancelled) return
+          // Same rule as success: the failure happened even though starting
+          // the save re-ran the effect — it must count against the retry
+          // budget or the backoff never engages.
+          if (activeCanvasFilePathRef.current !== target.path) return
+          recordCanvasSaveFailure(target.path, error)
           window.console.warn(
             "[Canvas] Failed to autosave active canvas file:",
             error instanceof Error ? error.message : error
           )
         }
       })()
-    }, 900)
+    }, delay)
 
     return () => {
-      cancelled = true
       window.clearTimeout(timeoutId)
     }
   }, [
     activeCanvasFilePath,
     canvasFileDirty,
     canvasFilePersistenceBusy,
+    canvasSaveFailure,
     currentCanvasFileSignature,
+    recordCanvasSaveFailure,
+    recordCanvasSaveSuccess,
     runCanvasPersistenceTask,
     saveCanvasFile,
     setActiveCanvasFile,
   ])
+
+  // A different file (or project) means the failure no longer describes the
+  // board on screen.
+  useEffect(() => {
+    setCanvasSaveFailure(null)
+  }, [activeCanvasFilePath])
 
   /**
    * FOX2-71 (FB-1): a canvas is always folder-backed. Creates an `Untitled`
@@ -560,16 +621,16 @@ export function useCanvasFilePersistence({
       )
       setActiveCanvasFile(saved)
       setLastSavedCanvasFileSignature(JSON.stringify(payload))
+      recordCanvasSaveSuccess(saved.path)
       emitFileLifecycle("file-save", {
         path: saved.path,
         itemCount: payload.document.items.length,
       })
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to save canvas file."
-      if (typeof window !== "undefined") {
-        window.alert(message)
-      }
+      // FOX2-70: a failed manual save enters the same persistent failed
+      // state as autosave (badge + banner + Retry) instead of a one-shot
+      // alert.
+      recordCanvasSaveFailure(activeCanvasFile?.path ?? "", error)
     }
   }, [
     activeCanvasFile,
@@ -577,6 +638,8 @@ export function useCanvasFilePersistence({
     buildCurrentCanvasFileAssets,
     buildCurrentCanvasFilePayload,
     emitFileLifecycle,
+    recordCanvasSaveFailure,
+    recordCanvasSaveSuccess,
     runCanvasPersistenceTask,
     saveCanvasFile,
     setActiveCanvasFile,
@@ -665,6 +728,15 @@ export function useCanvasFilePersistence({
     }
     await performSaveCanvasFile()
   }, [activeProjectId, canvasFilePersistenceBusy, performSaveCanvasFile])
+
+  /**
+   * FOX2-70: the Retry action on the save-failed banner. The failed state is
+   * cleared by the successful save itself (which also emits
+   * `save-recovered`), so a Retry that fails again stays visibly failed.
+   */
+  const retryCanvasSave = useCallback(() => {
+    void handleSaveCanvasFile()
+  }, [handleSaveCanvasFile])
 
   const handleToggleCanvasFavorite = useCallback(
     async (filePath: string) => {
@@ -874,6 +946,8 @@ export function useCanvasFilePersistence({
     canvasFileDirty,
     canvasFileMaterializing,
     ensureCanvasFileMaterialized,
+    canvasSaveFailure,
+    retryCanvasSave,
     canvasSaveQueued,
     hasRestoredCanvasFile,
     canvasFileActionModal,
