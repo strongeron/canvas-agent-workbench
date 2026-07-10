@@ -1,6 +1,6 @@
 # Folder-backed canvases: autosave everything, never fail silently
 
-**Date:** 2026-07-08 · **Status:** approved 2026-07-10 (D1b lazy materialize, silent auto-name, bounded retry, + agent-parity addendum) · **Follows:** FOX2-40 (autosave loop), the document-asset feature (PR-merged), FOX2-64 (harness for the e2e)
+**Date:** 2026-07-08 · **Status:** shipped 2026-07-10 — FOX2-71 (PR #30), FOX2-69 (PR #33), FOX2-70 (PR #32) · **Follows:** FOX2-40 (autosave loop), the document-asset feature (PR-merged), FOX2-64 (harness for the e2e)
 
 ## Problem
 
