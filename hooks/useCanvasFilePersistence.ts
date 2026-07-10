@@ -560,6 +560,17 @@ export function useCanvasFilePersistence({
     if (!activeProjectId) return
     return subscribeToDocumentChanges((event) => {
       if (event.meta.source === "replace-state") return
+      // Selection-only changes (select/clear/box-select) go through
+      // applyChange but reuse the items/groups references — they are not
+      // document work and must never materialize a file. A boot-time
+      // selection reset on an empty draft would otherwise litter an empty
+      // Untitled.canvas on every visit.
+      if (
+        event.prevSnapshot.items === event.nextSnapshot.items &&
+        event.prevSnapshot.groups === event.nextSnapshot.groups
+      ) {
+        return
+      }
       if (activeCanvasFilePathRef.current) return
       pendingDraftMutationRef.current = true
     })
