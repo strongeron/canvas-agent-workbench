@@ -523,6 +523,14 @@ export function useCanvasAddHandlers({
             /too large|payload|413|max\s+\d+\s*mb/i.test(reason)
 
           if (!canUseSessionBlob) {
+            // FOX2-70 (FB-3): every store refused the asset — leave a durable
+            // record on the lifecycle feed (activity panel + agents), not
+            // just the one-shot alert.
+            emitFileLifecycle("asset-store-failed", {
+              itemId: mediaItemId,
+              fileName: input.file.name,
+              reason,
+            })
             if (typeof window !== "undefined") {
               window.alert(reason)
             }

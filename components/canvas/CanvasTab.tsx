@@ -1551,6 +1551,8 @@ export function CanvasTab({
     canvasFileDirty,
     canvasFileMaterializing,
     ensureCanvasFileMaterialized,
+    canvasSaveFailure,
+    retryCanvasSave,
     canvasSaveQueued,
     hasRestoredCanvasFile,
     canvasFileActionModal,
@@ -3482,6 +3484,8 @@ export function CanvasTab({
                 canvasFilesError={canvasFilesError}
                 canvasFileDirty={canvasFileDirty}
                 canvasFileMaterializing={canvasFileMaterializing}
+                canvasSaveFailure={canvasSaveFailure}
+                onRetryCanvasSave={retryCanvasSave}
                 canvasSaveQueued={canvasSaveQueued}
                 onRefreshCanvasFiles={refreshCanvasFiles}
                 onOpenCanvasFile={handleOpenCanvasFile}
