@@ -203,9 +203,11 @@ function mountAddHandlers(options: {
       workspaceSize: { width: 1200, height: 800 },
       activeProjectId: "project-1",
       activeCanvasFilePath: null,
+      ensureCanvasFileMaterialized: async () => null,
       emitUserAction: (action, payload) => {
         events.push({ action, payload })
       },
+      emitFileLifecycle: () => {},
       setPropsPanelVisible: () => {},
       setSidebarVisible: () => {},
       setHistoryToast: () => {},

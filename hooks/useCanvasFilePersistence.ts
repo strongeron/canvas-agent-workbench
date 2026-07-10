@@ -282,6 +282,10 @@ export function useCanvasFilePersistence({
     activeCanvasFile !== null && lastSavedCanvasFileSignature !== currentCanvasFileSignature
 
   const materializePromiseRef = useRef<Promise<ActiveCanvasFile | null> | null>(null)
+  // Callers that must not lose work (asset paste) block on restore settling
+  // rather than getting a null back — the restore may auto-open a file that
+  // should receive the asset instead of a fresh Untitled.
+  const restoreWaitersRef = useRef<Array<() => void>>([])
   // Set by the change-stream listener when a genuine mutation lands on an
   // unsaved board; consumed by the post-commit materialize effect. A plain
   // ref (not state): the listener fires synchronously inside applyChange,
@@ -313,8 +317,16 @@ export function useCanvasFilePersistence({
     [emitFileLifecycle, replaceState, resetZoom, setActiveCanvasFile, setViewport]
   )
 
+  // Release restore waiters when restore settles (or when the draft context
+  // tears down — a hung waiter would strand its caller's paste forever).
+  useEffect(() => {
+    if (!hasRestoredCanvasFile) return
+    restoreWaitersRef.current.splice(0).forEach((resolve) => resolve())
+  }, [hasRestoredCanvasFile])
+
   useEffect(() => {
     pendingDraftMutationRef.current = false
+    restoreWaitersRef.current.splice(0).forEach((resolve) => resolve())
     setActiveCanvasFile(null)
     setLastSavedCanvasFileSignature(null)
     setHasRestoredCanvasFile(false)
@@ -408,8 +420,14 @@ export function useCanvasFilePersistence({
    * create is shared by all callers.
    */
   const ensureCanvasFileMaterialized = useCallback(async (): Promise<ActiveCanvasFile | null> => {
-    if (!activeProjectId || !hasRestoredCanvasFile) return null
-    if (activeCanvasFile) return activeCanvasFile
+    if (!activeProjectId) return null
+    if (!hasRestoredCanvasFile) {
+      // Restore may still auto-open a file that should receive this work —
+      // wait for it to settle rather than racing it with a fresh Untitled.
+      await new Promise<void>((resolve) => restoreWaitersRef.current.push(resolve))
+      if (activeProjectIdRef.current !== activeProjectId) return null
+    }
+    if (activeCanvasFileRef.current) return activeCanvasFileRef.current
     if (materializePromiseRef.current) return materializePromiseRef.current
 
     const materialize = (async () => {
@@ -461,7 +479,6 @@ export function useCanvasFilePersistence({
     materializePromiseRef.current = materialize
     return materialize
   }, [
-    activeCanvasFile,
     activeProjectId,
     buildCurrentCanvasFileAssets,
     buildCurrentCanvasFilePayload,

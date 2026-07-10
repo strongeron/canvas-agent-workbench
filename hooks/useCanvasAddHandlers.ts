@@ -102,7 +102,14 @@ interface UseCanvasAddHandlersInput {
   workspaceSize: { width: number; height: number }
   activeProjectId?: string
   activeCanvasFilePath: string | null
+  /**
+   * FOX2-71: guarantees a `.canvas` file exists before an asset is stored —
+   * pasting into a project draft materializes the file first so the asset
+   * lands in the canvas's own `.assets/` (FOX2-69).
+   */
+  ensureCanvasFileMaterialized: () => Promise<{ path: string } | null>
   emitUserAction: (action: string, payload?: Record<string, unknown>) => void
+  emitFileLifecycle: (action: string, meta?: Record<string, unknown>) => void
   setPropsPanelVisible: Dispatch<SetStateAction<boolean>>
   setSidebarVisible: Dispatch<SetStateAction<boolean>>
   setHistoryToast: Dispatch<SetStateAction<CanvasHistoryToast | null>>
@@ -129,7 +136,9 @@ export function useCanvasAddHandlers({
   workspaceSize,
   activeProjectId,
   activeCanvasFilePath,
+  ensureCanvasFileMaterialized,
   emitUserAction,
+  emitFileLifecycle,
   setPropsPanelVisible,
   setSidebarVisible,
   setHistoryToast,
@@ -241,7 +250,11 @@ export function useCanvasAddHandlers({
         throw new Error("Select a project before importing an HTML bundle.")
       }
 
-      if (!activeCanvasFilePath) {
+      // FOX2-69 (FB-2): importing a bundle into a draft materializes the
+      // canvas file (FOX2-71) instead of demanding a manual save first.
+      const canvasPath =
+        activeCanvasFilePath ?? (await ensureCanvasFileMaterialized())?.path ?? null
+      if (!canvasPath) {
         throw new Error("Save this board to a real .canvas file before importing an HTML bundle.")
       }
 
@@ -256,7 +269,7 @@ export function useCanvasAddHandlers({
           ? await serializeHtmlBundleFileEntries(input.fileEntries || [])
           : await serializeHtmlBundleFiles(input.files || [])
         await runCanvasPersistenceTask(async () => {
-          const imported = await importCanvasHtmlBundle(activeCanvasFilePath, {
+          const imported = await importCanvasHtmlBundle(canvasPath, {
             title: input.title?.trim() || undefined,
             files: serializedFiles,
           })
@@ -309,6 +322,7 @@ export function useCanvasAddHandlers({
       activeProjectId,
       addItem,
       emitUserAction,
+      ensureCanvasFileMaterialized,
       importCanvasHtmlBundle,
       refreshCanvasFiles,
       resolveAddPlacement,
@@ -455,18 +469,53 @@ export function useCanvasAddHandlers({
       let sourceCapturedAt: string | undefined
 
       if (input.file) {
-        const canStoreInCanvasDocument =
-          Boolean(activeProjectId?.trim()) && Boolean(activeCanvasFilePath?.trim())
+        const projectId = activeProjectId?.trim() || ""
+        // FOX2-69 (FB-2): assets belong to the canvas's own `.assets/`.
+        // Pasting into a project draft is a mutation, so the file
+        // materializes first (FOX2-71) and the asset lands with the canvas.
+        // The shared browser store remains the primary only when no project
+        // is selected at all.
+        let canvasPath = activeCanvasFilePath?.trim() || ""
+        if (projectId && !canvasPath) {
+          canvasPath = (await ensureCanvasFileMaterialized())?.path?.trim() ?? ""
+        }
+        const canStoreInCanvasDocument = Boolean(projectId && canvasPath)
 
-        const stored = canStoreInCanvasDocument
+        let stored = canStoreInCanvasDocument
           ? await storeCanvasDocumentMediaFile({
-              projectId: activeProjectId!,
-              canvasPath: activeCanvasFilePath!,
+              projectId,
+              canvasPath,
               itemId: mediaItemId,
               file: input.file,
               preferredFileName: input.file.name,
             })
           : await storeLocalMediaFile(input.file)
+
+        // FOX2-69 (FB-2): the shared store is never a silent substitute for
+        // the canvas document store. When the document store fails for a
+        // reason other than size (size falls through to the session-blob
+        // path below), fall back explicitly — toast + `asset-fallback` on
+        // the lifecycle feed so agents see it too.
+        if (canStoreInCanvasDocument && (stored.status !== "ready" || !stored.mediaUrl)) {
+          const documentStoreReason =
+            stored.reason || "Failed to store the asset in this canvas."
+          if (!/too large|payload|413|max\s+\d+\s*mb/i.test(documentStoreReason)) {
+            const fallback = await storeLocalMediaFile(input.file)
+            if (fallback.status === "ready" && fallback.mediaUrl) {
+              emitFileLifecycle("asset-fallback", {
+                itemId: mediaItemId,
+                fileName: input.file.name,
+                reason: documentStoreReason,
+              })
+              setHistoryToast({
+                id: Date.now(),
+                tone: "error",
+                message: `Saved to the shared media store, not this canvas — ${documentStoreReason}`,
+              })
+              stored = fallback
+            }
+          }
+        }
 
         if (stored.status !== "ready" || !stored.mediaUrl) {
           const reason = stored.reason || "Failed to upload media file."
@@ -540,7 +589,7 @@ export function useCanvasAddHandlers({
       if (placement) emitUserAction("create-item", { itemType: "media", parentId: placement.parentId, target: "artboard", ...(input.via ? { via: input.via } : {}) })
       setPropsPanelVisible(true)
     },
-    [activeCanvasFilePath, activeProjectId, addItem, emitUserAction, resolveAddPlacement, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
+    [activeCanvasFilePath, activeProjectId, addItem, emitFileLifecycle, emitUserAction, ensureCanvasFileMaterialized, resolveAddPlacement, setHistoryToast, setPropsPanelVisible, transform.offset.x, transform.offset.y, transform.scale, workspaceSize.height, workspaceSize.width]
   )
 
   const handleAddMermaid = useCallback(

@@ -23,6 +23,18 @@ export async function cleanupMaterializedCanvasFiles() {
       .filter((name) => /^untitled(-\d+)?\.canvas$/.test(name))
       .map((name) => fs.rm(path.join(DEMO_CANVASES_DIR, name), { force: true }))
   )
+  // Their document-asset folders (FOX2-69: pasted media lands in
+  // `.assets/<canvas-name>/`).
+  const assetDirs = await fs
+    .readdir(path.join(DEMO_CANVASES_DIR, ".assets"))
+    .catch(() => [] as string[])
+  await Promise.all(
+    assetDirs
+      .filter((name) => /^untitled(-\d+)?$/.test(name))
+      .map((name) =>
+        fs.rm(path.join(DEMO_CANVASES_DIR, ".assets", name), { recursive: true, force: true })
+      )
+  )
   // Derived cache — drop it so deleted files vanish from the index too.
   await fs.rm(path.join(DEMO_CANVASES_DIR, ".canvas-index.json"), { force: true })
 }
