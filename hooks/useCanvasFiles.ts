@@ -27,6 +27,11 @@ export function useCanvasFiles<
 >(projectId?: string) {
   const [files, setFiles] = useState<CanvasFileIndexEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  // `isLoading` stays false until the first fetch actually starts, so
+  // consumers that must wait for the index (draft restore, FOX2-71
+  // materialize) gate on this instead: false until the first refresh for the
+  // current project settles.
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -55,7 +60,8 @@ export function useCanvasFiles<
   }, [projectId])
 
   useEffect(() => {
-    void refreshFiles()
+    setHasLoaded(false)
+    void refreshFiles().finally(() => setHasLoaded(true))
   }, [refreshFiles])
 
   const openCanvasFile = useCallback(
@@ -362,6 +368,7 @@ export function useCanvasFiles<
   return {
     files,
     isLoading,
+    hasLoaded,
     isSaving,
     error,
     refreshFiles,

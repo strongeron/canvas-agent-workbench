@@ -761,6 +761,7 @@ export function CanvasTab({
   const {
     files: canvasFiles,
     isLoading: canvasFilesLoading,
+    hasLoaded: canvasFilesLoaded,
     isSaving: canvasFilesSaving,
     error: canvasFilesError,
     refreshFiles: refreshCanvasFiles,
@@ -1548,6 +1549,7 @@ export function CanvasTab({
     runCanvasPersistenceTask,
     activeCanvasFileTitle,
     canvasFileDirty,
+    canvasFileMaterializing,
     canvasSaveQueued,
     hasRestoredCanvasFile,
     canvasFileActionModal,
@@ -1582,6 +1584,7 @@ export function CanvasTab({
     activeCanvasFilePath,
     canvasFiles,
     canvasFilesLoading,
+    canvasFilesLoaded,
     canvasFilesSaving,
     openCanvasFile,
     createCanvasFile,
@@ -1592,6 +1595,7 @@ export function CanvasTab({
     deleteCanvasFile,
     canvasFileBrowser,
     emitFileLifecycle,
+    subscribeToDocumentChanges,
   })
 
   useEffect(() => {
@@ -3474,6 +3478,7 @@ export function CanvasTab({
                 canvasFilesSaving={canvasFilesSaving}
                 canvasFilesError={canvasFilesError}
                 canvasFileDirty={canvasFileDirty}
+                canvasFileMaterializing={canvasFileMaterializing}
                 canvasSaveQueued={canvasSaveQueued}
                 onRefreshCanvasFiles={refreshCanvasFiles}
                 onOpenCanvasFile={handleOpenCanvasFile}

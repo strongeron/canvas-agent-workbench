@@ -422,6 +422,7 @@ interface CanvasSidebarProps {
   canvasFilesSaving?: boolean
   canvasFilesError?: string | null
   canvasFileDirty?: boolean
+  canvasFileMaterializing?: boolean
   canvasSaveQueued?: boolean
   onRefreshCanvasFiles?: () => void | Promise<void>
   onOpenCanvasFile?: (filePath: string) => void | Promise<void>
@@ -471,6 +472,7 @@ export function CanvasSidebar({
   canvasFilesSaving,
   canvasFilesError,
   canvasFileDirty,
+  canvasFileMaterializing,
   canvasSaveQueued,
   onRefreshCanvasFiles,
   onOpenCanvasFile,
@@ -1245,13 +1247,17 @@ export function CanvasSidebar({
                   Current file
                 </p>
                 <p className="mt-1 truncate text-sm font-medium text-foreground">
-                  {activeCanvasFileTitle || "Unsaved canvas"}
+                  {activeCanvasFileTitle || (canvasFileMaterializing ? "Creating file…" : "Unsaved canvas")}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {activeCanvasFilePath || "Auto-saved browser draft. Open or create a real .canvas file to enable document-backed assets like HTML bundles."}
+                  {activeCanvasFilePath || "Empty board — your first change creates a .canvas file here automatically."}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {canvasFileDirty ? (
+                  {canvasFileMaterializing ? (
+                    <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
+                      Creating file…
+                    </span>
+                  ) : canvasFileDirty ? (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                       Autosave pending
                     </span>

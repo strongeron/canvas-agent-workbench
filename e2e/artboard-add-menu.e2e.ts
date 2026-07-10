@@ -4,11 +4,14 @@ import {
   addArtboard,
   artboardChildCount,
   openAddMenu,
+  cleanupHarnessState,
   openCanvas,
   selectArtboard,
 } from "./helpers"
 
 // FOX2-59 method 4: the artboard "+ Add" menu inserts assets into the flow.
+test.afterEach(({ request }) => cleanupHarnessState(request))
+
 test.describe("artboard add-menu", () => {
   test("grouped picker shows Components + Assets and adds an HTML node into the flow", async ({
     page,

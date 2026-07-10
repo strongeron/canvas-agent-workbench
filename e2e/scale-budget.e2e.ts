@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test"
 
+import { cleanupHarnessState } from "./helpers"
+
 // FOX2-65: a scale guardrail, not a strict perf gate. Seeds a 200-node board
 // via per-context localStorage (no disk writes), asserts it renders in full,
 // and measures a pan against a generous, logged ceiling so a real regression
@@ -19,6 +21,8 @@ function seedDocument(count: number) {
   }))
   return JSON.stringify({ items, groups: [], nextZIndex: count + 1, selectedIds: [] })
 }
+
+test.afterEach(({ request }) => cleanupHarnessState(request))
 
 test.describe("200-node scale budget", () => {
   test("renders a full 200-node board and pans within budget", async ({ page }) => {

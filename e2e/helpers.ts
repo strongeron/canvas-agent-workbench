@@ -1,10 +1,62 @@
-import { expect, type Locator, type Page } from "@playwright/test"
+import { promises as fs } from "node:fs"
+import path from "node:path"
+
+import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test"
 
 /**
  * Shared harness for the gesture e2e suite (FOX2-64). Everything runs against
- * the demo project WITHOUT opening a canvas file, so state lives in the
- * Playwright context's localStorage and never writes to projects/ on disk.
+ * the demo project WITHOUT opening a canvas file. Since FOX2-71, the first
+ * document mutation materializes a real `untitled*.canvas` in the demo
+ * project — every spec registers the cleanup hook below to keep the checkout,
+ * the file index, and the server-side agent workspace state clean.
  */
+
+export const DEMO_CANVASES_DIR = path.resolve(process.cwd(), "projects/demo/canvases")
+
+const DEMO_WORKSPACE_KEY = "gallery-demo:canvas"
+
+/** Remove `.canvas` files auto-created by draft materialization (FOX2-71). */
+export async function cleanupMaterializedCanvasFiles() {
+  const entries = await fs.readdir(DEMO_CANVASES_DIR).catch(() => [] as string[])
+  await Promise.all(
+    entries
+      .filter((name) => /^untitled(-\d+)?\.canvas$/.test(name))
+      .map((name) => fs.rm(path.join(DEMO_CANVASES_DIR, name), { force: true }))
+  )
+  // Derived cache — drop it so deleted files vanish from the index too.
+  await fs.rm(path.join(DEMO_CANVASES_DIR, ".canvas-index.json"), { force: true })
+}
+
+/**
+ * Full per-test cleanup. Register as
+ * `test.afterEach(({ request }) => cleanupHarnessState(request))` in every
+ * spec. Beyond the materialized files, this resets the dev server's
+ * IN-MEMORY agent workspace state: every board up-syncs there
+ * (`/api/agent-native/workspaces/canvas/state`), and the next test's empty
+ * draft would otherwise hydrate the previous test's items into its board.
+ */
+export async function cleanupHarnessState(request: APIRequestContext) {
+  await request
+    .post("/api/agent-native/workspaces/canvas/state", {
+      data: {
+        workspaceKey: DEMO_WORKSPACE_KEY,
+        clientId: "e2e-harness-cleanup",
+        payload: {
+          surface: "canvas",
+          workspaceKey: DEMO_WORKSPACE_KEY,
+          state: { items: [], groups: [], nextZIndex: 1, selectedIds: [] },
+          selection: [],
+          primitives: [],
+          themeSnapshot: { themes: [], activeThemeId: null, tokenValues: {} },
+          stateSummary: { itemCount: 0, groupCount: 0, selection: [] },
+        },
+      },
+    })
+    .catch(() => {
+      // The server may already be gone at suite teardown — files still matter.
+    })
+  await cleanupMaterializedCanvasFiles()
+}
 
 const MOD = process.platform === "darwin" ? "Meta" : "Control"
 
