@@ -62,6 +62,51 @@ test.describe("folder-backed autosave (FOX2-71)", () => {
     expect(await listUntitledCanvasFiles()).toEqual(["untitled.canvas"])
   })
 
+  // FOX2-69 (FB-2): pasting an image into a fresh project canvas
+  // materializes the file and stores the asset in the canvas's own
+  // `.assets/<canvas-name>/` — never silently in the shared media store.
+  test("pasted image lands in the canvas's .assets and the document references it", async ({
+    page,
+  }) => {
+    await openCanvas(page)
+
+    await page.evaluate(() => {
+      // 1×1 transparent PNG.
+      const base64 =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+      const file = new File([bytes], "e2e-pasted-shot.png", { type: "image/png" })
+      const transfer = new DataTransfer()
+      transfer.items.add(file)
+      window.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer }))
+    })
+
+    await expect.poll(listUntitledCanvasFiles).toEqual(["untitled.canvas"])
+    await expect
+      .poll(async () => {
+        const assetDir = path.join(DEMO_CANVASES_DIR, ".assets", "untitled")
+        const entries = await fs.readdir(assetDir, { recursive: true }).catch(() => [] as string[])
+        return entries.some((entry) => String(entry).includes("e2e-pasted-shot"))
+      })
+      .toBe(true)
+
+    // The media item reaches the document via the 900ms autosave; its src is
+    // the document-asset URL (`/api/projects/demo/canvases/assets/file?...`),
+    // not a shared-media-store URL.
+    await expect
+      .poll(
+        async () => {
+          const doc = await readCanvasDocument("untitled.canvas")
+          const media = doc.document.items.find((item) => item.type === "media") as
+            | { type: string; src?: string }
+            | undefined
+          return media?.src ?? ""
+        },
+        { timeout: 15_000 }
+      )
+      .toContain("/canvases/assets/file")
+  })
+
   test("browsing and panning a project never creates files", async ({ page }) => {
     await openCanvas(page)
 
