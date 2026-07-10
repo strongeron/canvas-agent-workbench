@@ -4,6 +4,7 @@ import {
   addArtboard,
   addAssetViaMenu,
   artboardChildCount,
+  cleanupHarnessState,
   openCanvas,
   undo,
 } from "./helpers"
@@ -11,6 +12,8 @@ import {
 const MOD = process.platform === "darwin" ? "Meta" : "Control"
 
 // FOX2-59 methods 1 & 2: duplicate-in-place and copy/paste into the artboard.
+test.afterEach(({ request }) => cleanupHarnessState(request))
+
 test.describe("clipboard + duplicate", () => {
   test("duplicate-in-place adds a sibling into the same artboard flow", async ({ page }) => {
     await openCanvas(page)

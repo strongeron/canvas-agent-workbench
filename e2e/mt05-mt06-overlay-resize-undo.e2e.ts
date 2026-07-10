@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test"
 
-import { addArtboard, addAssetViaMenu, openCanvas, setTool, undo } from "./helpers"
+import {
+  addArtboard,
+  addAssetViaMenu,
+  cleanupHarnessState,
+  openCanvas,
+  setTool,
+  undo,
+} from "./helpers"
 
 /**
  * MT-05 / MT-06 (FOX2-39) — overlay element resize + single-step undo.
@@ -21,6 +28,8 @@ import { addArtboard, addAssetViaMenu, openCanvas, setTool, undo } from "./helpe
  * sequence carrying a stable pointerId, or a test hook that invokes the resize
  * commit path directly.
  */
+test.afterEach(({ request }) => cleanupHarnessState(request))
+
 test.describe("MT-05 / MT-06 overlay resize undo", () => {
   test("selects an element in edit mode and shows the resize overlay", async ({ page }) => {
     await openCanvas(page)

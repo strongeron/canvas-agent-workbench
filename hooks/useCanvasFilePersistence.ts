@@ -14,6 +14,7 @@ import type {
 import { buildCanvasAssetFileName } from "../utils/canvasFileAssetName"
 import { SerialTaskQueue } from "../utils/serialTaskQueue"
 import { blobToDataUrl } from "./useCanvasAddHandlers"
+import type { CanvasDocumentChangeListener } from "./useCanvasState"
 
 export type CanvasFileActionModalState = {
   mode: "create" | "save-as" | "rename" | "duplicate"
@@ -31,6 +32,20 @@ export type CanvasFileDeleteModalState = {
 export type ActiveCanvasFile = {
   path: string
   document: CanvasFileDocument
+}
+
+/**
+ * Auto-name for materialized drafts (FOX2-71): `Untitled`, then `Untitled 2`…
+ * against the existing file titles. The server additionally dedupes the file
+ * path, so a stale index at worst produces `untitled-2.canvas` with the same
+ * display title.
+ */
+export function nextUntitledCanvasTitle(files: Pick<CanvasFileIndexEntry, "title">[]) {
+  const titles = new Set(files.map((file) => file.title.trim().toLowerCase()))
+  if (!titles.has("untitled")) return "Untitled"
+  let counter = 2
+  while (titles.has(`untitled ${counter}`)) counter += 1
+  return `Untitled ${counter}`
 }
 
 function fileNameFromCanvasAsset(
@@ -64,6 +79,8 @@ interface UseCanvasFilePersistenceInput {
   activeCanvasFilePath: string | null
   canvasFiles: CanvasFileIndexEntry[]
   canvasFilesLoading: boolean
+  /** True once the file index for the current project has loaded at least once. */
+  canvasFilesLoaded: boolean
   canvasFilesSaving: boolean
   openCanvasFile: (filePath: string) => Promise<ActiveCanvasFile>
   createCanvasFile: (input: {
@@ -102,6 +119,14 @@ interface UseCanvasFilePersistenceInput {
     removeTrackedPath: (path: string) => void
   }
   emitFileLifecycle: (action: string, meta?: Record<string, unknown>) => void
+  /**
+   * The FOX2-66 change stream. Every genuine document mutation — user
+   * gesture or agent operation — flows through `applyChange` and lands here,
+   * while restores (localStorage hydration, file open via `replace-state`)
+   * do not. That makes it the materialize trigger (FOX2-71): no diffing
+   * against a restored baseline, no ambiguity about what counts as a change.
+   */
+  subscribeToDocumentChanges: (listener: CanvasDocumentChangeListener) => () => void
 }
 
 /**
@@ -125,6 +150,7 @@ export function useCanvasFilePersistence({
   activeCanvasFilePath,
   canvasFiles,
   canvasFilesLoading,
+  canvasFilesLoaded,
   canvasFilesSaving,
   openCanvasFile,
   createCanvasFile,
@@ -135,6 +161,7 @@ export function useCanvasFilePersistence({
   deleteCanvasFile,
   canvasFileBrowser,
   emitFileLifecycle,
+  subscribeToDocumentChanges,
 }: UseCanvasFilePersistenceInput) {
   const [lastSavedCanvasFileSignature, setLastSavedCanvasFileSignature] = useState<string | null>(null)
   const [hasRestoredCanvasFile, setHasRestoredCanvasFile] = useState(false)
@@ -145,6 +172,7 @@ export function useCanvasFilePersistence({
   const [canvasFileActionBusy, setCanvasFileActionBusy] = useState(false)
   const [canvasFileDeleteBusy, setCanvasFileDeleteBusy] = useState(false)
   const [canvasSaveQueued, setCanvasSaveQueued] = useState(false)
+  const [canvasFileMaterializing, setCanvasFileMaterializing] = useState(false)
   const [canvasPersistencePendingCount, setCanvasPersistencePendingCount] = useState(0)
   const canvasPersistenceQueueRef = useRef<SerialTaskQueue | null>(null)
   if (!canvasPersistenceQueueRef.current) {
@@ -241,6 +269,10 @@ export function useCanvasFilePersistence({
   useEffect(() => {
     activeCanvasFilePathRef.current = activeCanvasFilePath
   }, [activeCanvasFilePath])
+  const activeProjectIdRef = useRef<string | undefined>(activeProjectId)
+  useEffect(() => {
+    activeProjectIdRef.current = activeProjectId
+  }, [activeProjectId])
   const canvasFilePersistenceBusy =
     canvasFilesSaving ||
     canvasFileActionBusy ||
@@ -248,6 +280,13 @@ export function useCanvasFilePersistence({
     canvasPersistencePendingCount > 0
   const canvasFileDirty =
     activeCanvasFile !== null && lastSavedCanvasFileSignature !== currentCanvasFileSignature
+
+  const materializePromiseRef = useRef<Promise<ActiveCanvasFile | null> | null>(null)
+  // Set by the change-stream listener when a genuine mutation lands on an
+  // unsaved board; consumed by the post-commit materialize effect. A plain
+  // ref (not state): the listener fires synchronously inside applyChange,
+  // before React commits the mutated document.
+  const pendingDraftMutationRef = useRef(false)
 
   const applyCanvasFileToWorkspace = useCallback(
     (file: { path: string; document: CanvasFileDocument }) => {
@@ -275,6 +314,7 @@ export function useCanvasFilePersistence({
   )
 
   useEffect(() => {
+    pendingDraftMutationRef.current = false
     setActiveCanvasFile(null)
     setLastSavedCanvasFileSignature(null)
     setHasRestoredCanvasFile(false)
@@ -285,10 +325,24 @@ export function useCanvasFilePersistence({
     setCanvasSaveQueued(false)
   }, [activeProjectId, setActiveCanvasFile])
 
+  // The autosave debounce must survive re-renders that don't change the
+  // document: `items`/`groups` get fresh identities on every CanvasTab
+  // render, and background polling (agent bridge state sync) re-renders the
+  // tab a few times per second — an identity-keyed effect would cancel its
+  // own timer forever and the save would never fire. So the effect below is
+  // keyed on VALUES (the payload signature string, the target path, the
+  // dirty/busy booleans) and reads everything else through these refs.
+  const buildCurrentCanvasFilePayloadRef = useRef(buildCurrentCanvasFilePayload)
+  buildCurrentCanvasFilePayloadRef.current = buildCurrentCanvasFilePayload
+  const buildCurrentCanvasFileAssetsRef = useRef(buildCurrentCanvasFileAssets)
+  buildCurrentCanvasFileAssetsRef.current = buildCurrentCanvasFileAssets
+  const activeCanvasFileRef = useRef(activeCanvasFile)
+  activeCanvasFileRef.current = activeCanvasFile
+
   useEffect(() => {
     if (
       typeof window === "undefined" ||
-      !activeCanvasFile ||
+      !activeCanvasFilePath ||
       !canvasFileDirty ||
       canvasFilePersistenceBusy
     ) {
@@ -296,16 +350,19 @@ export function useCanvasFilePersistence({
     }
 
     let cancelled = false
+    const targetPath = activeCanvasFilePath
     const timeoutId = window.setTimeout(() => {
       void (async () => {
+        const target = activeCanvasFileRef.current
+        if (!target || target.path !== targetPath) return
         try {
-          const payload = buildCurrentCanvasFilePayload()
-          const assets = await buildCurrentCanvasFileAssets()
+          const payload = buildCurrentCanvasFilePayloadRef.current()
+          const assets = await buildCurrentCanvasFileAssetsRef.current()
           const saved = await runCanvasPersistenceTask(() =>
             saveCanvasFile(
-              activeCanvasFile.path,
+              target.path,
               {
-                ...activeCanvasFile.document,
+                ...target.document,
                 document: payload.document,
                 view: payload.view,
               },
@@ -317,7 +374,7 @@ export function useCanvasFilePersistence({
           // cancelling this closure — the save still completed and its
           // signature must be recorded or dirty never clears (endless save
           // loop). Only discard when the active file itself changed.
-          if (activeCanvasFilePathRef.current !== activeCanvasFile.path) return
+          if (activeCanvasFilePathRef.current !== target.path) return
           setActiveCanvasFile(saved)
           setLastSavedCanvasFileSignature(JSON.stringify(payload))
         } catch (error) {
@@ -335,14 +392,125 @@ export function useCanvasFilePersistence({
       window.clearTimeout(timeoutId)
     }
   }, [
-    activeCanvasFile,
-    buildCurrentCanvasFileAssets,
-    buildCurrentCanvasFilePayload,
+    activeCanvasFilePath,
     canvasFileDirty,
     canvasFilePersistenceBusy,
+    currentCanvasFileSignature,
     runCanvasPersistenceTask,
     saveCanvasFile,
     setActiveCanvasFile,
+  ])
+
+  /**
+   * FOX2-71 (FB-1): a canvas is always folder-backed. Creates an `Untitled`
+   * `.canvas` file from the current workspace state when no file is open, so
+   * work never lives only in localStorage. Safe to call concurrently — one
+   * create is shared by all callers.
+   */
+  const ensureCanvasFileMaterialized = useCallback(async (): Promise<ActiveCanvasFile | null> => {
+    if (!activeProjectId || !hasRestoredCanvasFile) return null
+    if (activeCanvasFile) return activeCanvasFile
+    if (materializePromiseRef.current) return materializePromiseRef.current
+
+    const materialize = (async () => {
+      setCanvasFileMaterializing(true)
+      try {
+        const payload = buildCurrentCanvasFilePayload()
+        const assets = await buildCurrentCanvasFileAssets()
+        const title = nextUntitledCanvasTitle(canvasFiles)
+        const created = await runCanvasPersistenceTask(() =>
+          createCanvasFile({
+            title,
+            document: payload.document,
+            view: payload.view,
+            assets,
+          })
+        )
+        // The project may have switched while the create was in flight — the
+        // file was written, but it must not become active in the new project.
+        if (activeProjectIdRef.current !== activeProjectId) return null
+        emitFileLifecycle("file-create", {
+          path: created.path,
+          title,
+          reason: "auto-materialize",
+        })
+        pendingDraftMutationRef.current = false
+        setActiveCanvasFile(created)
+        setLastSavedCanvasFileSignature(JSON.stringify(payload))
+        return created
+      } catch (error) {
+        // FOX2-70 (FB-3) turns this into a persistent failed state; until
+        // then the NEXT change-stream event retries. The pending flag must
+        // clear here — the post-commit effect churns with every re-render
+        // (items identity), and a sticky flag would hot-retry a failing
+        // create several times per second (FOX2-40 lesson).
+        pendingDraftMutationRef.current = false
+        materializePromiseRef.current = null
+        if (typeof window !== "undefined") {
+          window.console.warn(
+            "[Canvas] Failed to materialize canvas file for draft:",
+            error instanceof Error ? error.message : error
+          )
+        }
+        return null
+      } finally {
+        setCanvasFileMaterializing(false)
+      }
+    })()
+
+    materializePromiseRef.current = materialize
+    return materialize
+  }, [
+    activeCanvasFile,
+    activeProjectId,
+    buildCurrentCanvasFileAssets,
+    buildCurrentCanvasFilePayload,
+    canvasFiles,
+    createCanvasFile,
+    emitFileLifecycle,
+    hasRestoredCanvasFile,
+    runCanvasPersistenceTask,
+    setActiveCanvasFile,
+  ])
+
+  // FOX2-71 (FB-1) trigger, part 1: the change stream marks genuine
+  // mutations on an unsaved board. Restores never fire it (localStorage
+  // hydration bypasses applyChange; file opens carry `replace-state`), so a
+  // pending flag here means real user or agent work that must get a file —
+  // including mutations that land before the file index finishes loading.
+  useEffect(() => {
+    if (!activeProjectId) return
+    return subscribeToDocumentChanges((event) => {
+      if (event.meta.source === "replace-state") return
+      if (activeCanvasFilePathRef.current) return
+      pendingDraftMutationRef.current = true
+    })
+  }, [activeProjectId, subscribeToDocumentChanges])
+
+  // FOX2-71 (FB-1) trigger, part 2: materialize after the mutated document
+  // commits (the stream fires pre-commit, when the workspace payload would
+  // still be stale) and once restore has settled. A failed create keeps the
+  // flag set and retries on the next commit — never in a hot loop (FOX2-40).
+  useEffect(() => {
+    if (!activeProjectId || !hasRestoredCanvasFile || activeCanvasFile) {
+      // A successful materialize keeps its resolved promise in the ref until
+      // the created file commits as active — callers landing in that window
+      // reuse it instead of double-creating. Clear it here once committed
+      // (or when the draft context tears down).
+      if (activeCanvasFile) pendingDraftMutationRef.current = false
+      materializePromiseRef.current = null
+      return
+    }
+    if (!pendingDraftMutationRef.current) return
+    void ensureCanvasFileMaterialized()
+  }, [
+    activeCanvasFile,
+    activeProjectId,
+    ensureCanvasFileMaterialized,
+    groups,
+    hasRestoredCanvasFile,
+    items,
+    nextZIndex,
   ])
 
   const performSaveCanvasFile = useCallback(async () => {
@@ -423,8 +591,21 @@ export function useCanvasFilePersistence({
   )
 
   useEffect(() => {
-    if (!activeProjectId || canvasFilesLoading || hasRestoredCanvasFile || activeCanvasFile) return
-    if (canvasFiles.length === 0) return
+    if (
+      !activeProjectId ||
+      !canvasFilesLoaded ||
+      canvasFilesLoading ||
+      hasRestoredCanvasFile ||
+      activeCanvasFile
+    ) {
+      return
+    }
+    // No files to restore still settles the restore: the FOX2-71 materialize
+    // trigger and the viewport override both wait on hasRestoredCanvasFile.
+    if (canvasFiles.length === 0) {
+      setHasRestoredCanvasFile(true)
+      return
+    }
 
     const preferredPath = canvasFileBrowser.lastActivePath
     const nextPath =
@@ -442,6 +623,7 @@ export function useCanvasFilePersistence({
     activeProjectId,
     canvasFileBrowser.lastActivePath,
     canvasFiles,
+    canvasFilesLoaded,
     canvasFilesLoading,
     handleOpenCanvasFile,
     hasRestoredCanvasFile,
@@ -673,6 +855,8 @@ export function useCanvasFilePersistence({
     runCanvasPersistenceTask,
     activeCanvasFileTitle,
     canvasFileDirty,
+    canvasFileMaterializing,
+    ensureCanvasFileMaterialized,
     canvasSaveQueued,
     hasRestoredCanvasFile,
     canvasFileActionModal,

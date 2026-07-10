@@ -4,12 +4,15 @@ import {
   addArtboard,
   addAssetViaMenu,
   artboardChildCount,
+  cleanupHarnessState,
   historyToast,
   openCanvas,
   undo,
 } from "./helpers"
 
 // FOX2-67: Cmd-Z now covers document-level operations, not just source edits.
+test.afterEach(({ request }) => cleanupHarnessState(request))
+
 test.describe("canvas-document undo", () => {
   test("undoes an add into an artboard in one step", async ({ page }) => {
     await openCanvas(page)
