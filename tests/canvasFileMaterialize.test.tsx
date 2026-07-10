@@ -126,11 +126,14 @@ function makeChangeStream() {
         listeners.delete(listener)
       }
     },
-    emit: (meta: CanvasChangeMeta) => {
+    emit: (meta: CanvasChangeMeta, snapshots?: Pick<CanvasDocumentChangeEvent, "prevSnapshot" | "nextSnapshot">) => {
       const event: CanvasDocumentChangeEvent = {
         meta,
-        prevSnapshot: { items: [], groups: [] },
-        nextSnapshot: { items: [], groups: [] },
+        // Distinct references = a real document mutation (matches how the
+        // state mutators produce new arrays). Selection-only changes pass
+        // shared references via `snapshots`.
+        prevSnapshot: snapshots?.prevSnapshot ?? { items: [], groups: [] },
+        nextSnapshot: snapshots?.nextSnapshot ?? { items: [], groups: [] },
       }
       listeners.forEach((listener) => listener(event))
     },
@@ -294,6 +297,24 @@ describe("draft materialization (FOX2-71)", () => {
       { items: [makeItem("opened")], createCanvasFile },
       { actor: "user", source: "replace-state" }
     )
+    expect(createCanvasFile).not.toHaveBeenCalled()
+    await harness.cleanup()
+  })
+
+  it("never materializes from selection-only changes (shared document references)", async () => {
+    const createCanvasFile = vi.fn()
+    const harness = await renderHarness({ items: [], createCanvasFile })
+
+    // select-item / clear-selection style events: same items/groups refs.
+    const sharedSnapshot = { items: [], groups: [] }
+    await act(async () => {
+      harness.stream.emit(
+        { actor: "user", source: "clear-selection" },
+        { prevSnapshot: sharedSnapshot, nextSnapshot: sharedSnapshot }
+      )
+    })
+    await harness.rerender({ items: [], createCanvasFile })
+
     expect(createCanvasFile).not.toHaveBeenCalled()
     await harness.cleanup()
   })
