@@ -12,6 +12,10 @@ import type {
   CanvasStateSnapshot,
 } from "../types/canvas"
 import { GROUP_COLORS } from "../types/canvas"
+import {
+  isRenderableCanvasItem,
+  validateCanvasAgentOperation,
+} from "../utils/canvasOperationSchema.mjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CanvasDocumentStore seam (FOX2-66)
@@ -112,10 +116,15 @@ function normalizeItem(item: CanvasItem | any): CanvasItem {
   return { ...item, type: "component" }
 }
 
-// Normalize state to handle stale localStorage data missing properties
+// Normalize state to handle stale localStorage data missing properties.
+// Items that can never render safely (no id / no numeric position — e.g. a
+// board poisoned by a pre-FOX2-74 malformed agent op) are quarantined here
+// instead of crashing the whole canvas on load.
 function normalizeState(state: Partial<CanvasState> | null | undefined): CanvasState {
   return {
-    items: (state?.items ?? []).map((item) => normalizeItem(item)),
+    items: (state?.items ?? [])
+      .filter((item) => isRenderableCanvasItem(item))
+      .map((item) => normalizeItem(item)),
     groups: state?.groups ?? [],
     nextZIndex: state?.nextZIndex ?? 1,
     selectedIds: state?.selectedIds ?? [],
@@ -682,7 +691,16 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
   )
 
   const applyRemoteOperation = useCallback(
-    (operation: CanvasRemoteOperation) => {
+    (rawOperation: CanvasRemoteOperation) => {
+      // FOX2-74 backstop: the server validates at ingest, but operations can
+      // also reach here from in-browser dispatchers (copilot actions, tests)
+      // — a malformed one is skipped loudly instead of corrupting state.
+      const validation = validateCanvasAgentOperation(rawOperation)
+      if (!validation.ok) {
+        console.warn("[Canvas] Skipped invalid remote operation:", validation.error, rawOperation)
+        return
+      }
+      const operation = validation.operation as CanvasRemoteOperation
       applyChange((prev) => {
         switch (operation.type) {
           case "create_item": {
