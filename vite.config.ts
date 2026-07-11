@@ -101,6 +101,7 @@ import {
   applyCanvasThemeOperationToSnapshot,
   normalizeCanvasStateSnapshot,
 } from './utils/canvasAgentOperations.mjs'
+import { validateCanvasAgentOperation } from './utils/canvasOperationSchema.mjs'
 import { buildColorAuditWorkspaceManifest } from './utils/colorAuditWorkspaceAdapter'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -4202,12 +4203,22 @@ function paperImportPlugin() {
 
       const applyCanvasAgentOperation = ({
         projectId,
-        operation,
+        operation: rawOperation,
         clientId = null,
         sessionId = null,
         source = 'canvas-operation',
         toolName = null,
       }) => {
+        // FOX2-74: the single validation boundary — the HTTP endpoint and
+        // the session queue both land here. Rejections surface to the agent
+        // as HTTP 400 / an {ok:false,error} queue result instead of the
+        // silent ok-then-brick of FOX2-72. Ids for created items are minted
+        // here so the agent's response echoes the id it can address.
+        const validation = validateCanvasAgentOperation(rawOperation)
+        if (!validation.ok) {
+          throw new Error(`Rejected canvas operation: ${validation.error}`)
+        }
+        const operation = validation.operation
         const canvasWorkspaceKey = buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey
         const operationRecord = appendAgentNativeWorkspaceOperation(
           'canvas',
