@@ -142,16 +142,34 @@ export function applyCanvasThemeOperationToSnapshot(snapshot, operation) {
 export function collectCanvasCascadeDeleteIds(state, ids) {
   const current = normalizeCanvasStateSnapshot(state)
   const idsToRemove = new Set(Array.isArray(ids) ? ids : [])
-  current.items.forEach((item) => {
-    if (item?.parentId && idsToRemove.has(item.parentId)) {
-      idsToRemove.add(item.id)
-    }
-  })
+  // Transitive: deleting an artboard removes its children AND their children.
+  // A single pass only caught direct children, so agent-side deletes left
+  // orphaned grandchildren behind while the browser (which always cascaded
+  // fully) removed them — the two reducers disagreed on the same operation.
+  let changed = true
+  while (changed) {
+    changed = false
+    current.items.forEach((item) => {
+      if (item?.parentId && idsToRemove.has(item.parentId) && !idsToRemove.has(item.id)) {
+        idsToRemove.add(item.id)
+        changed = true
+      }
+    })
+  }
   return idsToRemove
 }
 
-export function applyCanvasRemoteOperationToState(state, operation) {
+/**
+ * The ONE remote-operation reducer (FOX2-74): the server applies it to the
+ * workspace record and the browser's `applyRemoteOperation` delegates here,
+ * so an operation can never mean two different things on the two sides.
+ * `options.normalizeItem` lets the browser run created items through its
+ * item normalizer (type-specific defaults); the server passes nothing.
+ */
+export function applyCanvasRemoteOperationToState(state, operation, options = {}) {
   const current = normalizeCanvasStateSnapshot(state)
+  const normalizeItem =
+    typeof options.normalizeItem === 'function' ? options.normalizeItem : (item) => item
 
   if (!operation || typeof operation !== 'object' || typeof operation.type !== 'string') {
     return current
@@ -162,22 +180,25 @@ export function applyCanvasRemoteOperationToState(state, operation) {
       if (!operation.item || typeof operation.item !== 'object' || !operation.item.id) {
         return current
       }
-      const existingIndex = current.items.findIndex((item) => item.id === operation.item.id)
+      const nextItem = normalizeItem(operation.item)
+      const existingIndex = current.items.findIndex((item) => item.id === nextItem.id)
       const nextItems =
         existingIndex >= 0
-          ? current.items.map((item, index) => (index === existingIndex ? operation.item : item))
-          : [...current.items, operation.item]
+          ? current.items.map((item, index) => (index === existingIndex ? nextItem : item))
+          : [...current.items, nextItem]
 
       return {
         ...current,
         items: nextItems,
         nextZIndex: Math.max(current.nextZIndex, deriveCanvasNextZIndex(nextItems)),
-        selectedIds: operation.select ? [operation.item.id] : current.selectedIds,
+        selectedIds: operation.select ? [nextItem.id] : current.selectedIds,
       }
     }
     case 'create_items': {
       const nextBatch = Array.isArray(operation.items)
-        ? operation.items.filter((item) => item && typeof item === 'object' && item.id)
+        ? operation.items
+            .filter((item) => item && typeof item === 'object' && item.id)
+            .map((item) => normalizeItem(item))
         : []
       if (nextBatch.length === 0) {
         return current
