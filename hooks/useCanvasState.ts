@@ -12,6 +12,7 @@ import type {
   CanvasStateSnapshot,
 } from "../types/canvas"
 import { GROUP_COLORS } from "../types/canvas"
+import { applyCanvasRemoteOperationToState } from "../utils/canvasAgentOperations.mjs"
 import {
   isRenderableCanvasItem,
   validateCanvasAgentOperation,
@@ -702,125 +703,24 @@ export function useCanvasState(storageKey = "gallery-canvas-state") {
       }
       const operation = validation.operation as CanvasRemoteOperation
       applyChange((prev) => {
-        switch (operation.type) {
-          case "create_item": {
-            const nextItem = normalizeItem(operation.item)
-            const existingIndex = prev.items.findIndex((item) => item.id === nextItem.id)
-            const nextItems =
-              existingIndex >= 0
-                ? prev.items.map((item, index) => (index === existingIndex ? nextItem : item))
-                : [...prev.items, nextItem]
-
-            return {
-              ...prev,
-              items: nextItems,
-              nextZIndex: Math.max(prev.nextZIndex, deriveNextZIndex(nextItems)),
-              selectedIds: operation.select ? [nextItem.id] : prev.selectedIds,
-            }
-          }
-          case "create_items": {
-            const nextBatch = Array.isArray(operation.items)
-              ? operation.items
-                  .filter((item) => item && typeof item === "object" && item.id)
-                  .map((item) => normalizeItem(item))
-              : []
-            if (nextBatch.length === 0) return prev
-
-            const incomingIds = new Set(nextBatch.map((item) => item.id))
-            const preserved = prev.items.filter((item) => !incomingIds.has(item.id))
-            const nextItems = [...preserved, ...nextBatch]
-
-            return {
-              ...prev,
-              items: nextItems,
-              nextZIndex: Math.max(prev.nextZIndex, deriveNextZIndex(nextItems)),
-              selectedIds: operation.select ? nextBatch.map((item) => item.id) : prev.selectedIds,
-            }
-          }
-          case "update_item":
-            return {
-              ...prev,
-              items: prev.items.map((item) =>
-                item.id === operation.id
-                  ? ({ ...item, ...operation.updates } as CanvasItem)
-                  : item
-              ),
-            }
-          case "update_items": {
-            const entries = Array.isArray(operation.updates)
-              ? operation.updates.filter(
-                  (entry) => entry && typeof entry === "object" && entry.id
-                )
-              : []
-            if (entries.length === 0) return prev
-            const updatesById = new Map(entries.map((entry) => [entry.id, entry.updates]))
-            return {
-              ...prev,
-              items: prev.items.map((item) => {
-                const updates = updatesById.get(item.id)
-                return updates ? ({ ...item, ...updates } as CanvasItem) : item
-              }),
-              selectedIds: operation.select
-                ? entries.map((entry) => entry.id)
-                : prev.selectedIds,
-            }
-          }
-          case "delete_items": {
-            const idsToRemove = collectCascadeDeleteIds(prev, operation.ids)
-            return {
-              ...prev,
-              items: prev.items.filter((item) => !idsToRemove.has(item.id)),
-              selectedIds: prev.selectedIds.filter((selectedId) => !idsToRemove.has(selectedId)),
-            }
-          }
-          case "select_items":
-            return { ...prev, selectedIds: [...operation.ids] }
-          case "clear_canvas":
-            return DEFAULT_STATE
-          case "create_group": {
-            const nextGroup = operation.group
-            if (!nextGroup || typeof nextGroup !== "object" || !nextGroup.id) return prev
-            const itemIds = Array.isArray(operation.itemIds) ? operation.itemIds : []
-            const existingIndex = prev.groups.findIndex((group) => group.id === nextGroup.id)
-            const nextGroups =
-              existingIndex >= 0
-                ? prev.groups.map((group, index) => (index === existingIndex ? nextGroup : group))
-                : [...prev.groups, nextGroup]
-            return {
-              ...prev,
-              items: prev.items.map((item) =>
-                itemIds.includes(item.id) ? { ...item, groupId: nextGroup.id } : item
-              ),
-              groups: nextGroups,
-              selectedIds: operation.select ? [...itemIds] : prev.selectedIds,
-            }
-          }
-          case "update_group":
-            return {
-              ...prev,
-              groups: prev.groups.map((group) =>
-                group.id === operation.id ? { ...group, ...operation.updates } : group
-              ),
-            }
-          case "delete_group":
-            return {
-              ...prev,
-              items: prev.items.map((item) =>
-                item.groupId === operation.id ? { ...item, groupId: undefined } : item
-              ),
-              groups: prev.groups.filter((group) => group.id !== operation.id),
-            }
-          case "set_viewport":
-          case "focus_items":
-          case "set_active_theme":
-          case "undo_source_mutation":
-          case "redo_source_mutation":
-          case "undo_canvas_change":
-          case "redo_canvas_change":
-            return prev
-          default:
-            return prev
+        // One reducer for both sides (FOX2-74): the server applies the same
+        // function to its workspace record, so an operation can never mean
+        // two different things in the browser and in the agent read model.
+        const next = applyCanvasRemoteOperationToState(prev, operation, {
+          normalizeItem: (item: CanvasItem) => normalizeItem(item),
+        }) as CanvasState
+        // The reducer returns a fresh top-level object even when nothing
+        // changed (viewport/tool/undo ops the browser handles elsewhere) —
+        // keep the previous state identity so no-ops stay no-ops.
+        if (
+          next.items === prev.items &&
+          next.groups === prev.groups &&
+          next.selectedIds === prev.selectedIds &&
+          next.nextZIndex === prev.nextZIndex
+        ) {
+          return prev
         }
+        return next
       }, { actor: "agent", source: operation.type })
     },
     [applyChange]

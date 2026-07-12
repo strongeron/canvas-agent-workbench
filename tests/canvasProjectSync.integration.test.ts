@@ -29,7 +29,6 @@ import {
 } from "../utils/canvasDocumentNormalize"
 // The agent path resolves a canvas selection id into the EXACT `selection`
 // shape the UI sends — reusing it is what guarantees agent/UI parity.
-// @ts-expect-error — .mjs runtime module, no shipped types.
 import { resolveSyncSelectionFromState } from "../utils/canvasAgentOperations.mjs"
 
 const tmpDirs: string[] = []
