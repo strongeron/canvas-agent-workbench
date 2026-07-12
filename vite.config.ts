@@ -102,6 +102,7 @@ import {
   normalizeCanvasStateSnapshot,
 } from './utils/canvasAgentOperations.mjs'
 import { validateCanvasAgentOperation } from './utils/canvasOperationSchema.mjs'
+import { createProjectCanvasRoutes } from './vite/api/projectCanvasRoutes'
 import { buildColorAuditWorkspaceManifest } from './utils/colorAuditWorkspaceAdapter'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -192,6 +193,10 @@ const PINTEREST_ENABLE_PARTNER_SEARCH = String(process.env.PINTEREST_ENABLE_PART
 const HYPERBEAM_API_KEY = process.env.HYPERBEAM_API_KEY
 const HYPERBEAM_API_BASE = process.env.HYPERBEAM_API_BASE || 'https://engine.hyperbeam.com/v0'
 const MEDIA_STORE_DIR = path.resolve(__dirname, '.canvas-media')
+const handleProjectCanvasRoutes = createProjectCanvasRoutes({
+  projectsRoot: PROJECTS_ROOT,
+  mediaStoreDir: MEDIA_STORE_DIR,
+})
 const MEDIA_MAX_UPLOAD_BYTES = Number(process.env.MEDIA_MAX_UPLOAD_BYTES || 20 * 1024 * 1024)
 const EMBED_CAPTURE_TIMEOUT_MS = Number(process.env.EMBED_CAPTURE_TIMEOUT_MS || 20000)
 const LOCAL_APP_DISCOVERY_TIMEOUT_MS = Number(process.env.LOCAL_APP_DISCOVERY_TIMEOUT_MS || 1200)
@@ -5889,200 +5894,10 @@ function paperImportPlugin() {
           }
         }
 
-        const canvasFilesMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases$/)
-        if (req.method === 'GET' && canvasFilesMatch) {
-          try {
-            const requestUrl = new URL(req.url, 'http://localhost')
-            const projectId = decodeURIComponent(canvasFilesMatch[1])
-            const surface = requestUrl.searchParams.get('surface') || ''
-            const files = await listProjectCanvasFiles(PROJECTS_ROOT, projectId, surface)
-            return sendJson(res, 200, { ok: true, files })
-          } catch (error) {
-            return sendJson(res, 500, { error: error?.message || 'Failed to list canvas files.' })
-          }
-        }
-
-        const canvasAssetReadMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/assets\/file$/)
-        if (req.method === 'GET' && canvasAssetReadMatch) {
-          try {
-            const requestUrl = new URL(req.url, 'http://localhost')
-            const projectId = decodeURIComponent(canvasAssetReadMatch[1])
-            const canvasPath = requestUrl.searchParams.get('path') || ''
-            const assetName = requestUrl.searchParams.get('asset') || ''
-            if (!canvasPath) {
-              return sendJson(res, 400, { error: 'path query param is required.' })
-            }
-            if (!assetName) {
-              return sendJson(res, 400, { error: 'asset query param is required.' })
-            }
-            const asset = await readCanvasDocumentAsset(PROJECTS_ROOT, projectId, canvasPath, assetName)
-            res.statusCode = 200
-            res.setHeader('content-type', asset.mimeType)
-            res.setHeader('cache-control', 'public, max-age=31536000, immutable')
-            res.end(asset.content)
-            return
-          } catch (error) {
-            return sendJson(res, 404, { error: error?.message || 'Failed to read canvas asset.' })
-          }
-        }
-
-        const canvasAssetStoreMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/assets\/store$/)
-        if (req.method === 'POST' && canvasAssetStoreMatch) {
-          try {
-            const projectId = decodeURIComponent(canvasAssetStoreMatch[1])
-            const body = await readJson(req)
-            const stored = await storeProjectCanvasDocumentAsset(PROJECTS_ROOT, projectId, body)
-            return sendJson(res, 200, {
-              ok: true,
-              mediaUrl: stored.assetUrl,
-              assetName: stored.assetName,
-              mimeType: stored.mimeType,
-              sizeBytes: stored.sizeBytes,
-              provider: 'canvas-document-asset',
-              storedAt: stored.storedAt,
-            })
-          } catch (error) {
-            const status =
-              error?.message === 'path is required.' ||
-              error?.message === 'itemId is required.' ||
-              error?.message === 'dataUrl is required.'
-                ? 400
-                : 500
-            return sendJson(res, status, { error: error?.message || 'Failed to store canvas asset.' })
-          }
-        }
-
-        const canvasFileReadMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/file$/)
-        if (req.method === 'GET' && canvasFileReadMatch) {
-          try {
-            const requestUrl = new URL(req.url, 'http://localhost')
-            const projectId = decodeURIComponent(canvasFileReadMatch[1])
-            const canvasPath = requestUrl.searchParams.get('path') || ''
-            const file = await openProjectCanvasFile(PROJECTS_ROOT, projectId, canvasPath)
-            return sendJson(res, 200, { ok: true, file })
-          } catch (error) {
-            const status =
-              error?.message === 'path query param is required.'
-                ? 400
-                : 500
-            return sendJson(res, status, { error: error?.message || 'Failed to open canvas file.' })
-          }
-        }
-
-        const canvasFileCreateMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/create$/)
-        if (req.method === 'POST' && canvasFileCreateMatch) {
-          try {
-            const projectId = decodeURIComponent(canvasFileCreateMatch[1])
-            const body = await readJson(req)
-            const file = await createProjectCanvasFile(PROJECTS_ROOT, MEDIA_STORE_DIR, projectId, body)
-            return sendJson(res, 200, { ok: true, file })
-          } catch (error) {
-            const status = error?.message === 'title is required.' ? 400 : 500
-            return sendJson(res, status, { error: error?.message || 'Failed to create canvas file.' })
-          }
-        }
-
-        const canvasFileSaveMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/save$/)
-        if (req.method === 'POST' && canvasFileSaveMatch) {
-          try {
-            const projectId = decodeURIComponent(canvasFileSaveMatch[1])
-            const body = await readJson(req)
-            const file = await saveProjectCanvasFile(PROJECTS_ROOT, MEDIA_STORE_DIR, projectId, body)
-            return sendJson(res, 200, { ok: true, file })
-          } catch (error) {
-            const status =
-              error?.message === 'path is required.' || error?.message === 'document is required.'
-                ? 400
-                : 500
-            return sendJson(res, status, { error: error?.message || 'Failed to save canvas file.' })
-          }
-        }
-
-        const canvasFileMetadataMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/metadata$/)
-        if (req.method === 'POST' && canvasFileMetadataMatch) {
-          try {
-            const projectId = decodeURIComponent(canvasFileMetadataMatch[1])
-            const body = await readJson(req)
-            const file = await updateProjectCanvasFileMetadata(PROJECTS_ROOT, projectId, body)
-            return sendJson(res, 200, { ok: true, file })
-          } catch (error) {
-            const status = error?.message === 'path is required.' ? 400 : 500
-            return sendJson(res, status, { error: error?.message || 'Failed to update canvas file metadata.' })
-          }
-        }
-
-        const canvasFileMoveMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/move$/)
-        if (req.method === 'POST' && canvasFileMoveMatch) {
-          try {
-            const projectId = decodeURIComponent(canvasFileMoveMatch[1])
-            const body = await readJson(req)
-            const file = await moveProjectCanvasFile(PROJECTS_ROOT, projectId, body)
-            return sendJson(res, 200, { ok: true, file })
-          } catch (error) {
-            const status = error?.message === 'path is required.' ? 400 : 500
-            return sendJson(res, status, { error: error?.message || 'Failed to move canvas file.' })
-          }
-        }
-
-        const canvasFileDuplicateMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/duplicate$/)
-        if (req.method === 'POST' && canvasFileDuplicateMatch) {
-          try {
-            const projectId = decodeURIComponent(canvasFileDuplicateMatch[1])
-            const body = await readJson(req)
-            const file = await duplicateProjectCanvasFile(PROJECTS_ROOT, projectId, body)
-            return sendJson(res, 200, { ok: true, file })
-          } catch (error) {
-            const status = error?.message === 'path is required.' ? 400 : 500
-            return sendJson(res, status, { error: error?.message || 'Failed to duplicate canvas file.' })
-          }
-        }
-
-        const canvasFileDeleteMatch = pathname.match(/^\/api\/projects\/([^/]+)\/canvases\/delete$/)
-        if (req.method === 'POST' && canvasFileDeleteMatch) {
-          try {
-            const projectId = decodeURIComponent(canvasFileDeleteMatch[1])
-            const body = await readJson(req)
-            const result = await deleteProjectCanvasFile(PROJECTS_ROOT, projectId, body)
-            return sendJson(res, 200, { ok: true, ...result })
-          } catch (error) {
-            const status = error?.message === 'path is required.' ? 400 : 500
-            return sendJson(res, status, { error: error?.message || 'Failed to delete canvas file.' })
-          }
-        }
-
-        const canvasHtmlBundleImportMatch = pathname.match(
-          /^\/api\/projects\/([^/]+)\/canvases\/html-bundle\/import$/
-        )
-        if (req.method === 'POST' && canvasHtmlBundleImportMatch) {
-          try {
-            const projectId = decodeURIComponent(canvasHtmlBundleImportMatch[1])
-            const body = await readJson(req)
-            const htmlBundle = await importProjectCanvasHtmlBundle(PROJECTS_ROOT, projectId, body)
-            return sendJson(res, 200, { ok: true, htmlBundle })
-          } catch (error) {
-            const status = error?.message === 'path is required.' ? 400 : 500
-            return sendJson(res, status, {
-              error: error?.message || 'Failed to import HTML bundle.',
-            })
-          }
-        }
-
-        const canvasHtmlBundleScanMatch = pathname.match(
-          /^\/api\/projects\/([^/]+)\/canvases\/html-bundles$/
-        )
-        if (req.method === 'GET' && canvasHtmlBundleScanMatch) {
-          try {
-            const projectId = decodeURIComponent(canvasHtmlBundleScanMatch[1])
-            const rootPath = url.searchParams.get('rootPath') || ''
-            const result = await scanProjectCanvasHtmlBundles(PROJECTS_ROOT, projectId, rootPath)
-            return sendJson(res, 200, { ok: true, result })
-          } catch (error) {
-            const status = error?.message === 'rootPath is required.' ? 400 : 500
-            return sendJson(res, status, {
-              error: error?.message || 'Failed to scan HTML bundle library.',
-            })
-          }
-        }
+        // FOX2-75 slice 1: the /api/projects/:id/canvases* endpoint group lives
+        // in vite/api/projectCanvasRoutes.ts behind a framework-agnostic
+        // (req, res, pathname) => handled contract with direct route tests.
+        if (await handleProjectCanvasRoutes(req, res, pathname)) return
 
         if (req.method === 'GET' && pathname === '/api/embed/preflight') {
           try {
