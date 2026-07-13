@@ -12,21 +12,21 @@ import { injectCanvasElementIds } from './vite/plugins/canvas-element-id'
 import { buildBridgeScript as buildCanvasReactNodeBridgeScript } from './utils/canvasReactNodeBridge'
 import { readCanvasAstNode } from './utils/canvasAstReader'
 import { injectCanvasHtmlElementIds, readCanvasHtmlNode } from './utils/canvasHtmlEditor'
-import { applyCanvasAstWriteRequest } from './vite/api/canvasAstWrite'
-import { applyCanvasAstLoadRequest } from './vite/api/canvasAstLoad'
-import { applyCanvasMarkdownWriteRequest } from './vite/api/canvasMarkdownWrite'
-import { applyCanvasRegistryListRequest } from './vite/api/canvasRegistryList'
-import { applyCanvasComponentCreateRequest } from './vite/api/canvasComponentCreate'
-import { applyCanvasComponentPromoteRequest } from './vite/api/canvasComponentPromote'
-import { applyCanvasProjectSyncRequest } from './vite/api/canvasProjectSync'
-import { applyCanvasProjectDetectComponentsDirRequest } from './vite/api/canvasProjectDetectComponentsDir'
-import { computeWrittenSyncTarget } from './vite/api/syncTargetState'
-import { applyCanvasMcpAppConnectRequest } from './vite/api/mcpProxy/canvasMcpAppConnect'
-import { applyCanvasMcpAppCredentialsRequest } from './vite/api/mcpProxy/canvasMcpAppCredentials'
-import { applyCanvasMcpAppDisconnectRequest } from './vite/api/mcpProxy/canvasMcpAppDisconnect'
-import { applyCanvasMcpAppInvokeToolRequest } from './vite/api/mcpProxy/canvasMcpAppInvokeTool'
-import { applyCanvasMcpAppLogRequest } from './vite/api/mcpProxy/canvasMcpAppLog'
-import { disconnectAllMcpApps } from './vite/api/mcpProxy/registry'
+import { applyCanvasAstWriteRequest } from './server/canvasAstWrite'
+import { applyCanvasAstLoadRequest } from './server/canvasAstLoad'
+import { applyCanvasMarkdownWriteRequest } from './server/canvasMarkdownWrite'
+import { applyCanvasRegistryListRequest } from './server/canvasRegistryList'
+import { applyCanvasComponentCreateRequest } from './server/canvasComponentCreate'
+import { applyCanvasComponentPromoteRequest } from './server/canvasComponentPromote'
+import { applyCanvasProjectSyncRequest } from './server/canvasProjectSync'
+import { applyCanvasProjectDetectComponentsDirRequest } from './server/canvasProjectDetectComponentsDir'
+import { computeWrittenSyncTarget } from './server/syncTargetState'
+import { applyCanvasMcpAppConnectRequest } from './server/mcpProxy/canvasMcpAppConnect'
+import { applyCanvasMcpAppCredentialsRequest } from './server/mcpProxy/canvasMcpAppCredentials'
+import { applyCanvasMcpAppDisconnectRequest } from './server/mcpProxy/canvasMcpAppDisconnect'
+import { applyCanvasMcpAppInvokeToolRequest } from './server/mcpProxy/canvasMcpAppInvokeTool'
+import { applyCanvasMcpAppLogRequest } from './server/mcpProxy/canvasMcpAppLog'
+import { disconnectAllMcpApps } from './server/mcpProxy/registry'
 import { listProjectDesignTokens, writeProjectDesignToken } from './utils/canvasTokenCss'
 import { promises as fs } from 'node:fs'
 import { isIP } from 'node:net'
@@ -86,13 +86,13 @@ import {
   normalizeCanvasStateSnapshot,
 } from './utils/canvasAgentOperations.mjs'
 import { validateCanvasAgentOperation } from './utils/canvasOperationSchema.mjs'
-import { createProjectCanvasRoutes } from './vite/api/projectCanvasRoutes'
-import { createAgentNativeWorkspaceStore } from './vite/api/agentNativeWorkspaceStore'
+import { createProjectCanvasRoutes } from './server/projectCanvasRoutes'
+import { createAgentNativeWorkspaceStore } from './server/agentNativeWorkspaceStore'
 import {
   buildCanvasStateSummary,
   buildWorkspaceDebugPayload,
   createAgentNativeRoutes,
-} from './vite/api/agentNativeRoutes'
+} from './server/agentNativeRoutes'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -3699,7 +3699,7 @@ function paperImportPlugin() {
       const canvasAgentTranscriptBySession = new Map()
       const canvasAgentPrimitivesByProject = new Map()
       // FOX2-75 slice 2: workspace state + event logs live behind the store
-      // interface in vite/api/agentNativeWorkspaceStore.ts. The consts below
+      // interface in server/agentNativeWorkspaceStore.ts. The consts below
       // are thin delegates so the existing call sites read unchanged.
       const agentNativeWorkspaceStore = createAgentNativeWorkspaceStore()
       const canvasAgentQueueActive = new Set()
@@ -4049,7 +4049,7 @@ function paperImportPlugin() {
       }
 
       // FOX2-75 slice 3: the /api/agent-native/* endpoint group lives in
-      // vite/api/agentNativeRoutes.ts behind the same framework-agnostic
+      // server/agentNativeRoutes.ts behind the same framework-agnostic
       // (req, res, pathname) => handled contract as slice 1. The canvas
       // workspace still reads/writes through the session subsystem's
       // per-project state, injected here.
@@ -4948,7 +4948,7 @@ function paperImportPlugin() {
         }
 
         // FOX2-75 slice 3: /api/agent-native/manifest + the per-workspace
-        // resource group are handled by vite/api/agentNativeRoutes.ts.
+        // resource group are handled by server/agentNativeRoutes.ts.
         if (await handleAgentNativeRoutes(req, res, pathname)) return
 
         if (req.method === 'GET' && pathname === '/api/canvas-agent/agents') {
@@ -5374,7 +5374,7 @@ function paperImportPlugin() {
         }
 
         // FOX2-75 slice 1: the /api/projects/:id/canvases* endpoint group lives
-        // in vite/api/projectCanvasRoutes.ts behind a framework-agnostic
+        // in server/projectCanvasRoutes.ts behind a framework-agnostic
         // (req, res, pathname) => handled contract with direct route tests.
         if (await handleProjectCanvasRoutes(req, res, pathname)) return
 

@@ -664,7 +664,7 @@ export async function disconnectMcpApp(context, input) {
 
 export async function invokeMcpAppTool(context, input) {
   // Note: caller-supplied depth is intentionally omitted. Recursion is
-  // bounded server-side per registry entry. See vite/api/mcpProxy/registry.ts.
+  // bounded server-side per registry entry. See server/mcpProxy/registry.ts.
   return postAgentNativeJsonSoft(context, '/api/canvas/mcp-app/invoke-tool', {
     projectId: input?.projectId || context.projectId,
     nodeId: input?.nodeId,

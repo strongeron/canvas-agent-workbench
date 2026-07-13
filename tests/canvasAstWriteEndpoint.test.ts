@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { hashSourceId } from "../utils/canvasAstPath"
 import { injectCanvasHtmlElementIds } from "../utils/canvasHtmlEditor"
 import { injectCanvasElementIds } from "../vite/plugins/canvas-element-id"
-import { applyCanvasAstWriteRequest } from "../vite/api/canvasAstWrite"
+import { applyCanvasAstWriteRequest } from "../server/canvasAstWrite"
 
 const tempDirs: string[] = []
 

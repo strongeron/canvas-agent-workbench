@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   assertRealpathStable,
   resolveSandboxPath,
-} from "../vite/api/resolveSandboxPath"
+} from "../server/resolveSandboxPath"
 
 const tmpDirs: string[] = []
 

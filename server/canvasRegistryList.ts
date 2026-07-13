@@ -4,7 +4,7 @@ import path from "node:path"
 import {
   parseCanvasRegistry,
   type CanvasRegistryParseResult,
-} from "../../utils/canvasRegistry"
+} from "../utils/canvasRegistry"
 
 interface CanvasRegistryListBody {
   projectId?: unknown

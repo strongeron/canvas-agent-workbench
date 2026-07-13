@@ -5,7 +5,7 @@ import {
   createAgentNativeWorkspaceEventLog,
   listAgentNativeWorkspaceEvents as listWorkspaceEvents,
   listPendingAgentNativeWorkspaceOperations,
-} from "../../utils/agentNativeWorkspaceEvents"
+} from "../utils/agentNativeWorkspaceEvents"
 
 export interface AgentNativeWorkspaceStateRecord {
   workspaceId: string

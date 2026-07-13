@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 import {
   applyCanvasComponentCreateRequest,
   validateSingleSegment,
-} from "../vite/api/canvasComponentCreate"
+} from "../server/canvasComponentCreate"
 import { parseCanvasRegistry } from "../utils/canvasRegistry"
 import {
   isFileBackedComponent,

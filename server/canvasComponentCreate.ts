@@ -1,12 +1,12 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 
-import { listCanvasHtmlSlots } from "../../utils/canvasHtmlEditor"
+import { listCanvasHtmlSlots } from "../utils/canvasHtmlEditor"
 import {
   parseCanvasRegistry,
   type CanvasRegistryPrimitive,
   type CanvasRegistrySlot,
-} from "../../utils/canvasRegistry"
+} from "../utils/canvasRegistry"
 
 interface CanvasComponentCreateBody {
   projectId?: unknown

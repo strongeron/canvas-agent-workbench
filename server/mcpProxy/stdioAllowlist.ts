@@ -1,4 +1,4 @@
-import type { CanvasMcpStdioTransport } from "../../../utils/mcpApp"
+import type { CanvasMcpStdioTransport } from "../../utils/mcpApp"
 import { readProjectMeta, writeProjectMetaAtomic } from "./projectMeta"
 
 const BUILTIN_ALLOWED_TOKENS = [

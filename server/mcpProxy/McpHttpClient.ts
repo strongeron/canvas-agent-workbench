@@ -7,7 +7,7 @@ import type {
   McpPromptDescriptor,
   McpResourceDescriptor,
   McpToolDescriptor,
-} from "../../../utils/mcpApp"
+} from "../../utils/mcpApp"
 
 // Strip request-smuggling primitives and other framing headers an attacker
 // could inject through a stored credential object. Forwarding `Host` lets

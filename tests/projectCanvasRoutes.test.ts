@@ -6,7 +6,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { createProjectCanvasRoutes } from "../vite/api/projectCanvasRoutes"
+import { createProjectCanvasRoutes } from "../server/projectCanvasRoutes"
 
 const tempDirs: string[] = []
 

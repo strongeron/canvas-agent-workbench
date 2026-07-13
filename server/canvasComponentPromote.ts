@@ -1,4 +1,4 @@
-import { extractHtmlSubtree } from "../../utils/canvasHtmlEditor"
+import { extractHtmlSubtree } from "../utils/canvasHtmlEditor"
 import {
   applyCanvasComponentCreateRequest,
   type CanvasComponentCreateResponse,

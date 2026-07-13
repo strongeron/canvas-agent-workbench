@@ -1,6 +1,6 @@
 import path from "node:path"
 
-import type { CanvasMcpAppTransport } from "../../../utils/mcpApp"
+import type { CanvasMcpAppTransport } from "../../utils/mcpApp"
 import {
   describeHttpTransportSignature,
   isHttpTransportAllowlisted,

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   computeWrittenSyncTarget,
   normalizeSyncTargetState,
-} from "../vite/api/syncTargetState"
+} from "../server/syncTargetState"
 
 const tmpDirs: string[] = []
 

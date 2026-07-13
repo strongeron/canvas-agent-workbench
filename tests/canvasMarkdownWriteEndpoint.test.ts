@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { applyCanvasMarkdownWriteRequest } from "../vite/api/canvasMarkdownWrite"
+import { applyCanvasMarkdownWriteRequest } from "../server/canvasMarkdownWrite"
 
 const tempDirs: string[] = []
 

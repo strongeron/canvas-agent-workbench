@@ -6,7 +6,7 @@ import type {
   McpPromptDescriptor,
   McpResourceDescriptor,
   McpToolDescriptor,
-} from "../../../utils/mcpApp"
+} from "../../utils/mcpApp"
 import { buildSafeStdioEnv } from "./stdioEnv"
 
 function mapTools(payload: any): McpToolDescriptor[] {

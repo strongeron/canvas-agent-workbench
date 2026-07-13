@@ -9,7 +9,7 @@
 // realpath and defeat the re-sync revalidation (which compares the persisted
 // value to a fresh `fs.realpath(rootPath)`). On write, the realpath is
 // recomputed server-side from `rootPath`; if it does not resolve the write is
-// rejected. `vite/api/**` may use fs/node.
+// rejected. `server/**` may use fs/node.
 
 import { promises as fs } from "node:fs"
 import path from "node:path"

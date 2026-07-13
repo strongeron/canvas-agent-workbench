@@ -4,7 +4,7 @@ import path from "node:path"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { applyCanvasProjectSyncRequest } from "../vite/api/canvasProjectSync"
+import { applyCanvasProjectSyncRequest } from "../server/canvasProjectSync"
 import { buildNativeComponentShell } from "../utils/canvasNativeComponentShell"
 import {
   composeNormalizedPage,
@@ -545,7 +545,7 @@ describe("applyCanvasProjectSyncRequest — error paths", () => {
   it("(#7) realpath drift detected at the STAGING dir (before mkdir/writeFile) → 403, nothing written", async () => {
     const ws = await makeWorkspace()
     const src = await writeShellSource(ws, "card")
-    const mod = await import("../vite/api/resolveSandboxPath")
+    const mod = await import("../server/resolveSandboxPath")
     // The staging guard calls assertRealpathStable on the staging DIRECTORY
     // (path.dirname(resolved)) before mkdir/writeFile. Drift it on the very
     // first call so staging never runs — same bail shape as the pre-rename
@@ -596,7 +596,7 @@ describe("applyCanvasProjectSyncRequest — error paths", () => {
     const src = await writeShellSource(ws, "card")
     // Make assertRealpathStable fail on the VERY FIRST destination (k=0) so
     // writtenPaths is still empty → discard staged batch, 403, nothing renamed.
-    const mod = await import("../vite/api/resolveSandboxPath")
+    const mod = await import("../server/resolveSandboxPath")
     const spy = vi
       .spyOn(mod, "assertRealpathStable")
       .mockResolvedValue({
@@ -635,7 +635,7 @@ describe("applyCanvasProjectSyncRequest — error paths", () => {
   it("(coverage) mid-batch realpath drift AFTER the first rename → partialFailure, written/notWritten split", async () => {
     const ws = await makeWorkspace()
     const src = await writeShellSource(ws, "card")
-    const mod = await import("../vite/api/resolveSandboxPath")
+    const mod = await import("../server/resolveSandboxPath")
     // assertRealpathStable is called per file at BOTH the staging-dir check
     // (arg = directory) and the pre-rename check (arg = the file path). Let
     // every staging-dir check + the card.html rename pass; drift the next
@@ -721,7 +721,7 @@ describe("applyCanvasProjectSyncRequest — error paths", () => {
       `<article>${sentinel}</article>\n`,
       "utf8"
     )
-    const mod = await import("../vite/api/resolveSandboxPath")
+    const mod = await import("../server/resolveSandboxPath")
     const spy = vi
       .spyOn(mod, "assertRealpathStable")
       .mockImplementation(async (resolved: string) => {

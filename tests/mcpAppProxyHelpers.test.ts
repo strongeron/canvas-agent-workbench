@@ -1,29 +1,29 @@
 import { describe, expect, it } from "vitest"
 
-import { redactToolArgs } from "../vite/api/mcpProxy/logRedaction"
+import { redactToolArgs } from "../server/mcpProxy/logRedaction"
 import {
   MAX_MCP_APP_CALLER_DEPTH,
   validateInFlightDepth,
-} from "../vite/api/mcpProxy/recursionBound"
-import { applyCanvasMcpAppCredentialsRequest } from "../vite/api/mcpProxy/canvasMcpAppCredentials"
-import { applyCanvasMcpAppConnectRequest } from "../vite/api/mcpProxy/canvasMcpAppConnect"
-import { filterHeaders } from "../vite/api/mcpProxy/McpHttpClient"
-import { sanitizeProjectId } from "../vite/api/mcpProxy/projectIdSafety"
-import { __setRegistryEntryForTest, invokeMcpAppTool } from "../vite/api/mcpProxy/registry"
-import { buildSafeStdioEnv } from "../vite/api/mcpProxy/stdioEnv"
+} from "../server/mcpProxy/recursionBound"
+import { applyCanvasMcpAppCredentialsRequest } from "../server/mcpProxy/canvasMcpAppCredentials"
+import { applyCanvasMcpAppConnectRequest } from "../server/mcpProxy/canvasMcpAppConnect"
+import { filterHeaders } from "../server/mcpProxy/McpHttpClient"
+import { sanitizeProjectId } from "../server/mcpProxy/projectIdSafety"
+import { __setRegistryEntryForTest, invokeMcpAppTool } from "../server/mcpProxy/registry"
+import { buildSafeStdioEnv } from "../server/mcpProxy/stdioEnv"
 import {
   describeHttpTransportSignature,
   isBuiltInAllowedHttpTransport,
   isHttpTransportAllowlisted,
   persistAllowlistedHttpTransport,
-} from "../vite/api/mcpProxy/httpAllowlist"
+} from "../server/mcpProxy/httpAllowlist"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
   describeTransportSignature,
   isBuiltInAllowedTransport,
-} from "../vite/api/mcpProxy/stdioAllowlist"
+} from "../server/mcpProxy/stdioAllowlist"
 
 describe("mcp app proxy helpers", () => {
   it("redacts secret-like tool args recursively", () => {

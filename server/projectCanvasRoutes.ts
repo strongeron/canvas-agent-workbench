@@ -12,8 +12,8 @@ import {
   saveProjectCanvasFile,
   storeProjectCanvasDocumentAsset,
   updateProjectCanvasFileMetadata,
-} from "../../utils/canvasFileApi"
-import { readCanvasDocumentAsset } from "../../utils/canvasFileAssets"
+} from "../utils/canvasFileApi"
+import { readCanvasDocumentAsset } from "../utils/canvasFileAssets"
 
 /**
  * FOX2-75: route modules own an endpoint group behind a framework-agnostic

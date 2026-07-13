@@ -1,4 +1,4 @@
-import type { CanvasMcpHttpTransport } from "../../../utils/mcpApp"
+import type { CanvasMcpHttpTransport } from "../../utils/mcpApp"
 import { readProjectMeta, writeProjectMetaAtomic } from "./projectMeta"
 
 // Localhost hosts that are considered safe by default. Public hosts and

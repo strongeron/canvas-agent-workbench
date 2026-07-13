@@ -3,7 +3,7 @@
 // VERIFICATION ONLY. The behaviors exercised here (server-side coherence /
 // stale-source abort, EACCES/EROFS handling, non-file-backed-child rejection,
 // structural Sync-vs-Sync serialization, agent/UI selection-shape parity) are
-// already implemented in U5 (`vite/api/canvasProjectSync.ts`), U7
+// already implemented in U5 (`server/canvasProjectSync.ts`), U7
 // (`utils/canvasAgentOperations.mjs` `resolveSyncSelectionFromState`), and U9
 // (`utils/canvasDocumentNormalize.ts`). This file proves they COMPOSE end to
 // end against a real temp-dir filesystem + the real handler — no mocks for any
@@ -21,7 +21,7 @@ import path from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { applyCanvasProjectSyncRequest } from "../vite/api/canvasProjectSync"
+import { applyCanvasProjectSyncRequest } from "../server/canvasProjectSync"
 import { buildNativeComponentShell } from "../utils/canvasNativeComponentShell"
 import {
   composeNormalizedPage,
@@ -376,7 +376,7 @@ describe("create → edit Root A → sync → Root B == normalize(current Root A
 
     // Real file-backed create via the U2 endpoint.
     const { applyCanvasComponentCreateRequest } = await import(
-      "../vite/api/canvasComponentCreate"
+      "../server/canvasComponentCreate"
     )
     const created = await applyCanvasComponentCreateRequest(
       {

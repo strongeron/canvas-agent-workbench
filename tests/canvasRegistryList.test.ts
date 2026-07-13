@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { applyCanvasRegistryListRequest } from "../vite/api/canvasRegistryList"
+import { applyCanvasRegistryListRequest } from "../server/canvasRegistryList"
 
 const tempDirs: string[] = []
 

@@ -4,11 +4,11 @@ import path from "node:path"
 import {
   writeCanvasAstNode,
   type CanvasAstMutation,
-} from "../../utils/canvasAstWriter"
+} from "../utils/canvasAstWriter"
 import {
   writeCanvasHtmlNode,
   type CanvasHtmlMutation,
-} from "../../utils/canvasHtmlEditor"
+} from "../utils/canvasHtmlEditor"
 
 interface CanvasAstWriteBody {
   sourceReact?: unknown
