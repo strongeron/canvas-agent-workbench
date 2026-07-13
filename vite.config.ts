@@ -103,6 +103,7 @@ import {
 } from './utils/canvasAgentOperations.mjs'
 import { validateCanvasAgentOperation } from './utils/canvasOperationSchema.mjs'
 import { createProjectCanvasRoutes } from './vite/api/projectCanvasRoutes'
+import { createAgentNativeWorkspaceStore } from './vite/api/agentNativeWorkspaceStore'
 import { buildColorAuditWorkspaceManifest } from './utils/colorAuditWorkspaceAdapter'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -3709,8 +3710,10 @@ function paperImportPlugin() {
       const canvasAgentOutputBySession = new Map()
       const canvasAgentTranscriptBySession = new Map()
       const canvasAgentPrimitivesByProject = new Map()
-      const agentNativeWorkspaceStateByKey = new Map()
-      const agentNativeWorkspaceEventsByKey = new Map()
+      // FOX2-75 slice 2: workspace state + event logs live behind the store
+      // interface in vite/api/agentNativeWorkspaceStore.ts. The consts below
+      // are thin delegates so the existing call sites read unchanged.
+      const agentNativeWorkspaceStore = createAgentNativeWorkspaceStore()
       const canvasAgentQueueActive = new Set()
       const canvasAgentServerRuntimeRoot = path.join(
         CANVAS_AGENT_RUNTIME_ROOT,
@@ -3775,36 +3778,14 @@ function paperImportPlugin() {
         selection: Array.isArray(state?.selectedIds) ? state.selectedIds : [],
       })
 
-      const getAgentNativeWorkspaceStorageKey = (workspaceId, workspaceKey) =>
-        `${workspaceId}:${workspaceKey || 'default'}`
-
       const getAgentNativeWorkspaceStateRecord = (workspaceId, workspaceKey) =>
-        agentNativeWorkspaceStateByKey.get(
-          getAgentNativeWorkspaceStorageKey(workspaceId, workspaceKey)
-        ) || null
+        agentNativeWorkspaceStore.getStateRecord(workspaceId, workspaceKey)
 
-      const getAgentNativeWorkspaceEventLog = (workspaceId, workspaceKey) => {
-        const normalizedWorkspaceKey =
-          typeof workspaceKey === 'string' && workspaceKey.trim() ? workspaceKey.trim() : 'default'
-        const storageKey = getAgentNativeWorkspaceStorageKey(workspaceId, normalizedWorkspaceKey)
-        if (!agentNativeWorkspaceEventsByKey.has(storageKey)) {
-          agentNativeWorkspaceEventsByKey.set(
-            storageKey,
-            createAgentNativeWorkspaceEventLog(workspaceId, normalizedWorkspaceKey)
-          )
-        }
-        return agentNativeWorkspaceEventsByKey.get(storageKey)
-      }
+      const getAgentNativeWorkspaceEventLog = (workspaceId, workspaceKey) =>
+        agentNativeWorkspaceStore.getEventLog(workspaceId, workspaceKey)
 
-      const listAgentNativeWorkspaceEvents = (
-        workspaceId,
-        workspaceKey,
-        cursor = 0,
-        limit = 100
-      ) => {
-        const log = getAgentNativeWorkspaceEventLog(workspaceId, workspaceKey)
-        return listWorkspaceEvents(log, cursor, limit)
-      }
+      const listAgentNativeWorkspaceEvents = (workspaceId, workspaceKey, cursor = 0, limit = 100) =>
+        agentNativeWorkspaceStore.listEvents(workspaceId, workspaceKey, cursor, limit)
 
       const appendAgentNativeWorkspaceOperation = (
         workspaceId,
@@ -3813,33 +3794,21 @@ function paperImportPlugin() {
         sourceClientId,
         source,
         options = {}
-      ) => {
-        const log = getAgentNativeWorkspaceEventLog(workspaceId, workspaceKey)
-        const record = appendAgentNativeWorkspaceOperationEvent(log, {
+      ) =>
+        agentNativeWorkspaceStore.appendOperation(
+          workspaceId,
+          workspaceKey,
           operation,
-          sourceClientId:
-            sourceClientId || (typeof options.sessionId === 'string' ? options.sessionId : null),
-          source: source || null,
-          actor:
-            options.actor ||
-            (sourceClientId || options.sessionId || source === 'canvas-ui'
-              ? 'agent'
-              : 'system'),
-          metadata:
-            options.metadata && typeof options.metadata === 'object' ? options.metadata : null,
-        })
-        return record
-      }
+          sourceClientId,
+          source,
+          options
+        )
 
-      const listAgentNativeWorkspaceOperations = (workspaceId, workspaceKey, cursor = 0) => {
-        const log = getAgentNativeWorkspaceEventLog(workspaceId, workspaceKey)
-        return listPendingAgentNativeWorkspaceOperations(log, cursor)
-      }
+      const listAgentNativeWorkspaceOperations = (workspaceId, workspaceKey, cursor = 0) =>
+        agentNativeWorkspaceStore.listPendingOperations(workspaceId, workspaceKey, cursor)
 
-      const acknowledgeAgentNativeWorkspaceOperations = (workspaceId, workspaceKey, cursor = 0) => {
-        const log = getAgentNativeWorkspaceEventLog(workspaceId, workspaceKey)
-        return acknowledgeWorkspaceEventOperations(log, cursor)
-      }
+      const acknowledgeAgentNativeWorkspaceOperations = (workspaceId, workspaceKey, cursor = 0) =>
+        agentNativeWorkspaceStore.acknowledgeOperations(workspaceId, workspaceKey, cursor)
 
       const upsertAgentNativeWorkspaceState = (
         workspaceId,
@@ -3847,39 +3816,8 @@ function paperImportPlugin() {
         payload,
         sourceClientId,
         options = {}
-      ) => {
-        const normalizedWorkspaceKey =
-          typeof workspaceKey === 'string' && workspaceKey.trim() ? workspaceKey.trim() : 'default'
-        const record = {
-          workspaceId,
-          workspaceKey: normalizedWorkspaceKey,
-          payload,
-          updatedAt: new Date().toISOString(),
-          sourceClientId: sourceClientId || null,
-        }
-        agentNativeWorkspaceStateByKey.set(
-          getAgentNativeWorkspaceStorageKey(workspaceId, normalizedWorkspaceKey),
-          record
-        )
-        appendWorkspaceEvent(getAgentNativeWorkspaceEventLog(workspaceId, normalizedWorkspaceKey), {
-          kind: 'state-synced',
-          actor: sourceClientId ? 'agent' : 'system',
-          source: 'workspace-sync',
-          sourceClientId: sourceClientId || null,
-          stateSummary:
-            payload?.stateSummary && typeof payload.stateSummary === 'object'
-              ? payload.stateSummary
-              : null,
-          metadata: {
-            ...(options.metadata && typeof options.metadata === 'object' ? options.metadata : {}),
-            selectedNodeId:
-              typeof payload?.selection?.selectedNodeId === 'string' ? payload.selection.selectedNodeId : null,
-            selectedEdgeId:
-              typeof payload?.selection?.selectedEdgeId === 'string' ? payload.selection.selectedEdgeId : null,
-          },
-        })
-        return record
-      }
+      ) =>
+        agentNativeWorkspaceStore.upsertState(workspaceId, workspaceKey, payload, sourceClientId, options)
 
       const findCanvasAgentSession = (sessionId) => {
         for (const sessions of canvasAgentSessionsByProject.values()) {
