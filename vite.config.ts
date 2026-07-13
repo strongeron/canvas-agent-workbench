@@ -6175,14 +6175,28 @@ function copilotKitPlugin() {
 
 const optionalCopilotAliases: Array<{ find: string | RegExp; replacement: string }> = []
 
-if (!HAS_COPILOTKIT_REACT_CORE) {
+// Without a usable provider key /api/copilotkit can only 501, and
+// @copilotkit/react-core@1.52 rethrows that failure past its own error
+// boundary — a missing key blanked the whole app (and every CI e2e run,
+// which has no secrets). Degrade to the no-op shims instead, exactly like
+// the packages-not-installed case.
+const COPILOTKIT_RUNTIME_CONFIGURED = (() => {
+  if (COPILOTKIT_PROVIDER === 'openrouter') {
+    const key = (process.env.OPENROUTER_API_KEY || '').trim()
+    return Boolean(key) && key !== 'sk-or-your-key'
+  }
+  const key = (process.env.ANTHROPIC_API_KEY || '').trim()
+  return Boolean(key) && key !== 'sk-ant-your-key'
+})()
+
+if (!HAS_COPILOTKIT_REACT_CORE || !COPILOTKIT_RUNTIME_CONFIGURED) {
   optionalCopilotAliases.push({
     find: '@copilotkit/react-core',
     replacement: path.resolve(__dirname, './components/agent/copilotkit-shims/react-core.tsx'),
   })
 }
 
-if (!HAS_COPILOTKIT_REACT_UI) {
+if (!HAS_COPILOTKIT_REACT_UI || !COPILOTKIT_RUNTIME_CONFIGURED) {
   optionalCopilotAliases.push(
     {
       find: '@copilotkit/react-ui/styles.css',
