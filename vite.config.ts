@@ -49,10 +49,6 @@ import {
   toPascalCase,
 } from './core/mcp/paper'
 import {
-  buildAgentNativeManifest,
-  buildWorkspaceManifest,
-} from './utils/agentNativeManifest'
-import {
   CANVAS_AGENT_RUNTIME_MCP_GUIDANCE,
   buildCanvasAgentSessionDraft,
   getAgentNativeRuntimeAdapter,
@@ -62,15 +58,11 @@ import {
 import { createAgentNativeRuntimeSessionManager } from './utils/agentNativeRuntimeSessions'
 import {
   buildAgentNativeWorkspaceScreenshotConfig,
-  buildFocusedCanvasScreenshotSnapshot,
   cropAgentNativeWorkspaceScreenshotPng,
   normalizeAgentNativeWorkspaceScreenshotCropRect,
 } from './utils/agentNativeWorkspaceScreenshots'
 import { resolveAgentNativeBrowserExecutable } from './utils/agentNativeBrowser'
-import {
-  buildCanvasWorkspaceManifest,
-  buildCanvasWorkspaceStateResource,
-} from './utils/canvasWorkspaceAdapter'
+import { buildCanvasWorkspaceStateResource } from './utils/canvasWorkspaceAdapter'
 import { ensureProjectCanvasDir } from './utils/canvasFileStore'
 import {
   createProjectCanvasFile,
@@ -89,14 +81,6 @@ import {
   readCanvasDocumentAsset,
 } from './utils/canvasFileAssets'
 import {
-  acknowledgeAgentNativeWorkspaceOperations as acknowledgeWorkspaceEventOperations,
-  appendAgentNativeWorkspaceEvent as appendWorkspaceEvent,
-  appendAgentNativeWorkspaceOperationEvent,
-  createAgentNativeWorkspaceEventLog,
-  listAgentNativeWorkspaceEvents as listWorkspaceEvents,
-  listPendingAgentNativeWorkspaceOperations,
-} from './utils/agentNativeWorkspaceEvents'
-import {
   applyCanvasRemoteOperationToState,
   applyCanvasThemeOperationToSnapshot,
   normalizeCanvasStateSnapshot,
@@ -104,7 +88,11 @@ import {
 import { validateCanvasAgentOperation } from './utils/canvasOperationSchema.mjs'
 import { createProjectCanvasRoutes } from './vite/api/projectCanvasRoutes'
 import { createAgentNativeWorkspaceStore } from './vite/api/agentNativeWorkspaceStore'
-import { buildColorAuditWorkspaceManifest } from './utils/colorAuditWorkspaceAdapter'
+import {
+  buildCanvasStateSummary,
+  buildWorkspaceDebugPayload,
+  createAgentNativeRoutes,
+} from './vite/api/agentNativeRoutes'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -3772,20 +3760,11 @@ function paperImportPlugin() {
         )
       }
 
-      const buildCanvasStateSummary = (state) => ({
-        itemCount: Array.isArray(state?.items) ? state.items.length : 0,
-        groupCount: Array.isArray(state?.groups) ? state.groups.length : 0,
-        selection: Array.isArray(state?.selectedIds) ? state.selectedIds : [],
-      })
-
       const getAgentNativeWorkspaceStateRecord = (workspaceId, workspaceKey) =>
         agentNativeWorkspaceStore.getStateRecord(workspaceId, workspaceKey)
 
       const getAgentNativeWorkspaceEventLog = (workspaceId, workspaceKey) =>
         agentNativeWorkspaceStore.getEventLog(workspaceId, workspaceKey)
-
-      const listAgentNativeWorkspaceEvents = (workspaceId, workspaceKey, cursor = 0, limit = 100) =>
-        agentNativeWorkspaceStore.listEvents(workspaceId, workspaceKey, cursor, limit)
 
       const appendAgentNativeWorkspaceOperation = (
         workspaceId,
@@ -3803,9 +3782,6 @@ function paperImportPlugin() {
           source,
           options
         )
-
-      const listAgentNativeWorkspaceOperations = (workspaceId, workspaceKey, cursor = 0) =>
-        agentNativeWorkspaceStore.listPendingOperations(workspaceId, workspaceKey, cursor)
 
       const acknowledgeAgentNativeWorkspaceOperations = (workspaceId, workspaceKey, cursor = 0) =>
         agentNativeWorkspaceStore.acknowledgeOperations(workspaceId, workspaceKey, cursor)
@@ -4066,32 +4042,24 @@ function paperImportPlugin() {
         return record
       }
 
-      const buildWorkspaceDebugPayload = (workspaceId, workspaceKey, stateRecord, limit = 60) => {
-        const log = getAgentNativeWorkspaceEventLog(workspaceId, workspaceKey)
-        const nextLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, Number(limit))) : 60
-        const payload = listWorkspaceEvents(log, 0, nextLimit)
-        const pending = listPendingAgentNativeWorkspaceOperations(log, log.appliedCursor)
-
-        return {
-          workspaceId,
-          workspaceKey,
-          cursor: payload.cursor,
-          appliedCursor: log.appliedCursor,
-          updatedAt: stateRecord?.updatedAt || null,
-          stateSummary:
-            stateRecord?.payload?.stateSummary && typeof stateRecord.payload.stateSummary === 'object'
-              ? stateRecord.payload.stateSummary
-              : null,
-          pendingOperationCount: Array.isArray(pending.operations) ? pending.operations.length : 0,
-          events: Array.isArray(payload.events) ? payload.events : [],
-        }
-      }
-
       const getCanvasWorkspaceDebug = (projectId, limit = 60) => {
         const workspaceKey = buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey
         const stateRecord = getAgentNativeWorkspaceStateRecord('canvas', workspaceKey)
-        return buildWorkspaceDebugPayload('canvas', workspaceKey, stateRecord, limit)
+        return buildWorkspaceDebugPayload(agentNativeWorkspaceStore, 'canvas', workspaceKey, stateRecord, limit)
       }
+
+      // FOX2-75 slice 3: the /api/agent-native/* endpoint group lives in
+      // vite/api/agentNativeRoutes.ts behind the same framework-agnostic
+      // (req, res, pathname) => handled contract as slice 1. The canvas
+      // workspace still reads/writes through the session subsystem's
+      // per-project state, injected here.
+      const handleAgentNativeRoutes = createAgentNativeRoutes({
+        store: agentNativeWorkspaceStore,
+        getCanvasAgentState: (projectId) => canvasAgentStateByProject.get(projectId) || null,
+        upsertCanvasAgentState,
+        buildCanvasAgentWorkspaceKeys,
+        captureWorkspaceScreenshot: captureAgentNativeWorkspaceScreenshot,
+      })
 
       const appendCanvasAgentOutput = (session, chunk) => {
         if (!session || typeof chunk !== 'string' || chunk.length === 0) return
@@ -4979,436 +4947,9 @@ function paperImportPlugin() {
           }
         }
 
-        if (req.method === 'GET' && pathname === '/api/agent-native/manifest') {
-          return sendJson(res, 200, {
-            ok: true,
-            manifest: buildAgentNativeManifest(),
-          })
-        }
-
-        const agentNativeWorkspaceMatch = pathname.match(
-          /^\/api\/agent-native\/workspaces\/([^/]+)\/(manifest|state|selection|primitives|sections|export-preview|screenshot|operations|events|user-events|debug)$/
-        )
-        if (agentNativeWorkspaceMatch) {
-          const workspaceId = decodeURIComponent(agentNativeWorkspaceMatch[1])
-          const resourceName = agentNativeWorkspaceMatch[2]
-          const requestUrl = new URL(req.url, 'http://localhost')
-          const requestedWorkspaceKey = requestUrl.searchParams.get('workspaceKey')?.trim() || ''
-          const workspaceProjectId = requestUrl.searchParams.get('projectId')?.trim() || 'demo'
-          const workspaceKey =
-            requestedWorkspaceKey ||
-            (workspaceId === 'canvas'
-              ? buildCanvasAgentWorkspaceKeys(workspaceProjectId).canvasWorkspaceKey
-              : 'default')
-          const stateRecord =
-            workspaceId === 'canvas'
-              ? getAgentNativeWorkspaceStateRecord(
-                  workspaceId,
-                  buildCanvasAgentWorkspaceKeys(workspaceProjectId).canvasWorkspaceKey
-                ) ||
-                getAgentNativeWorkspaceStateRecord(workspaceId, workspaceKey)
-              : getAgentNativeWorkspaceStateRecord(workspaceId, workspaceKey)
-
-          if (req.method === 'POST' && resourceName === 'screenshot') {
-            try {
-              const body = await readJson(req)
-              const projectId =
-                typeof body.projectId === 'string' && body.projectId.trim()
-                  ? body.projectId.trim()
-                  : 'demo'
-              const target =
-                typeof body.target === 'string' && body.target.trim() === 'mobile'
-                  ? 'mobile'
-                  : 'desktop'
-              const host = req.headers.host || '127.0.0.1:5173'
-              const origin = `http://${host}`
-              const capture = await captureAgentNativeWorkspaceScreenshot({
-                workspaceId,
-                projectId,
-                target,
-                origin,
-                focusItemIds:
-                  workspaceId === 'canvas' && Array.isArray(body.focusItemIds)
-                    ? body.focusItemIds
-                    : undefined,
-                cropPadding:
-                  workspaceId === 'canvas'
-                    ? Number.isFinite(body.cropPadding)
-                      ? Number(body.cropPadding)
-                      : Number.isFinite(body.focusPadding)
-                        ? Number(body.focusPadding)
-                        : undefined
-                    : undefined,
-                snapshot:
-                  workspaceId === 'canvas'
-                    ? buildFocusedCanvasScreenshotSnapshot(
-                        body.snapshot ?? null,
-                        Array.isArray(body.focusItemIds) ? body.focusItemIds : [],
-                        Number.isFinite(body.focusPadding) ? Number(body.focusPadding) : undefined,
-                        target
-                      )
-                    : body.snapshot ?? null,
-              })
-
-              return sendJson(res, capture.status === 'ready' ? 200 : 501, {
-                ok: capture.status === 'ready',
-                workspaceId,
-                capture,
-              })
-            } catch (error) {
-              return sendJson(res, 400, {
-                error: error?.message || 'Failed to capture workspace screenshot.',
-              })
-            }
-          }
-
-          if (resourceName === 'operations') {
-            if (workspaceId !== 'color-audit' && workspaceId !== 'system-canvas') {
-              return sendJson(res, 404, {
-                error: 'Remote operations are not available for this workspace yet.',
-              })
-            }
-
-            if (req.method === 'POST') {
-              try {
-                const body = await readJson(req)
-                const nextWorkspaceKey =
-                  typeof body.workspaceKey === 'string' && body.workspaceKey.trim()
-                    ? body.workspaceKey.trim()
-                    : ''
-                if (!nextWorkspaceKey) {
-                  return sendJson(res, 400, { error: 'workspaceKey is required.' })
-                }
-                if (!body.operation || typeof body.operation !== 'object') {
-                  return sendJson(res, 400, { error: 'operation is required.' })
-                }
-
-                const record = appendAgentNativeWorkspaceOperation(
-                  workspaceId,
-                  nextWorkspaceKey,
-                  body.operation,
-                  body.clientId || null,
-                  body.source || null
-                )
-
-                return sendJson(res, 200, {
-                  ok: true,
-                  workspaceId,
-                  workspaceKey: record.workspaceKey,
-                  operationId: record.id,
-                  cursor: record.cursor,
-                  createdAt: record.createdAt,
-                })
-              } catch (error) {
-                return sendJson(res, 400, {
-                  error: error?.message || 'Failed to queue workspace operation.',
-                })
-              }
-            }
-
-            if (req.method === 'GET') {
-              const cursor = Number.parseInt(requestUrl.searchParams.get('cursor') || '0', 10)
-              const payload = listAgentNativeWorkspaceOperations(workspaceId, workspaceKey, cursor)
-              return sendJson(res, 200, {
-                ok: true,
-                workspaceId,
-                workspaceKey,
-                operations: payload.operations,
-                cursor: payload.cursor,
-              })
-            }
-          }
-
-          if (req.method === 'GET' && resourceName === 'events') {
-            const cursor = Number.parseInt(requestUrl.searchParams.get('cursor') || '0', 10)
-            const limit = Number.parseInt(requestUrl.searchParams.get('limit') || '100', 10)
-            const payload = listAgentNativeWorkspaceEvents(workspaceId, workspaceKey, cursor, limit)
-            return sendJson(res, 200, {
-              ok: true,
-              workspaceId,
-              workspaceKey,
-              events: payload.events,
-              cursor: payload.cursor,
-            })
-          }
-
-          // Semantic user-action events (FOX2-45): the browser reports
-          // user-initiated mutations as operation-shaped payloads so agents
-          // can observe what the human did, not just coarse state-synced
-          // blobs.
-          if (req.method === 'POST' && resourceName === 'user-events') {
-            try {
-              const body = await readJson(req)
-              const nextWorkspaceKey =
-                typeof body.workspaceKey === 'string' && body.workspaceKey.trim()
-                  ? body.workspaceKey.trim()
-                  : workspaceKey
-              if (!nextWorkspaceKey) {
-                return sendJson(res, 400, { error: 'workspaceKey is required.' })
-              }
-              const incoming = Array.isArray(body.events) ? body.events.slice(0, 50) : []
-              // Browser-reported human activity. Default kind is user-action
-              // (a semantic UI gesture); source-edit mirrors a mutation-log
-              // write (FOX2-46). Both carry actor "user".
-              const allowedKinds = new Set(['user-action', 'source-edit', 'file-lifecycle'])
-              const accepted = []
-              for (const entry of incoming) {
-                if (!entry || typeof entry !== 'object') continue
-                const action =
-                  typeof entry.action === 'string' && entry.action.trim()
-                    ? entry.action.trim()
-                    : ''
-                if (!action) continue
-                const kind = allowedKinds.has(entry.kind) ? entry.kind : 'user-action'
-                const record = appendWorkspaceEvent(
-                  getAgentNativeWorkspaceEventLog(workspaceId, nextWorkspaceKey),
-                  {
-                    kind,
-                    actor: 'user',
-                    source:
-                      typeof body.source === 'string' && body.source.trim()
-                        ? body.source.trim()
-                        : 'canvas-ui',
-                    sourceClientId: typeof body.clientId === 'string' ? body.clientId : null,
-                    operation:
-                      entry.payload && typeof entry.payload === 'object' ? entry.payload : null,
-                    stateSummary: null,
-                    metadata: {
-                      action,
-                      ...(entry.meta && typeof entry.meta === 'object' ? entry.meta : {}),
-                    },
-                  }
-                )
-                accepted.push({ id: record.id, cursor: record.cursor })
-              }
-              return sendJson(res, 200, {
-                ok: true,
-                workspaceId,
-                workspaceKey: nextWorkspaceKey,
-                accepted,
-              })
-            } catch (error) {
-              return sendJson(res, 400, {
-                error: error?.message || 'Failed to record user events.',
-              })
-            }
-          }
-
-          if (req.method === 'GET' && resourceName === 'debug') {
-            const limit = Number.parseInt(requestUrl.searchParams.get('limit') || '60', 10)
-            const fallbackDebugStateRecord =
-              workspaceId === 'canvas' && !stateRecord
-                ? (() => {
-                    const canvasState = canvasAgentStateByProject.get(workspaceProjectId) || null
-                    if (!canvasState) return null
-                    return {
-                      updatedAt: canvasState.updatedAt,
-                      payload: {
-                        stateSummary: buildCanvasStateSummary(canvasState.state),
-                      },
-                    }
-                  })()
-                : stateRecord
-            const debug = buildWorkspaceDebugPayload(
-              workspaceId,
-              workspaceKey,
-              fallbackDebugStateRecord,
-              limit
-            )
-            return sendJson(res, 200, {
-              ok: true,
-              workspaceId,
-              workspaceKey,
-              debug,
-            })
-          }
-
-          if (req.method === 'POST' && resourceName === 'state') {
-            try {
-              const body = await readJson(req)
-              const nextWorkspaceKey =
-                typeof body.workspaceKey === 'string' && body.workspaceKey.trim()
-                  ? body.workspaceKey.trim()
-                  : ''
-              if (!nextWorkspaceKey) {
-                return sendJson(res, 400, { error: 'workspaceKey is required.' })
-              }
-              if (!body.payload || typeof body.payload !== 'object') {
-                return sendJson(res, 400, { error: 'payload is required.' })
-              }
-
-              const record =
-                workspaceId === 'canvas'
-                  ? upsertCanvasAgentState(
-                      workspaceProjectId,
-                      body.payload.state,
-                      body.clientId || null,
-                      {
-                        source:
-                          typeof body.payload?.source === 'string' && body.payload.source.trim()
-                            ? body.payload.source.trim()
-                            : 'canvas-ui',
-                        primitives: body.payload.primitives,
-                        themeSnapshot: body.payload.themeSnapshot,
-                        sessionId:
-                          typeof body.payload?.sessionId === 'string' && body.payload.sessionId.trim()
-                            ? body.payload.sessionId.trim()
-                            : null,
-                        toolName:
-                          typeof body.payload?.toolName === 'string' && body.payload.toolName.trim()
-                            ? body.payload.toolName.trim()
-                            : null,
-                      }
-                    )
-                  : upsertAgentNativeWorkspaceState(
-                      workspaceId,
-                      nextWorkspaceKey,
-                      body.payload,
-                      body.clientId || null
-                    )
-
-              if (Number.isFinite(body.appliedOperationCursor)) {
-                acknowledgeAgentNativeWorkspaceOperations(
-                  workspaceId,
-                  nextWorkspaceKey,
-                  Number(body.appliedOperationCursor)
-                )
-              }
-
-              return sendJson(res, 200, {
-                ok: true,
-                updatedAt: record.updatedAt,
-              })
-            } catch (error) {
-              return sendJson(res, 400, {
-                error: error?.message || 'Failed to sync workspace state.',
-              })
-            }
-          }
-
-          if (req.method === 'GET' && resourceName === 'state') {
-            if (workspaceId === 'canvas' && !stateRecord) {
-              const canvasState = canvasAgentStateByProject.get(workspaceProjectId) || null
-              return sendJson(res, 200, {
-                ok: true,
-                workspaceId,
-                workspaceKey,
-                state: canvasState
-                  ? buildCanvasWorkspaceStateResource({
-                      workspaceKey,
-                      state: canvasState.state,
-                      selection: canvasState.state.selectedIds,
-                      primitives: canvasState.primitives,
-                      themeSnapshot: canvasState.themeSnapshot,
-                      stateSummary: buildCanvasStateSummary(canvasState.state),
-                    })
-                  : null,
-                updatedAt: canvasState?.updatedAt || null,
-              })
-            }
-            return sendJson(res, 200, {
-              ok: true,
-              workspaceId,
-              workspaceKey,
-              state: stateRecord?.payload || null,
-              updatedAt: stateRecord?.updatedAt || null,
-            })
-          }
-
-          if (req.method === 'GET' && resourceName === 'selection') {
-            if (workspaceId !== 'canvas') {
-              return sendJson(res, 404, { error: 'Selection is not available for this workspace.' })
-            }
-            const fallbackCanvasState = canvasAgentStateByProject.get(workspaceProjectId) || null
-            const selection = Array.isArray(stateRecord?.payload?.selection)
-              ? stateRecord.payload.selection
-              : Array.isArray(stateRecord?.payload?.state?.selectedIds)
-                ? stateRecord.payload.state.selectedIds
-                : Array.isArray(fallbackCanvasState?.state?.selectedIds)
-                  ? fallbackCanvasState.state.selectedIds
-                  : []
-            return sendJson(res, 200, {
-              ok: true,
-              workspaceId,
-              workspaceKey,
-              selection,
-              updatedAt: stateRecord?.updatedAt || null,
-            })
-          }
-
-          if (req.method === 'GET' && resourceName === 'primitives') {
-            if (workspaceId !== 'canvas') {
-              return sendJson(res, 404, { error: 'Primitives are not available for this workspace.' })
-            }
-            const fallbackCanvasState = canvasAgentStateByProject.get(workspaceProjectId) || null
-            return sendJson(res, 200, {
-              ok: true,
-              workspaceId,
-              workspaceKey,
-              primitives: Array.isArray(stateRecord?.payload?.primitives)
-                ? stateRecord.payload.primitives
-                : Array.isArray(fallbackCanvasState?.primitives)
-                  ? fallbackCanvasState.primitives
-                  : [],
-              updatedAt: stateRecord?.updatedAt || null,
-            })
-          }
-
-          if (req.method === 'GET' && resourceName === 'sections') {
-            if (workspaceId !== 'node-catalog') {
-              return sendJson(res, 404, { error: 'Sections are not available for this workspace.' })
-            }
-            return sendJson(res, 200, {
-              ok: true,
-              workspaceId,
-              workspaceKey,
-              sections: {
-                workspaceSections: stateRecord?.payload?.workspaceSections || [],
-                nodeSections: stateRecord?.payload?.nodeSections || [],
-              },
-              updatedAt: stateRecord?.updatedAt || null,
-            })
-          }
-
-          if (req.method === 'GET' && resourceName === 'export-preview') {
-            if (workspaceId !== 'color-audit') {
-              return sendJson(res, 404, { error: 'Export preview is not available for this workspace.' })
-            }
-            return sendJson(res, 200, {
-              ok: true,
-              workspaceId,
-              workspaceKey,
-              exportPreview: stateRecord?.payload?.exportPreview || null,
-              updatedAt: stateRecord?.updatedAt || null,
-            })
-          }
-
-          if (req.method === 'GET' && resourceName === 'manifest') {
-            const currentState =
-              stateRecord?.payload?.stateSummary ||
-              (workspaceId === 'canvas'
-                ? buildCanvasStateSummary(canvasAgentStateByProject.get(workspaceProjectId)?.state)
-                : undefined)
-            const manifest =
-              workspaceId === 'canvas'
-                ? buildCanvasWorkspaceManifest(stateRecord?.payload || (currentState ? { stateSummary: currentState } : null))
-                : workspaceId === 'color-audit'
-                ? buildColorAuditWorkspaceManifest(stateRecord?.payload || null)
-                : buildWorkspaceManifest(workspaceId, currentState)
-
-            if (!manifest) {
-              return sendJson(res, 404, { error: 'Unknown workspace.' })
-            }
-
-            return sendJson(res, 200, {
-              ok: true,
-              workspaceId,
-              workspaceKey,
-              manifest,
-              updatedAt: stateRecord?.updatedAt || null,
-            })
-          }
-        }
+        // FOX2-75 slice 3: /api/agent-native/manifest + the per-workspace
+        // resource group are handled by vite/api/agentNativeRoutes.ts.
+        if (await handleAgentNativeRoutes(req, res, pathname)) return
 
         if (req.method === 'GET' && pathname === '/api/canvas-agent/agents') {
           return sendJson(res, 200, {
