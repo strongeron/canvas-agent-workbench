@@ -8,7 +8,7 @@ import {
   insertMarkdownBlock,
   updateMarkdownBlock,
   type MarkdownBlockInfo,
-} from "../../utils/canvasMarkdownWriter"
+} from "../utils/canvasMarkdownWriter"
 import { resolveWorkspacePath } from "./canvasAstWrite"
 
 interface CanvasMarkdownWriteBody {

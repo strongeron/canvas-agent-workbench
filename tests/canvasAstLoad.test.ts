@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { applyCanvasAstLoadRequest } from "../vite/api/canvasAstLoad"
+import { applyCanvasAstLoadRequest } from "../server/canvasAstLoad"
 
 const tempDirs: string[] = []
 

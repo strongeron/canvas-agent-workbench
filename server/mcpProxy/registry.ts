@@ -1,7 +1,7 @@
 import path from "node:path"
 
-import type { CanvasMcpAppTransport, McpCallRecord } from "../../../utils/mcpApp"
-import { redactMcpValue } from "../../../utils/mcpApp"
+import type { CanvasMcpAppTransport, McpCallRecord } from "../../utils/mcpApp"
+import { redactMcpValue } from "../../utils/mcpApp"
 import { McpHttpClient } from "./McpHttpClient"
 import { McpStdioProcess } from "./McpStdioProcess"
 import { readMcpAppCreds } from "./projectMeta"

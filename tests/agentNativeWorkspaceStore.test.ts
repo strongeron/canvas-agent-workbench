@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { createAgentNativeWorkspaceStore } from "../vite/api/agentNativeWorkspaceStore"
+import { createAgentNativeWorkspaceStore } from "../server/agentNativeWorkspaceStore"
 
 describe("agent-native workspace store (FOX2-75 slice 2)", () => {
   it("round-trips state records per workspace key", () => {

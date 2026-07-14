@@ -8,8 +8,8 @@ import {
   buildWorkspaceDebugPayload,
   createAgentNativeRoutes,
   type CanvasAgentProjectStateRecord,
-} from "../vite/api/agentNativeRoutes"
-import { createAgentNativeWorkspaceStore } from "../vite/api/agentNativeWorkspaceStore"
+} from "../server/agentNativeRoutes"
+import { createAgentNativeWorkspaceStore } from "../server/agentNativeWorkspaceStore"
 
 function makeRequest(method: string, url: string, body?: unknown): IncomingMessage {
   const payload = body === undefined ? [] : [Buffer.from(JSON.stringify(body), "utf8")]

@@ -4,7 +4,7 @@ import path from "node:path"
 // Generalized path-safety guard for an ARBITRARY user-picked root (Root B).
 //
 // This is the higher-risk twin of `resolveWorkspacePath` in
-// `vite/api/canvasAstWrite.ts`. The AST endpoints sandbox to the repo root
+// `server/canvasAstWrite.ts`. The AST endpoints sandbox to the repo root
 // (`__dirname`) and keep their own `resolveWorkspacePath(__dirname)` — that
 // root is a fixed, trusted constant. This guard is for the Sync endpoint,
 // which writes OUTSIDE the repo into a folder the user picked at runtime.

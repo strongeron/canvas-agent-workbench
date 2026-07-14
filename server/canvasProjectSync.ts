@@ -56,8 +56,8 @@ import {
   composeNormalizedPage,
   normalizeDocument,
   type NormalizedDocument,
-} from "../../utils/canvasDocumentNormalize"
-import { listCanvasHtmlSlots } from "../../utils/canvasHtmlEditor"
+} from "../utils/canvasDocumentNormalize"
+import { listCanvasHtmlSlots } from "../utils/canvasHtmlEditor"
 import {
   assertRealpathStable,
   resolveSandboxPath,

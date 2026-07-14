@@ -5,7 +5,7 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { extractHtmlSubtree, injectCanvasHtmlElementIds } from "../utils/canvasHtmlEditor"
-import { applyCanvasComponentPromoteRequest } from "../vite/api/canvasComponentPromote"
+import { applyCanvasComponentPromoteRequest } from "../server/canvasComponentPromote"
 
 async function makeWorkspace() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-component-promote-"))

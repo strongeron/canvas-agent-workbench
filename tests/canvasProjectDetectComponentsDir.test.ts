@@ -4,7 +4,7 @@ import path from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { applyCanvasProjectDetectComponentsDirRequest } from "../vite/api/canvasProjectDetectComponentsDir"
+import { applyCanvasProjectDetectComponentsDirRequest } from "../server/canvasProjectDetectComponentsDir"
 
 const tmpDirs: string[] = []
 

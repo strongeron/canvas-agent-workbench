@@ -1,16 +1,16 @@
-import type { AgentNativeWorkspaceId } from "../../types/agentNative"
-import { buildAgentNativeManifest, buildWorkspaceManifest } from "../../utils/agentNativeManifest"
+import type { AgentNativeWorkspaceId } from "../types/agentNative"
+import { buildAgentNativeManifest, buildWorkspaceManifest } from "../utils/agentNativeManifest"
 import {
   appendAgentNativeWorkspaceEvent,
   listAgentNativeWorkspaceEvents as listWorkspaceEvents,
   listPendingAgentNativeWorkspaceOperations,
-} from "../../utils/agentNativeWorkspaceEvents"
-import { buildFocusedCanvasScreenshotSnapshot } from "../../utils/agentNativeWorkspaceScreenshots"
+} from "../utils/agentNativeWorkspaceEvents"
+import { buildFocusedCanvasScreenshotSnapshot } from "../utils/agentNativeWorkspaceScreenshots"
 import {
   buildCanvasWorkspaceManifest,
   buildCanvasWorkspaceStateResource,
-} from "../../utils/canvasWorkspaceAdapter"
-import { buildColorAuditWorkspaceManifest } from "../../utils/colorAuditWorkspaceAdapter"
+} from "../utils/canvasWorkspaceAdapter"
+import { buildColorAuditWorkspaceManifest } from "../utils/colorAuditWorkspaceAdapter"
 import type { AgentNativeWorkspaceStore } from "./agentNativeWorkspaceStore"
 import { readJson, sendJson, type RouteHandler } from "./projectCanvasRoutes"
 
