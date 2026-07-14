@@ -12,22 +12,10 @@ import {
 } from "../utils/canvasWorkspaceAdapter"
 import { buildColorAuditWorkspaceManifest } from "../utils/colorAuditWorkspaceAdapter"
 import type { AgentNativeWorkspaceStore } from "./agentNativeWorkspaceStore"
+import type { CanvasAgentProjectStateRecord } from "./canvasAgentProjectStore"
 import { readJson, sendJson, type RouteHandler } from "./projectCanvasRoutes"
 
-/**
- * Legacy canvas-agent per-project state record — the canvas workspace keeps a
- * parallel store (state + primitives + theme snapshot) owned by the
- * canvas-agent session subsystem, which several routes fall back to when the
- * agent-native store has no record yet.
- */
-export interface CanvasAgentProjectStateRecord {
-  projectId: string
-  state: any
-  primitives: any[]
-  themeSnapshot: any
-  updatedAt: string
-  sourceClientId: string | null
-}
+export type { CanvasAgentProjectStateRecord } from "./canvasAgentProjectStore"
 
 export const buildCanvasStateSummary = (state: any) => ({
   itemCount: Array.isArray(state?.items) ? state.items.length : 0,

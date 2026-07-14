@@ -93,6 +93,8 @@ import {
   buildWorkspaceDebugPayload,
   createAgentNativeRoutes,
 } from './server/agentNativeRoutes'
+import { createCanvasAgentProjectStore } from './server/canvasAgentProjectStore'
+import { createCanvasAgentRoutes } from './server/canvasAgentRoutes'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -3691,13 +3693,14 @@ function paperImportPlugin() {
       const localScanTimers = new Map()
       const localScanActive = new Set()
       const localScanPending = new Set()
-      const canvasAgentStateByProject = new Map()
+      // FOX2-75 slice 4: per-project canvas state + primitives live behind
+      // the store interface in server/canvasAgentProjectStore.ts.
+      const canvasAgentProjectStore = createCanvasAgentProjectStore()
       const canvasAgentSessionsByProject = new Map()
       const canvasAgentClientsByProject = new Map()
       const canvasAgentPtysBySession = new Map()
       const canvasAgentOutputBySession = new Map()
       const canvasAgentTranscriptBySession = new Map()
-      const canvasAgentPrimitivesByProject = new Map()
       // FOX2-75 slice 2: workspace state + event logs live behind the store
       // interface in server/agentNativeWorkspaceStore.ts. The consts below
       // are thin delegates so the existing call sites read unchanged.
@@ -3887,8 +3890,8 @@ function paperImportPlugin() {
         if (!session) return
 
         await ensureCanvasAgentSessionDir(sessionId)
-        const stateRecord = canvasAgentStateByProject.get(session.projectId) || null
-        const primitives = canvasAgentPrimitivesByProject.get(session.projectId) || []
+        const stateRecord = canvasAgentProjectStore.getState(session.projectId)
+        const primitives = canvasAgentProjectStore.getPrimitives(session.projectId)
         const transcript = getCanvasAgentTranscript(sessionId)
         const stateHistory = getCanvasAgentStateHistory(session.projectId)
         const workspaceDebug = getCanvasWorkspaceDebug(session.projectId, 80)
@@ -3995,12 +3998,12 @@ function paperImportPlugin() {
         const normalizedPrimitives =
           Array.isArray(meta.primitives) || (meta.primitives && typeof meta.primitives === 'object')
             ? normalizeCanvasAgentPrimitiveList(meta.primitives)
-            : canvasAgentPrimitivesByProject.get(projectId) || []
+            : canvasAgentProjectStore.getPrimitives(projectId)
         // Fall back to the existing record like primitives do — otherwise any
         // agent operation without meta.themeSnapshot wipes the themes the
         // browser last synced (FOX2-54).
         const normalizedThemeSnapshot = normalizeCanvasThemeSnapshot(
-          meta.themeSnapshot ?? canvasAgentStateByProject.get(projectId)?.themeSnapshot
+          meta.themeSnapshot ?? canvasAgentProjectStore.getState(projectId)?.themeSnapshot
         )
         const record = {
           projectId,
@@ -4010,8 +4013,8 @@ function paperImportPlugin() {
           updatedAt: new Date().toISOString(),
           sourceClientId: sourceClientId || null,
         }
-        canvasAgentStateByProject.set(projectId, record)
-        canvasAgentPrimitivesByProject.set(projectId, normalizedPrimitives)
+        canvasAgentProjectStore.setState(projectId, record)
+        canvasAgentProjectStore.setPrimitives(projectId, normalizedPrimitives)
         upsertAgentNativeWorkspaceState(
           'canvas',
           buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey,
@@ -4055,7 +4058,7 @@ function paperImportPlugin() {
       // per-project state, injected here.
       const handleAgentNativeRoutes = createAgentNativeRoutes({
         store: agentNativeWorkspaceStore,
-        getCanvasAgentState: (projectId) => canvasAgentStateByProject.get(projectId) || null,
+        getCanvasAgentState: (projectId) => canvasAgentProjectStore.getState(projectId),
         upsertCanvasAgentState,
         buildCanvasAgentWorkspaceKeys,
         captureWorkspaceScreenshot: captureAgentNativeWorkspaceScreenshot,
@@ -4149,7 +4152,7 @@ function paperImportPlugin() {
           }
         )
         const currentRecord =
-          canvasAgentStateByProject.get(projectId) ||
+          canvasAgentProjectStore.getState(projectId) ||
           upsertCanvasAgentState(projectId, { items: [], groups: [], nextZIndex: 1, selectedIds: [] }, null)
         const nextState = applyCanvasRemoteOperationToState(currentRecord.state, operation)
         // Theme ops don't touch canvas state, but the record's themeSnapshot
@@ -4198,6 +4201,17 @@ function paperImportPlugin() {
 
         return updatedRecord
       }
+
+      // FOX2-75 slice 4: the non-session /api/canvas-agent/* endpoints
+      // (agents, state, operations) live in server/canvasAgentRoutes.ts.
+      // Sessions, PTY, and the SSE stream follow in the next slice.
+      const handleCanvasAgentRoutes = createCanvasAgentRoutes({
+        projectStore: canvasAgentProjectStore,
+        upsertCanvasAgentState,
+        applyCanvasAgentOperation,
+        buildCanvasAgentWorkspaceKeys,
+        agentDefinitions: CANVAS_AGENT_DEFINITIONS,
+      })
 
       const processCanvasAgentQueueFile = async (filePath) => {
         const normalizedPath = path.resolve(filePath)
@@ -4951,12 +4965,9 @@ function paperImportPlugin() {
         // resource group are handled by server/agentNativeRoutes.ts.
         if (await handleAgentNativeRoutes(req, res, pathname)) return
 
-        if (req.method === 'GET' && pathname === '/api/canvas-agent/agents') {
-          return sendJson(res, 200, {
-            ok: true,
-            agents: CANVAS_AGENT_DEFINITIONS,
-          })
-        }
+        // FOX2-75 slice 4: agents + canvas state/operations endpoints are
+        // handled by server/canvasAgentRoutes.ts.
+        if (await handleCanvasAgentRoutes(req, res, pathname)) return
 
         if (req.method === 'GET' && pathname === '/api/canvas-agent/sessions') {
           const requestUrl = new URL(req.url, 'http://localhost')
@@ -5089,8 +5100,8 @@ function paperImportPlugin() {
             return sendJson(res, 404, { error: 'Canvas agent session not found.' })
           }
 
-          const stateRecord = canvasAgentStateByProject.get(session.projectId) || null
-          const primitives = canvasAgentPrimitivesByProject.get(session.projectId) || []
+          const stateRecord = canvasAgentProjectStore.getState(session.projectId)
+          const primitives = canvasAgentProjectStore.getPrimitives(session.projectId)
           const workspaceDebug = getCanvasWorkspaceDebug(session.projectId, 80)
           const toolCommand = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
           return sendJson(res, 200, {
@@ -5197,120 +5208,6 @@ function paperImportPlugin() {
           } catch (error) {
             return sendJson(res, 500, {
               error: error?.message || 'Failed to update canvas agent session.',
-            })
-          }
-        }
-
-        if (req.method === 'GET' && pathname === '/api/canvas-agent/state') {
-          const requestUrl = new URL(req.url, 'http://localhost')
-          const projectId = requestUrl.searchParams.get('projectId')?.trim()
-          if (!projectId) {
-            return sendJson(res, 400, { error: 'projectId query param is required.' })
-          }
-
-          const stateRecord = canvasAgentStateByProject.get(projectId) || null
-          return sendJson(res, 200, {
-            ok: true,
-            state: stateRecord
-              ? buildCanvasWorkspaceStateResource({
-                  workspaceKey: buildCanvasAgentWorkspaceKeys(projectId).canvasWorkspaceKey,
-                  state: stateRecord.state,
-                  selection: stateRecord.state.selectedIds,
-                  primitives: stateRecord.primitives,
-                  themeSnapshot: stateRecord.themeSnapshot,
-                  stateSummary: buildCanvasStateSummary(stateRecord.state),
-                })
-              : null,
-            primitives: stateRecord?.primitives || [],
-            updatedAt: stateRecord?.updatedAt || null,
-            sourceClientId: stateRecord?.sourceClientId || null,
-          })
-        }
-
-        if (req.method === 'POST' && pathname === '/api/canvas-agent/state') {
-          try {
-            const body = await readJson(req)
-            const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : ''
-            if (!projectId) {
-              return sendJson(res, 400, { error: 'projectId is required.' })
-            }
-
-            const nextState =
-              body.payload && typeof body.payload === 'object' && body.payload.state
-                ? body.payload.state
-                : body.state
-            const nextPrimitives =
-              body.payload && typeof body.payload === 'object' && Array.isArray(body.payload.primitives)
-                ? body.payload.primitives
-                : body.primitives
-            const nextThemeSnapshot =
-              body.payload && typeof body.payload === 'object' && body.payload.themeSnapshot
-                ? body.payload.themeSnapshot
-                : body.themeSnapshot
-
-            const stateRecord = upsertCanvasAgentState(projectId, nextState, body.clientId, {
-              source:
-                typeof body.source === 'string' && body.source.trim()
-                  ? body.source.trim()
-                  : 'canvas-ui',
-              primitives: nextPrimitives,
-              themeSnapshot: nextThemeSnapshot,
-              sessionId:
-                typeof body.sessionId === 'string' && body.sessionId.trim()
-                  ? body.sessionId.trim()
-                  : null,
-              toolName:
-                typeof body.toolName === 'string' && body.toolName.trim()
-                  ? body.toolName.trim()
-                  : null,
-            })
-            return sendJson(res, 200, {
-              ok: true,
-              primitives: stateRecord.primitives,
-              updatedAt: stateRecord.updatedAt,
-            })
-          } catch (error) {
-            return sendJson(res, 400, {
-              error: error?.message || 'Failed to sync canvas state.',
-            })
-          }
-        }
-
-        if (req.method === 'POST' && pathname === '/api/canvas-agent/operations') {
-          try {
-            const body = await readJson(req)
-            const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : ''
-            const sessionId =
-              typeof body.sessionId === 'string' && body.sessionId.trim() ? body.sessionId.trim() : null
-            const toolName =
-              typeof body.toolName === 'string' && body.toolName.trim() ? body.toolName.trim() : null
-            const source =
-              typeof body.source === 'string' && body.source.trim()
-                ? body.source.trim()
-                : toolName
-                  ? `canvas-tool:${toolName}`
-                  : 'canvas-operation'
-            if (!projectId) {
-              return sendJson(res, 400, { error: 'projectId is required.' })
-            }
-
-            const updatedRecord = applyCanvasAgentOperation({
-              projectId,
-              operation: body.operation,
-              clientId: body.clientId || null,
-              sessionId,
-              source,
-              toolName,
-            })
-
-            return sendJson(res, 200, {
-              ok: true,
-              updatedAt: updatedRecord.updatedAt,
-              state: updatedRecord.state,
-            })
-          } catch (error) {
-            return sendJson(res, 400, {
-              error: error?.message || 'Failed to apply canvas operation.',
             })
           }
         }
