@@ -3,6 +3,8 @@ import { useDroppable } from "@dnd-kit/core"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ComponentType } from "react"
 
+import { CANVAS_GRID_SIZE } from "../../hooks/useCanvasTransform"
+
 import type {
   CanvasItem as CanvasItemType,
   CanvasItemUpdate,
@@ -149,6 +151,14 @@ interface CanvasWorkspaceProps {
     artboardId: string,
     position: { x: number; y: number }
   ) => void
+  /**
+   * Compositor-direct wheel gestures (FOX2-80): useCanvasTransform writes
+   * transform/grid styles straight to these elements during a wheel gesture
+   * instead of re-rendering per tick. Surface = the grid background host,
+   * content = the transform container.
+   */
+  gestureSurfaceRef?: React.Ref<HTMLDivElement>
+  gestureContentRef?: React.Ref<HTMLDivElement>
 }
 
 export function CanvasWorkspace({
@@ -191,6 +201,8 @@ export function CanvasWorkspace({
   onLibraryPrimitiveDropOnCanvas,
   onFilesDropOnArtboard,
   onArtboardAddMenuRequest,
+  gestureSurfaceRef,
+  gestureContentRef,
 }: CanvasWorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -851,6 +863,11 @@ export function CanvasWorkspace({
       ref={(node) => {
         workspaceRef.current = node
         setNodeRef(node)
+        if (typeof gestureSurfaceRef === "function") {
+          gestureSurfaceRef(node)
+        } else if (gestureSurfaceRef) {
+          ;(gestureSurfaceRef as React.MutableRefObject<HTMLDivElement | null>).current = node
+        }
       }}
       className={`relative h-full flex-1 overflow-hidden ${getCursor()} ${
         isOver || isFileDragOver ? "bg-brand-50/30" : "bg-surface-50"
@@ -859,7 +876,7 @@ export function CanvasWorkspace({
         backgroundImage: `
           radial-gradient(circle, var(--color-border-default) 1px, transparent 1px)
         `,
-        backgroundSize: `${24 * transform.scale}px ${24 * transform.scale}px`,
+        backgroundSize: `${CANVAS_GRID_SIZE * transform.scale}px ${CANVAS_GRID_SIZE * transform.scale}px`,
         backgroundPosition: `${transform.offset.x}px ${transform.offset.y}px`,
       }}
       onMouseDown={handleMouseDown}
@@ -874,6 +891,7 @@ export function CanvasWorkspace({
     >
       {/* Transform container */}
       <div
+        ref={gestureContentRef}
         className="absolute left-0 top-0 origin-top-left"
         style={{
           transform: `translate(${transform.offset.x}px, ${transform.offset.y}px) scale(${transform.scale})`,

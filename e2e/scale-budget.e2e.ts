@@ -39,11 +39,32 @@ test.describe("200-node scale budget", () => {
     await expect(nodes).toHaveCount(NODE_COUNT, { timeout: 20_000 })
     const renderMs = Date.now() - renderStart
 
-    // Pan the board with a burst of wheel events over the canvas surface.
+    // Pan the board with a burst of wheel events over the canvas surface,
+    // capturing rAF frame times while the gesture runs (FOX2-80).
     const surface = page.locator('[data-canvas-root="true"]')
     const box = await surface.boundingBox()
     if (!box) throw new Error("no canvas surface")
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __frameTimes: number[]
+        __stopFrameCapture: () => void
+      }
+      w.__frameTimes = []
+      let running = true
+      let last = performance.now()
+      w.__stopFrameCapture = () => {
+        running = false
+      }
+      const loop = () => {
+        if (!running) return
+        const now = performance.now()
+        w.__frameTimes.push(now - last)
+        last = now
+        requestAnimationFrame(loop)
+      }
+      requestAnimationFrame(loop)
+    })
     const panStart = Date.now()
     for (let i = 0; i < 12; i++) {
       await page.mouse.wheel(40, 60)
@@ -51,12 +72,31 @@ test.describe("200-node scale budget", () => {
     // Settle a frame, then confirm the board is still fully present.
     await page.waitForTimeout(100)
     const panMs = Date.now() - panStart
+    const frameTimes = await page.evaluate(() => {
+      const w = window as unknown as {
+        __frameTimes: number[]
+        __stopFrameCapture: () => void
+      }
+      w.__stopFrameCapture()
+      return w.__frameTimes
+    })
 
     await expect(nodes).toHaveCount(NODE_COUNT)
 
+    // Median pan frame. Wheel gestures must stay off the React render loop
+    // (FOX2-80): before the compositor-direct path, panning re-rendered all
+    // 200 items per tick at ~36-40ms/frame; after, frames sit at vsync
+    // (~8-17ms). The ceiling is generous for CI but fails a regression back
+    // to state-per-tick panning.
+    const sorted = [...frameTimes].sort((a, b) => a - b)
+    const medianFrameMs = sorted[Math.floor(sorted.length / 2)] ?? 0
+
     // Generous ceilings — a guardrail. Tighten only with evidence.
-    console.log(`SCALE_BUDGET render=${renderMs}ms pan(12 wheel)=${panMs}ms nodes=${NODE_COUNT}`)
+    console.log(
+      `SCALE_BUDGET render=${renderMs}ms pan(12 wheel)=${panMs}ms medianFrame=${medianFrameMs.toFixed(1)}ms frames=${frameTimes.length} nodes=${NODE_COUNT}`
+    )
     expect(renderMs, "200-node initial render").toBeLessThan(15_000)
     expect(panMs, "12-step wheel pan").toBeLessThan(4_000)
+    expect(medianFrameMs, "median pan frame time").toBeLessThan(28)
   })
 })

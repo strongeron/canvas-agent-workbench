@@ -633,6 +633,8 @@ export function CanvasTab({
     handleWheel,
     fitToView,
     setWorkspaceDimensions,
+    gestureSurfaceRef,
+    gestureContentRef,
   } = useCanvasTransform()
 
   const [activeDragData, setActiveDragData] = useState<DragData | null>(null)
@@ -3661,6 +3663,8 @@ export function CanvasTab({
             onMoveLayer={handleMoveLayer}
             onPan={pan}
             onWheel={handleWheel}
+            gestureSurfaceRef={gestureSurfaceRef}
+            gestureContentRef={gestureContentRef}
             onDimensionsChange={handleDimensionsChange}
             getGroupBounds={getGroupBounds}
             onDropMediaFiles={handleDropMediaFiles}

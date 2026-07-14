@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef } from "react"
+import { useCallback, useEffect, useState, useRef } from "react"
 
 import type { CanvasTransform } from "../types/canvas"
 
@@ -12,9 +12,58 @@ const DEFAULT_TRANSFORM: CanvasTransform = {
   offset: { x: 0, y: 0 },
 }
 
+/** Grid cell size in px at scale 1 — the workspace background derives from this too. */
+export const CANVAS_GRID_SIZE = 24
+
+/** Commit the gesture to React state this long after the last wheel tick. */
+const GESTURE_COMMIT_MS = 140
+
+function applyTransformStyles(
+  surfaceEl: HTMLElement | null,
+  contentEl: HTMLElement | null,
+  next: CanvasTransform
+) {
+  if (contentEl) {
+    contentEl.style.transform = `translate(${next.offset.x}px, ${next.offset.y}px) scale(${next.scale})`
+  }
+  if (surfaceEl) {
+    surfaceEl.style.backgroundSize = `${CANVAS_GRID_SIZE * next.scale}px ${CANVAS_GRID_SIZE * next.scale}px`
+    surfaceEl.style.backgroundPosition = `${next.offset.x}px ${next.offset.y}px`
+  }
+}
+
 export function useCanvasTransform() {
   const [transform, setTransform] = useState<CanvasTransform>(DEFAULT_TRANSFORM)
   const workspaceRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 })
+
+  // FOX2-80: wheel pan/zoom runs compositor-direct. Re-rendering the board on
+  // every wheel tick cost ~37-41ms/frame (~26fps) on a 200-node board — >95%
+  // of it React reconciliation, measured via Long Animation Frames. When a
+  // consumer attaches these refs, wheel gestures write transform/grid styles
+  // straight to the DOM (compositor-only properties) and commit to React
+  // state once, shortly after the gesture ends. Consumers that don't attach
+  // the refs keep the original state-per-tick behavior.
+  const gestureSurfaceRef = useRef<HTMLDivElement | null>(null)
+  const gestureContentRef = useRef<HTMLDivElement | null>(null)
+  const liveTransformRef = useRef<CanvasTransform>(DEFAULT_TRANSFORM)
+  const gestureCommitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const gestureActiveRef = useRef(false)
+
+  // Programmatic setters (zoom buttons, fitToView, …) go through state; keep
+  // the live mirror in sync so the next gesture starts from committed truth.
+  // A re-render mid-gesture would also rewrite the styles from stale state —
+  // the next wheel tick (<16ms away during an active gesture) rewrites them.
+  useEffect(() => {
+    if (!gestureActiveRef.current) {
+      liveTransformRef.current = transform
+    }
+  }, [transform])
+
+  useEffect(() => {
+    return () => {
+      if (gestureCommitTimer.current) clearTimeout(gestureCommitTimer.current)
+    }
+  }, [])
 
   // Store workspace dimensions for centering calculations
   const setWorkspaceDimensions = useCallback((width: number, height: number) => {
@@ -119,40 +168,61 @@ export function useCanvasTransform() {
   // Handle wheel event - supports both zoom (Ctrl/Cmd+scroll) and pan (regular scroll)
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
-      // Zoom with Ctrl/Cmd + scroll
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault()
-        const rect = e.currentTarget.getBoundingClientRect()
-        const mouseX = e.clientX - rect.left
-        const mouseY = e.clientY - rect.top
+      const computeNext = (prev: CanvasTransform): CanvasTransform => {
+        // Zoom with Ctrl/Cmd + scroll
+        if (e.ctrlKey || e.metaKey) {
+          const rect = e.currentTarget.getBoundingClientRect()
+          const mouseX = e.clientX - rect.left
+          const mouseY = e.clientY - rect.top
 
-        // Calculate zoom factor based on scroll direction
-        const zoomFactor = e.deltaY > 0 ? 1 - ZOOM_STEP : 1 + ZOOM_STEP
-
-        setTransform((prev) => {
+          // Calculate zoom factor based on scroll direction
+          const zoomFactor = e.deltaY > 0 ? 1 - ZOOM_STEP : 1 + ZOOM_STEP
           const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev.scale * zoomFactor))
 
           // Zoom towards mouse position
           const scaleRatio = newScale / prev.scale
-          const newOffsetX = mouseX - (mouseX - prev.offset.x) * scaleRatio
-          const newOffsetY = mouseY - (mouseY - prev.offset.y) * scaleRatio
-
           return {
             scale: newScale,
-            offset: { x: newOffsetX, y: newOffsetY },
+            offset: {
+              x: mouseX - (mouseX - prev.offset.x) * scaleRatio,
+              y: mouseY - (mouseY - prev.offset.y) * scaleRatio,
+            },
           }
-        })
-      } else {
+        }
         // Pan with regular scroll (infinite canvas)
-        e.preventDefault()
-        setTransform((prev) => ({
+        return {
           ...prev,
           offset: {
             x: prev.offset.x - e.deltaX,
             y: prev.offset.y - e.deltaY,
           },
-        }))
+        }
       }
+
+      e.preventDefault()
+
+      const contentEl = gestureContentRef.current
+      if (!contentEl) {
+        // No gesture host attached — original state-per-tick behavior.
+        setTransform(computeNext)
+        return
+      }
+
+      // Compositor-direct path: mutate the DOM now, commit state after the
+      // gesture settles. Between ticks the committed state is stale by
+      // design; anything that must read mid-gesture coordinates should wait
+      // for the commit (≤GESTURE_COMMIT_MS after the last tick).
+      gestureActiveRef.current = true
+      const next = computeNext(liveTransformRef.current)
+      liveTransformRef.current = next
+      applyTransformStyles(gestureSurfaceRef.current, contentEl, next)
+
+      if (gestureCommitTimer.current) clearTimeout(gestureCommitTimer.current)
+      gestureCommitTimer.current = setTimeout(() => {
+        gestureCommitTimer.current = null
+        gestureActiveRef.current = false
+        setTransform(liveTransformRef.current)
+      }, GESTURE_COMMIT_MS)
     },
     []
   )
@@ -207,5 +277,7 @@ export function useCanvasTransform() {
     handleWheel,
     fitToView,
     setWorkspaceDimensions,
+    gestureSurfaceRef,
+    gestureContentRef,
   }
 }
