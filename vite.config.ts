@@ -95,6 +95,7 @@ import {
 } from './server/agentNativeRoutes'
 import { createCanvasAgentProjectStore } from './server/canvasAgentProjectStore'
 import { createCanvasAgentRoutes } from './server/canvasAgentRoutes'
+import { createCanvasAgentSessionRoutes, writeSseEvent } from './server/canvasAgentSessionRoutes'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -567,11 +568,6 @@ function normalizeCanvasThemeSnapshot(input) {
         : null,
     tokenValues,
   }
-}
-
-function writeSseEvent(res, eventName, payload) {
-  res.write(`event: ${eventName}\n`)
-  res.write(`data: ${JSON.stringify(payload)}\n\n`)
 }
 
 function trimCanvasAgentOutput(value) {
@@ -4213,6 +4209,33 @@ function paperImportPlugin() {
         agentDefinitions: CANVAS_AGENT_DEFINITIONS,
       })
 
+      // FOX2-75 slice 5: session CRUD/lifecycle, PTY input/resize, bootstrap,
+      // open-terminal, per-session debug, and the SSE stream live in
+      // server/canvasAgentSessionRoutes.ts. The session manager, PTY
+      // registry, transcripts, and broadcast fan-out stay here and are
+      // injected.
+      const handleCanvasAgentSessionRoutes = createCanvasAgentSessionRoutes({
+        toolCommand: CANVAS_AGENT_TOOL_COMMAND,
+        defaultTerminal: CANVAS_AGENT_DEFAULT_TERMINAL,
+        projectStore: canvasAgentProjectStore,
+        getSessions: getCanvasAgentSessions,
+        findSession: findCanvasAgentSession,
+        createSession: createCanvasAgentSession,
+        bootstrapSession: bootstrapCanvasAgentSession,
+        startSession: startCanvasAgentSession,
+        stopSession: stopCanvasAgentSession,
+        updateSession: updateCanvasAgentSession,
+        pushTranscript: pushCanvasAgentTranscript,
+        getTranscript: getCanvasAgentTranscript,
+        getSessionOutput: (sessionId) => canvasAgentOutputBySession.get(sessionId) || '',
+        getSessionPty: (sessionId) => canvasAgentPtysBySession.get(sessionId),
+        ensureSessionDir: ensureCanvasAgentSessionDir,
+        broadcastEvent: broadcastCanvasAgentEvent,
+        getEventClients: getCanvasAgentClients,
+        getWorkspaceDebug: getCanvasWorkspaceDebug,
+        getStateHistory: getCanvasAgentStateHistory,
+      })
+
       const processCanvasAgentQueueFile = async (filePath) => {
         const normalizedPath = path.resolve(filePath)
         const requestRaw = await fs.readFile(normalizedPath, 'utf8')
@@ -4969,297 +4992,7 @@ function paperImportPlugin() {
         // handled by server/canvasAgentRoutes.ts.
         if (await handleCanvasAgentRoutes(req, res, pathname)) return
 
-        if (req.method === 'GET' && pathname === '/api/canvas-agent/sessions') {
-          const requestUrl = new URL(req.url, 'http://localhost')
-          const projectId = requestUrl.searchParams.get('projectId')?.trim()
-          if (!projectId) {
-            return sendJson(res, 400, { error: 'projectId query param is required.' })
-          }
-
-          return sendJson(res, 200, {
-            ok: true,
-            sessions: getCanvasAgentSessions(projectId),
-          })
-        }
-
-        if (req.method === 'POST' && pathname === '/api/canvas-agent/bootstrap') {
-          try {
-            const body = await readJson(req)
-            const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : ''
-            const agentId =
-              typeof body.agentId === 'string' && body.agentId.trim() ? body.agentId.trim() : 'codex'
-
-            if (!projectId) {
-              return sendJson(res, 400, { error: 'projectId is required.' })
-            }
-
-            const bootstrap = await bootstrapCanvasAgentSession({
-              projectId,
-              agentId,
-              cwd: body.cwd,
-              title: body.title,
-              surfaceId: body.surfaceId,
-              reuseSession: body.reuseSession !== false,
-              launchProfile: body.launchProfile,
-            })
-
-            return sendJson(res, 200, { ok: true, bootstrap })
-          } catch (error) {
-            return sendJson(res, 400, {
-              error: error?.message || 'Failed to bootstrap canvas agent session.',
-            })
-          }
-        }
-
-        if (req.method === 'POST' && pathname === '/api/canvas-agent/sessions') {
-          try {
-            const body = await readJson(req)
-            const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : ''
-            const agentId = typeof body.agentId === 'string' ? body.agentId.trim() : ''
-
-            if (!projectId || !agentId) {
-              return sendJson(res, 400, { error: 'projectId and agentId are required.' })
-            }
-
-            const session = await createCanvasAgentSession({
-              projectId,
-              agentId,
-              cwd: body.cwd,
-              title: body.title,
-              launchProfile: body.launchProfile,
-            })
-
-            broadcastCanvasAgentEvent(projectId, 'session-created', { session })
-            return sendJson(res, 200, { ok: true, session })
-          } catch (error) {
-            return sendJson(res, 400, {
-              error: error?.message || 'Failed to create canvas agent session.',
-            })
-          }
-        }
-
-        const canvasAgentSessionOutputMatch = pathname.match(/^\/api\/canvas-agent\/sessions\/([^/]+)\/output$/)
-        if (req.method === 'GET' && canvasAgentSessionOutputMatch) {
-          const sessionId = decodeURIComponent(canvasAgentSessionOutputMatch[1])
-          const session = findCanvasAgentSession(sessionId)
-          if (!session) {
-            return sendJson(res, 404, { error: 'Canvas agent session not found.' })
-          }
-
-          return sendJson(res, 200, {
-            ok: true,
-            session,
-            output: canvasAgentOutputBySession.get(sessionId) || '',
-          })
-        }
-
-        const canvasAgentSessionOpenTerminalMatch = pathname.match(
-          /^\/api\/canvas-agent\/sessions\/([^/]+)\/open-terminal$/
-        )
-        if (req.method === 'POST' && canvasAgentSessionOpenTerminalMatch) {
-          const sessionId = decodeURIComponent(canvasAgentSessionOpenTerminalMatch[1])
-          const session = findCanvasAgentSession(sessionId)
-          if (!session) {
-            return sendJson(res, 404, { error: 'Canvas agent session not found.' })
-          }
-          if (process.platform !== 'darwin') {
-            return sendJson(res, 400, {
-              error: 'Open in Terminal is only available on macOS. Copy the launch command instead.',
-            })
-          }
-          const launchCommand =
-            typeof session.launchCommand === 'string' ? session.launchCommand.trim() : ''
-          if (!launchCommand) {
-            return sendJson(res, 400, { error: 'Session has no launch command.' })
-          }
-          try {
-            // The command comes from the server-side session record only — the
-            // request carries just the session id, so this endpoint cannot run
-            // arbitrary input. A .command file avoids AppleScript quoting of
-            // the (heavily nested-quoted) launch command: `open` hands it to
-            // Terminal, which executes it in a new window.
-            const sessionDir = await ensureCanvasAgentSessionDir(sessionId)
-            const scriptPath = path.join(sessionDir, 'open-terminal.command')
-            await fs.writeFile(scriptPath, `#!/bin/zsh\n${launchCommand}\n`, { mode: 0o755 })
-            await new Promise((resolve, reject) => {
-              execFile('open', [scriptPath], (error) => (error ? reject(error) : resolve(undefined)))
-            })
-            return sendJson(res, 200, { ok: true, sessionId })
-          } catch (error) {
-            return sendJson(res, 500, {
-              error: error?.message || 'Failed to open Terminal for this session.',
-            })
-          }
-        }
-
-        const canvasAgentSessionDebugMatch = pathname.match(/^\/api\/canvas-agent\/sessions\/([^/]+)\/debug$/)
-        if (req.method === 'GET' && canvasAgentSessionDebugMatch) {
-          const sessionId = decodeURIComponent(canvasAgentSessionDebugMatch[1])
-          const session = findCanvasAgentSession(sessionId)
-          if (!session) {
-            return sendJson(res, 404, { error: 'Canvas agent session not found.' })
-          }
-
-          const stateRecord = canvasAgentProjectStore.getState(session.projectId)
-          const primitives = canvasAgentProjectStore.getPrimitives(session.projectId)
-          const workspaceDebug = getCanvasWorkspaceDebug(session.projectId, 80)
-          const toolCommand = session.toolCommand || CANVAS_AGENT_TOOL_COMMAND
-          return sendJson(res, 200, {
-            ok: true,
-            debug: {
-              session,
-              output: canvasAgentOutputBySession.get(sessionId) || '',
-              transcript: getCanvasAgentTranscript(sessionId),
-              projectState: stateRecord?.state || null,
-              primitives,
-              stateHistory: getCanvasAgentStateHistory(session.projectId),
-              workspaceEvents: workspaceDebug.events,
-              toolCommand,
-              toolExamples: [
-                `${toolCommand} attach --project ${session.projectId} --surface color-audit`,
-                `${toolCommand} workspace-manifest`,
-                `${toolCommand} surface-manifest color-audit`,
-                `${toolCommand} color-audit-state`,
-                `${toolCommand} color-audit-export`,
-                `${toolCommand} system-canvas-state`,
-                `${toolCommand} state`,
-                `${toolCommand} context`,
-                `${toolCommand} primitives`,
-                `${toolCommand} create-item ./payload.json`,
-                `${toolCommand} update-item item-id ./updates.json`,
-                `${toolCommand} transcript`,
-              ],
-            },
-          })
-        }
-
-        const canvasAgentSessionActionMatch = pathname.match(
-          /^\/api\/canvas-agent\/sessions\/([^/]+)\/(start|stop|input|resize)$/
-        )
-        if (req.method === 'POST' && canvasAgentSessionActionMatch) {
-          try {
-            const sessionId = decodeURIComponent(canvasAgentSessionActionMatch[1])
-            const action = canvasAgentSessionActionMatch[2]
-            const session = findCanvasAgentSession(sessionId)
-            if (!session) {
-              return sendJson(res, 404, { error: 'Canvas agent session not found.' })
-            }
-
-            const body = await readJson(req)
-
-            if (action === 'start') {
-              try {
-                const startedSession = await startCanvasAgentSession(sessionId, body)
-                return sendJson(res, 200, {
-                  ok: true,
-                  session: startedSession,
-                })
-              } catch (error) {
-                pushCanvasAgentTranscript(
-                  sessionId,
-                  'session-error',
-                  error?.message || 'Failed to start agent session.'
-                )
-                const failedSession = updateCanvasAgentSession(sessionId, {
-                  transport: 'pty',
-                  status: 'error',
-                  errorMessage: error?.message || 'Failed to start agent session.',
-                  endedAt: new Date().toISOString(),
-                })
-                return sendJson(res, 500, {
-                  error: error?.message || 'Failed to start agent session.',
-                  session: failedSession,
-                })
-              }
-            }
-
-            if (action === 'stop') {
-              const stoppedSession = stopCanvasAgentSession(sessionId)
-              return sendJson(res, 200, {
-                ok: true,
-                session: stoppedSession,
-              })
-            }
-
-            const ptyProcess = canvasAgentPtysBySession.get(sessionId)
-            if (!ptyProcess) {
-              return sendJson(res, 409, { error: 'Canvas agent session is not running.' })
-            }
-
-            if (action === 'input') {
-              const input = typeof body.input === 'string' ? body.input : ''
-              if (!input) {
-                return sendJson(res, 400, { error: 'input is required.' })
-              }
-              ptyProcess.write(input)
-              return sendJson(res, 200, { ok: true })
-            }
-
-            if (action === 'resize') {
-              const cols = Math.max(40, Number(body.cols || session.cols || CANVAS_AGENT_DEFAULT_TERMINAL.cols))
-              const rows = Math.max(10, Number(body.rows || session.rows || CANVAS_AGENT_DEFAULT_TERMINAL.rows))
-              ptyProcess.resize(cols, rows)
-              const resizedSession = updateCanvasAgentSession(sessionId, { cols, rows })
-              return sendJson(res, 200, {
-                ok: true,
-                session: resizedSession,
-              })
-            }
-          } catch (error) {
-            return sendJson(res, 500, {
-              error: error?.message || 'Failed to update canvas agent session.',
-            })
-          }
-        }
-
-        if (req.method === 'GET' && pathname === '/api/canvas-agent/events') {
-          const requestUrl = new URL(req.url, 'http://localhost')
-          const projectId = requestUrl.searchParams.get('projectId')?.trim()
-          const clientId =
-            requestUrl.searchParams.get('clientId')?.trim() ||
-            `canvas-agent-client-${Math.random().toString(36).slice(2, 8)}`
-
-          if (!projectId) {
-            return sendJson(res, 400, { error: 'projectId query param is required.' })
-          }
-
-          res.statusCode = 200
-          res.setHeader('Content-Type', 'text/event-stream')
-          res.setHeader('Cache-Control', 'no-cache, no-transform')
-          res.setHeader('Connection', 'keep-alive')
-          res.setHeader('X-Accel-Buffering', 'no')
-          res.flushHeaders?.()
-
-          const client = {
-            id: clientId,
-            res,
-          }
-          const clients = getCanvasAgentClients(projectId)
-          clients.add(client)
-
-          writeSseEvent(res, 'hello', {
-            clientId,
-            projectId,
-            connectedAt: new Date().toISOString(),
-          })
-
-          const pingTimer = setInterval(() => {
-            writeSseEvent(res, 'ping', { at: new Date().toISOString() })
-          }, 15000)
-          let cleanedUp = false
-
-          const cleanup = () => {
-            if (cleanedUp) return
-            cleanedUp = true
-            clearInterval(pingTimer)
-            clients.delete(client)
-            res.end()
-          }
-
-          req.on('close', cleanup)
-          req.on('end', cleanup)
-          return
-        }
+        if (await handleCanvasAgentSessionRoutes(req, res, pathname)) return
 
         if (req.method === 'GET' && pathname === '/api/projects/list') {
           try {
