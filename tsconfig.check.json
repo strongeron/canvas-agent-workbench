@@ -21,7 +21,8 @@
     "demo/components/**/*.tsx",
     "tests/**/*.ts",
     "tests/**/*.tsx",
-    "vite/**/*.ts"
+    "vite/**/*.ts",
+    "server/**/*.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }
